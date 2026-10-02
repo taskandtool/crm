@@ -1,0 +1,19 @@
+{
+  "business": "A counselor in private practice who wants a record of who got in touch and whether they heard back. Sessions are booked and noted elsewhere.",
+  "vocabulary": { "one": "Client", "many": "Clients" },
+  "stages": [
+    { "key": "new", "label": "New", "kind": "open" },
+    { "key": "contacted", "label": "Contacted", "kind": "open" },
+    { "key": "closed", "label": "Closed", "kind": "won" }
+  ],
+  "sources": ["Website", "Directory listing", "Referral", "Phone"],
+  "fields": [
+    { "key": "preferred_contact", "label": "Preferred contact", "type": "select", "options": ["Phone", "Email", "Text"] },
+    { "key": "referred_by", "label": "Referred by", "type": "text" }
+  ],
+  "owner_label": "Counselor",
+  "time_zone": "America/Los_Angeles",
+  "default_view": "list",
+  "pipeline": false,
+  "inbox": { "forms": "all", "exclude_forms": [], "bookings": false, "payments": false }
+}

@@ -1,0 +1,39 @@
+{
+  "name": "crm",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A small business's customer record: what came in across the project, customers keyed by email, a pipeline, notes. Server-rendered on Hono, on the project's Postgres, shaped by its AI; runs in dev on its machine and in production on Cloudflare, team only.",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "start": "npm run css && tsx src/server.ts",
+    "css": "tailwindcss -i styles/input.css -o static/crm.css --minify",
+    "css:watch": "tailwindcss -i styles/input.css -o static/crm.css --watch=always",
+    "build": "tsx scripts/build.ts",
+    "vendor": "node scripts/vendor.mjs",
+    "postinstall": "node scripts/vendor.mjs",
+    "check": "node scripts/check.mjs",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "tsx --test test/config.test.ts test/helpers.test.ts test/db.test.ts test/http.test.ts src/admin/test/admin-core.test.ts",
+    "deploy": "node scripts/migrate.mjs && npm run build && python3 ~/tools/taskandtool.py deploy dist --worker build/worker.mjs --flag nodejs_compat"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "hono": "^4.13.7",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.15.0",
+    "esbuild": "^0.28.2",
+    "htmx.org": "^2.0.6",
+    "sortablejs": "^1.15.6",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.0"
+  }
+}

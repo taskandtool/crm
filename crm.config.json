@@ -1,0 +1,25 @@
+{
+  "business": "to fill",
+  "vocabulary": {
+    "one": "Customer",
+    "many": "Customers"
+  },
+  "stages": [
+    { "key": "new", "label": "New", "kind": "open" },
+    { "key": "contacted", "label": "Contacted", "kind": "open" },
+    { "key": "won", "label": "Won", "kind": "won" },
+    { "key": "lost", "label": "Lost", "kind": "lost" }
+  ],
+  "sources": ["Website", "Phone", "Referral", "Walk-in"],
+  "fields": [],
+  "owner_label": "Owner",
+  "time_zone": "UTC",
+  "default_view": "list",
+  "pipeline": true,
+  "inbox": {
+    "forms": "all",
+    "exclude_forms": [],
+    "bookings": true,
+    "payments": true
+  }
+}

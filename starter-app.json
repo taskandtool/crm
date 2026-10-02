@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "slug": "crm",
+  "version": "0.1.0",
+  "needs": {
+    "capabilities": [{ "kind": "postgres", "strength": "required" }]
+  },
+  "ready": { "service": "web" },
+  "suggestions": [
+    {
+      "id": "shape-the-crm",
+      "label": "Shape the CRM for my business",
+      "prompt": "Shape this CRM for how my business works: read crm.config.json and the closest example in examples/, ask me only what you cannot infer from this project, then set the words for a customer, the stages, sources, custom fields, who looks after each customer, the time zone and which forms count as leads, make the live stages match, restart the service, and show me in plain words what you set. We are: ",
+      "when": [{ "path": "crm.config.json", "is": "unfilled" }]
+    },
+    {
+      "id": "import-customer-list",
+      "label": "Import the customer list I use today",
+      "prompt": "I keep my customers in a spreadsheet today. I will attach it as a CSV; run node scripts/import.mjs with --dry-run first, show me the column mapping and how many are new, matched or folded together, then import it when I say so."
+    },
+    {
+      "id": "who-got-in-touch",
+      "label": "Who got in touch this week?",
+      "prompt": "Using node scripts/inbox.mjs --since 7d and node scripts/customers.mjs follow-up, tell me who got in touch this week (and who is not a customer yet), then who I should follow up with and why, one line each."
+    },
+    {
+      "id": "add-people-by-chat",
+      "label": "Add people from what I tell you",
+      "prompt": "I will describe people in plain words; add each as a customer with node scripts/customers.mjs add (and a note for what happened), picking the stage, tags, owner and fields from what I say, and confirm in a short list. Here they are: "
+    },
+    {
+      "id": "publish-to-production",
+      "label": "Publish to production (team only)",
+      "prompt": "Publish the CRM to production with npm run deploy (the crm skill): it applies the schema, builds and deploys to Cloudflare. Open the production address to check it, and tell me who can see it. It stays team only."
+    }
+  ]
+}

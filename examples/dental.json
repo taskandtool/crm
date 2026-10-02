@@ -1,0 +1,22 @@
+{
+  "business": "A two-dentist family practice: new patient enquiries, first visits and recalls. Clinical notes live in the practice software, not here.",
+  "vocabulary": { "one": "Patient", "many": "Patients" },
+  "stages": [
+    { "key": "enquiry", "label": "Enquiry", "kind": "open" },
+    { "key": "first-visit", "label": "First visit booked", "kind": "open" },
+    { "key": "active", "label": "Active patient", "kind": "won" },
+    { "key": "not-proceeding", "label": "Not proceeding", "kind": "lost" }
+  ],
+  "sources": ["Website", "Google", "Insurance directory", "Referral", "Walk-in"],
+  "fields": [
+    { "key": "insurance", "label": "Insurance", "type": "text" },
+    { "key": "recall_due", "label": "Recall due", "type": "date" },
+    { "key": "preferred_contact", "label": "Preferred contact", "type": "select", "options": ["Phone", "Text", "Email"] },
+    { "key": "referred_by", "label": "Referred by", "type": "text" }
+  ],
+  "owner_label": "Dentist",
+  "time_zone": "America/New_York",
+  "default_view": "list",
+  "pipeline": true,
+  "inbox": { "forms": "all", "exclude_forms": [], "bookings": true, "payments": false }
+}

@@ -1,0 +1,24 @@
+{
+  "business": "A neighbourhood restaurant: regulars worth knowing by name, and private dining and event enquiries that need a quick answer.",
+  "vocabulary": { "one": "Guest", "many": "Guests" },
+  "stages": [
+    { "key": "enquiry", "label": "Event enquiry", "kind": "open" },
+    { "key": "proposal", "label": "Menu and quote sent", "kind": "open" },
+    { "key": "booked", "label": "Event booked", "kind": "won" },
+    { "key": "regular", "label": "Regular", "kind": "won" },
+    { "key": "declined", "label": "Declined", "kind": "lost" }
+  ],
+  "sources": ["Website", "Walk-in", "Instagram", "Phone", "Reservation app", "Referral"],
+  "fields": [
+    { "key": "event_date", "label": "Event date", "type": "date" },
+    { "key": "party_size", "label": "Party size", "type": "number" },
+    { "key": "dietary", "label": "Allergies and diet", "type": "text" },
+    { "key": "birthday", "label": "Birthday", "type": "date" },
+    { "key": "favourite_table", "label": "Favourite table", "type": "text" }
+  ],
+  "owner_label": "Host",
+  "time_zone": "Europe/London",
+  "default_view": "list",
+  "pipeline": true,
+  "inbox": { "forms": ["private-dining", "contact"], "exclude_forms": [], "bookings": true, "payments": true }
+}

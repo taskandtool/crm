@@ -1,0 +1,26 @@
+# Never commit credentials or local state. Task & Tool delivers env to a
+# machine at install time; nothing in this repo should ever hold a key.
+.env
+.env.*
+!.env.example
+.envrc
+*.pem
+*.key
+
+# Built and vendored output: npm install recreates both.
+static/crm.css
+static/vendor/
+node_modules/
+
+# Working material on the owner's machine, never part of the repository
+uploads/
+imports/
+
+# Tool noise
+__pycache__/
+*.pyc
+.DS_Store
+
+# Production build output: npm run build recreates both.
+dist/
+build/

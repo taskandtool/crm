@@ -1,0 +1,24 @@
+{
+  "business": "A plumbing company with three locations and eight trucks: emergency calls, repairs and estimates for homes and small commercial buildings.",
+  "vocabulary": { "one": "Customer", "many": "Customers" },
+  "stages": [
+    { "key": "new-call", "label": "New call", "kind": "open" },
+    { "key": "scheduled", "label": "Visit scheduled", "kind": "open" },
+    { "key": "estimate-sent", "label": "Estimate sent", "kind": "open" },
+    { "key": "won", "label": "Job won", "kind": "won" },
+    { "key": "lost", "label": "Lost", "kind": "lost" }
+  ],
+  "sources": ["Website", "Google", "Phone", "Home warranty", "Property manager", "Referral"],
+  "fields": [
+    { "key": "location", "label": "Location", "type": "select", "options": ["North", "Downtown", "South"] },
+    { "key": "truck", "label": "Truck", "type": "select", "options": ["Truck 1", "Truck 2", "Truck 3", "Truck 4", "Truck 5", "Truck 6", "Truck 7", "Truck 8"] },
+    { "key": "property", "label": "Property", "type": "select", "options": ["House", "Apartment", "Commercial"] },
+    { "key": "site_contact", "label": "On-site contact phone", "type": "phone" },
+    { "key": "access", "label": "Access notes", "type": "text" }
+  ],
+  "owner_label": "Technician",
+  "time_zone": "America/Denver",
+  "default_view": "pipeline",
+  "pipeline": true,
+  "inbox": { "forms": "all", "exclude_forms": ["careers"], "bookings": true, "payments": true }
+}
