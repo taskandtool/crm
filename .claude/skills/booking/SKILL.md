@@ -126,12 +126,18 @@ It exits 1 with the errors when something failed, so `job_runs` shows why.
 ## Recipes
 
 **Add a booking page to the Website.** Copy this folder to `src/booking/`
-with `data/` and `admin/`; run `schema.sql` with `applySchema` from
-the setup script. Make a resource with a `slug` in the editor. Mount
+with `data/` and `admin/` (leave `sync.ts` and its test out until a calendar
+is connected: it is machine only); run `schema.sql` with `applySchema` from
+the setup script. Mount
 `bookingPages(getDb, { base: "/book", domain, css, source: "website", Page })`,
-passing the site's own frame as `Page`, and
+passing the site's own frame as `Page` (`domain` is the business's real
+domain, the host of `site.url`; it names every invite, so set it once),
+and under the private `/admin` path both
 `bookingAdmin(getDb, { base: "/admin/bookings", css, source: "website" })`
-under the private `/admin` path. If the owner has a sender, wire `onBooked`
+and the editor, `availabilityRoutes(getDb, { base: "/admin/hours", css, source: "website" })`.
+Make the resource with a `slug` in the editor (a POST to `/admin/hours`,
+then one POST per weekly window to `/admin/hours/<id>/hours` with `weekday`,
+`start`, `end`); it is booked at `/book/<slug>`. If the owner has a sender, wire `onBooked`
 to `afterResponse(c, sendInvite(envOf(c), …))` with `invite({ method:
 "REQUEST" })` (and CANCEL on cancel); otherwise leave it out. To take a
 deposit, `afterBook` returns the Checkout URL (the payments skill's recipe).

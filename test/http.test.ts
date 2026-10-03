@@ -216,6 +216,61 @@ test("CSV export of the filter, with formulas defused", async (t) => {
   assert.match(lines[1], /,"'=HYPERLINK\(""http:\/\/evil\.example"",""click""\)",formula@example\.com,/);
 });
 
+test("visits: add from the customer's page, the list, its page, status, CSV", async (t) => {
+  if (skip) return t.skip(skip);
+  const made = await post("/customers", { name: "Val Visit", email: "val@example.com", phone: "555 404 0000" });
+  const cid = made.headers.get("location")!.match(/\/customers\/(\d+)/)![1];
+  const page = await (await get(`/customers/${cid}`)).text();
+  assert.match(page, /<h2[^>]*>Visits<\/h2>/);
+  assert.match(page, /<a href="\/visits"[^>]*>Visits<\/a>/, "in the nav");
+  assert.match(page, /<form method="post" action="\/customers\/\d+\/visits" aria-label="Add a visit"/);
+
+  assert.equal((await post(`/customers/${cid}/visits`, { title: " " })).headers.get("location"), `/customers/${cid}?saved=visit-title-needed`);
+  const added = await post(`/customers/${cid}/visits`, { title: "Boiler service", at: "2099-01-15T09:30", status: "planned", owner: "Sam", amount: "$1,245.50" });
+  assert.equal(added.status, 303);
+  const loc = added.headers.get("location")!;
+  assert.match(loc, /^\/visits\/\d+\?saved=visit-added$/);
+  const vid = loc.match(/\/visits\/(\d+)/)![1];
+  const detail = await (await get(loc)).text();
+  assert.match(detail, /Visit added\./);
+  assert.match(detail, /value="2099-01-15T09:30"/, "the time back in the business's zone");
+  assert.match(detail, /value="1245.50"/);
+  assert.match(detail, new RegExp(`<a href="/customers/${cid}">Val Visit</a>`));
+  assert.equal((await get("/visits/999999")).status, 404);
+  assert.equal((await post(`/customers/999999/visits`, { title: "x" })).status, 404);
+
+  const list = await (await get("/visits")).text();
+  assert.match(list, /Boiler service/);
+  assert.match(list, /\$1,245\.50/);
+  assert.match(await (await get("/visits?q=boiler", { ...ME, "hx-request": "true" })).text(), /^<div id="results">/);
+
+  // A bad amount or time is flagged and keeps what was there; the rest saves.
+  const saved = await post(`/visits/${vid}`, { title: "Boiler service and flue check", at: "2099-02-30T09:30", status: "planned", owner: "Sam", amount: "lots" });
+  assert.equal(saved.headers.get("location"), `/visits/${vid}?saved=invalid`);
+  const after = await (await get(`/visits/${vid}`)).text();
+  assert.match(after, /Boiler service and flue check/);
+  assert.match(after, /value="2099-01-15T09:30"/);
+  assert.match(after, /value="1245.50"/);
+
+  const status = await post(`/visits/${vid}/status`, { status: "done", return: `/visits/${vid}` });
+  assert.equal(status.headers.get("location"), `/visits/${vid}?saved=visit-status`);
+  assert.equal((await post(`/visits/${vid}/status`, { status: "maybe", return: `/visits/${vid}` })).headers.get("location"), `/visits/${vid}?saved=pick-status`);
+  assert.doesNotMatch(await (await get("/visits")).text(), /Boiler service/, "done is not coming up");
+  assert.match(await (await get("/visits?view=done")).text(), /Boiler service/);
+  assert.ok((await getCustomer(db, cid))!.last_contact_at, "done counts as contact");
+
+  const csv = await get("/visits/export.csv?view=done&q=boiler");
+  assert.equal(csv.status, 200);
+  const text = new TextDecoder().decode(new Uint8Array(await csv.arrayBuffer()).slice(3));
+  const lines = text.trim().split("\r\n");
+  assert.equal(lines[0], `ID,Customer,Customer email,Customer phone,What,When (${cfg.time_zone}),Status,Owner,Amount (USD),Notes,Added (UTC)`);
+  assert.equal(lines.length, 2);
+  assert.match(lines[1], /,Val Visit,val@example\.com,555 404 0000,Boiler service and flue check,\d{4}-\d{2}-\d{2} \d{2}:\d{2},Done,Sam,1245\.50,,/);
+
+  assert.equal((await get("/visits", { host: "crm.example" })).status, 404, "team only");
+  assert.equal((await post(`/visits/${vid}/status`, { status: "planned" }, { ...ME, origin: "https://evil.example" })).status, 403);
+});
+
 // Review regressions.
 
 test("a tampered paging cursor is the first page, not a server error", async (t) => {

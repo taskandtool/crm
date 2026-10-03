@@ -4,13 +4,19 @@ import { readdirSync, readFileSync } from "node:fs";
 import { validate } from "../src/config-schema";
 import { additiveProblems } from "../src/data/migrate";
 
-const good = () => JSON.parse(readFileSync("crm.config.json", "utf8"));
+// The config the CRM ships with; every test runs against it (pin-config.mjs).
+const SHIPPED = "test/fixtures/crm.config.json";
+const good = () => JSON.parse(readFileSync(SHIPPED, "utf8"));
+
+test("the live config is valid", () => {
+  assert.deepEqual(validate(JSON.parse(readFileSync("crm.config.json", "utf8"))), []);
+});
 
 test("the shipped config is valid and still to fill", () => {
   assert.deepEqual(validate(good()), []);
   // The "Shape the CRM" suggestion shows while the file says "to fill" anywhere.
   assert.ok(good().business.includes("to fill"));
-  assert.equal(readFileSync("crm.config.json", "utf8").split("to fill").length, 2, "only the business line says to fill");
+  assert.equal(readFileSync(SHIPPED, "utf8").split("to fill").length, 2, "only the business line says to fill");
 });
 
 test("every example is valid, shaped, and the five businesses are there", () => {
@@ -22,10 +28,13 @@ test("every example is valid, shaped, and the five businesses are there", () => 
     assert.ok(!c.business.includes("to fill"), `${f} has a business line`);
   }
   const plumbing = JSON.parse(readFileSync("examples/plumbing-multi-location.json", "utf8"));
-  assert.deepEqual(plumbing.fields.filter((f: { type: string }) => f.type === "select").map((f: { key: string }) => f.key).slice(0, 2), ["location", "truck"]);
+  // A customer's location is theirs; which truck went is the job's.
+  assert.equal(plumbing.fields[0].key, "location");
+  assert.deepEqual(plumbing.visits.fields.map((f: { key: string }) => f.key).slice(0, 2), ["truck", "location"]);
   const counselor = JSON.parse(readFileSync("examples/counselor.json", "utf8"));
   assert.deepEqual(counselor.stages.map((s: { label: string }) => s.label), ["New", "Contacted", "Closed"]);
   assert.equal(counselor.pipeline, false);
+  assert.equal(counselor.visits, false, "sessions are noted elsewhere");
 });
 
 test("stages need an open one, slug keys, no repeats and a known kind", () => {
@@ -55,6 +64,30 @@ test("custom fields: known types, select options, no built-in or repeated keys",
   assert.ok(p.some((x) => x.includes("type must be")));
   assert.ok(p.some((x) => x.includes("repeats")));
   assert.ok(p.some((x) => x.includes("lower case")));
+});
+
+test("visits: off, or words, their own fields and a currency", () => {
+  const off = good();
+  off.visits = false;
+  assert.deepEqual(validate(off), []);
+  delete off.visits;
+  assert.deepEqual(validate(off), []);
+  const c = good();
+  c.visits = { one: "", many: "Jobs", fields: [{ key: "status", label: "Truck", type: "text" }, { key: "truck", label: "What", type: "text" }], currency: "usd" };
+  const p = validate(c);
+  assert.ok(p.some((x) => x.includes("visits needs one and many")));
+  assert.ok(p.some((x) => x.includes("visits.fields[0].key status is a built-in")));
+  assert.ok(p.some((x) => x.includes("visits.fields[1].label What is a built-in")));
+  assert.ok(p.some((x) => x.includes("visits.currency")));
+  const e = good();
+  e.owner_label = "Technician";
+  e.visits = { one: "Job", many: "Jobs", fields: [{ key: "tech", label: "Technician", type: "text" }, { key: "fee", label: "Amount (USD)", type: "number" }] };
+  const pe = validate(e);
+  assert.ok(pe.some((x) => x.includes("visits.fields[0].label Technician is a built-in")), "the owner's label heads a CSV column");
+  assert.ok(pe.some((x) => x.includes("visits.fields[1].label Amount (USD) reads as a built-in")));
+  const d = good();
+  d.visits = "yes";
+  assert.ok(validate(d).some((x) => x.includes("visits must be false or an object")));
 });
 
 test("time zone, views and inbox rules are checked", () => {

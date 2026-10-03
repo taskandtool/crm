@@ -1,6 +1,6 @@
 ---
 name: crm
-description: "Run and reshape this CRM: the levers (crm.config.json, stages as rows, custom fields, additive schema.sql), what came in from forms, bookings and payments, team-only production, and the scripts that find, add, note, import and export customers. Use for 'shape the CRM', 'add a customer', 'who got in touch', 'import my list', 'publish it'."
+description: "Run and reshape this CRM: the levers (crm.config.json, stages, custom fields, jobs or visits, additive schema.sql), what came in, team-only production, and the scripts for customers, notes, jobs, import and export. Use for 'shape the CRM', 'add a customer', 'log a job', 'who got in touch', 'import my list', 'publish it'."
 ---
 
 # Crm

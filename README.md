@@ -4,8 +4,9 @@ The customer record for a small business: everyone who got in touch, in
 one place, and what happened next. Its first screen is **what came in**
 across the project (form submissions from the Website, bookings, payments),
 newest first, each matched to a customer by email or offered as a new one.
-Then the customers themselves, a pipeline you drag between stages, and a
-timeline of notes, calls and visits per customer. It works the minute it
+Then the customers themselves, a pipeline you drag between stages, a
+timeline of notes and calls per customer, and their jobs or visits: what
+was done, when, by whom, for how much. It works the minute it
 is installed and is shaped for the business by talking to the app's AI:
 an HVAC shop, a dental practice, a restaurant, a plumber with several
 locations and trucks, a counselor who only wants a record of who called.
@@ -24,19 +25,26 @@ runs anywhere with Node 20 and a Postgres.
   filter as CSV, archive (never delete).
 - **A customer's page**: details and custom fields, stage, tags, owner,
   a notes timeline, and everything they sent, booked and paid.
+- **Jobs, visits or events** (the config names them): one per occasion,
+  planned, done or cancelled, with who did it, an amount and its own
+  fields (which truck, which room). A list of what is coming up and what
+  was done, exported as CSV. Turned off for a business that keeps them
+  elsewhere.
 - **A pipeline** of stages you name and order, with drag between them,
   or a select on each card without JavaScript.
 - **CSV import** of the list you keep today, matched by email then phone
   so nobody is added twice, with a dry run first.
 - **The AI's hands**: scripts to find, add, update, note, stage, tag,
-  import and export customers from chat, and to list what came in.
+  import and export customers from chat, add and close jobs or visits,
+  and list what came in.
 
 ## Shaping it
 
 `crm.config.json` holds the words (`Patients`, `Guests`, `Clients`), the
 stages seeded on the first run, sources, custom fields (`text`, `number`,
 `date`, `select`, `phone`, `email`, no migration needed), what the owner
-is called, the time zone and which forms count as leads. `examples/` has
+is called, the time zone, which forms count as leads, and what a visit
+is called and records. `examples/` has
 five worked configs. Ask the AI to shape the CRM for your business; it
 reads them, asks what it cannot infer, and sets it up. Stages are rows
 after the first run (the Stages page). A field that deserves a real column
@@ -63,10 +71,10 @@ is an additive line in `schema.sql`.
 crm.config.json          the levers: words, stages, sources, fields, zone, inbox
 schema.sql               the tables, additive only, applied at start and deploy
 src/app.tsx              the Hono app: the team-only gate, the routes
-src/crm/                 customers, stages, notes, what came in, history, import
-src/views/               what came in, customers, a customer, pipeline, stages
+src/crm/                 customers, stages, notes, visits, what came in, history, import
+src/views/               what came in, customers, a customer, visits, pipeline, stages
 src/data/  src/admin/    copies of the data and admin business skills
-scripts/                 customers, inbox, stages, import, export, migrate (--help)
+scripts/                 customers, visits, inbox, stages, import, export, migrate (--help)
 styles/  static/         the tokens; the built CSS, vendored htmx and SortableJS, crm.js
 examples/                hvac, dental, restaurant, plumbing, counselor configs
 test/                    node:test

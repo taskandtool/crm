@@ -41,6 +41,9 @@ default, with two locks:
 - **Mutations are POSTs.** `teamOnly` refuses a cross-site one (Origin, else
   Sec-Fetch-Site), which stands in for a CSRF token. Record who acted:
   `updated_by = ${c.get("user")}` (and `updated_at = now()`) on every change.
+- **One `/admin`, a section per skill.** Each skill's views mount under it
+  (`/admin/forms`, `/admin/bookings`) on one guarded sub-app, all passing the
+  same `nav`; `/admin` itself redirects to the list the owner reads most.
 - Local runs off the platform: `ADMIN_DEV_USER=you@example.com`, honoured
   only for a localhost URL on a loopback connection with no proxy headers (the
   Host header alone is whatever the sender typed).

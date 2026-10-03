@@ -15,6 +15,7 @@ import { addFromInbox, inboxPage, markDone, readInboxCursor, type InboxRow } fro
 import { addNote, listNotes } from "../src/crm/notes";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, restoreStage, seedStages } from "../src/crm/stages";
 import { missingSentence, present } from "../src/crm/tables";
+import { addVisit, customerVisits, saveVisit, setVisitStatus, visitsPage, type VisitInput } from "../src/crm/visits";
 import type { CustomField, StageConfig } from "../src/config-schema";
 import { scratch, type Scratch } from "./scratch";
 
@@ -508,4 +509,69 @@ test("two stage changes at once cannot leave the pipeline without an open stage"
   // Put things back for anything after this.
   for (const o of others) await editStage(db, o.key, { kind: "open" }, ME);
   assert.ok(c.ok);
+});
+
+test("visits: planned, done and cancelled; done counts as contact; the list's views and paging", async (t) => {
+  if (skip) return t.skip(skip);
+  const { customer } = await createCustomer(db, { name: "Vi Sit", email: "visit@example.com", stage: "new" }, ME);
+  const base: VisitInput = { title: "Tune-up", status: "planned", at: null, timeZone: "America/Chicago", owner: "sam@team.example", amount_cents: null, currency: "USD", notes: null, fields: {} };
+  assert.equal(await addVisit(db, "999999", base, ME), null, "no customer, no visit");
+
+  const later = await addVisit(db, customer.id, { ...base, at: "2099-01-15 09:30:00", fields: { truck: "Truck 2" } }, ME);
+  assert.ok(later);
+  assert.equal(later.starts_at!.toISOString(), "2099-01-15T15:30:00.000Z", "a wall time in the business's zone");
+  assert.equal(later.customer_name, "Vi Sit");
+  assert.equal((await getCustomer(db, customer.id))!.last_contact_at, null, "planned is not contact");
+  // Someone with a visit coming up is not waiting on a follow-up.
+  await db.sql`update customers set last_contact_at = now() - interval '60 days' where id = ${customer.id}::bigint`;
+  assert.ok(!(await followUps(db, 30)).some((c) => c.id === customer.id));
+
+  const unscheduled = await addVisit(db, customer.id, { ...base, title: "Quote the duct work" }, ME);
+  assert.equal(unscheduled!.starts_at, null);
+  const done = await addVisit(db, customer.id, { ...base, title: "Repair", status: "done", at: "2026-09-30 14:00:00", amount_cents: 24500 }, ME);
+  assert.equal(done!.amount_cents, "24500");
+  assert.equal(done!.currency, "USD");
+  assert.equal((await getCustomer(db, customer.id))!.last_contact_at!.toISOString(), "2026-09-30T19:00:00.000Z", "done moves the last contact");
+
+  // Done with no time happened now; marking it done never moves the last contact into the future or backwards.
+  const now = await setVisitStatus(db, unscheduled!.id, "done", ME);
+  assert.ok(now!.starts_at && Math.abs(now!.starts_at.getTime() - Date.now()) < 60_000);
+  const lc = (await getCustomer(db, customer.id))!.last_contact_at!;
+  assert.ok(Math.abs(lc.getTime() - Date.now()) < 60_000);
+  const early = await setVisitStatus(db, later!.id, "done", ME);
+  assert.ok(early!.starts_at!.getTime() <= Date.now() + 1000, "done is never in the future: finished early, it happened now");
+  assert.ok((await getCustomer(db, customer.id))!.last_contact_at!.getTime() >= lc.getTime(), "never back");
+  await setVisitStatus(db, later!.id, "planned", ME);
+
+  // Save merges fields, removes unset ones, clears the time.
+  const saved = await saveVisit(db, later!.id, { ...base, title: "Tune-up and filter", at: null, fields: { van: "Van 1" }, unset: ["truck"] }, ME);
+  assert.deepEqual([saved!.title, saved!.starts_at, saved!.fields], ["Tune-up and filter", null, { van: "Van 1" }]);
+  await saveVisit(db, later!.id, { ...base, at: "2099-01-15 09:30:00", unset: [] }, ME);
+  assert.equal(await saveVisit(db, "999999", { ...base, unset: [] }, ME), null);
+  await assert.rejects(db.sql`update customer_visits set status = 'maybe' where id = ${later!.id}::bigint`);
+  await assert.rejects(db.sql`update customer_visits set amount_cents = -1 where id = ${later!.id}::bigint`);
+
+  const mine = await customerVisits(db, customer.id);
+  assert.deepEqual(mine.map((v) => v.title), ["Tune-up", "Quote the duct work", "Repair"], "planned first, then newest first");
+
+  const cancelled = await addVisit(db, customer.id, { ...base, title: "Called off", at: "2099-01-01 08:00:00" }, ME);
+  await setVisitStatus(db, cancelled!.id, "cancelled", ME);
+  const upcoming = await visitsPage(db, { view: "upcoming", owner: null, q: null }, null, 50);
+  assert.deepEqual(upcoming.filter((v) => v.customer_id === customer.id).map((v) => v.title), ["Tune-up"]);
+  const doneList = await visitsPage(db, { view: "done", owner: null, q: null }, null, 50);
+  assert.deepEqual(doneList.filter((v) => v.customer_id === customer.id).map((v) => v.title), ["Quote the duct work", "Repair"]);
+  assert.equal((await visitsPage(db, { view: "all", owner: "SAM@team.example", q: "duct" }, null, 50)).length, 1, "owner is case-blind, q finds the title");
+  assert.equal((await visitsPage(db, { view: "all", owner: null, q: "vi sit" }, null, 50)).filter((v) => v.customer_id === customer.id).length, 4, "q finds the customer's name");
+
+  // Paging walks every row once, ties on the time included.
+  for (let i = 0; i < 5; i++) await addVisit(db, customer.id, { ...base, title: `Batch ${i}`, at: "2099-06-01 10:00:00" }, ME);
+  const seen: string[] = [];
+  let after = null;
+  for (;;) {
+    const { page, next } = cut(await visitsPage(db, { view: "upcoming", owner: null, q: "batch" }, after, 2), 2);
+    seen.push(...page.map((v) => v.title));
+    if (!next) break;
+    after = readListCursor(next);
+  }
+  assert.deepEqual(seen, ["Batch 0", "Batch 1", "Batch 2", "Batch 3", "Batch 4"]);
 });

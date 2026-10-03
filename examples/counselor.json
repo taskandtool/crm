@@ -15,5 +15,6 @@
   "time_zone": "America/Los_Angeles",
   "default_view": "list",
   "pipeline": false,
-  "inbox": { "forms": "all", "exclude_forms": [], "bookings": false, "payments": false }
+  "inbox": { "forms": "all", "exclude_forms": [], "bookings": false, "payments": false },
+  "visits": false
 }

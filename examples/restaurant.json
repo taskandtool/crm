@@ -10,8 +10,6 @@
   ],
   "sources": ["Website", "Walk-in", "Instagram", "Phone", "Reservation app", "Referral"],
   "fields": [
-    { "key": "event_date", "label": "Event date", "type": "date" },
-    { "key": "party_size", "label": "Party size", "type": "number" },
     { "key": "dietary", "label": "Allergies and diet", "type": "text" },
     { "key": "birthday", "label": "Birthday", "type": "date" },
     { "key": "favourite_table", "label": "Favourite table", "type": "text" }
@@ -20,5 +18,15 @@
   "time_zone": "Europe/London",
   "default_view": "list",
   "pipeline": true,
-  "inbox": { "forms": ["private-dining", "contact"], "exclude_forms": [], "bookings": true, "payments": true }
+  "inbox": { "forms": ["private-dining", "contact"], "exclude_forms": [], "bookings": true, "payments": true },
+  "visits": {
+    "one": "Event",
+    "many": "Events",
+    "fields": [
+      { "key": "party_size", "label": "Party size", "type": "number" },
+      { "key": "room", "label": "Room", "type": "select", "options": ["Main room", "Private room", "Terrace", "Whole restaurant"] },
+      { "key": "menu", "label": "Menu", "type": "text" }
+    ],
+    "currency": "GBP"
+  }
 }

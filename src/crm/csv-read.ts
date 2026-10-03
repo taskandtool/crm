@@ -15,8 +15,21 @@ export function decodeCsv(bytes: Uint8Array): { text: string; encoding: "utf-8" 
   try {
     return { text: new TextDecoder("utf-8", { fatal: true }).decode(bytes), encoding: "utf-8" };
   } catch {
-    return { text: new TextDecoder("windows-1252").decode(bytes), encoding: "windows-1252" };
+    return { text: windows1252(bytes), encoding: "windows-1252" };
   }
+}
+
+// 0x80-0x9F are where Windows-1252 differs from Latin-1 (curly quotes,
+// dashes, the euro sign). Mapped by hand: Node built without full ICU
+// decodes "windows-1252" as Latin-1 and turns ’ into a control character.
+const CP1252_HIGH =
+  "\u20ac\u0081\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u008d\u017d\u008f" +
+  "\u0090\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u009d\u017e\u0178";
+
+function windows1252(bytes: Uint8Array): string {
+  let out = "";
+  for (const b of bytes) out += b >= 0x80 && b <= 0x9f ? CP1252_HIGH[b - 0x80] : String.fromCharCode(b);
+  return out;
 }
 
 /**

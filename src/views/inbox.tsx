@@ -123,7 +123,7 @@ function Row({ row, self }: { row: InboxRow; self: string }) {
         <p class="mt-1 break-words">
           <span class="font-semibold">{person}</span>
           {row.email && row.email !== person ? <span class="text-ink-2"> · {row.email}</span> : null}
-          {row.phone && row.phone !== person ? <span class="text-ink-2"> · {row.phone}</span> : null}
+          {row.phone && row.phone !== person ? <span class="text-ink-2"> · <span class="whitespace-nowrap">{row.phone}</span></span> : null}
         </p>
         <What row={row} />
       </div>

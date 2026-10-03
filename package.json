@@ -1,7 +1,7 @@
 {
   "name": "crm",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "A small business's customer record: what came in across the project, customers keyed by email, a pipeline, notes. Server-rendered on Hono, on the project's Postgres, shaped by its AI; runs in dev on its machine and in production on Cloudflare, team only.",
   "scripts": {
@@ -14,7 +14,7 @@
     "postinstall": "node scripts/vendor.mjs",
     "check": "node scripts/check.mjs",
     "typecheck": "tsc --noEmit -p .",
-    "test": "tsx --test test/config.test.ts test/helpers.test.ts test/db.test.ts test/http.test.ts src/admin/test/admin-core.test.ts",
+    "test": "tsx --import ./test/pin-config.mjs --test test/config.test.ts test/helpers.test.ts test/db.test.ts test/http.test.ts src/admin/test/admin-core.test.ts",
     "deploy": "node scripts/migrate.mjs && npm run build && python3 ~/tools/taskandtool.py deploy dist --worker build/worker.mjs --flag nodejs_compat"
   },
   "engines": {

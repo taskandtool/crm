@@ -2,15 +2,16 @@
 // and who is signed in, then the page. Scripts are the vendored htmx and
 // crm.js on every page, and SortableJS only where something drags.
 import type { Child } from "hono/jsx";
-import { cfg, showPipeline, vocab } from "../config";
+import { cfg, showPipeline, visitsCfg, vocab } from "../config";
 
-export type Section = "inbox" | "customers" | "stages";
+export type Section = "inbox" | "customers" | "visits" | "stages";
 
 export function Layout(props: { title: string; user: string; section: Section; drag?: boolean; wide?: boolean; children?: Child }) {
   const { title, user, section, drag, wide, children } = props;
   const nav: { href: string; label: string; section: Section }[] = [
     { href: "/", label: "What came in", section: "inbox" },
     { href: cfg.default_view === "pipeline" && showPipeline ? "/pipeline" : "/customers", label: vocab.many, section: "customers" },
+    ...(visitsCfg ? [{ href: "/visits", label: visitsCfg.many, section: "visits" as const }] : []),
     { href: "/stages", label: "Stages", section: "stages" },
   ];
   return (

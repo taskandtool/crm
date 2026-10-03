@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "slug": "crm",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "needs": {
     "capabilities": [{ "kind": "postgres", "strength": "required" }]
   },
@@ -10,7 +10,7 @@
     {
       "id": "shape-the-crm",
       "label": "Shape the CRM for my business",
-      "prompt": "Shape this CRM for how my business works: read crm.config.json and the closest example in examples/, ask me only what you cannot infer from this project, then set the words for a customer, the stages, sources, custom fields, who looks after each customer, the time zone and which forms count as leads, make the live stages match, restart the service, and show me in plain words what you set. We are: ",
+      "prompt": "Shape this CRM for how my business works: read crm.config.json and the closest example in examples/, ask me only what you cannot infer from this project, then set the words for a customer, the stages, sources, custom fields, who looks after each customer, the time zone, which forms count as leads and what a job or visit is called and records, make the live stages match, restart the service, and show me in plain words what you set. We are: ",
       "when": [{ "path": "crm.config.json", "is": "unfilled" }]
     },
     {

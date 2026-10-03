@@ -133,6 +133,12 @@ hand-over is a deliverable (`work` skill), and a deliverable is a file:
 | `print.ts` | `printToPdf`, `findChrome`, `fileUrl`. Machine only |
 | `test/` | copy with the files and keep green |
 
+Copy the folder whole, `client.js` included (its test reads it from
+there), and serve `client.js` as a static file too. `ops.tsx` imports `seo-report.tsx`, which
+imports `seo.ts`, so keep those even without Google. `print.ts` is machine
+only: leave it and `test/seo.test.ts` out of an app that deploys `src/` to
+Cloudflare until a PDF is wanted.
+
 ## Add a report to this app
 
 ```tsx
@@ -156,6 +162,10 @@ reports.get("/", async (c) => {
 });
 app.route("/reports", reports);
 ```
+
+A period to date ("this quarter", "this month") is `{ from: <first day>,
+to: todayIn(zone) }`; its first and last weeks are partial, so say so on
+the page. `lastFull` covers whole periods only.
 
 A new chart over another table: add its entry to `SOURCES`, then
 `run(db, seriesQuery(name, period, grain, zone))` and

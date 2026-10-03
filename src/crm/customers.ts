@@ -351,7 +351,8 @@ export async function facets(db: Db): Promise<{ tags: string[]; owners: string[]
 
 /**
  * Open customers nobody has been in touch with for `days`: the follow-up
- * list. Judged on the last contact noted, or when they were added.
+ * list. Judged on the last contact noted, or when they were added; someone
+ * with a visit planned from now on is not waiting on anyone.
  */
 export function followUps(db: Db, days: number, limit = 50): Promise<(Customer & { quiet_days: number })[]> {
   return db.sql<Customer & { quiet_days: number }>`
@@ -360,6 +361,7 @@ export function followUps(db: Db, days: number, limit = 50): Promise<(Customer &
     from customers c join pipeline_stages s on s.key = c.stage
     where c.archived_at is null and s.kind = 'open'
       and coalesce(c.last_contact_at, c.created_at) < now() - make_interval(days => ${days}::int)
+      and not exists (select 1 from customer_visits v where v.customer_id = c.id and v.status = 'planned' and v.starts_at >= now())
     order by coalesce(c.last_contact_at, c.created_at)
     limit ${limit}`;
 }

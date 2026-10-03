@@ -18,5 +18,13 @@
   "time_zone": "America/New_York",
   "default_view": "list",
   "pipeline": true,
-  "inbox": { "forms": "all", "exclude_forms": [], "bookings": true, "payments": false }
+  "inbox": { "forms": "all", "exclude_forms": [], "bookings": true, "payments": false },
+  "visits": {
+    "one": "Visit",
+    "many": "Visits",
+    "fields": [
+      { "key": "reason", "label": "Reason", "type": "select", "options": ["Check-up and clean", "New patient exam", "Emergency", "Treatment", "Cosmetic consult"] }
+    ],
+    "currency": "USD"
+  }
 }

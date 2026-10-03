@@ -14,7 +14,7 @@ carries meaning. `npm run check` enforces the parts that can be checked.
 | `--color-panel` | A pipeline column, a flash, a hover, the current nav item. |
 | `--color-ink` / `ink-2` / `ink-3` | Text, secondary text, metadata. Every pair meets 4.5:1 on canvas and panel. |
 | `--color-accent` / `accent-ink` | The one action colour: Add, Save, a New badge, a won stage, the focus ring. |
-| `--color-line` / `line-strong` | Hairlines; input and table edges. |
+| `--color-line` / `line-strong` | Hairlines; input, button and table edges. `line-strong` keeps 3:1 on every ground, the floor for a control's edge. |
 
 Change a value in `styles/theme.css` and keep its row here. The Tailwind
 default palette is off, so `bg-blue-500` does not exist; add a role.

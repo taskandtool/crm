@@ -18,16 +18,16 @@
 
   /* Text */
   --color-ink: #1c1a17;                       /* 15:1 on canvas */
-  --color-ink-2: #4f4a43;                     /* secondary, 7.6:1 on canvas */
-  --color-ink-3: #6f6960;                     /* metadata, 4.9:1 on canvas, 4.5:1 on panel */
+  --color-ink-2: #4f4a43;                     /* secondary, 7.9:1 on canvas */
+  --color-ink-3: #6b655c;                     /* metadata, 5.2:1 on canvas, 4.6:1 on panel */
 
   /* The one action colour */
-  --color-accent: #2f5bea;                    /* 5.1:1 on canvas */
+  --color-accent: #2f5bea;                    /* 4.9:1 on canvas, 4.4:1 on panel: a ring, never text on panel */
   --color-accent-ink: #ffffff;
 
   /* Lines */
   --color-line: rgb(28 26 23 / 0.12);
-  --color-line-strong: rgb(28 26 23 / 0.3);
+  --color-line-strong: rgb(28 26 23 / 0.5);   /* input and button edges: 3.2:1 on panel, the 3:1 a control boundary needs */
 
   /* Type: an app's density, one family */
   --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;

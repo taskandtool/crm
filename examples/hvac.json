@@ -20,5 +20,14 @@
   "time_zone": "America/Chicago",
   "default_view": "pipeline",
   "pipeline": true,
-  "inbox": { "forms": "all", "exclude_forms": ["newsletter"], "bookings": true, "payments": true }
+  "inbox": { "forms": "all", "exclude_forms": ["newsletter"], "bookings": true, "payments": true },
+  "visits": {
+    "one": "Job",
+    "many": "Jobs",
+    "fields": [
+      { "key": "work", "label": "Work", "type": "select", "options": ["Repair", "Tune-up", "Estimate", "Replacement", "Install"] },
+      { "key": "van", "label": "Van", "type": "select", "options": ["Van 1", "Van 2"] }
+    ],
+    "currency": "USD"
+  }
 }

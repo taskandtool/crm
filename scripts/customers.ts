@@ -1,6 +1,6 @@
 // Customers from chat: list, find, show, add, update, stage, tag, note,
 // archive, follow-up. `node scripts/customers.mjs --help`.
-import { cfg } from "../src/config";
+import { cfg, visitsCfg } from "../src/config";
 import { cut } from "../src/admin/keyset";
 import {
   createCustomer, followUps, listPage, patchCustomer, retag, setArchived, setStage, NO_FILTER, type Details,
@@ -9,6 +9,7 @@ import { readFields } from "../src/crm/fields";
 import { everythingFrom } from "../src/crm/history";
 import { addNote, listNotes, pickNoteKind, NOTE_KINDS } from "../src/crm/notes";
 import { phoneKey } from "../src/crm/phone";
+import { customerVisits } from "../src/crm/visits";
 import { firstOpenStage, listStages, resolveStage } from "../src/crm/stages";
 import { clean, parseTags, wallTime } from "../src/crm/text";
 import { normalizeEmail } from "../src/data/email";
@@ -18,7 +19,7 @@ const HELP = `customers.mjs <command> [...] [--json] [--as <email>]
 
   list [--stage s] [--tag t] [--owner o] [--archived] [--limit 50]
   find <text>                          name, email, phone or company
-  show <who>                           details, notes, and what they sent, booked and paid
+  show <who>                           details, notes, visits, and what they sent, booked and paid
   add "<name>" [--email e] [--phone p] [--company c] [--address a] [--stage s]
                [--source s] [--tag t]... [--owner o] [--notes n] [--field key=value]...
                                        an email or phone already here is reported, not added twice
@@ -82,8 +83,8 @@ await withDb(async (db) => {
 
     case "show": {
       const c = await resolveCustomer(db, rest[0]);
-      const [notes, history] = await Promise.all([listNotes(db, c.id, 20), everythingFrom(db, c, 20)]);
-      return out(json, { customer: c, notes, history: history.items }, () =>
+      const [notes, visits, history] = await Promise.all([listNotes(db, c.id, 20), visitsCfg ? customerVisits(db, c.id, 20) : [], everythingFrom(db, c, 20)]);
+      return out(json, { customer: c, notes, visits, history: history.items }, () =>
         [
           fmtCustomer(c, label(c.stage)),
           c.address ? `address: ${c.address}` : "",
@@ -91,6 +92,11 @@ await withDb(async (db) => {
           ...Object.entries(c.fields ?? {}).map(([k, v]) => `${cfg.fields.find((f) => f.key === k)?.label ?? k}: ${String(v)}`),
           c.notes ? `about: ${c.notes}` : "",
           notes.length ? "notes:\n" + notes.map((n) => `  ${local(n.happened_at)} ${n.kind}${n.author ? " " + n.author : ""}: ${n.body}`).join("\n") : "no notes",
+          visitsCfg
+            ? visits.length
+              ? `${visitsCfg.many.toLowerCase()}:\n` + visits.map((x) => `  #${x.id} ${x.starts_at ? local(x.starts_at) : "not scheduled"} [${x.status}] ${x.title}`).join("\n")
+              : `no ${visitsCfg.many.toLowerCase()}`
+            : "",
           history.items.length
             ? "from this person:\n" + history.items.map((i) => `  ${local(i.at)} ${i.kind === "submission" ? i.form_title || i.form_key : i.kind} (${i.status})`).join("\n")
             : "nothing from this person in forms, bookings or payments",

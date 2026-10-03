@@ -131,7 +131,9 @@ It needs `data/` (the handle, settings, spam, sending) and, for
 4. Serve the page as a route, not a pre-rendered page:
    `app.get("/contact", async (c) => c.html(render(Contact.page, <Contact.Body form={await embedForm(c, getDb(c), "contact")} />)))`.
    `embedForm` is null when the form is missing or switched off; say so in
-   the page instead of showing nothing.
+   the page instead of showing nothing. On the Website the page module is
+   then not listed in `src/pages/index.ts` (that would pre-render it), so
+   its nav link goes in `site.nav` by hand.
 5. Mount `formsAdmin(getDb, { base: "/admin/forms", css, timeZone, source: "<app slug>" })`
    at `/admin/forms` (see the `admin` skill for where private views live),
    and set `SPAM_SECRET`.

@@ -70,8 +70,35 @@ create table if not exists customer_notes (
 
 create index if not exists customer_notes_customer on customer_notes (customer_id, happened_at desc, id desc);
 
+-- One job, visit, appointment or event for a customer: what it was, when,
+-- who did it, whether it happened, what it cost. crm.config.json's `visits`
+-- names it for the business and declares its own custom fields.
+create table if not exists customer_visits (
+  id            bigserial primary key,
+  customer_id   bigint not null references customers (id) on delete cascade,
+  title         text not null,
+  status        text not null default 'planned' check (status in ('planned', 'done', 'cancelled')),
+  starts_at     timestamptz,
+  owner         citext,
+  amount_cents  bigint check (amount_cents >= 0),
+  currency      text,
+  fields        jsonb not null default '{}'::jsonb check (jsonb_typeof(fields) = 'object'),
+  notes         text,
+  created_by    citext,
+  updated_by    citext,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+create index if not exists customer_visits_customer on customer_visits (customer_id, starts_at desc nulls first, id desc);
+create index if not exists customer_visits_when on customer_visits ((coalesce(starts_at, created_at)), id);
+create index if not exists customer_visits_status_when on customer_visits (status, (coalesce(starts_at, created_at)), id);
+
 comment on table pipeline_stages is 'The CRM pipeline, one row per stage, edited by the owner. customers.stage holds a key. Seeded once from crm.config.json.';
 comment on table customers is 'One row per customer, keyed by email when there is one (unique, case-blind). fields holds the custom fields crm.config.json declares. Archived, never deleted, from the CRM.';
 comment on column customers.owner is 'Who looks after this customer: usually a team member''s email.';
 comment on column customers.last_contact_at is 'The latest call, email, meeting or text noted, or when the person first got in touch.';
 comment on table customer_notes is 'A customer''s timeline: notes, calls, emails, meetings and texts, with who wrote them and when they happened.';
+comment on table customer_visits is 'A customer''s jobs, visits, appointments or events (crm.config.json names them): planned, done or cancelled, never deleted. fields holds the custom fields the config declares for them.';
+comment on column customer_visits.starts_at is 'When it happens or happened; null while it is not scheduled yet.';
+comment on column customer_visits.amount_cents is 'What it was worth, in the minor units of currency (cents for USD). A record, not a payment: payments are their own table.';

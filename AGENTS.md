@@ -2,7 +2,7 @@
 
 The business's customer record: what came in across the project (form
 submissions, bookings, payments), customers keyed by email, a pipeline of
-stages, notes of every call and visit. It runs in **dev** on this machine
+stages, notes of every call, and each job or visit. It runs in **dev** on this machine
 and in **production** on Cloudflare once deployed, team only in both. This
 repository *is* the app: the code at the root, the skill that knows how to
 work on it in `.claude/skills/crm/`, and `.taskandtool/setup.sh` for what
@@ -16,10 +16,11 @@ before changing the CRM rather than working from memory.
 
 - `crm.config.json` is the first lever: the words (`Patients`, `Guests`),
   the stages seeded on the first run, sources, custom fields, the owner's
-  label, the time zone, the default view, which forms count as leads.
+  label, the time zone, the default view, which forms count as leads,
+  and `visits` (what a job or visit is called, its own fields, or off).
   `examples/` holds five worked configs to read, not a switch.
 - `schema.sql` is the CRM's tables (`customers`, `pipeline_stages`,
-  `customer_notes`), applied at every start and every deploy. Additive
+  `customer_notes`, `customer_visits`), applied at every start and every deploy. Additive
   only; never rename a table.
 - `src/crm/` is every query and rule, named: customers, stages, notes, what
   came in, everything from one person, the import. Routes, scripts and
@@ -31,9 +32,9 @@ before changing the CRM rather than working from memory.
 - `src/data/` and `src/admin/` are copies of the `data` and `admin`
   business skills: the database handle, the additive check, the email key,
   the guard, keyset paging, CSV, the list components.
-- `scripts/customers.mjs`, `inbox.mjs` and `stages.mjs` are your hands on
-  the data from chat; `import.mjs` and `export.mjs` move CSV in and out.
-  Every one answers `--help`.
+- `scripts/customers.mjs`, `visits.mjs`, `inbox.mjs` and `stages.mjs` are
+  your hands on the data from chat; `import.mjs` and `export.mjs` move CSV
+  in and out. Every one answers `--help`.
 - `styles/theme.css` is the design as tokens; `DESIGN.md` explains them.
   `static/` is served as-is (the built CSS, the vendored htmx and
   SortableJS, `crm.js`).
@@ -62,7 +63,7 @@ before changing the CRM rather than working from memory.
 
 - Table names never change. The customer's words live in
   `crm.config.json`; the tables stay `customers`, `pipeline_stages`,
-  `customer_notes`.
+  `customer_notes`, `customer_visits`.
 - A person is their email; a customer is archived, never deleted.
 - Other apps' tables are read only, except `submissions.status`.
 - Identity comes from the platform: `X-TaskTool-User`, or 404. The CRM

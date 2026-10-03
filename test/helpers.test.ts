@@ -10,6 +10,7 @@ import { readFields } from "../src/crm/fields";
 import { guessMap, planRows } from "../src/crm/importer";
 import { makeInboxCursor, readInboxCursor, type InboxRow } from "../src/crm/inbox";
 import { cleanPhone, phoneKey } from "../src/crm/phone";
+import { amountText, parseAmount } from "../src/crm/visits";
 import type { Stage } from "../src/crm/stages";
 import { resolveStage } from "../src/crm/stages";
 import { missingSentence } from "../src/crm/tables";
@@ -150,6 +151,8 @@ test("CSV bytes: UTF-8, UTF-16 with a BOM, and Windows-1252 from an old Excel", 
   assert.deepEqual(decodeCsv(utf8), { text: "Name\nJosé\n", encoding: "utf-8" });
   const cp1252 = Uint8Array.from([...Buffer.from("Name\nJos", "latin1"), 0xe9, 0x0a]);
   assert.deepEqual(decodeCsv(cp1252), { text: "Name\nJosé\n", encoding: "windows-1252" });
+  const quotes = Uint8Array.from([...Buffer.from("Ann O", "latin1"), 0x92, ...Buffer.from("Brien ", "latin1"), 0x80, 0x35, 0x0a]);
+  assert.equal(decodeCsv(quotes).text, "Ann O\u2019Brien \u20ac5\n");
   const utf16 = Uint8Array.from([0xff, 0xfe, ...Buffer.from("Name\nJosé\n", "utf16le")]);
   assert.deepEqual(decodeCsv(utf16), { text: "Name\nJosé\n", encoding: "utf-16le" });
 });
@@ -185,4 +188,22 @@ test("a wall time in a zone is the instant Postgres would give, across DST", () 
   assert.equal(wallToInstant("2026-03-08 09:30:00", "America/Chicago").toISOString(), "2026-03-08T14:30:00.000Z");
   assert.equal(wallToInstant("2026-10-02 00:00:00", "UTC").toISOString(), "2026-10-02T00:00:00.000Z");
   assert.equal(wallToInstant("2026-10-02 00:00:00", "Asia/Kolkata").toISOString(), "2026-10-01T18:30:00.000Z");
+});
+
+test("amounts: minor units in the currency's own decimals, a comma only ever thousands", () => {
+  assert.equal(parseAmount("1,245.50", "USD"), 124550);
+  assert.equal(parseAmount("$90", "USD"), 9000);
+  assert.equal(parseAmount(" 0.5 ", "USD"), 50);
+  assert.equal(parseAmount("", "USD"), null);
+  assert.equal(parseAmount("12,50", "EUR"), 125000, "a comma is a thousands separator, so 12,50 is 1250");
+  assert.equal(parseAmount("1.005", "USD"), "invalid", "no fractions of a cent");
+  assert.equal(parseAmount("-5", "USD"), "invalid");
+  assert.equal(parseAmount("ten", "USD"), "invalid");
+  assert.equal(parseAmount("£1,200", "GBP"), 120000);
+  assert.equal(parseAmount("5000", "JPY"), 5000);
+  assert.equal(parseAmount("50.5", "JPY"), "invalid");
+  assert.equal(amountText("124550", "USD"), "1245.50");
+  assert.equal(amountText(5, "USD"), "0.05");
+  assert.equal(amountText(5000, "JPY"), "5000");
+  assert.equal(amountText(null, "USD"), "");
 });

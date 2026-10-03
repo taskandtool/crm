@@ -1,29 +1,30 @@
 // One customer: their details (custom fields included), stage, notes
-// timeline, and everything they did across the project's tables. Plain
-// forms throughout: every change is a POST answered with a 303 back here.
-import type { Child } from "hono/jsx";
+// timeline, their jobs or visits when the config has them, and everything
+// they did across the project's tables. Plain forms throughout: every change
+// is a POST answered with a 303 back here.
 import { FieldList, JsonData, Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
 import { StatusForm } from "../admin/status";
-import { cfg, ownerLabel, vocab } from "../config";
-import type { CustomField } from "../config-schema";
+import { cfg, ownerLabel, visitsCfg, vocab } from "../config";
 import type { Customer } from "../crm/customers";
-import { fieldText } from "../crm/fields";
 import type { HistoryItem } from "../crm/history";
 import { NOTE_KINDS, NOTE_LABELS, type Note } from "../crm/notes";
 import type { Stage } from "../crm/stages";
+import type { Visit } from "../crm/visits";
 import { missingSentence, type Present } from "../crm/tables";
 import { money, nowIn } from "../crm/text";
 import { firstText } from "./inbox";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, Field, MESSAGES, primaryClass, stageOptions, timeZone } from "./ui";
+import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, stageOptions, timeZone, Who } from "./ui";
+import { CustomerVisits } from "./visits";
 
 export function CustomerPage(p: {
   user: string;
   customer: Customer;
   stages: Stage[];
   notes: Note[];
+  visits: Visit[];
   history: HistoryItem[];
   present: Present;
   owners: string[];
@@ -55,10 +56,15 @@ export function CustomerPage(p: {
         </p>
       ) : null}
       <div class="grid gap-4 md:grid-cols-3">
-        {/* On a phone the notes come first: adding one is what a visit or a
-            call needs, and the details form is long. The markup keeps Details
-            first, each under its own heading; only the visual order moves. */}
+        {/* Jobs or visits lead: they are what the team works from. On a phone
+            the notes come first: adding one is what a call needs, and the
+            details form is long. Only the visual order moves. */}
         <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
+          {visitsCfg ? (
+            <Section title={visitsCfg.many}>
+              <CustomerVisits c={c} visits={p.visits} owners={p.owners} />
+            </Section>
+          ) : null}
           <Section title="Details">
             <Details c={c} owners={p.owners} />
           </Section>
@@ -92,15 +98,6 @@ export function CustomerPage(p: {
         </div>
       </div>
     </Layout>
-  );
-}
-
-function Who({ at, by }: { at: Date | null; by: string | null }) {
-  return (
-    <>
-      <When at={at} timeZone={timeZone} />
-      {by ? <span class="text-ink-3"> by {by}</span> : null}
-    </>
   );
 }
 
@@ -154,34 +151,6 @@ function Details({ c, owners }: { c: Customer; owners: string[] }) {
       </div>
     </form>
   );
-}
-
-function CustomInput({ f, value }: { f: CustomField; value: unknown }) {
-  const v = fieldText(value);
-  const name = `f_${f.key}`;
-  let input: Child;
-  if (f.type === "select") {
-    const options = f.options ?? [];
-    input = (
-      <select name={name} class={controlClass}>
-        <option value="">None</option>
-        {options.map((o) => (
-          <option value={o} selected={o === v}>
-            {o}
-          </option>
-        ))}
-        {v && !options.includes(v) ? (
-          <option value={v} selected>
-            {v}
-          </option>
-        ) : null}
-      </select>
-    );
-  } else {
-    const type = { text: "text", number: "number", date: "date", phone: "tel", email: "email" }[f.type];
-    input = <input name={name} type={type} step={f.type === "number" ? "any" : undefined} value={v} maxlength={f.type === "text" ? 2000 : undefined} class={controlClass} />;
-  }
-  return <Field label={f.label}>{input}</Field>;
 }
 
 function Notes({ c, notes }: { c: Customer; notes: Note[] }) {

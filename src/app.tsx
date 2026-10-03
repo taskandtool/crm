@@ -11,7 +11,7 @@ import { teamOnly } from "./admin/guard";
 import { cut, everyPage } from "./admin/keyset";
 import { TableRows } from "./admin/list";
 import { idParam, isPartial, listUrl, localPath, str } from "./admin/query";
-import { cfg, showPipeline, KEY } from "./config";
+import { cfg, showPipeline, visitsCfg, KEY } from "./config";
 import { normalizeEmail } from "./data/email";
 import {
   byStage, createCustomer, facets, getCustomer, listPage, readListCursor, saveDetails, setArchived, setStage,
@@ -23,9 +23,10 @@ import { everythingFrom } from "./crm/history";
 import { addFromInbox, inboxPage, markDone, readInboxCursor, type InboxKind } from "./crm/inbox";
 import { addNote, listNotes, pickNoteKind } from "./crm/notes";
 import { phoneKey } from "./crm/phone";
+import { addVisit, customerVisits, getVisit, parseAmount, pickVisitStatus, saveVisit, setVisitStatus, visitCsvColumns, visitOwners, visitsPage, type Visit, type VisitFilter, type VisitInput } from "./crm/visits";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, pickKind, restoreStage, stagesWithCounts, type StageResult } from "./crm/stages";
 import { missingSentence } from "./crm/tables";
-import { clean, parseTags, wallTime } from "./crm/text";
+import { clean, nowIn, parseTags, slugify, wallTime } from "./crm/text";
 import type { AppEnv } from "./runtime";
 import { CustomerPage } from "./views/customer";
 import { CustomersPage, customerSpec, filterParams, Results } from "./views/customers";
@@ -33,6 +34,7 @@ import { InboxPage, InboxResults, InboxRows } from "./views/inbox";
 import { WaitingView } from "./views/layout";
 import { Pipeline, PipelinePage, PER_COLUMN, type PipelineData } from "./views/pipeline";
 import { StagesPage } from "./views/stages";
+import { CUSTOMER_VISITS, visitParams, VisitPage, VisitResults, VisitsPage, visitSpec } from "./views/visits";
 
 type C = Context<AppEnv>;
 const PAGE = 50;
@@ -182,10 +184,12 @@ app.get("/customers/:id", async (c) => {
   const id = idParam(c.req.param("id"));
   const customer = id ? await getCustomer(db, id) : null;
   if (!customer) return c.notFound();
-  const [stages, notes, history, f] = await Promise.all([listStages(db), listNotes(db, customer.id), everythingFrom(db, customer), facets(db)]);
+  const [stages, notes, visits, history, f] = await Promise.all([
+    listStages(db), listNotes(db, customer.id), visitsCfg ? customerVisits(db, customer.id, CUSTOMER_VISITS) : [], everythingFrom(db, customer), facets(db),
+  ]);
   const owners = [...new Set([c.var.user, ...f.owners])];
   return c.html(
-    <CustomerPage user={c.var.user} customer={customer} stages={stages} notes={notes} history={history.items} present={history.present} owners={owners} flash={flashOf(c)} />,
+    <CustomerPage user={c.var.user} customer={customer} stages={stages} notes={notes} visits={visits} history={history.items} present={history.present} owners={owners} flash={flashOf(c)} />,
   );
 });
 
@@ -252,6 +256,118 @@ app.post("/customers/:id/archive", async (c) => {
   const archive = str((await c.req.parseBody()).archived) === "1";
   const r = await setArchived(c.var.db, id, archive, c.var.user);
   return r ? back(c, `/customers/${id}`, archive ? "archived" : "unarchived") : c.notFound();
+});
+
+// ---- jobs, visits, appointments or events ---------------------------------
+// crm.config.json's `visits` names them; with it off these paths are 404.
+
+app.use("/visits/*", async (c, next) => (visitsCfg ? next() : c.notFound()));
+app.use("/visits", async (c, next) => (visitsCfg ? next() : c.notFound()));
+app.use("/customers/:id/visits", async (c, next) => (visitsCfg ? next() : c.notFound()));
+
+/** The visit form, read the way the customer form is: a bad amount or field is left as it was and flagged. */
+function readVisitForm(body: Record<string, unknown>, current?: Visit) {
+  const v = visitsCfg!;
+  let invalid = false;
+  const at = str(body.at).trim();
+  let wall = at ? wallTime(at) : null;
+  if (at && !wall) {
+    invalid = true;
+    wall = current?.starts_at ? wallTime(nowIn(cfg.time_zone, new Date(current.starts_at))) : null;
+  }
+  let amount = parseAmount(body.amount, v.currency);
+  if (amount === "invalid") {
+    invalid = true;
+    amount = current?.amount_cents == null ? null : Number(current.amount_cents);
+  }
+  const input: Record<string, unknown> = {};
+  for (const fd of v.fields) if (`f_${fd.key}` in body) input[fd.key] = body[`f_${fd.key}`];
+  const fr = readFields(v.fields, input);
+  if (fr.errors.length) invalid = true;
+  const visit: VisitInput = {
+    title: clean(body.title, 200) ?? "",
+    status: pickVisitStatus(body.status) ?? "planned",
+    at: wall,
+    timeZone: cfg.time_zone,
+    owner: clean(body.owner, 200),
+    amount_cents: amount,
+    currency: (amount !== null && current?.currency) || v.currency,
+    notes: clean(body.notes, 10_000),
+    fields: fr.set,
+  };
+  return { visit, unset: fr.unset, invalid };
+}
+
+function readVisitFilter(c: C): VisitFilter {
+  const view = c.req.query("view");
+  return { view: view === "done" || view === "all" ? view : "upcoming", owner: clean(c.req.query("owner"), 200), q: clean(c.req.query("q"), 100) };
+}
+
+app.get("/visits", async (c) => {
+  const db = c.var.db;
+  const f = readVisitFilter(c);
+  const after = readListCursor(c.req.query("after"));
+  const { page, next } = cut(await visitsPage(db, f, after, PAGE), PAGE);
+  if (isPartial(c) && after) {
+    const more = (cur: string) => listUrl("/visits", { ...visitParams(f), after: cur });
+    return c.html(<TableRows spec={visitSpec()} rows={page} next={next} more={more} />);
+  }
+  if (isPartial(c)) return c.html(<VisitResults filter={f} rows={page} next={next} paged={!!after} />);
+  return c.html(<VisitsPage user={c.var.user} owners={await visitOwners(db)} filter={f} rows={page} next={next} paged={!!after} flash={flashOf(c)} />);
+});
+
+app.get("/visits/export.csv", async (c) => {
+  const db = c.var.db;
+  const f = readVisitFilter(c);
+  const v = visitsCfg!;
+  const day = new Date().toISOString().slice(0, 10);
+  const columns = visitCsvColumns(v.fields, cfg.time_zone, cfg.owner_label ?? "Owner", v.currency);
+  return csvResponse(`${slugify(v.many)}-${day}.csv`, columns, everyPage((after, size) => visitsPage(db, f, after, size)));
+});
+
+app.post("/customers/:id/visits", async (c) => {
+  const id = idParam(c.req.param("id"));
+  if (!id) return c.notFound();
+  const self = `/customers/${id}`;
+  const { visit, invalid } = readVisitForm(await c.req.parseBody());
+  if (!visit.title) return back(c, self, "visit-title-needed");
+  const r = await addVisit(c.var.db, id, visit, c.var.user);
+  if (!r) return c.notFound();
+  return back(c, `/visits/${r.id}`, invalid ? "invalid" : "visit-added");
+});
+
+app.get("/visits/:id", async (c) => {
+  const db = c.var.db;
+  const id = idParam(c.req.param("id"));
+  const visit = id ? await getVisit(db, id) : null;
+  if (!visit) return c.notFound();
+  const [vo, f] = await Promise.all([visitOwners(db), facets(db)]);
+  const owners = [...new Set([c.var.user, ...vo, ...f.owners])];
+  return c.html(<VisitPage user={c.var.user} visit={visit} owners={owners} flash={flashOf(c)} />);
+});
+
+app.post("/visits/:id", async (c) => {
+  const db = c.var.db;
+  const id = idParam(c.req.param("id"));
+  const current = id ? await getVisit(db, id) : null;
+  if (!current) return c.notFound();
+  const self = `/visits/${current.id}`;
+  const { visit, unset, invalid } = readVisitForm(await c.req.parseBody(), current);
+  if (!visit.title) visit.title = current.title;
+  const r = await saveVisit(db, current.id, { ...visit, unset }, c.var.user);
+  if (!r) return back(c, "/visits", "gone");
+  return back(c, self, invalid ? "invalid" : "saved");
+});
+
+app.post("/visits/:id/status", async (c) => {
+  const id = idParam(c.req.param("id"));
+  if (!id) return c.notFound();
+  const body = await c.req.parseBody();
+  const ret = localPath(str(body.return), "", `/visits/${id}`);
+  const status = pickVisitStatus(body.status);
+  if (!status) return back(c, ret, "pick-status");
+  const r = await setVisitStatus(c.var.db, id, status, c.var.user);
+  return r ? back(c, ret, "visit-status") : c.notFound();
 });
 
 // ---- pipeline -------------------------------------------------------------

@@ -93,14 +93,24 @@ Each app makes its handle from the driver it already uses:
 
 A skill's `.ts`/`.tsx` files are snippets: copy them into `src/<skill>/` and
 this skill's into `src/data/`, so `../data/db` resolves the same
-here as in the skills repo. Copy a skill's `test/` with it. Then:
+here as in the skills repo. Copy a skill's `test/` with it, and keep
+`src/data/` whole (`gateway.ts` and `test/scratch.ts` included): other
+skills import both. Then:
 
 1. Run its `schema.sql` with `applySchema` from the app's setup or start
    script (machine only, never per request):
    `await applySchema(db, readFileSync("src/booking/schema.sql", "utf8"))`.
 2. Add the dependency the handle needs if the app lacks it
-   (`@neondatabase/serverless` or `pg`).
-3. Run the copied tests and the app's typecheck.
+   (`@neondatabase/serverless` or `pg`). The tests use `pg` whatever the
+   app's handle, so an app on the Neon driver adds `pg` and `@types/pg` as
+   dev dependencies.
+3. Run the copied tests and the app's typecheck:
+   `TEST_DATABASE_URL=postgres://… npx tsx --test src/<skill>/test/*.test.ts`
+   (a role that may create databases; each test makes and drops its own).
+
+A machine-only file (booking's `sync.ts`, reports' `print.ts`) imports Node
+built-ins, which an app that deploys `src/` to Cloudflare refuses there
+(`npm run check`). Leave it out until the app needs it.
 
 Adapt freely after copying: the copy is this app's code. Keep the rules above,
 and keep the tests passing.

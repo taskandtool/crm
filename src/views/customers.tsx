@@ -35,12 +35,12 @@ export function customerSpec(stages: Stage[]): TableSpec<Customer> {
         label: "Contact",
         class: "hidden sm:table-cell",
         cell: (r) => (
-          <span class="break-words text-ink-2">
+          <span class="wrap-anywhere text-ink-2">
             {[r.email, r.phone].filter(Boolean).join(" · ")}
           </span>
         ),
       },
-      { label: "Company", class: "hidden md:table-cell", cell: (r) => r.company ?? "" },
+      { label: "Company", class: "hidden wrap-anywhere md:table-cell", cell: (r) => r.company ?? "" },
       { label: "Tags", class: "hidden lg:table-cell", cell: (r) => (r.tags.length ? <span class="text-ink-2">{r.tags.join(", ")}</span> : "") },
       { label: ownerLabel, class: "hidden lg:table-cell", cell: (r) => r.owner ?? "" },
       { label: "Last contact", class: "hidden md:table-cell", cell: (r) => <When at={r.last_contact_at} timeZone={timeZone} /> },
