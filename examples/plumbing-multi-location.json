@@ -29,5 +29,6 @@
       { "key": "work", "label": "Work", "type": "select", "options": ["Emergency", "Repair", "Estimate", "Install", "Drain cleaning"] }
     ],
     "currency": "USD"
-  }
+  },
+  "booking": true
 }

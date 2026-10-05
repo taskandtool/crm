@@ -1,18 +1,20 @@
 ---
 name: booking
-description: "Appointments in the project's Postgres: weekly hours, time off, crews, the tested slot calculator, double-booking-safe booking, manage links, .ics invites, the hours editor, and the calendar sync job for Google and Microsoft. Use for any booking page, availability or calendar sync. Not for embedding Calendly."
+description: "Appointments in the project's Postgres: booking types (an estimate visit, a video call) with their hosts and where they happen, weekly hours, time off, the tested slot calculator, double-booking-safe booking, manage links, .ics invites, the editor, Google and Microsoft calendar sync. Use for any booking page, availability or calendar sync."
 ---
 
 # Booking
 
-Who can be booked (`resources`, a person or a crew), when
-(`availability`, `time_off`), what the calendar says is busy
-(`calendars`, `busy`), and what is booked (`bookings`).
-Every app granted the project database reads the same rows: the Booking app
-sets the hours, the Website's booking page shows them, the CRM lists the
-bookings by email.
+What can be booked (`booking_types`: an installation, a sales visit, a
+video call, each with its length, rules and where it happens), who takes
+it (`booking_type_hosts`, the people in `resources`), when they can
+(`availability`, `time_off`), what their calendar says is busy
+(`calendars`, `busy`), and what is booked (`bookings`). Every app granted
+the project database reads the same rows: the Website's `/book` pages
+take bookings, the CRM sets types, hosts and hours and lists the bookings
+by email.
 
-Version: 0.1.0 (taskandtool/skills)
+Version: 0.2.0 (taskandtool/skills)
 
 ## The rules
 
@@ -21,9 +23,9 @@ Version: 0.1.0 (taskandtool/skills)
   the page reads that. So production's Worker needs only `DATABASE_URL`, never
   a calendar token, and works the same whichever calendar the owner uses.
 - **Store instants, show local.** Bookings and time off are `timestamptz`.
-  Weekly hours are wall times in the resource's `time_zone`. Show a booker
+  Weekly hours are wall times in the person's `time_zone`. Show a booker
   times in *their* zone and name it ("Times are in Asia/Kolkata"); show the
-  team times in the resource's zone. Never format a time without `timeZone`:
+  team times in the host's zone. Never format a time without `timeZone`:
   dev and production both run in UTC.
 - **Daylight saving, decided** (tests in `test/slots.test.ts`): days are
   walked as local dates, never by adding 24 hours. A start that the clock
@@ -32,7 +34,7 @@ Version: 0.1.0 (taskandtool/skills)
   A window end inside a gap moves forward past it. A window never crosses
   midnight: store 22:00 to 24:00 on one day and 00:00 to 02:00 on the next.
 - **Taking a booking is one non-interactive transaction** (`book.ts`): an
-  advisory lock per resource as its own statement, then `insert … select …
+  advisory lock per candidate host as its own statement, then `insert … select …
   where not exists (overlapping booking, busy, time off) returning *`. Empty
   means taken. Do not merge the lock into the insert (the insert's snapshot
   would predate the lock and miss the booking that just committed), do not
@@ -58,17 +60,28 @@ Version: 0.1.0 (taskandtool/skills)
   its SHA-256 is stored and looked up. Pages that carry it send
   `Referrer-Policy: no-referrer`. A lost link cannot be recovered; the team
   can still change the booking.
-- **Crews.** A crew's time is open when any member is free in their own
-  hours and zone, using the crew's slot settings. The booking goes to the
-  free member whose latest booking was made longest ago (never booked
-  first), chosen inside the transaction.
+- **A customer books a type; a host takes it.** A type's time is open
+  when any of its active hosts is free in their own hours and zone, using
+  the type's rules. The booker may pick a host (`?host=`); otherwise the
+  booking goes to the free host whose latest booking was made longest ago
+  (never booked first), chosen inside the transaction. One person's hours
+  are shared by every type they take: a booking of one closes the others.
+- **Where it happens is the type's, kept on the booking.** At their place
+  asks for the address; a phone call asks for the number; at ours and a
+  video call carry the type's address or link. The booking stores the
+  place as it was when booked, so changing a type's link or address never
+  moves a booking already made. A meeting link is shown on the manage page
+  and in the invite, never on the public type page.
 - **Buffers.** The slot plus its before and after buffers must be clear of
   busy time and time off; two bookings are at least after + before apart.
   Buffers may fall outside the weekly hours.
 
-Not supported: windows that cross midnight, moving a crew booking to another
-member on reschedule, recurring bookings, group bookings (one booker per
-slot), calendar push notifications (the job polls), Calendly or Cal.com sync.
+Not supported: windows that cross midnight, moving a booking to another
+host on reschedule, two hosts at once on one booking, recurring bookings,
+group bookings (one booker per slot), a meeting link made per booking (the
+type's link is shared), reminders (they need a scheduled job and the
+owner's sender), calendar push notifications (the job polls), Calendly or
+Cal.com sync.
 
 ## The calendar sync job
 
@@ -97,7 +110,7 @@ Google is `events.list` with `singleEvents=true`, paged by `nextPageToken`;
 free (transparent), cancelled and declined events are not busy. Microsoft is
 `calendarView` with `Prefer: outlook.timezone="UTC"` and the tag `$expand`ed,
 paged by `@odata.nextLink`, because `getSchedule` refuses personal accounts.
-An all-day event covers its dates in the resource's zone.
+An all-day event covers its dates in the person's zone.
 
 Schedule it once (`/schedule-job` skill; check `list_jobs()` first), as a
 command, every 15 minutes (the platform's floor), not visible to clients:
@@ -112,12 +125,12 @@ It exits 1 with the errors when something failed, so `job_runs` shows why.
 
 | File | What |
 |---|---|
-| `schema.sql` | The seven tables and their indexes |
+| `schema.sql` | The eight tables and their indexes |
 | `slots.ts` | The pure slot calculator, zone arithmetic, formatting for a viewer |
-| `book.ts` | Open slots from the database, `book`, `reschedule`, `cancelByToken`, `setStatus` |
-| `hours.ts` | The editor's writes: weekly hours, time off, settings, crews, calendars |
-| `public.tsx` | `bookingPages`: day and time picker, confirm form, manage page (with the deposit's status), .ics; `onBooked`, `afterBook` |
-| `admin.tsx` | `bookingAdmin` (list, detail, status, calendars) and `availabilityRoutes` (the editor) |
+| `book.ts` | Types and hosts, open slots from the database, `book`, `reschedule`, `cancelByToken`, `setStatus` |
+| `hours.ts` | The editor's writes: types and their hosts, people, weekly hours, time off, calendars |
+| `public.tsx` | `bookingPages`: what can be booked, host, day and time, confirm form, manage page (with the deposit's status), .ics; `onBooked`, `afterBook` |
+| `admin.tsx` | `bookingAdmin` (list, detail, status, calendars), `typeRoutes` and `peopleRoutes` (the editor) |
 | `ics.ts` | RFC 5545 invite builder |
 | `notify.ts` | `sendInvite`: the confirmation with its .ics, through `data/send.ts` |
 | `sync.ts` | The calendar sync job (machine only) |
@@ -131,22 +144,31 @@ is connected: it is machine only); run `schema.sql` with `applySchema` from
 the setup script. Mount
 `bookingPages(getDb, { base: "/book", domain, css, source: "website", Page })`,
 passing the site's own frame as `Page` (`domain` is the business's real
-domain, the host of `site.url`; it names every invite, so set it once),
-and under the private `/admin` path both
-`bookingAdmin(getDb, { base: "/admin/bookings", css, source: "website" })`
-and the editor, `availabilityRoutes(getDb, { base: "/admin/hours", css, source: "website" })`.
-Make the resource with a `slug` in the editor (a POST to `/admin/hours`,
-then one POST per weekly window to `/admin/hours/<id>/hours` with `weekday`,
-`start`, `end`); it is booked at `/book/<slug>`. If the owner has a sender, wire `onBooked`
-to `afterResponse(c, sendInvite(envOf(c), …))` with `invite({ method:
-"REQUEST" })` (and CANCEL on cancel); otherwise leave it out. To take a
-deposit, `afterBook` returns the Checkout URL (the payments skill's recipe).
+domain, the host of `site.url`; it names every invite, so set it once).
+`/book` lists what can be booked and `/book/<slug>` books one; link the nav
+to `/book`. If the owner has a sender, wire `onBooked` to
+`afterResponse(c, sendInvite(envOf(c), …))` (`notify.ts`) with `invite({
+method: "REQUEST" })` (and CANCEL on cancel); otherwise leave it out. To
+take a deposit, `afterBook` returns the Checkout URL (the payments skill's
+recipe). The types, people and hours are the team's: in the CRM when the
+project has one (below), else `bookingAdmin` under the Website's private
+`/admin/bookings`.
 
-**Let the owner change hours from another app (the CRM).** Copy `slots.ts`,
-`book.ts`, `hours.ts` and `admin.tsx` and mount only
-`availabilityRoutes(getDb, { base: "/hours", css, source: "crm" })` on a private path. It
-writes the tables the booking page reads, so the change is live on
-the next page load; nothing to sync or deploy.
+**Set up what can be booked.** Ask what people book, how long it takes,
+where it happens and who does it, then add the people (`/people`: name,
+email for the invite, time zone, weekly hours), then each type (`/types`:
+a name like "Installation estimate", its address `install-estimate`, the
+length, a buffer for travel or set-up, notice, where it happens) and tick
+who takes it. A type no active person takes is left off `/book`.
+
+**The team's side in another app (the CRM).** Mount `bookingAdmin(getDb,
+{ base: "/bookings", css, source: "crm", Frame, extra })` on its private
+routes: the list of bookings, the types and their hosts, each person's
+hours, time off and calendars. `Frame` puts the pages in the app's own
+layout (the booking sections become links at the top); `extra` adds to a
+booking's page (the CRM's customer and "Make it a job"). It writes the
+tables the Website's `/book` reads, so a change is live on the next page
+load; nothing to sync or deploy.
 
 **Connect a calendar.** The job calls the endpoint `google-calendar` (the
 `google` connection, scope `calendar.events`) or `microsoft-calendar` (the
@@ -156,6 +178,6 @@ neither, ask with
 or `request_connection("microsoft", why=…)`, give the owner the `review_url`,
 and stop until it is granted; a Google owner also enables the Calendar API
 on their Google Cloud project. Add the calendar on the person's page in the
-editor (`primary` is the main calendar), schedule the sync job above, run it
+editor (People and hours) (`primary` is the main calendar), schedule the sync job above, run it
 once by hand (`npx tsx src/booking/sync.ts`) and check the Calendars page
 for a sync time and no error.

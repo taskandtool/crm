@@ -14,6 +14,8 @@ import type { Stage } from "../crm/stages";
 import type { Visit } from "../crm/visits";
 import { missingSentence, type Present } from "../crm/tables";
 import { money, nowIn } from "../crm/text";
+import { whereText } from "../booking/public";
+import type { Booking } from "../booking/book";
 import { firstText } from "./inbox";
 import { Layout } from "./layout";
 import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, stageOptions, timeZone, Who } from "./ui";
@@ -73,7 +75,7 @@ export function CustomerPage(p: {
           </Section>
           <Section title="Everything from this person">
             {missing ? <p class="mb-3 text-label text-ink-3">{missing}</p> : null}
-            <History items={p.history} hasKey={!!(c.email || c.phone)} />
+            <History items={p.history} hasKey={!!(c.email || c.phone)} customerId={c.id} />
           </Section>
         </div>
         <div class="flex flex-col gap-4">
@@ -193,7 +195,33 @@ function Notes({ c, notes }: { c: Customer; notes: Note[] }) {
   );
 }
 
-function History({ items, hasKey }: { items: HistoryItem[]; hasKey: boolean }) {
+function BookingItem({ i, customerId }: { i: Extract<HistoryItem, { kind: "booking" }>; customerId: string }) {
+  return (
+    <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+      <div class="min-w-0">
+        <p>
+          {i.type_name ? `${i.type_name}, ` : ""}
+          <When at={i.starts_at} timeZone={timeZone} />
+          {i.resource_name ? ` with ${i.resource_name}` : ""}
+        </p>
+        {i.location ? <p class="break-words text-label text-ink-2">{whereText({ location_kind: i.location_kind as Booking["location_kind"], location: i.location }, { link: true })}</p> : null}
+        <p class="text-label"><a href={`/bookings/${i.id}`}>The booking</a></p>
+      </div>
+      {visitsCfg ? (
+        i.visit_id ? (
+          <a href={`/visits/${i.visit_id}`} class="text-label">The {visitsCfg.one.toLowerCase()}</a>
+        ) : (
+          <form method="post" action={`/bookings/${i.id}/job`}>
+            <input type="hidden" name="customer" value={customerId} />
+            <button class={buttonClass}>Make it a {visitsCfg.one.toLowerCase()}</button>
+          </form>
+        )
+      ) : null}
+    </div>
+  );
+}
+
+function History({ items, hasKey, customerId }: { items: HistoryItem[]; hasKey: boolean; customerId: string }) {
   if (!hasKey) return <p class="text-ink-3">Add an email or a phone number to see what this person sent, booked and paid.</p>;
   if (!items.length) return <p class="text-ink-3">Nothing from this person in the project's forms, bookings or payments.</p>;
   return (
@@ -215,10 +243,7 @@ function History({ items, hasKey }: { items: HistoryItem[]; hasKey: boolean }) {
             </details>
             </>
           ) : i.kind === "booking" ? (
-            <p>
-              <When at={i.starts_at} timeZone={timeZone} />
-              {i.resource_name ? ` with ${i.resource_name}` : ""}
-            </p>
+            <BookingItem i={i} customerId={customerId} />
           ) : (
             <p>
               {money(i.amount_cents, i.currency)}

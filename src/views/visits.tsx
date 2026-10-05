@@ -12,9 +12,9 @@ import type { CustomField } from "../config-schema";
 import type { Customer } from "../crm/customers";
 import { fieldText } from "../crm/fields";
 import { money, nowIn } from "../crm/text";
-import { amountText, VISIT_STATUS_LABELS, VISIT_STATUSES, type Visit, type VisitFilter } from "../crm/visits";
+import { amountText, VISIT_STATUS_LABELS, VISIT_STATUSES, type OpenBooking, type Visit, type VisitFilter } from "../crm/visits";
 import { Layout } from "./layout";
-import { controlClass, CustomInput, Field, MESSAGES, primaryClass, timeZone, Who } from "./ui";
+import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, timeZone, Who } from "./ui";
 
 /** How many a customer's page shows. */
 export const CUSTOMER_VISITS = 100;
@@ -216,8 +216,37 @@ export function VisitResults(p: { filter: VisitFilter; rows: Visit[]; next: stri
   );
 }
 
+/** Bookings still to come that nobody made a job of yet: one click each. */
+function Booked({ rows }: { rows: OpenBooking[] }) {
+  if (!rows.length) return null;
+  return (
+    <Section title={`Booked, not a ${one} yet`} class="mb-4">
+      <ul class="flex flex-col gap-2">
+        {rows.map((b) => (
+          <li class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <span class="min-w-0">
+              <When at={b.starts_at} timeZone={timeZone} />
+              <span class="text-ink-2">
+                {" "}
+                {b.type_name ?? "Booking"}, {b.name}
+                {b.host_name ? `, with ${b.host_name}` : ""}
+              </span>{" "}
+              <a href={`/bookings/${b.id}`} class="text-label">The booking</a>
+            </span>
+            <form method="post" action={`/bookings/${b.id}/job`}>
+              {b.customer_id ? <input type="hidden" name="customer" value={b.customer_id} /> : null}
+              <button class={buttonClass}>Make it a {one}</button>
+            </form>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
 export function VisitsPage(p: {
   user: string;
+  booked: OpenBooking[];
   owners: string[];
   filter: VisitFilter;
   rows: Visit[];
@@ -245,6 +274,7 @@ export function VisitsPage(p: {
           },
         ]}
       />
+      {p.filter.view === "upcoming" && !p.paged ? <Booked rows={p.booked} /> : null}
       <VisitResults filter={p.filter} rows={p.rows} next={p.next} paged={p.paged} />
     </Layout>
   );

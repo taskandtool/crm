@@ -16,5 +16,7 @@ export const cfg = config as Config;
 export const vocab = cfg.vocabulary;
 export const ownerLabel = cfg.owner_label ?? "Owner";
 export const showPipeline = cfg.pipeline !== false;
+/** The team's side of booking: what can be booked, who takes it, their hours and calendars, and the bookings. */
+export const showBooking = cfg.booking !== false;
 /** Jobs, visits, appointments or events, or null when the config turns them off. */
 export const visitsCfg = cfg.visits ? { ...cfg.visits, currency: cfg.visits.currency ?? "USD" } : null;

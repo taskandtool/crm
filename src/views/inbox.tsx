@@ -170,7 +170,7 @@ function What({ row }: { row: InboxRow }) {
   if (row.kind === "booking") {
     return (
       <p class="mt-1 text-ink-2">
-        Booked for <When at={row.starts_at} timeZone={timeZone} />
+        {row.type_name ?? "Booked"}, <When at={row.starts_at} timeZone={timeZone} />
         {row.resource_name ? ` with ${row.resource_name}` : ""}
       </p>
     );

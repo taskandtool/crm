@@ -62,7 +62,7 @@ exist) need `@theme static`, or a class that uses them, to reach the page.
   is the app that took the form; an owner asking about sources means the
   UTM source the forms skill stored, else the referring host, else direct
   (`leadsByOriginQuery`).
-- **A table may not exist yet** (no booking app, no payments):
+- **A table may not exist yet** (no bookings, no payments):
   `projectTables(db)` checks `information_schema`, and the section says so
   in a sentence instead of failing the page.
 - **Identifiers are never parameters or input.** A query over another table

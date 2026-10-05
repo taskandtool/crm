@@ -11,10 +11,10 @@ import { teamOnly } from "./admin/guard";
 import { cut, everyPage } from "./admin/keyset";
 import { TableRows } from "./admin/list";
 import { idParam, isPartial, listUrl, localPath, str } from "./admin/query";
-import { cfg, showPipeline, visitsCfg, KEY } from "./config";
+import { cfg, showBooking, showPipeline, visitsCfg, KEY } from "./config";
 import { normalizeEmail } from "./data/email";
 import {
-  byStage, createCustomer, facets, getCustomer, listPage, readListCursor, saveDetails, setArchived, setStage,
+  byStage, createCustomer, facets, findMatch, getCustomer, listPage, readListCursor, saveDetails, setArchived, setStage,
   type ListFilter,
 } from "./crm/customers";
 import { csvColumns } from "./crm/columns";
@@ -23,7 +23,7 @@ import { everythingFrom } from "./crm/history";
 import { addFromInbox, inboxPage, markDone, readInboxCursor, type InboxKind } from "./crm/inbox";
 import { addNote, listNotes, pickNoteKind } from "./crm/notes";
 import { phoneKey } from "./crm/phone";
-import { addVisit, customerVisits, getVisit, parseAmount, pickVisitStatus, saveVisit, setVisitStatus, visitCsvColumns, visitOwners, visitsPage, type Visit, type VisitFilter, type VisitInput } from "./crm/visits";
+import { addVisit, bookingsWithoutJob, customerVisits, getVisit, visitFromBooking, parseAmount, pickVisitStatus, saveVisit, setVisitStatus, visitCsvColumns, visitOwners, visitsPage, type Visit, type VisitFilter, type VisitInput } from "./crm/visits";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, pickKind, restoreStage, stagesWithCounts, type StageResult } from "./crm/stages";
 import { missingSentence } from "./crm/tables";
 import { clean, nowIn, parseTags, slugify, wallTime } from "./crm/text";
@@ -31,9 +31,13 @@ import type { AppEnv } from "./runtime";
 import { CustomerPage } from "./views/customer";
 import { CustomersPage, customerSpec, filterParams, Results } from "./views/customers";
 import { InboxPage, InboxResults, InboxRows } from "./views/inbox";
-import { WaitingView } from "./views/layout";
+import { Layout, WaitingView } from "./views/layout";
 import { Pipeline, PipelinePage, PER_COLUMN, type PipelineData } from "./views/pipeline";
 import { StagesPage } from "./views/stages";
+import { bookingAdmin } from "./booking/admin";
+import { Section } from "./admin/detail";
+import type { Db } from "./data/db";
+import { buttonClass } from "./views/ui";
 import { CUSTOMER_VISITS, visitParams, VisitPage, VisitResults, VisitsPage, visitSpec } from "./views/visits";
 
 type C = Context<AppEnv>;
@@ -313,7 +317,8 @@ app.get("/visits", async (c) => {
     return c.html(<TableRows spec={visitSpec()} rows={page} next={next} more={more} />);
   }
   if (isPartial(c)) return c.html(<VisitResults filter={f} rows={page} next={next} paged={!!after} />);
-  return c.html(<VisitsPage user={c.var.user} owners={await visitOwners(db)} filter={f} rows={page} next={next} paged={!!after} flash={flashOf(c)} />);
+  const [owners, booked] = await Promise.all([visitOwners(db), showBooking ? bookingsWithoutJob(db) : []]);
+  return c.html(<VisitsPage user={c.var.user} owners={owners} booked={booked} filter={f} rows={page} next={next} paged={!!after} flash={flashOf(c)} />);
 });
 
 app.get("/visits/export.csv", async (c) => {
@@ -369,6 +374,69 @@ app.post("/visits/:id/status", async (c) => {
   const r = await setVisitStatus(c.var.db, id, status, c.var.user);
   return r ? back(c, ret, "visit-status") : c.notFound();
 });
+
+// ---- bookings ---------------------------------------------------------------
+// The team's side of the booking skill, in the CRM's own frame: every
+// booking, what can be booked and who takes it, each person's hours, time
+// off and calendars. The Website's /book pages read the same tables.
+
+/** Make it a job: the customer (matched, or added, as from What came in), then the job. */
+app.post("/bookings/:id/job", async (c) => {
+  if (!showBooking || !visitsCfg) return c.notFound();
+  const db = c.var.db;
+  const id = idParam(c.req.param("id"));
+  if (!id) return c.notFound();
+  const body = await c.req.parseBody();
+  let customerId = idParam(str(body.customer));
+  if (!customerId || !(await getCustomer(db, customerId))) {
+    const stage = await firstOpenStage(db);
+    if (!stage) return back(c, "/stages", "last-open");
+    const r = await addFromInbox(db, "booking", id, stage.key, c.var.user, cfg.fields);
+    if (!r) return c.notFound();
+    customerId = r.customer.id;
+  }
+  const v = await visitFromBooking(db, id, customerId, c.var.user);
+  return v ? back(c, `/visits/${v.id}`, "visit-added") : c.notFound();
+});
+
+/** The request's database, set by the middleware above, for the booking skill's routes. */
+const dbOf = (c: Context): Db => (c as unknown as C).var.db;
+
+if (showBooking) {
+  app.route(
+    "/bookings",
+    bookingAdmin(dbOf, {
+      base: "/bookings",
+      css: "/crm.css",
+      source: "crm",
+      Frame: ({ title, user, children }) => (
+        <Layout title={title} user={user} section="bookings">
+          {children}
+        </Layout>
+      ),
+      // Beside a booking: whose it is here, and its job.
+      extra: async (c, b) => {
+        const db = dbOf(c);
+        const [customer, visit] = await Promise.all([findMatch(db, b.email, b.phone), db.sql<{ id: string }>`select id::text as id from customer_visits where booking_id = ${b.id}::bigint`]);
+        return (
+          <Section title={cfg.vocabulary.one}>
+            {customer ? <p class="mb-3"><a href={`/customers/${customer.id}`}>{customer.name}</a></p> : <p class="mb-3 text-ink-2">Not a {cfg.vocabulary.one.toLowerCase()} yet.</p>}
+            {visitsCfg ? (
+              visit[0] ? (
+                <p><a href={`/visits/${visit[0].id}`}>The {visitsCfg.one.toLowerCase()}</a></p>
+              ) : (
+                <form method="post" action={`/bookings/${b.id}/job`}>
+                  {customer ? <input type="hidden" name="customer" value={customer.id} /> : null}
+                  <button class={buttonClass}>Make it a {visitsCfg.one.toLowerCase()}</button>
+                </form>
+              )
+            ) : null}
+          </Section>
+        );
+      },
+    }),
+  );
+}
 
 // ---- pipeline -------------------------------------------------------------
 

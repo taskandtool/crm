@@ -26,5 +26,6 @@
       { "key": "reason", "label": "Reason", "type": "select", "options": ["Check-up and clean", "New patient exam", "Emergency", "Treatment", "Cosmetic consult"] }
     ],
     "currency": "USD"
-  }
+  },
+  "booking": false
 }

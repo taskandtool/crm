@@ -1,6 +1,6 @@
 ---
 name: crm
-description: "Run and reshape this CRM: the levers (crm.config.json, stages, custom fields, jobs or visits, additive schema.sql), what came in, team-only production, and the scripts for customers, notes, jobs, import and export. Use for 'shape the CRM', 'add a customer', 'log a job', 'who got in touch', 'import my list', 'publish it'."
+description: "Run and reshape this CRM: the levers (crm.config.json, stages, custom fields, jobs or visits, bookings, additive schema.sql), what came in, team-only production, and the scripts for customers, notes, jobs, import and export. Use for 'shape the CRM', 'add a customer', 'log a job', 'what can be booked', 'who got in touch', 'import my list', 'publish it'."
 ---
 
 # CRM
@@ -17,7 +17,10 @@ The project has one Postgres database, and every app in it uses the same
 tables by their plain names.
 
 - **The CRM's own:** `customers`, `pipeline_stages`, `customer_notes`,
-  `customer_visits` (`schema.sql`). Booking and the Board read `customers` too, so its
+  `customer_visits` (`schema.sql`); and, with booking on, the booking
+  skill's tables (`src/booking/schema.sql`: `booking_types`,
+  `booking_type_hosts`, `resources`, hours, time off, calendars,
+  `bookings`), which the setup applies first. Booking and the Board read `customers` too, so its
   columns keep their names and meanings.
 - **Other apps' tables it reads:** `submissions` (and `forms` for titles)
   from the Website's forms, `bookings` (and `resources`) from Booking,
@@ -65,6 +68,8 @@ Everything a business wants changed is one of these.
      (`{ "one": "Job", "many": "Jobs" }`), its own custom `fields` (same
      shape as lever 3), and the `currency` of its amounts; `false` turns
      them off (the counselor). See "Jobs and visits" below.
+   - `booking`: `false` leaves out the team's side of booking (the
+     dentist whose practice software books, the counselor). On otherwise.
    - `business`: one line about the business. It ships as `to fill`;
      writing the real line retires the "Shape the CRM" suggestion.
 
@@ -126,6 +131,33 @@ insurer); a fact about one occasion is a visit field (the truck that went,
 the party size, the reason for the visit). It is a record, not a
 schedule: times people book stay in `bookings`, and a booking becomes a
 visit only when the owner asks (`visits.mjs add`).
+
+## Bookings
+
+A customer books a **type** (an estimate visit, an installation, a video
+call) and one of its **hosts** takes it. Here, under Bookings, the team
+sets what can be booked (`/bookings/types`: length, buffers for travel,
+notice, where it happens: at their place, at ours, by phone, by video
+link), who takes each, each person's weekly hours, time off and Google or
+Outlook calendar (`/bookings/people`), and sees every booking. The public
+page that takes bookings is the Website's (`/book`, the booking skill's
+recipe): this CRM is private as a whole and never shows a booking page.
+Both read and write the same tables, so a change here is live there on the
+next load.
+
+Set it up by asking what people book, how long it takes, where it
+happens and who does it; add the people first, then the types, and tick
+who takes each. A type nobody takes stays off `/book`.
+
+A booking is a time on someone's calendar; a job is the record of the
+work. "Make it a job" (on the booking, on the customer's page, or in the
+Jobs page's "Booked, not a job yet") adds the customer if they are new
+(their address from a booking at their place) and a job carrying the
+booking's type, time, host and place, once per booking.
+
+Calendars, reminders and the booking skill's other rules are in the
+`booking` skill; the calendar sync job is `src/booking/sync.ts` (schedule
+it as that skill says, with `npx tsx src/booking/sync.ts`).
 
 ## Dev, on this machine
 
@@ -262,14 +294,13 @@ record, and say so when shaping one.
 - Tokens only in markup (`npm run check`), no em dashes in copy.
 - Real data only: never invent customers, notes or history.
 
-`src/data/` and `src/admin/` are copies of the `data` and `admin` business
-skills, `src/data/` trimmed to what the CRM uses. The others (`forms`,
-`booking`, `payments`, `reports`) come with this app as skills: when the
-owner asks to edit booking hours or see a report here, copy from them
-rather than writing it fresh, and copy the `data` files they import that
-`src/data/` lacks (`gateway.ts`, `test/scratch.ts`). `npm run check` allows
-Node built-ins only in `src/server.ts` and `src/db/`, so a skill's
-machine-only file (`print.ts`, `sync.ts`) stays out of `src/`. A report
+`src/data/`, `src/admin/` and `src/booking/` are copies of the `data`,
+`admin` and `booking` business skills. The others (`forms`, `payments`,
+`reports`) come with this app as skills: when the owner asks for a report
+or an invoice here, copy from them rather than writing it fresh, with the
+`data` files they import. `npm run check` allows Node built-ins only in
+`src/server.ts`, `src/db/` and `src/booking/sync.ts`, so a skill's other
+machine-only file (`print.ts`) stays out of `src/`. A report
 here takes the handle as `c.get("db")` and the CRM's own `Layout`
 (`src/views/layout.tsx`) as its frame, given a `head` slot for
 `ChartScripts` and a nav link; `customer_visits` is the table for "jobs

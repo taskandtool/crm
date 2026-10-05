@@ -29,5 +29,6 @@
       { "key": "van", "label": "Van", "type": "select", "options": ["Van 1", "Van 2"] }
     ],
     "currency": "USD"
-  }
+  },
+  "booking": true
 }

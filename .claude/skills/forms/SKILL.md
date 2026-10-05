@@ -8,7 +8,7 @@ description: "Forms as rows in the project's database: a form's fields in forms,
 Every form in the project is a row in `forms`, and every submission,
 from any app, is a row in `submissions`. A new form, or a new
 question on one, is a change to a row, never a migration. The Website embeds
-forms on its pages; the CRM and the Booking app read the submissions.
+forms on its pages; the CRM reads the submissions.
 
 Version: 0.1.0 (taskandtool/skills)
 

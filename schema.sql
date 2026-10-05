@@ -94,11 +94,17 @@ create index if not exists customer_visits_customer on customer_visits (customer
 create index if not exists customer_visits_when on customer_visits ((coalesce(starts_at, created_at)), id);
 create index if not exists customer_visits_status_when on customer_visits (status, (coalesce(starts_at, created_at)), id);
 
+-- A job made from a booking ("Make it a job") names it, once. No foreign
+-- key: a CRM with booking off has no bookings table.
+alter table customer_visits add column if not exists booking_id bigint;
+create unique index if not exists customer_visits_booking on customer_visits (booking_id) where booking_id is not null;
+
 comment on table pipeline_stages is 'The CRM pipeline, one row per stage, edited by the owner. customers.stage holds a key. Seeded once from crm.config.json.';
 comment on table customers is 'One row per customer, keyed by email when there is one (unique, case-blind). fields holds the custom fields crm.config.json declares. Archived, never deleted, from the CRM.';
 comment on column customers.owner is 'Who looks after this customer: usually a team member''s email.';
 comment on column customers.last_contact_at is 'The latest call, email, meeting or text noted, or when the person first got in touch.';
 comment on table customer_notes is 'A customer''s timeline: notes, calls, emails, meetings and texts, with who wrote them and when they happened.';
 comment on table customer_visits is 'A customer''s jobs, visits, appointments or events (crm.config.json names them): planned, done or cancelled, never deleted. fields holds the custom fields the config declares for them.';
+comment on column customer_visits.booking_id is 'The booking this was made from, if any (the booking skill''s bookings.id).';
 comment on column customer_visits.starts_at is 'When it happens or happened; null while it is not scheduled yet.';
 comment on column customer_visits.amount_cents is 'What it was worth, in the minor units of currency (cents for USD). A record, not a payment: payments are their own table.';

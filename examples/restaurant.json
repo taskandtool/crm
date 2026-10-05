@@ -28,5 +28,6 @@
       { "key": "menu", "label": "Menu", "type": "text" }
     ],
     "currency": "GBP"
-  }
+  },
+  "booking": false
 }

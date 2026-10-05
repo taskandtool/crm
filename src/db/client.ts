@@ -7,7 +7,7 @@
 // database up the moment it appears. Off-platform the file does not exist
 // and the env var is the whole story. Node only.
 import { existsSync, readFileSync } from "node:fs";
-import { cfg } from "../config";
+import { cfg, showBooking } from "../config";
 import type { Db } from "../data/db";
 import { fromPool } from "../data/pg";
 import type { DbState, Runtime } from "../runtime";
@@ -50,7 +50,7 @@ export async function start(log: (msg: string) => void = console.log): Promise<v
       await p.query("select 1");
       state = "migrating";
       const handle = fromPool(p);
-      const { seeded } = await setup(handle, cfg.stages);
+      const { seeded } = await setup(handle, cfg.stages, { booking: showBooking });
       if (seeded) log(`seeded ${seeded} pipeline stages from crm.config.json`);
       db = handle;
       state = "ready";

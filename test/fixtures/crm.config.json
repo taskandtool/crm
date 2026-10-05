@@ -27,5 +27,6 @@
     "many": "Visits",
     "fields": [],
     "currency": "USD"
-  }
+  },
+  "booking": true
 }

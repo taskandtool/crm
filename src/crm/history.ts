@@ -9,7 +9,12 @@ import { present as presentTables, type Present } from "./tables";
 
 export type HistoryItem =
   | { kind: "submission"; id: string; at: Date; form_key: string; form_title: string | null; status: string; data: Record<string, unknown>; page: string | null }
-  | { kind: "booking"; id: string; at: Date; starts_at: Date; ends_at: Date; status: string; resource_name: string | null }
+  | {
+      kind: "booking"; id: string; at: Date; starts_at: Date; ends_at: Date; status: string; resource_name: string | null;
+      type_name: string | null; location_kind: string; location: string | null;
+      /** The job made from it, if one was. */
+      visit_id: string | null;
+    }
   | { kind: "payment"; id: string; at: Date; amount_cents: string; currency: string; status: string; pay_kind: string; description: string | null; livemode: boolean | null };
 
 export async function everythingFrom(db: Db, c: Pick<Customer, "email" | "phone">, limit = 50): Promise<{ items: HistoryItem[]; present: Present }> {
@@ -30,8 +35,10 @@ export async function everythingFrom(db: Db, c: Pick<Customer, "email" | "phone"
   }
   if (p.bookings) {
     jobs.push(db.sql<HistoryItem>`
-      select 'booking' as kind, b.id::text as id, b.created_at as at, b.starts_at, b.ends_at, b.status, r.name as resource_name
-      from bookings b left join resources r on r.id = b.resource_id
+      select 'booking' as kind, b.id::text as id, b.created_at as at, b.starts_at, b.ends_at, b.status, r.name as resource_name,
+             t.name as type_name, b.location_kind, b.location,
+             (select v.id::text from customer_visits v where v.booking_id = b.id) as visit_id
+      from bookings b left join resources r on r.id = b.resource_id left join booking_types t on t.id = b.type_id
       where (${email}::citext is not null and b.email = ${email}::citext)
          or ((${email}::citext is null or b.email is null) and ${key}::text is not null
              and right(regexp_replace(regexp_replace(b.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10) = ${key})

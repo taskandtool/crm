@@ -271,6 +271,47 @@ test("visits: add from the customer's page, the list, its page, status, CSV", as
   assert.equal((await post(`/visits/${vid}/status`, { status: "planned" }, { ...ME, origin: "https://evil.example" })).status, 403);
 });
 
+test("bookings in the CRM: its own frame, a type and a person, Make it a job from a booking", async (t) => {
+  if (skip) return t.skip(skip);
+  let html = await (await get("/bookings/types")).text();
+  assert.match(html, /<nav aria-label="CRM"/, "the CRM's own frame");
+  assert.match(html, /<a href="\/bookings" aria-current="page"[^>]*>Bookings<\/a>/);
+  assert.match(html, /<nav aria-label="Booking"/);
+  assert.equal((await get("/bookings/types", { host: "crm.example" })).status, 404, "team only");
+
+  const person = await post("/bookings/people", { name: "Rae", email: "rae@team.example", time_zone: "America/Chicago", active: "1" });
+  assert.equal(person.status, 303);
+  const personId = person.headers.get("location")!.match(/\/people\/(\d+)/)![1];
+  const type = await post("/bookings/types", {
+    name: "Estimate visit", slug: "estimate-visit", location_kind: "their_place", duration_min: "60", interval_min: "60",
+    buffer_before_min: "30", buffer_after_min: "30", min_notice_min: "120", horizon_days: "30", active: "1",
+  });
+  assert.equal(type.status, 303);
+  const typeId = type.headers.get("location")!.match(/\/types\/(\d+)/)![1];
+  assert.equal((await post(`/bookings/types/${typeId}/hosts`, { host: personId })).status, 303);
+  assert.match(await (await get(`/bookings/people/${personId}`)).text(), /Estimate visit/);
+
+  // A booking the Website took, then Make it a job from the Jobs page.
+  const [b] = await db.sql<{ id: string }>`
+    insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, location_kind, location)
+    values (${typeId}::bigint, ${personId}::bigint, now() + interval '2 days', now() + interval '2 days 1 hour', 'Lee Wong', 'lee@example.com', 'their_place', '7 Pine St')
+    returning id::text as id`;
+  html = await (await get("/visits")).text();
+  assert.match(html, /Booked, not a visit yet/);
+  assert.match(html, /Estimate visit, Lee Wong, with Rae/);
+  assert.match(await (await get(`/bookings/${b.id}`)).text(), /Not a customer yet\.[\s\S]*Make it a visit/);
+  const made = await post(`/bookings/${b.id}/job`, {});
+  assert.equal(made.status, 303);
+  const visitUrl = made.headers.get("location")!;
+  assert.match(visitUrl, /^\/visits\/\d+\?saved=visit-added$/);
+  html = await (await get(visitUrl)).text();
+  assert.match(html, /<h1[^>]*>Estimate visit<\/h1>/);
+  assert.match(html, />Lee Wong<\/a>/);
+  assert.doesNotMatch(await (await get("/visits")).text(), /Lee Wong, with Rae/, "made into a job, it leaves the list");
+  assert.match(await (await get(`/bookings/${b.id}`)).text(), /The visit<\/a>/);
+  assert.equal((await post(`/bookings/999999/job`, {})).status, 404);
+});
+
 // Review regressions.
 
 test("a tampered paging cursor is the first page, not a server error", async (t) => {

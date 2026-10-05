@@ -15,7 +15,7 @@ import { addFromInbox, inboxPage, markDone, readInboxCursor, type InboxRow } fro
 import { addNote, listNotes } from "../src/crm/notes";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, restoreStage, seedStages } from "../src/crm/stages";
 import { missingSentence, present } from "../src/crm/tables";
-import { addVisit, customerVisits, saveVisit, setVisitStatus, visitsPage, type VisitInput } from "../src/crm/visits";
+import { addVisit, bookingsWithoutJob, customerVisits, saveVisit, setVisitStatus, visitFromBooking, visitsPage, type VisitInput } from "../src/crm/visits";
 import type { CustomField, StageConfig } from "../src/config-schema";
 import { scratch, type Scratch } from "./scratch";
 
@@ -48,8 +48,9 @@ const rows = async (sql: string) => (await s!.pool.query(sql)).rows;
 
 test("setup applies twice; stages are seeded once and only into an empty table", async (t) => {
   if (skip) return t.skip(skip);
-  assert.deepEqual(await setup(db, STAGES), { seeded: 4 });
-  assert.deepEqual(await setup(db, STAGES), { seeded: 0 });
+  // Booking off: these tests start as a CRM in a project with no other app's tables.
+  assert.deepEqual(await setup(db, STAGES, { booking: false }), { seeded: 4 });
+  assert.deepEqual(await setup(db, STAGES, { booking: false }), { seeded: 0 });
   await applySchema(db, readFileSync("schema.sql", "utf8"));
   assert.equal(await seedStages(db, [{ key: "other", label: "Other" }]), 0, "a table with rows is the owner's");
   assert.deepEqual((await listStages(db)).map((x) => x.key), ["new", "contacted", "won", "lost"]);
@@ -189,8 +190,10 @@ test("what came in, across submissions, bookings and payments", async (t) => {
         ('newsletter', 'News', 'news@example.com', null, '{}', 'website', 'new', '2026-10-01 12:00:00+00'),
         ('quote', null, null, '555 777 1234', '{}', 'website', 'new', '2026-10-01 09:00:00+00')`,
     q`insert into resources (name, time_zone) values ('Sam', 'America/Chicago')`,
-    q`insert into bookings (resource_id, starts_at, ends_at, name, email, status, created_at)
-        select id, '2026-10-05 15:00+00', '2026-10-05 16:00+00', 'Ann Lee', 'ann.lee@example.com', 'confirmed', '2026-10-01 10:00:00.000001+00' from resources`,
+    q`insert into booking_types (slug, name, location_kind) values ('estimate', 'Estimate visit', 'their_place')`,
+    q`insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, status, location_kind, location, created_at)
+        select (select id from booking_types), id, '2026-10-05 15:00+00', '2026-10-05 16:00+00', 'Ann Lee', 'ann.lee@example.com', 'confirmed',
+               'their_place', '9 Oak Lane', '2026-10-01 10:00:00.000001+00' from resources`,
     q`insert into payments (email, name, amount_cents, currency, status, created_at) values
         ('kim@example.com', 'Kim', 12500, 'usd', 'paid', '2026-10-02 08:00+00'),
         ('kim@example.com', 'Kim', 999, 'usd', 'pending', '2026-10-02 09:00+00')`,
@@ -317,8 +320,8 @@ test("Add as customer keeps what the person gave: address, custom fields, a phon
   await sub("payer@example.com", "  ", {}, "2026-08-05 10:00+00");
   await sub("payer@example.com", "555 818 9999", {}, "2026-08-06 10:00+00").then((id) => db.sql`update submissions set status = 'spam' where id = ${id}::bigint`);
   await db.sql`
-    insert into bookings (resource_id, starts_at, ends_at, name, email, phone, created_at)
-    select id, '2026-08-10 15:00+00', '2026-08-10 16:00+00', 'Payer', 'payer@example.com', '555 818 3333', '2026-08-02 10:00+00' from resources limit 1`;
+    insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, phone, location_kind, created_at)
+    select (select id from booking_types limit 1), id, '2026-08-10 15:00+00', '2026-08-10 16:00+00', 'Payer', 'payer@example.com', '555 818 3333', 'phone', '2026-08-02 10:00+00' from resources limit 1`;
   const [pay] = await db.sql<{ id: string }>`
     insert into payments (email, name, amount_cents, currency, status, created_at)
     values ('Payer@Example.com', 'Payer', 5000, 'usd', 'paid', '2026-08-07 10:00+00') returning id::text as id`;
@@ -400,8 +403,8 @@ test("import gives a customer with no last contact their latest submission, book
         ('quote', 'Undated', 'undated@example.com', '{}', 'website', 'new', '2026-06-01 10:00+00'),
         ('quote', 'Undated', 'undated@example.com', '{}', 'website', 'spam', '2026-09-30 10:00+00'),
         ('quote', 'Dated', 'dated@example.com', '{}', 'website', 'new', '2026-07-01 10:00+00')`,
-    q`insert into bookings (resource_id, starts_at, ends_at, name, email, created_at)
-        select id, '2026-07-10 15:00+00', '2026-07-10 16:00+00', 'Undated', 'undated@example.com', '2026-07-02 10:00+00' from resources limit 1`,
+    q`insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, location_kind, created_at)
+        select (select id from booking_types limit 1), id, '2026-07-10 15:00+00', '2026-07-10 16:00+00', 'Undated', 'undated@example.com', 'our_place', '2026-07-02 10:00+00' from resources limit 1`,
     q`insert into payments (email, name, amount_cents, currency, status, created_at) values
         ('fresh@example.com', 'Fresh', 100, 'usd', 'paid', '2026-05-05 10:00+00'),
         ('fresh@example.com', 'Fresh', 100, 'usd', 'pending', '2026-09-09 10:00+00')`,
@@ -574,4 +577,37 @@ test("visits: planned, done and cancelled; done counts as contact; the list's vi
     after = readListCursor(next);
   }
   assert.deepEqual(seen, ["Batch 0", "Batch 1", "Batch 2", "Batch 3", "Batch 4"]);
+});
+
+test("a booking becomes a customer and a job, once: its type, time, host and place carried over", async (t) => {
+  if (skip) return t.skip(skip);
+  // The booking tables are there from the other apps' fixture (an earlier test).
+  const [type] = await db.sql<{ id: string }>`insert into booking_types (slug, name, location_kind) values ('install', 'Installation', 'their_place') returning id::text as id`;
+  const [host] = await db.sql<{ id: string }>`insert into resources (name, email, time_zone) values ('Rae', 'rae@team.example', 'UTC') returning id::text as id`;
+  const [b] = await db.sql<{ id: string }>`
+    insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, phone, location_kind, location, answers)
+    values (${type.id}::bigint, ${host.id}::bigint, now() + interval '3 days', now() + interval '3 days 2 hours', 'Joy Park', 'joy@example.com',
+            '555 202 3030', 'their_place', '44 Birch Road', '{"notes": "Side gate is open"}'::jsonb)
+    returning id::text as id`;
+  assert.ok((await bookingsWithoutJob(db)).some((x) => x.id === b.id && x.type_name === "Installation" && x.customer_id === null));
+
+  const added = await addFromInbox(db, "booking", b.id, "new", ME, []);
+  assert.ok(added?.created);
+  assert.deepEqual([added!.customer.address, added!.customer.source], ["44 Birch Road", "Booking: Installation"], "their place is their address");
+
+  const job = await visitFromBooking(db, b.id, added!.customer.id, ME);
+  assert.ok(job);
+  assert.deepEqual([job.title, job.status, job.owner, job.booking_id], ["Installation", "planned", "rae@team.example", b.id]);
+  assert.equal(job.notes, "At 44 Birch Road\nSide gate is open");
+  const again = await visitFromBooking(db, b.id, added!.customer.id, ME);
+  assert.equal(again!.id, job.id, "a second click finds the first job");
+  assert.equal((await db.sql`select count(*)::int as n from customer_visits where booking_id = ${b.id}::bigint`)[0].n, 1);
+  assert.ok(!(await bookingsWithoutJob(db)).some((x) => x.id === b.id), "no longer waiting for a job");
+
+  const { items } = await everythingFrom(db, added!.customer);
+  const item = items.find((i) => i.kind === "booking" && i.id === b.id);
+  assert.ok(item && item.kind === "booking");
+  assert.deepEqual([item.type_name, item.location, item.visit_id], ["Installation", "44 Birch Road", job.id]);
+  const page = await inboxPage(db, { inbox: { forms: "all", exclude_forms: [] } }, null, 200);
+  assert.equal((page.rows.find((r) => r.kind === "booking" && r.id === b.id) as InboxRow & { type_name: string })?.type_name, "Installation");
 });

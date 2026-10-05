@@ -1,5 +1,5 @@
-// Reading forms and writing submissions. The CRM, the Booking app and the
-// Website all look in the same submissions table.
+// Reading forms and writing submissions. The Website and the CRM look in the
+// same submissions table.
 import type { Db } from "../data/db";
 import { checkFields, sitePath, type Field, type Form, type Submission } from "./fields";
 

@@ -2,7 +2,7 @@
 // output. Every script sets the database up first (the same idempotent
 // setup the service runs), so it works on a fresh project too.
 import type pg from "pg";
-import { cfg } from "../src/config";
+import { cfg, showBooking } from "../src/config";
 import type { Db } from "../src/data/db";
 import { fromPool } from "../src/data/pg";
 import { databaseUrl } from "../src/db/client";
@@ -48,7 +48,7 @@ export async function withDb<T>(fn: (db: Db, pool: pg.Pool) => Promise<T>): Prom
   const pool = openPool(url);
   try {
     const db = fromPool(pool);
-    await setup(db, cfg.stages);
+    await setup(db, cfg.stages, { booking: showBooking });
     return await fn(db, pool);
   } finally {
     await pool.end();

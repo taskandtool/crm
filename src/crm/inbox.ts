@@ -34,7 +34,7 @@ type Base = {
   customer_archived_at: Date | null;
 };
 export type SubmissionRow = Base & { kind: "submission"; form_key: string; form_title: string | null; data: Record<string, unknown> };
-export type BookingRow = Base & { kind: "booking"; starts_at: Date; ends_at: Date; resource_name: string | null };
+export type BookingRow = Base & { kind: "booking"; starts_at: Date; ends_at: Date; resource_name: string | null; type_name: string | null };
 export type PaymentRow = Base & { kind: "payment"; amount_cents: string; currency: string; pay_kind: string; description: string | null; livemode: boolean | null };
 export type InboxRow = SubmissionRow | BookingRow | PaymentRow;
 
@@ -113,15 +113,16 @@ export async function inboxPage(
     );
   }
   if (p.bookings && ib.bookings !== false) {
-    // bookings.resource_id references resources, so resources is there too.
+    // bookings references resources and booking_types, so both are there too.
     jobs.push(
       db.sql<BookingRow>`
         select 'booking' as kind, b.id::text as id, b.created_at, b.starts_at, b.ends_at, b.name, b.email::text as email, b.phone, b.status,
-               r.name as resource_name,
+               r.name as resource_name, t.name as type_name,
                to_char(b.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k,
                m.id::text as customer_id, m.name as customer_name, m.archived_at as customer_archived_at
         from bookings b
         left join resources r on r.id = b.resource_id
+        left join booking_types t on t.id = b.type_id
         left join lateral (
           select c.id, c.name, c.archived_at from customers c
           where (b.email is not null and c.email = b.email)
@@ -211,7 +212,11 @@ export async function addFromInbox(
       if (f?.title) row.source = f.title;
     }
   } else if (kind === "booking" && p.bookings) {
-    [row] = await db.sql<Src>`select name, email::text as email, phone, created_at, 'Booking' as source, null::jsonb as data from bookings where id = ${id}::bigint`;
+    // What they booked is where they came from; a visit at their place gave their address.
+    [row] = await db.sql<Src>`
+      select b.name, b.email::text as email, b.phone, b.created_at, coalesce('Booking: ' || t.name, 'Booking') as source,
+             case when b.location_kind = 'their_place' then jsonb_build_object('address', b.location) end as data
+      from bookings b left join booking_types t on t.id = b.type_id where b.id = ${id}::bigint`;
   } else if (kind === "payment" && p.payments) {
     [row] = await db.sql<Src>`select name, email::text as email, null::text as phone, created_at, 'Payment' as source, null::jsonb as data from payments where id = ${id}::bigint`;
   }

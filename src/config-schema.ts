@@ -28,6 +28,8 @@ export type Config = {
   inbox: InboxConfig;
   /** false (or absent) turns them off. */
   visits?: VisitsConfig | false;
+  /** The team's side of booking (types, hosts, hours, calendars, the bookings); false leaves it out. On unless false. */
+  booking?: boolean;
 };
 
 export const KEY = /^[a-z0-9][a-z0-9_-]{0,39}$/;
@@ -90,6 +92,7 @@ export function validate(raw: unknown): string[] {
     for (const k of ["bookings", "payments"] as const) if (ib[k] !== undefined && typeof ib[k] !== "boolean") out.push(`inbox.${k} must be true or false`);
   }
 
+  if (c.booking !== undefined && typeof c.booking !== "boolean") out.push("booking must be true or false");
   if (c.visits !== undefined && c.visits !== false) {
     const vs = c.visits as Partial<VisitsConfig> | null;
     if (!vs || typeof vs !== "object" || Array.isArray(vs)) out.push('visits must be false or an object, e.g. { "one": "Job", "many": "Jobs", "fields": [] }');

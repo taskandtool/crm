@@ -4,8 +4,9 @@
 // and the manage page's .ics download is the invite.
 //
 //   onBooked: (c, e) => afterResponse(c, sendInvite(envOf(c), {
-//     to: e.booking.email, subject: `Booked: ${e.resource.name}`, text: `Change or cancel: ${e.manageUrl}`,
-//     ics: invite({ method: "REQUEST", booking: e.booking, domain, organizer, summary, url: e.manageUrl }), method: "REQUEST",
+//     to: e.booking.email, subject: `Booked: ${e.type.name} with ${e.host.name}`, text: `Change or cancel: ${e.manageUrl}`,
+//     ics: invite({ method: "REQUEST", booking: e.booking, domain, organizer: { email: e.host.email!, name: e.host.name },
+//       summary: inviteSummary(e.type, e.host), location: e.booking.location, url: e.manageUrl }), method: "REQUEST",
 //   })),
 import type { Env } from "../data/env";
 import { sendEmail, type Sent } from "../data/send";

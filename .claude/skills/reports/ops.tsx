@@ -2,7 +2,7 @@
 // per currency, the funnel lead, booked, showed, paid (matched by email),
 // bookings per week, leads by where they came from and by form, and the
 // latest bookings. A table the
-// project does not have yet (no booking app, no payments) leaves its section
+// project does not have yet (no bookings, no payments) leaves its section
 // out with a plain note; the rest still renders.
 //
 //   const zone = "America/New_York";                      // the business's zone, from the app's settings

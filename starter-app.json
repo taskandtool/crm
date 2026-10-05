@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "slug": "crm",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "needs": {
     "capabilities": [{ "kind": "postgres", "strength": "required" }]
   },

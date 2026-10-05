@@ -11,7 +11,7 @@ import { Hono } from "hono";
 import { applySchema } from "../../data/migrate";
 import { makeStamp } from "../../data/spam";
 import { scratch, why } from "../../data/test/scratch";
-import { addWindow, createResource } from "../../booking/hours";
+import { addWindow, createPerson, createType, setHosts } from "../../booking/hours";
 import { bookingPages } from "../../booking/public";
 import { startCheckout } from "../checkout";
 import { stripeWebhook } from "../webhook";
@@ -26,12 +26,15 @@ test("afterBook takes the deposit; the manage page shows it once Stripe says it 
   try {
     await applySchema(s.db, read("../../booking/schema.sql"));
     await applySchema(s.db, read("../schema.sql"));
-    const r = await createResource(s.db, {
-      name: "Pat", slug: "intro", email: "pat@example.com", time_zone: "UTC", duration_min: "30", interval_min: "30",
-      buffer_before_min: "0", buffer_after_min: "0", min_notice_min: "0", horizon_days: "14",
-    }, "owner@example.com", "website");
+    const r = await createPerson(s.db, { name: "Pat", email: "pat@example.com", time_zone: "UTC" }, "owner@example.com", "website");
     assert.ok(r.ok);
     for (let d = 0; d < 7; d++) await addWindow(s.db, r.value.id, String(d), "00:00", "24:00", "owner@example.com");
+    const type = await createType(s.db, {
+      name: "Intro call", slug: "intro", duration_min: "30", interval_min: "30", buffer_before_min: "0", buffer_after_min: "0",
+      min_notice_min: "0", horizon_days: "14", location_kind: "our_place", location: "1 Main St",
+    }, "owner@example.com", "website");
+    assert.ok(type.ok);
+    await setHosts(s.db, type.value.id, [r.value.id]);
 
     const sessions: URLSearchParams[] = [];
     const stripe: Stripe = async (_method, _path, params) => {
@@ -47,7 +50,7 @@ test("afterBook takes the deposit; the manage page shows it once Stripe says it 
       afterBook: async (c, e) => {
         const { url } = await startCheckout(getDb(), stripe, {
           kind: "deposit", refType: "booking", refId: e.booking.id,
-          amountCents: 5000, currency: "usd", description: `Deposit for your time with ${e.resource.name}`,
+          amountCents: 5000, currency: "usd", description: `Deposit: ${e.type.name} with ${e.host.name}`,
           email: e.booking.email, name: e.booking.name, source: "website",
           successUrl: `${e.manageUrl}?new=1`, cancelUrl: `${e.manageUrl}?new=1`,
           expiresAt: new Date(Date.now() + 30 * 60_000),

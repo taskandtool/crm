@@ -31,6 +31,7 @@ export type Visit = Keyed & {
   updated_by: string | null;
   created_at: Date;
   updated_at: Date;
+  booking_id: string | null;
   customer_name: string;
   customer_email: string | null;
   customer_phone: string | null;
@@ -208,6 +209,52 @@ export function visitsPage(db: Db, f: VisitFilter, after: Cursor | null, size: n
       and (${k}::timestamptz is null or (coalesce(v.starts_at, v.created_at), v.id) < (${k}::timestamptz, ${id}::bigint))
     order by coalesce(v.starts_at, v.created_at) desc, v.id desc
     limit ${size + 1}`;
+}
+
+/**
+ * "Make it a job": a planned visit (done, once the booking is completed) for
+ * this customer, carrying the booking's type, time, host and place. A
+ * booking makes one visit at most: a second click returns the first.
+ */
+export async function visitFromBooking(db: Db, bookingId: string, customerId: string, user: string): Promise<Visit | null> {
+  if (!/^\d{1,18}$/.test(bookingId) || !/^\d{1,18}$/.test(customerId)) return null;
+  const [rows] = await db.transaction([
+    q`insert into customer_visits (customer_id, booking_id, title, status, starts_at, owner, notes, created_by, updated_by)
+      select ${customerId}::bigint, b.id, coalesce(t.name, 'Booking'),
+             case when b.status = 'completed' then 'done' when b.status in ('cancelled', 'no_show') then 'cancelled' else 'planned' end,
+             b.starts_at, coalesce(r.email::text, r.name),
+             concat_ws(E'\n',
+               case b.location_kind when 'their_place' then 'At ' || b.location when 'our_place' then 'At ' || b.location
+                                    when 'phone' then 'Call ' || b.location when 'video' then 'Video: ' || b.location end,
+               nullif(b.answers ->> 'notes', '')),
+             ${user}, ${user}
+      from bookings b
+      left join booking_types t on t.id = b.type_id
+      left join resources r on r.id = b.resource_id
+      where b.id = ${bookingId}::bigint and exists (select 1 from customers where id = ${customerId}::bigint)
+      on conflict (booking_id) where booking_id is not null do nothing
+      returning id::text as id`,
+  ]);
+  const made = (rows[0] as { id: string } | undefined)?.id;
+  if (made) return getVisit(db, made);
+  const [v] = await db.sql<{ id: string }>`select id::text as id from customer_visits where booking_id = ${bookingId}::bigint`;
+  return v ? getVisit(db, v.id) : null;
+}
+
+export type OpenBooking = { id: string; starts_at: Date; name: string; email: string; type_name: string | null; host_name: string | null; customer_id: string | null };
+
+/** Confirmed bookings still to come that no job was made from, soonest first: the "booked, not a job yet" list. */
+export function bookingsWithoutJob(db: Db, limit = 20): Promise<OpenBooking[]> {
+  return db.sql<OpenBooking>`
+    select b.id::text as id, b.starts_at, b.name, b.email::text as email, t.name as type_name, r.name as host_name,
+           (select c.id::text from customers c where c.email = b.email order by c.archived_at nulls first, c.id limit 1) as customer_id
+    from bookings b
+    left join booking_types t on t.id = b.type_id
+    left join resources r on r.id = b.resource_id
+    where b.status = 'confirmed' and b.ends_at > now()
+      and not exists (select 1 from customer_visits v where v.booking_id = b.id)
+    order by b.starts_at, b.id
+    limit ${limit}`;
 }
 
 /** Who has done or is down for any, for the owner filter. */

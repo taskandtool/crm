@@ -7,8 +7,8 @@ description: "Taking money through the owner's Stripe account: Checkout for depo
 
 Payments go through the owner's own Stripe account, by a connection. Every
 payment is a row in `payments` that names what it pays for
-(`ref_type`, `ref_id`), so the Booking app, the CRM and Quotes & Invoices all
-read the same rows by email or by ref.
+(`ref_type`, `ref_id`), so the Website's booking page, the CRM and its
+invoices all read the same rows by email or by ref.
 
 Version: 0.1.0 (taskandtool/skills)
 
@@ -124,7 +124,7 @@ app.route("/book", bookingPages(getDb, {
   afterBook: async (c, e) => {
     const { url } = await startCheckout(getDb(c), stripeFrom(envOf(c)), {
       kind: "deposit", refType: "booking", refId: e.booking.id,
-      amountCents: DEPOSIT_CENTS, currency: "usd", description: `Deposit for your time with ${e.resource.name}`,
+      amountCents: DEPOSIT_CENTS, currency: "usd", description: `Deposit: ${e.type.name} with ${e.host.name}`,
       email: e.booking.email, name: e.booking.name, source: "website",
       successUrl: `${e.manageUrl}?new=1`, cancelUrl: `${e.manageUrl}?new=1`,
       expiresAt: new Date(Date.now() + 30 * 60_000),   // an unpaid hold frees after 30 minutes

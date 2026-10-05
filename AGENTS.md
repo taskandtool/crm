@@ -17,7 +17,8 @@ before changing the CRM rather than working from memory.
 - `crm.config.json` is the first lever: the words (`Patients`, `Guests`),
   the stages seeded on the first run, sources, custom fields, the owner's
   label, the time zone, the default view, which forms count as leads,
-  and `visits` (what a job or visit is called, its own fields, or off).
+  `visits` (what a job or visit is called, its own fields, or off) and
+  `booking` (the team's side of booking, or off).
   `examples/` holds five worked configs to read, not a switch.
 - `schema.sql` is the CRM's tables (`customers`, `pipeline_stages`,
   `customer_notes`, `customer_visits`), applied at every start and every deploy. Additive
@@ -29,6 +30,9 @@ before changing the CRM rather than working from memory.
   `src/views/` are the pages. `src/server.ts` is dev's entry (Node, with
   `src/db/client.ts`); `src/worker.ts` is production's (Cloudflare).
   `src/runtime.ts` is all that differs between them.
+- `src/booking/` is a copy of the `booking` skill's code: the Bookings
+  section (types, hosts, hours, calendars, the bookings) and the calendar
+  sync job. The Website's `/book` pages take the bookings.
 - `src/data/` and `src/admin/` are copies of the `data` and `admin`
   business skills: the database handle, the additive check, the email key,
   the guard, keyset paging, CSV, the list components.

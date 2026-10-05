@@ -30,6 +30,10 @@ runs anywhere with Node 20 and a Postgres.
   fields (which truck, which room). A list of what is coming up and what
   was done, exported as CSV. Turned off for a business that keeps them
   elsewhere.
+- **Bookings**: what customers can book (an estimate visit, an
+  installation, a video call), who takes each, everyone's hours, time off
+  and Google or Outlook calendar, and every booking, with "Make it a job".
+  The public booking page is the Website's; both use the same tables.
 - **A pipeline** of stages you name and order, with drag between them,
   or a select on each card without JavaScript.
 - **CSV import** of the list you keep today, matched by email then phone
@@ -73,6 +77,7 @@ schema.sql               the tables, additive only, applied at start and deploy
 src/app.tsx              the Hono app: the team-only gate, the routes
 src/crm/                 customers, stages, notes, visits, what came in, history, import
 src/views/               what came in, customers, a customer, visits, pipeline, stages
+src/booking/             a copy of the booking skill: the Bookings section, the calendar sync job
 src/data/  src/admin/    copies of the data and admin business skills
 scripts/                 customers, visits, inbox, stages, import, export, migrate (--help)
 styles/  static/         the tokens; the built CSS, vendored htmx and SortableJS, crm.js

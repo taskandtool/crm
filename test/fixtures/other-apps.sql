@@ -1,5 +1,6 @@
--- Test fixture: the forms, booking and payments skills' schema.sql (taskandtool/skills 0.1.0),
--- concatenated, so the CRM's tests read the same tables a project has. Not applied by the app.
+-- Test fixture: the forms, booking and payments skills' schema.sql (taskandtool/skills: forms 0.1.0,
+-- booking 0.2.0, payments 0.1.0), concatenated, so the CRM's tests read the same tables a project has.
+-- Not applied by the app (it applies booking's own copy, src/booking/schema.sql, when booking is on).
 
 -- forms: every form in the project is a row, and every submission from any
 -- app lands in one table the CRM reads. Additive only (data/SKILL.md).
@@ -48,43 +49,66 @@ comment on table forms is 'One row per form. fields is the ordered definition th
 comment on table submissions is 'Every form submission from every app in the project. A person is their email. No IP addresses are stored.';
 comment on column submissions.data is 'Every answer that is not name, email or phone, keyed by field name. _consent holds the wording of each consent box ticked; _utm (source, medium, campaign) and _referrer (a host) say where the visitor came from.';
 
--- booking: who can be booked, when, and what is booked. Additive only
+-- booking: what can be booked, who takes it, when, and what is booked. Additive only
 -- (data/SKILL.md): run with applySchema from setup or start.
 --
 -- Times a person chose are instants (timestamptz) with the IANA zone stored
 -- beside them. Weekly hours are wall times (time) in the resource's zone.
 -- Weekday is 0 Sunday to 6 Saturday, as extract(dow) and Date#getUTCDay.
 
+-- The people who can be booked. A booking type (below) says what is booked
+-- and which of them can take it; their own hours, time off and calendars
+-- say when.
 create table if not exists resources (
   id bigserial primary key,
-  kind text not null default 'person' check (kind in ('person', 'crew')),
-  slug text,
   name text not null,
   email citext,
   time_zone text not null,
-  duration_min integer not null default 30 check (duration_min between 5 and 1440),
-  interval_min integer not null default 30 check (interval_min between 5 and 1440),
-  buffer_before_min integer not null default 0 check (buffer_before_min between 0 and 1440),
-  buffer_after_min integer not null default 0 check (buffer_after_min between 0 and 1440),
-  min_notice_min integer not null default 120 check (min_notice_min between 0 and 525600),
-  horizon_days integer not null default 60 check (horizon_days between 0 and 730),
   active boolean not null default true,
   source text,
   updated_by citext,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-create unique index if not exists resources_slug on resources (slug);
 create index if not exists resources_email on resources (email);
 
--- A crew is booked as one; each booking goes to one free member.
-create table if not exists resource_members (
-  crew_id bigint not null references resources (id) on delete cascade,
-  member_id bigint not null references resources (id) on delete cascade,
+-- What a customer books: an installation, a sales visit, a video call. Its
+-- slug is its public address (/book/<slug>). Where it happens:
+--   their_place  at the customer's address, which they give when booking
+--   our_place    at `location`, the business's address
+--   phone        the business calls the number they give
+--   video        at `location`, the owner's own meeting link
+create table if not exists booking_types (
+  id bigserial primary key,
+  slug text not null check (slug ~ '^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$' and slug <> 'manage'),
+  name text not null,
+  description text,
+  duration_min integer not null default 30 check (duration_min between 5 and 1440),
+  interval_min integer not null default 30 check (interval_min between 5 and 1440),
+  buffer_before_min integer not null default 0 check (buffer_before_min between 0 and 1440),
+  buffer_after_min integer not null default 0 check (buffer_after_min between 0 and 1440),
+  min_notice_min integer not null default 120 check (min_notice_min between 0 and 525600),
+  horizon_days integer not null default 60 check (horizon_days between 0 and 730),
+  location_kind text not null default 'our_place' check (location_kind in ('their_place', 'our_place', 'phone', 'video')),
+  location text,
+  position integer not null default 0,
+  active boolean not null default true,
+  source text,
+  updated_by citext,
   created_at timestamptz not null default now(),
-  primary key (crew_id, member_id),
-  check (crew_id <> member_id)
+  updated_at timestamptz not null default now()
 );
+create unique index if not exists booking_types_slug on booking_types (slug);
+
+-- Who can take a type. With several, the booker picks one or takes the
+-- first free; each booking goes to one person.
+create table if not exists booking_type_hosts (
+  type_id bigint not null references booking_types (id) on delete cascade,
+  resource_id bigint not null references resources (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (type_id, resource_id)
+);
+create index if not exists booking_type_hosts_resource on booking_type_hosts (resource_id);
 
 -- Weekly hours. end_local may be 24:00 (until midnight); a window never
 -- crosses midnight: split it into two rows on two weekdays.
@@ -141,13 +165,15 @@ create index if not exists busy_calendar_end on busy (calendar_id, ends_at);
 
 create table if not exists bookings (
   id bigserial primary key,
+  type_id bigint not null references booking_types (id),
   resource_id bigint not null references resources (id),
-  crew_id bigint references resources (id),
   starts_at timestamptz not null,
   ends_at timestamptz not null,
   name text not null,
   email citext not null,
   phone text,
+  location_kind text not null check (location_kind in ('their_place', 'our_place', 'phone', 'video')),
+  location text,
   booker_time_zone text,
   status text not null default 'confirmed' check (status in ('confirmed', 'cancelled', 'completed', 'no_show')),
   answers jsonb not null default '{}'::jsonb,
@@ -169,8 +195,11 @@ create table if not exists bookings (
 create index if not exists bookings_resource_end on bookings (resource_id, ends_at);
 create index if not exists bookings_starts on bookings (starts_at, id);
 create index if not exists bookings_email on bookings (email);
+create index if not exists bookings_type on bookings (type_id, starts_at);
 create unique index if not exists bookings_manage_token on bookings (manage_token_hash);
 
+comment on column bookings.resource_id is 'The person taking it.';
+comment on column bookings.location is 'Where, as it was when booked: the customer''s address, the business''s address, the number to call, or the meeting link.';
 comment on column bookings.sequence is 'Rises on every reschedule and cancel. It is the ICS SEQUENCE, and the sync job compares it with synced_sequence.';
 comment on column bookings.manage_token_hash is 'Hex SHA-256 of the manage link token. The token itself is never stored.';
 
