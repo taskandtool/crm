@@ -14,7 +14,7 @@
     "postinstall": "node scripts/vendor.mjs",
     "check": "node scripts/check.mjs",
     "typecheck": "tsc --noEmit -p .",
-    "test": "tsx --import ./test/pin-config.mjs --test test/config.test.ts test/helpers.test.ts test/db.test.ts test/http.test.ts src/admin/test/admin-core.test.ts src/booking/test/book.test.ts src/booking/test/pages.test.ts src/booking/test/slots.test.ts src/booking/test/zones.test.ts src/booking/test/ics.test.ts src/booking/test/sync.test.ts",
+    "test": "tsx --import ./test/pin-config.mjs --test test/config.test.ts test/helpers.test.ts test/db.test.ts test/http.test.ts src/admin/test/admin-core.test.ts src/booking/test/book.test.ts src/booking/test/pages.test.ts src/booking/test/slots.test.ts src/booking/test/zones.test.ts src/booking/test/ics.test.ts src/booking/test/sync.test.ts src/booking/test/notify.test.ts src/booking/test/reminders.test.ts",
     "deploy": "node scripts/migrate.mjs && npm run build && python3 ~/tools/taskandtool.py deploy dist --worker build/worker.mjs --flag nodejs_compat"
   },
   "engines": {

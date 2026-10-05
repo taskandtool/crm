@@ -6,7 +6,8 @@ import { FieldList, JsonData, Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
 import { StatusForm } from "../admin/status";
-import { cfg, ownerLabel, visitsCfg, vocab } from "../config";
+import { cfg, ownerLabel, showBooking, visitsCfg, vocab } from "../config";
+import { listUrl } from "../admin/query";
 import type { Customer } from "../crm/customers";
 import type { HistoryItem } from "../crm/history";
 import { NOTE_KINDS, NOTE_LABELS, type Note } from "../crm/notes";
@@ -14,8 +15,7 @@ import type { Stage } from "../crm/stages";
 import type { Visit } from "../crm/visits";
 import { missingSentence, type Present } from "../crm/tables";
 import { money, nowIn } from "../crm/text";
-import { whereText } from "../booking/public";
-import type { Booking } from "../booking/book";
+import { whereText, type Booking } from "../booking/book";
 import { firstText } from "./inbox";
 import { Layout } from "./layout";
 import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, stageOptions, timeZone, Who } from "./ui";
@@ -50,6 +50,9 @@ export function CustomerPage(p: {
           <StatusForm action={`${self}/stage`} current={c.stage} options={options} returnTo={self} label="Stage" />
         </span>
         {c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`}>Call {c.phone}</a> : null}
+        {showBooking ? (
+          <a href={listUrl("/bookings/new", { name: c.name, email: c.email, phone: c.phone, address: c.address })}>Book a time</a>
+        ) : null}
         {c.email ? <a href={`mailto:${c.email}`} class="break-all">Email {c.email}</a> : null}
       </div>
       {c.archived_at ? (

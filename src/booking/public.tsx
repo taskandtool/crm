@@ -23,7 +23,7 @@ import type { Db, GetDb } from "../data/db";
 import { envVar } from "../data/env";
 import { HONEYPOT, makeStamp, SpamFields, STAMP, verdict } from "../data/spam";
 import {
-  book, bookableTypes, bookingByToken, cancelByToken, hostsOf, openSlotsFor, reschedule, resourceById, typeById, typeBySlug,
+  book, bookableTypes, bookingByToken, cancelByToken, hostsOf, openSlotsFor, reschedule, resourceById, typeById, typeBySlug, whereText,
   type Booking, type BookingType, type OpenSlot, type Resource,
 } from "./book";
 import { invite } from "./ics";
@@ -39,20 +39,6 @@ export type BookingEvent = {
   /** The manage link, absolute: put it in the confirmation. */
   manageUrl: string;
 };
-
-/** One line for where it happens, for the booker. A meeting link is shown only to the person who booked. */
-export function whereText(b: Pick<Booking, "location_kind" | "location">, opts: { link?: boolean } = {}): string {
-  switch (b.location_kind) {
-    case "their_place":
-      return b.location ? `At ${b.location}` : "At your address";
-    case "our_place":
-      return b.location ? `At ${b.location}` : "At our place";
-    case "phone":
-      return b.location ? `We will call you on ${b.location}` : "By phone";
-    case "video":
-      return opts.link && b.location ? `Video call: ${b.location}` : "Video call";
-  }
-}
 
 /** What a type's page says about where, before anyone books. */
 const typeWhere = (t: BookingType) =>
@@ -86,7 +72,7 @@ const control =
   "w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-copy text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 const button =
   "rounded-control bg-accent px-4 py-2 font-semibold text-accent-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
-const chip =
+export const chip =
   "inline-block rounded-control border border-line-strong bg-surface px-3 py-2 text-center no-underline text-ink hover:bg-panel focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 function PlainPage({ title, css, children }: { title: string; css: string; children: Child }) {
@@ -119,7 +105,7 @@ const q = (params: Record<string, string | null | undefined>) => {
 };
 
 /** The open slots for the next days, grouped by the viewer's local date. */
-async function upcoming(db: Db, type: BookingType, viewerZone: string, maxDays: number, opts: { hosts?: string[]; exceptBooking?: string } = {}) {
+export async function upcoming(db: Db, type: BookingType, viewerZone: string, maxDays: number, opts: { hosts?: string[]; exceptBooking?: string } = {}) {
   const now = new Date();
   const days = Math.min(type.horizon_days + 1, maxDays);
   const list = await openSlotsFor(db, type, now, new Date(now.getTime() + (days + 1) * 86_400_000), now, opts);
@@ -127,7 +113,7 @@ async function upcoming(db: Db, type: BookingType, viewerZone: string, maxDays: 
 }
 
 /** The days with open times, a week of them at a time (the chosen day's), with links to the weeks around it. */
-function DayPicker({ days, chosen, href }: { days: string[]; chosen: string; href: (d: string) => string }) {
+export function DayPicker({ days, chosen, href }: { days: string[]; chosen: string; href: (d: string) => string }) {
   const PER = 7;
   const at = Math.max(0, days.indexOf(chosen));
   const from = Math.floor(at / PER) * PER;

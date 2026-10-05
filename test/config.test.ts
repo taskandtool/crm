@@ -87,7 +87,12 @@ test("visits: off, or words, their own fields and a currency", () => {
   assert.ok(pe.some((x) => x.includes("visits.fields[1].label Amount (USD) reads as a built-in")));
   const b = good();
   b.booking = "yes";
+  b.booking_page = "acme.com/book";
   assert.ok(validate(b).some((x) => x.includes("booking must be true or false")));
+  assert.ok(validate(b).some((x) => x.includes("booking_page must be")));
+  const ok = good();
+  ok.booking_page = "https://acme.com/book";
+  assert.deepEqual(validate(ok), []);
   const d = good();
   d.visits = "yes";
   assert.ok(validate(d).some((x) => x.includes("visits must be false or an object")));

@@ -30,6 +30,8 @@ export type Config = {
   visits?: VisitsConfig | false;
   /** The team's side of booking (types, hosts, hours, calendars, the bookings); false leaves it out. On unless false. */
   booking?: boolean;
+  /** The Website's booking pages, absolute ("https://acme.com/book"): a booking the team makes then mails a manage link there. */
+  booking_page?: string;
 };
 
 export const KEY = /^[a-z0-9][a-z0-9_-]{0,39}$/;
@@ -93,6 +95,9 @@ export function validate(raw: unknown): string[] {
   }
 
   if (c.booking !== undefined && typeof c.booking !== "boolean") out.push("booking must be true or false");
+  if (c.booking_page !== undefined && !(typeof c.booking_page === "string" && /^https:\/\/[^\s/]+(\/\S*)?$/.test(c.booking_page))) {
+    out.push('booking_page must be the Website\'s booking address, like "https://acme.com/book"');
+  }
   if (c.visits !== undefined && c.visits !== false) {
     const vs = c.visits as Partial<VisitsConfig> | null;
     if (!vs || typeof vs !== "object" || Array.isArray(vs)) out.push('visits must be false or an object, e.g. { "one": "Job", "many": "Jobs", "fields": [] }');

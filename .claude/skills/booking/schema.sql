@@ -159,3 +159,18 @@ comment on column bookings.manage_token_hash is 'Hex SHA-256 of the manage link 
 -- characters, which Google's event ids (base32hex) accept as they are.
 alter table bookings add column if not exists event_key text default replace(gen_random_uuid()::text, '-', '');
 comment on column bookings.event_key is 'Random, never changes. sync.ts derives each calendar event''s id or tag from it.';
+
+-- Reminders the job (reminders.ts) claimed, one row each: a reminder is for a
+-- booking at one start time, so a booking that moves is reminded again, and a
+-- claimed row is never sent twice. status: sent, none (no sender connected),
+-- failed (detail says why), sending (claimed by a run that died).
+create table if not exists booking_reminders (
+  booking_id bigint not null references bookings (id) on delete cascade,
+  before_min integer not null check (before_min between 1 and 10080),
+  starts_at timestamptz not null,
+  status text not null default 'sending' check (status in ('sending', 'sent', 'none', 'failed')),
+  detail text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (booking_id, before_min, starts_at)
+);

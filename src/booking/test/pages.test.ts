@@ -289,3 +289,56 @@ test("in an app's own frame, the booking pages keep their sections and the extra
     await s.drop();
   }
 });
+
+test("the team books for someone: carried details, a time, the confirmation sent; the week shows it", async (t) => {
+  const s = await scratch();
+  if (!s) return t.skip(why);
+  try {
+    const pat = await intro(s); // Pat, open all day, UTC; "Intro call" by phone
+    const sent: unknown[] = [];
+    const app = new Hono();
+    app.route("/bookings", bookingAdmin(() => s.db, {
+      base: "/bookings", css: "/crm.css", source: "crm", timeZone: "UTC", manageBase: "https://acme.example/book",
+      onBooked: (_c, e) => void sent.push(e),
+    }));
+    const who = "name=Joy%20Park&email=joy%40example.com&phone=555%20202%203030";
+    let html = await (await app.request(`/bookings/new?${who}`, { headers: team })).text();
+    assert.match(html, /Book a time for Joy Park/);
+    const typeLink = /href="(\/bookings\/new\/\d+\?[^"]+)"/.exec(html)![1].replace(/&amp;/g, "&");
+    assert.match(typeLink, /email=joy%40example\.com/, "who it is for travels with the link");
+    html = await (await app.request(typeLink, { headers: team })).text();
+    const timeLink = /href="(\/bookings\/new\/\d+\/confirm\?[^"]+)"/.exec(html)![1].replace(/&amp;/g, "&");
+    html = await (await app.request(timeLink, { headers: team })).text();
+    assert.match(html, /value="Joy Park"/);
+    assert.match(html, /value="555 202 3030"/);
+    const typeId = /action="\/bookings\/new\/(\d+)"/.exec(html)![1];
+    const start = new URL(timeLink, "http://x").searchParams.get("start")!;
+
+    // A stranger cannot; a missing phone for a phone call is refused next to the field.
+    assert.equal((await app.request(`/bookings/new/${typeId}`, form({ start, name: "X", email: "x@example.com" }))).status, 404);
+    let res = await app.request(`/bookings/new/${typeId}`, form({ start, name: "Joy Park", email: "joy@example.com" }, team));
+    assert.equal(res.status, 422);
+    assert.match(await res.text(), /Enter the number we should call/);
+    res = await app.request(`/bookings/new/${typeId}`, form({ start, name: "Joy Park", email: "joy@example.com", phone: "555 202 3030", notes: "Prefers mornings" }, team));
+    assert.equal(res.status, 303);
+    assert.match(res.headers.get("location")!, /^\/bookings\/\d+\?saved=booked$/);
+    const [b] = await s.db.sql`select source, location, answers from bookings`;
+    assert.deepEqual([b.source, b.location, b.answers], ["crm", "555 202 3030", { notes: "Prefers mornings" }]);
+    const e = sent[0] as { host: { id: string }; manageUrl: string };
+    assert.equal(e.host.id, pat.id);
+    assert.match(e.manageUrl, /^https:\/\/acme\.example\/book\/manage\/[A-Za-z0-9_-]{43}$/);
+    // The same time again is taken.
+    res = await app.request(`/bookings/new/${typeId}`, form({ start, name: "Bo", email: "bo@example.com", phone: "555 0000" }, team));
+    assert.match(await res.text(), /just taken/);
+
+    const week = start.slice(0, 10);
+    html = await (await app.request(`/bookings/schedule?week=${week}`, { headers: team })).text();
+    assert.match(html, /Intro call, Joy Park<\/a><span class="text-ink-2">, with Pat/);
+    assert.equal((html.match(/<li class="rounded-card/g) ?? []).length, 7, "seven days");
+    assert.match(html, /We will call you on 555 202 3030/);
+    const nextWeek = /href="(\/bookings\/schedule\?week=[\d-]+)">Week after/.exec(html)![1];
+    assert.doesNotMatch(await (await app.request(nextWeek, { headers: team })).text(), /Joy Park/);
+  } finally {
+    await s.drop();
+  }
+});

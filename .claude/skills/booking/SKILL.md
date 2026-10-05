@@ -1,6 +1,6 @@
 ---
 name: booking
-description: "Appointments in the project's Postgres: booking types (an estimate visit, a video call) with their hosts and where they happen, weekly hours, time off, the tested slot calculator, double-booking-safe booking, manage links, .ics invites, the editor, Google and Microsoft calendar sync. Use for any booking page, availability or calendar sync."
+description: "Appointments in the project's Postgres: booking types (an estimate visit, a video call) with their hosts and where they happen, weekly hours, time off, the tested slot calculator, double-booking-safe booking, manage links, .ics invites, reminders, the editor, Google and Microsoft calendar sync. Use for any booking page, availability or calendar sync."
 ---
 
 # Booking
@@ -14,7 +14,7 @@ the project database reads the same rows: the Website's `/book` pages
 take bookings, the CRM sets types, hosts and hours and lists the bookings
 by email.
 
-Version: 0.2.0 (taskandtool/skills)
+Version: 0.3.0 (taskandtool/skills)
 
 ## The rules
 
@@ -44,11 +44,14 @@ Version: 0.2.0 (taskandtool/skills)
   last sync is not in `busy` yet, so that time can be booked. Both
   then show in the owner's calendar. Say so if the owner asks; syncing every
   15 minutes keeps it small. Bookings never double-book each other.
-- **Confirmations go through the owner's sender only.** Task & Tool sends no
-  email for an app. `sendInvite` (`notify.ts`) sends through
-  `data/send.ts`, configured once for the project's skills by
-  `NOTIFY_FROM` and `NOTIFY_VIA` (the forms skill's "Telling the owner"). No
-  sender: send nothing, and the manage page's .ics download is the invite.
+- **Messages go through the owner's sender only.** Task & Tool sends no
+  email for an app. The words are `bookingMessage` (`notify.ts`): booked,
+  moved, cancelled, reminder, each naming what, with whom, when in the
+  booker's zone and where. Delivery is a `Send`: `emailSend(env)` is email
+  through `data/send.ts` (Resend or Postmark, set once by `NOTIFY_FROM`
+  and `NOTIFY_VIA`, the forms skill's "Telling the owner"). No sender:
+  nothing is sent and the booking stands; the manage page's .ics download
+  is the invite. Another connector is another `Send` (below).
 - **The confirm form is spam-checked** with the forms' honeypot and minimum
   fill time (`data/spam.tsx`); set `SPAM_SECRET` so the stamp is
   signed. A bot is sent back to the day's times and nothing is booked.
@@ -79,9 +82,43 @@ Version: 0.2.0 (taskandtool/skills)
 Not supported: windows that cross midnight, moving a booking to another
 host on reschedule, two hosts at once on one booking, recurring bookings,
 group bookings (one booker per slot), a meeting link made per booking (the
-type's link is shared), reminders (they need a scheduled job and the
-owner's sender), calendar push notifications (the job polls), Calendly or
-Cal.com sync.
+type's link is shared), a manage link in a reminder (only its hash is
+stored), calendar push notifications (the job polls), Calendly or Cal.com
+sync.
+
+## Messages and reminders
+
+Wire the confirmation once, where bookings are taken:
+
+```ts
+onBooked: (c, e) => afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain })),
+```
+
+It sends the booked, moved or cancelled message with the calendar invite
+(REQUEST, or CANCEL with a higher SEQUENCE) when the host has an email.
+`bookingAdmin`'s `onBooked` does the same for a booking the team makes.
+
+**Reminders** are a job on the machine (`reminders.ts`), a day and an hour
+before by default. Schedule it once (`/schedule-job`; check `list_jobs()`
+first), every 15 minutes, not visible to clients:
+
+```python
+schedule_job("Booking reminders", "*/15 * * * *", command="npx tsx src/booking/reminders.ts", client_visible=False)
+```
+
+`--before 1440,120` changes the times. Each reminder is claimed in
+`booking_reminders` before it is sent, so it goes once; a moved booking is
+reminded again; only the nearest due reminder goes; none for a booking
+made after the reminder's time. With no sender each is recorded as
+`none`, so connecting one later reminds from then on.
+
+**The last mile is the owner's connection.** Email is Resend or Postmark
+(`list_connections()`; ask with `request_connection("resend", why=…)` if
+neither is granted), then `NOTIFY_FROM` on a domain verified there. For a
+text instead, or as well, write a `Send` against the owner's Twilio
+connection through the gateway (the `connections` skill) and pass it to
+`notifyBooking` and `sendReminders`; the words and the once-only rules stay
+the same. Never send through an address of Task & Tool's.
 
 ## The calendar sync job
 
@@ -125,14 +162,15 @@ It exits 1 with the errors when something failed, so `job_runs` shows why.
 
 | File | What |
 |---|---|
-| `schema.sql` | The eight tables and their indexes |
+| `schema.sql` | The nine tables and their indexes |
 | `slots.ts` | The pure slot calculator, zone arithmetic, formatting for a viewer |
 | `book.ts` | Types and hosts, open slots from the database, `book`, `reschedule`, `cancelByToken`, `setStatus` |
 | `hours.ts` | The editor's writes: types and their hosts, people, weekly hours, time off, calendars |
 | `public.tsx` | `bookingPages`: what can be booked, host, day and time, confirm form, manage page (with the deposit's status), .ics; `onBooked`, `afterBook` |
-| `admin.tsx` | `bookingAdmin` (list, detail, status, calendars), `typeRoutes` and `peopleRoutes` (the editor) |
+| `admin.tsx` | `bookingAdmin` (list, detail, status, Schedule, Book for someone, calendars), `typeRoutes` and `peopleRoutes` (the editor) |
 | `ics.ts` | RFC 5545 invite builder |
-| `notify.ts` | `sendInvite`: the confirmation with its .ics, through `data/send.ts` |
+| `notify.ts` | The words (`bookingMessage`), `notifyBooking`, `emailSend` and the `Send` type |
+| `reminders.ts` | The reminder job (machine only) |
 | `sync.ts` | The calendar sync job (machine only) |
 | `test/` | Slots and DST, concurrency, sync with a fake gateway, ICS, the pages, spam, afterBook |
 
@@ -147,8 +185,8 @@ passing the site's own frame as `Page` (`domain` is the business's real
 domain, the host of `site.url`; it names every invite, so set it once).
 `/book` lists what can be booked and `/book/<slug>` books one; link the nav
 to `/book`. If the owner has a sender, wire `onBooked` to
-`afterResponse(c, sendInvite(envOf(c), …))` (`notify.ts`) with `invite({
-method: "REQUEST" })` (and CANCEL on cancel); otherwise leave it out. To
+`afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain }))`
+(Messages and reminders, above); otherwise leave it out. To
 take a deposit, `afterBook` returns the Checkout URL (the payments skill's
 recipe). The types, people and hours are the team's: in the CRM when the
 project has one (below), else `bookingAdmin` under the Website's private
@@ -162,13 +200,18 @@ length, a buffer for travel or set-up, notice, where it happens) and tick
 who takes it. A type no active person takes is left off `/book`.
 
 **The team's side in another app (the CRM).** Mount `bookingAdmin(getDb,
-{ base: "/bookings", css, source: "crm", Frame, extra })` on its private
-routes: the list of bookings, the types and their hosts, each person's
-hours, time off and calendars. `Frame` puts the pages in the app's own
-layout (the booking sections become links at the top); `extra` adds to a
-booking's page (the CRM's customer and "Make it a job"). It writes the
-tables the Website's `/book` reads, so a change is live on the next page
-load; nothing to sync or deploy.
+{ base: "/bookings", css, source: "crm", Frame, extra, timeZone,
+manageBase, onBooked })` on its private routes: the list of bookings, the
+Schedule (a week of bookings and time off, by person), Book for someone
+(`/new`, which takes `name`, `email`, `phone` and `address` in its link so
+a team member starting from a customer types nothing twice), the types and
+their hosts, each person's hours, time off and calendars. `Frame` puts the
+pages in the app's own layout (the booking sections become links at the
+top); `extra` adds to a booking's page (the CRM's customer and "Make it a
+job"); `timeZone` is the Schedule's; `manageBase` is the Website's `/book`
+address, so a team booking's confirmation carries a manage link; `onBooked`
+sends it. It writes the tables the Website's `/book` reads, so a change is
+live on the next page load; nothing to sync or deploy.
 
 **Connect a calendar.** The job calls the endpoint `google-calendar` (the
 `google` connection, scope `calendar.events`) or `microsoft-calendar` (the

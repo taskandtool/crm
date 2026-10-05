@@ -1,6 +1,6 @@
 ---
 name: booking
-description: "Appointments in the project's Postgres: booking types (an estimate visit, a video call) with their hosts and where they happen, weekly hours, time off, the tested slot calculator, double-booking-safe booking, manage links, .ics invites, the editor, Google and Microsoft calendar sync. Use for any booking page, availability or calendar sync."
+description: "Appointments in the project's Postgres: booking types (an estimate visit, a video call) with their hosts and where they happen, weekly hours, time off, the tested slot calculator, double-booking-safe booking, manage links, .ics invites, reminders, the editor, Google and Microsoft calendar sync. Use for any booking page, availability or calendar sync."
 ---
 
 # Booking

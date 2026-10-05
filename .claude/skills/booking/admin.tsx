@@ -22,14 +22,14 @@ import { AdminLayout, type NavItem } from "../admin/layout";
 import { DataTable, SearchBar, TableRow, TableRows, When, type TableSpec } from "../admin/list";
 import { idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
 import { buttonClass, controlClass, pickStatus, StatusBadge, StatusForm, type StatusOption } from "../admin/status";
-import { hostsOf, LOCATION_KINDS, resourceById, setStatus, toBooking, typeById, type Booking, type BookingType, type Resource } from "./book";
+import { book, bookableTypes, hostsOf, LOCATION_KINDS, resourceById, setStatus, toBooking, typeById, whereText, type Booking, type BookingType, type Resource } from "./book";
 import {
   addCalendar, addTimeOff, addWindow, allPeople, allTypes, calendars, createPerson, createType, LOCATION_LABELS, removeCalendar,
   removeTimeOff, removeWindow, savePerson, saveType, setHosts, timeOffList, typesHostedBy, weeklyHours, WEEKDAYS,
   type Errors, type PersonFields, type TypeFields,
 } from "./hours";
-import { whereText } from "./public";
-import { formatSlot, localDate } from "./slots";
+import { addDays, dayBounds, formatDate, formatSlot, formatTime, localDate, weekdayOf } from "./slots";
+import { chip, DayPicker, upcoming } from "./public";
 
 export type BookingAdminOptions = {
   base: string;
@@ -43,11 +43,24 @@ export type BookingAdminOptions = {
    * AdminLayout. The booking sections then show as links at the top of the page.
    */
   Frame?: Frame;
+  /** The zone the Schedule shows; the first person's when absent. */
+  timeZone?: string;
+  /**
+   * The public booking pages' address, absolute ("https://acme.com/book"), so
+   * a booking the team makes gets a manage link the booker can use. Without
+   * it the confirmation says to reply instead.
+   */
+  manageBase?: string;
+  /** After the team books for someone: send the confirmation here (notify.ts). Never throws into the response. */
+  onBooked?: (c: Context<{ Variables: TeamVars }>, e: TeamBooked) => void | Promise<void>;
   /** More on a booking's page, beside its status: the CRM's customer and "Make it a job". */
   extra?: (c: Context<{ Variables: TeamVars }>, b: Booking) => Child | Promise<Child>;
 };
 
 export type Frame = (p: { title: string; user: string; children: Child }) => Child;
+
+/** A booking the team made for someone, for onBooked. */
+export type TeamBooked = { event: "booked"; booking: Booking; type: BookingType; host: Resource; manageUrl: string | null };
 
 /** The page: in the app's own frame with the booking sections on top, or AdminLayout with them as its nav. */
 function framed(c: Context<{ Variables: TeamVars }>, opts: BookingAdminOptions, links: NavItem[], current: string, title: string, body: Child, status = 200) {
@@ -85,6 +98,7 @@ const MESSAGES: FlashMessages = {
   calendar: "Calendar saved. The next sync, within 15 minutes, reads it.",
   created: "Added. Now set the weekly hours.",
   "type-created": "Added. Now choose who takes it.",
+  booked: "Booked.",
 };
 
 type Row = Keyed & {
@@ -139,6 +153,7 @@ export function bookingsPage(db: Db, f: Filter, after: Cursor | null, size: numb
 function nav(base: string, extra?: NavItem[]): NavItem[] {
   return extra ?? [
     { href: base, label: "Bookings" },
+    { href: `${base}/schedule`, label: "Schedule" },
     { href: `${base}/types`, label: "What can be booked" },
     { href: `${base}/people`, label: "People and hours" },
     { href: `${base}/calendars`, label: "Calendars" },
@@ -194,6 +209,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     return framed(c, opts, links, base, "Bookings", (
       <>
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
+        <p class="mb-3"><a href={`${base}/new`} class={buttonClass + " no-underline"}>Book for someone</a></p>
         <SearchBar action={base} target="#results" q={f.q} placeholder="Name or email" filters={[
           { name: "when", label: "When", options: [{ value: "past", label: "Past" }], value: params.when, any: "Upcoming" },
           { name: "type", label: "What", options: types.map((t) => ({ value: t.id, label: t.name })), value: f.type, any: "Anything" },
@@ -203,6 +219,227 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
         {results}
       </>
     ));
+  });
+
+  // ---- the week, and booking for someone ------------------------------------------
+
+  const zoneOf = async (c: Context<{ Variables: TeamVars }>) => opts.timeZone ?? (await allPeople(getDb(c)))[0]?.time_zone ?? "UTC";
+
+  app.get("/schedule", async (c) => {
+    const d = getDb(c);
+    const zone = await zoneOf(c);
+    const people = await allPeople(d);
+    const person = idParam(c.req.query("person"));
+    const asked = c.req.query("week") ?? "";
+    const today = localDate(new Date(), zone);
+    const anchor = /^\d{4}-\d{2}-\d{2}$/.test(asked) ? asked : today;
+    const monday = addDays(anchor, -((weekdayOf(anchor) + 6) % 7));
+    const days = [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(monday, i));
+    const from = dayBounds(days[0], zone).start.toISOString();
+    const to = dayBounds(days[6], zone).end.toISOString();
+    const rows = await d.sql<{ id: string; starts_at: Date; ends_at: Date; name: string; status: string; type_name: string; host: string; location_kind: Booking["location_kind"]; location: string | null }>`
+      select b.id::text as id, b.starts_at, b.ends_at, b.name, b.status, t.name as type_name, r.name as host, b.location_kind, b.location
+      from bookings b join booking_types t on t.id = b.type_id join resources r on r.id = b.resource_id
+      where b.status <> 'cancelled' and b.starts_at < ${to}::timestamptz and b.ends_at > ${from}::timestamptz
+        and (${person}::bigint is null or b.resource_id = ${person}::bigint)
+      order by b.starts_at, b.id`;
+    const off = await d.sql<{ name: string; starts_at: Date; ends_at: Date; note: string | null }>`
+      select r.name, t.starts_at, t.ends_at, t.note from time_off t join resources r on r.id = t.resource_id
+      where t.starts_at < ${to}::timestamptz and t.ends_at > ${from}::timestamptz
+        and (${person}::bigint is null or t.resource_id = ${person}::bigint)
+      order by t.starts_at`;
+    const self = (week: string) => listUrl(`${base}/schedule`, { week, person });
+    const time = (t: Date) => formatTime(new Date(t), zone);
+    return framed(c, opts, links, `${base}/schedule`, "Schedule", (
+      <>
+        <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <form method="get" action={`${base}/schedule`} class="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="week" value={monday} />
+            <label class={fieldClass}>Whose
+              <select name="person" class={controlClass}>
+                <option value="">Everyone</option>
+                {people.map((p) => <option value={p.id} selected={p.id === person}>{p.name}</option>)}
+              </select>
+            </label>
+            <button class={buttonClass}>Show</button>
+          </form>
+          <p class="flex flex-wrap items-center gap-3 text-label">
+            <a href={self(addDays(monday, -7))}>Week before</a>
+            {monday !== addDays(today, -((weekdayOf(today) + 6) % 7)) ? <a href={self(today)}>This week</a> : null}
+            <a href={self(addDays(monday, 7))}>Week after</a>
+            <a href={`${base}/new`} class={buttonClass + " no-underline"}>Book for someone</a>
+          </p>
+        </div>
+        <p class="mb-3 text-label text-ink-3">Times are in {zone.replace(/_/g, " ")}.</p>
+        <ol class="flex flex-col gap-3">
+          {days.map((day) => {
+            const b = dayBounds(day, zone);
+            const mine = rows.filter((r) => new Date(r.starts_at) < b.end && new Date(r.ends_at) > b.start);
+            const away = off.filter((t) => new Date(t.starts_at) < b.end && new Date(t.ends_at) > b.start);
+            return (
+              <li class="rounded-card border border-line bg-surface p-3">
+                <h2 class={"mb-2 text-label font-semibold " + (day === today ? "text-ink" : "text-ink-2")}>{formatDate(day)}{day === today ? ", today" : ""}</h2>
+                {mine.length || away.length ? (
+                  <ul class="flex flex-col gap-2">
+                    {away.map((t) => {
+                      // Off all day, or from and to the times that fall on this day.
+                      const s0 = new Date(t.starts_at), e0 = new Date(t.ends_at);
+                      const allDay = s0 <= b.start && e0 >= b.end;
+                      const span = allDay ? "all day" : `${s0 > b.start ? time(s0) : "until"}${s0 > b.start ? " to " : " "}${e0 < b.end ? time(e0) : "the end of the day"}`;
+                      return <li class="text-label text-ink-2">{t.name} is off, {span}{t.note ? ` (${t.note})` : ""}</li>;
+                    })}
+                    {mine.map((r) => (
+                      <li class="flex flex-wrap gap-x-3">
+                        <span class="w-40 shrink-0 whitespace-nowrap text-ink-2">{time(r.starts_at)} to {time(r.ends_at)}</span>
+                        <span class="min-w-0">
+                          <a href={`${base}/${r.id}`}>{r.type_name}, {r.name}</a>
+                          <span class="text-ink-2">, with {r.host}</span>
+                          <span class="block break-words text-label text-ink-3">{whereText(r, { link: true })}{r.status !== "confirmed" ? `. ${BOOKING_STATUSES.find((x) => x.value === r.status)?.label ?? r.status}` : ""}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p class="text-label text-ink-3">Nothing booked.</p>}
+              </li>
+            );
+          })}
+        </ol>
+      </>
+    ));
+  });
+
+  // Who it is for travels with every link of the flow, so a team member who
+  // starts from someone's page (the CRM's customer) never types them again.
+  const forWhom = (c: Context<{ Variables: TeamVars }>, body?: Record<string, unknown>) => {
+    const read = (k: string) => (body ? str(body[k]) : c.req.query(k) ?? "").slice(0, k === "address" || k === "notes" ? 2000 : 200);
+    return { name: read("name"), email: read("email"), phone: read("phone"), address: read("address") };
+  };
+  const carry = (w: Record<string, string>, extra: Record<string, string | null | undefined> = {}) => ({ ...w, ...extra });
+
+  app.get("/new", async (c) => {
+    const w = forWhom(c);
+    const types = await bookableTypes(getDb(c));
+    return framed(c, opts, links, base, w.name ? `Book a time for ${w.name}` : "Book for someone", (
+      <>
+        <p class="mb-4 text-label"><a href={base}>All bookings</a></p>
+        {types.length ? (
+          <ul class="flex flex-col gap-2">
+            {types.map((t) => (
+              <li class="rounded-card border border-line bg-surface p-3">
+                <a href={listUrl(`${base}/new/${t.id}`, carry(w))} class="font-semibold">{t.name}</a>{" "}
+                <span class="text-label text-ink-3">{t.duration_min} minutes, {LOCATION_LABELS[t.location_kind].toLowerCase()}</span>
+              </li>
+            ))}
+          </ul>
+        ) : <p class="text-ink-2">Nothing can be booked yet: add what people book and who takes it under What can be booked.</p>}
+      </>
+    ));
+  });
+
+  async function pickTime(c: Context<{ Variables: TeamVars }>, t: BookingType) {
+    const d = getDb(c);
+    const w = forWhom(c);
+    const hosts = await hostsOf(d, t.id);
+    const host = hosts.find((h) => h.id === c.req.query("host")) ?? null;
+    const zone = opts.timeZone ?? host?.time_zone ?? hosts[0]?.time_zone ?? "UTC";
+    const days = await upcoming(d, t, zone, 60, host ? { hosts: [host.id] } : {});
+    const keys = [...days.keys()];
+    const chosen = keys.includes(c.req.query("date") ?? "") ? c.req.query("date")! : keys[0];
+    const here = (extra: Record<string, string | null | undefined>) => listUrl(`${base}/new/${t.id}`, carry(w, { host: host?.id, ...extra }));
+    return framed(c, opts, links, base, `${t.name}${w.name ? ` for ${w.name}` : ""}`, (
+      <>
+        <p class="mb-4 text-label"><a href={listUrl(`${base}/new`, w)}>Something else</a></p>
+        {hosts.length > 1 ? (
+          <nav aria-label="With" class="mb-4 flex flex-wrap items-center gap-2 text-label">
+            <span class="text-ink-2">With</span>
+            <a href={listUrl(`${base}/new/${t.id}`, w)} aria-current={host ? undefined : "true"} class={chip + (host ? "" : " border-accent font-semibold")}>Anyone free</a>
+            {hosts.map((h) => (
+              <a href={listUrl(`${base}/new/${t.id}`, carry(w, { host: h.id }))} aria-current={host?.id === h.id ? "true" : undefined} class={chip + (host?.id === h.id ? " border-accent font-semibold" : "")}>{h.name}</a>
+            ))}
+          </nav>
+        ) : null}
+        <p class="mb-3 text-label text-ink-3">Times are in {zone.replace(/_/g, " ")}.</p>
+        {keys.length ? (
+          <>
+            <DayPicker days={keys} chosen={chosen} href={(day) => here({ date: day })} />
+            <ul class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {(days.get(chosen) ?? []).map((slot) => (
+                <li><a class={chip + " w-full"} href={listUrl(`${base}/new/${t.id}/confirm`, carry(w, { host: host?.id, start: slot.start.toISOString() }))}>{formatTime(slot.start, zone)}</a></li>
+              ))}
+            </ul>
+          </>
+        ) : <p class="text-ink-2">No open times{host ? ` with ${host.name}` : ""} in the next weeks.</p>}
+      </>
+    ));
+  }
+
+  async function confirmTeam(c: Context<{ Variables: TeamVars }>, t: BookingType, values: Record<string, string>, errors: Errors = {}, notice?: string) {
+    const hosts = await hostsOf(getDb(c), t.id);
+    const host = hosts.find((h) => h.id === values.host) ?? null;
+    const zone = opts.timeZone ?? host?.time_zone ?? hosts[0]?.time_zone ?? "UTC";
+    const start = new Date(values.start);
+    if (Number.isNaN(start.getTime())) return c.redirect(listUrl(`${base}/new/${t.id}`, forWhom(c)), 303);
+    const end = new Date(start.getTime() + t.duration_min * 60_000);
+    return framed(c, opts, links, base, `Confirm: ${t.name}`, (
+      <>
+        <p class="mb-1">{t.name}{host ? `, with ${host.name}` : ", with whoever is free"}.</p>
+        <p class="mb-4">{formatSlot({ start, end }, zone)}.</p>
+        {notice ? <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">{notice}</p> : null}
+        <form method="post" action={`${base}/new/${t.id}`} class="grid gap-3 sm:grid-cols-2">
+          <input type="hidden" name="start" value={start.toISOString()} />
+          {host ? <input type="hidden" name="host" value={host.id} /> : null}
+          <Input label="Name" name="name" value={values.name} errors={errors} required />
+          <Input label="Email" name="email" type="email" value={values.email} errors={errors} required hint="The confirmation goes here." />
+          <Input label={t.location_kind === "phone" ? "Phone, for the call" : "Phone"} name="phone" type="tel" value={values.phone} errors={errors} required={t.location_kind === "phone"} />
+          {t.location_kind === "their_place" ? <Input label="Address" name="address" value={values.address} errors={errors} required class="sm:col-span-2" /> : null}
+          <label class={fieldClass + " sm:col-span-2"}>Notes
+            <textarea name="notes" rows={2} maxlength={2000} class={controlClass}>{values.notes ?? ""}</textarea>
+          </label>
+          <div class="sm:col-span-2"><button class={buttonClass}>Book it</button></div>
+        </form>
+      </>
+    ), Object.keys(errors).length || notice ? 422 : 200);
+  }
+
+  const loadType = async (c: Context<{ Variables: TeamVars }>) => {
+    const id = idParam(c.req.param("type"));
+    const t = id ? await typeById(getDb(c), id) : null;
+    return t?.active ? t : null;
+  };
+
+  app.get("/new/:type", async (c) => {
+    const t = await loadType(c);
+    return t ? pickTime(c, t) : c.notFound();
+  });
+
+  app.get("/new/:type/confirm", async (c) => {
+    const t = await loadType(c);
+    if (!t) return c.notFound();
+    return confirmTeam(c, t, { ...forWhom(c), host: c.req.query("host") ?? "", start: c.req.query("start") ?? "", notes: "" });
+  });
+
+  app.post("/new/:type", async (c) => {
+    const t = await loadType(c);
+    if (!t) return c.notFound();
+    const body = await c.req.parseBody();
+    const values = { ...forWhom(c, body), host: str(body.host), start: str(body.start), notes: str(body.notes).slice(0, 2000) };
+    const notes = values.notes.trim();
+    const r = await book(getDb(c), {
+      typeId: t.id, hostId: values.host || null, start: new Date(values.start), name: values.name, email: values.email,
+      phone: values.phone || null, address: values.address || null, answers: notes ? { notes } : {}, source: opts.source,
+    });
+    if (!r.ok && r.reason === "invalid") return confirmTeam(c, t, values, r.errors);
+    if (!r.ok) return confirmTeam(c, t, values, {}, "That time was just taken. Go back and pick another.");
+    const host = await resourceById(getDb(c), r.booking.resource_id);
+    if (host && opts.onBooked) {
+      const manageUrl = opts.manageBase ? `${opts.manageBase.replace(/\/+$/, "")}/manage/${r.token}` : null;
+      try {
+        await opts.onBooked(c, { event: "booked", booking: r.booking, type: t, host, manageUrl });
+      } catch (err) {
+        console.error("booking: onBooked failed:", err);
+      }
+    }
+    return c.redirect(withFlash(`${base}/${r.booking.id}`, "booked"), 303);
   });
 
   app.get("/calendars", async (c) => {

@@ -35,6 +35,9 @@ import { Layout, WaitingView } from "./views/layout";
 import { Pipeline, PipelinePage, PER_COLUMN, type PipelineData } from "./views/pipeline";
 import { StagesPage } from "./views/stages";
 import { bookingAdmin } from "./booking/admin";
+import { emailSend, notifyBooking } from "./booking/notify";
+import { envOf } from "./data/env";
+import { afterResponse } from "./data/send";
 import { Section } from "./admin/detail";
 import type { Db } from "./data/db";
 import { buttonClass } from "./views/ui";
@@ -409,6 +412,11 @@ if (showBooking) {
       base: "/bookings",
       css: "/crm.css",
       source: "crm",
+      timeZone: cfg.time_zone,
+      manageBase: cfg.booking_page,
+      // The confirmation of a booking the team made, through the owner's sender (none: nothing is sent).
+      onBooked: (c, e) =>
+        afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain: new URL(cfg.booking_page ?? c.req.url).host })),
       Frame: ({ title, user, children }) => (
         <Layout title={title} user={user} section="bookings">
           {children}

@@ -310,6 +310,18 @@ test("bookings in the CRM: its own frame, a type and a person, Make it a job fro
   assert.doesNotMatch(await (await get("/visits")).text(), /Lee Wong, with Rae/, "made into a job, it leaves the list");
   assert.match(await (await get(`/bookings/${b.id}`)).text(), /The visit<\/a>/);
   assert.equal((await post(`/bookings/999999/job`, {})).status, 404);
+
+  // From the customer's page, Book a time carries who they are into Book for someone.
+  const lee = (await db.sql<{ id: string }>`select id::text as id from customers where email = 'lee@example.com'`)[0].id;
+  html = await (await get(`/customers/${lee}`)).text();
+  const bookLink = /href="(\/bookings\/new\?[^"]+)">Book a time</.exec(html)![1].replace(/&amp;/g, "&");
+  assert.match(bookLink, /name=Lee\+Wong&email=lee%40example\.com/);
+  html = await (await get(bookLink)).text();
+  assert.match(html, /<h1[^>]*>Book a time for Lee Wong<\/h1>/);
+  assert.match(html, /Estimate visit/);
+  html = await (await get("/bookings/schedule")).text();
+  assert.match(html, /<a href="\/bookings" aria-current="page"[^>]*>Bookings<\/a>/, "inside the CRM's frame");
+  assert.match(html, /Times are in UTC\./, "the CRM's zone");
 });
 
 // Review regressions.

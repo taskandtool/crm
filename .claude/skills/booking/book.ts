@@ -79,6 +79,20 @@ export type Booking = {
   updated_at: Date;
 };
 
+/** One line for where it happens, for the booker. A meeting link is shown only to the person who booked. */
+export function whereText(b: Pick<Booking, "location_kind" | "location">, opts: { link?: boolean } = {}): string {
+  switch (b.location_kind) {
+    case "their_place":
+      return b.location ? `At ${b.location}` : "At your address";
+    case "our_place":
+      return b.location ? `At ${b.location}` : "At our place";
+    case "phone":
+      return b.location ? `We will call you on ${b.location}` : "By phone";
+    case "video":
+      return opts.link && b.location ? `Video call: ${b.location}` : "Video call";
+  }
+}
+
 /** An open slot and the hosts who are free to take it. */
 export type OpenSlot = Slot & { members: string[] };
 

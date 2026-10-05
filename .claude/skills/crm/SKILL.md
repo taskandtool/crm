@@ -70,6 +70,8 @@ Everything a business wants changed is one of these.
      them off (the counselor). See "Jobs and visits" below.
    - `booking`: `false` leaves out the team's side of booking (the
      dentist whose practice software books, the counselor). On otherwise.
+   - `booking_page`: the Website's booking address (`https://acme.com/book`),
+     once it has one, so a booking the team makes mails a manage link there.
    - `business`: one line about the business. It ships as `to fill`;
      writing the real line retires the "Shape the CRM" suggestion.
 
@@ -148,6 +150,22 @@ next load.
 Set it up by asking what people book, how long it takes, where it
 happens and who does it; add the people first, then the types, and tick
 who takes each. A type nobody takes stays off `/book`.
+
+The Schedule is the week by person; Book for someone (and "Book a time"
+on a customer's page, which carries their details) books a caller in.
+
+**Messages.** A booking the team makes sends its confirmation, and the
+reminder job reminds every booker a day and an hour before, through the
+owner's email sender: Resend or Postmark granted to this app (ask with
+`request_connection("resend", why="send booking confirmations and
+reminders")` if `list_connections()` has neither), `NOTIFY_FROM` set to an
+address on a domain verified there, and `NOTIFY_VIA` when the connection's
+slug is not the vendor's name. With none, nothing is sent and the bookings
+stand. Schedule the reminders once (`/schedule-job`, after `list_jobs()`):
+`schedule_job("Booking reminders", "*/15 * * * *", command="npx tsx
+src/booking/reminders.ts", client_visible=False)`. A text message instead
+is a `Send` written against the owner's Twilio connection (the `booking`
+skill's "Messages and reminders"). Never send through Task & Tool.
 
 A booking is a time on someone's calendar; a job is the record of the
 work. "Make it a job" (on the booking, on the customer's page, or in the
@@ -299,8 +317,9 @@ record, and say so when shaping one.
 `reports`) come with this app as skills: when the owner asks for a report
 or an invoice here, copy from them rather than writing it fresh, with the
 `data` files they import. `npm run check` allows Node built-ins only in
-`src/server.ts`, `src/db/` and `src/booking/sync.ts`, so a skill's other
-machine-only file (`print.ts`) stays out of `src/`. A report
+`src/server.ts`, `src/db/`, `src/booking/sync.ts` and
+`src/booking/reminders.ts`, so a skill's other machine-only file
+(`print.ts`) stays out of `src/`. A report
 here takes the handle as `c.get("db")` and the CRM's own `Layout`
 (`src/views/layout.tsx`) as its frame, given a `head` slot for
 `ChartScripts` and a nav link; `customer_visits` is the table for "jobs
