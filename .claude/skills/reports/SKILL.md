@@ -177,12 +177,15 @@ A new chart over another table: add its entry to `SOURCES`, then
 1. Hold the `google` connection; note the client's Search Console property
    and GA4 property id in the app's settings.
 2. `scripts/seo-report.tsx`: `fetchSeo(googleCall(process.env), { siteUrl,
-   ga4Property, period: lastFull("week", 1, zone, { lag: 3 }) })`, then
-   `saveSnapshot(db, "seo", data)`, render `<ReportDocument><SeoReport data
-   notes /></ReportDocument>`, `printToPdf` to `out/seo-<to>.pdf`, and print
-   the path.
+   ga4Property, period: lastFull("week", 1, zone, { lag: 3 }) })`, render
+   `<ReportDocument><SeoReport data notes /></ReportDocument>`, `printToPdf`
+   to `out/seo-<to>.pdf`, and print the path. Where the app has a database
+   (the Website, the CRM), also `saveSnapshot(db, "seo", data)` for step 4.
+   The deliverable needs none: Marketing makes this report with no
+   database at all.
 3. Schedule it as a prompt job on a weekday from Thursday, when last week is
    final: the job runs the script, writes two or three sentences of notes
    from the figures (what moved, and the likely reason), re-renders with
    them, and makes the deliverable. Notes need judgment; the numbers do not.
-4. `/reports/seo` renders `loadSnapshot(db, "seo")` for the team in between.
+4. With a database, `/reports/seo` renders `loadSnapshot(db, "seo")` for
+   the team in between.
