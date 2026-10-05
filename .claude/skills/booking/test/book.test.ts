@@ -49,6 +49,32 @@ test("two people booking the same slot at once: exactly one gets it", (t) =>
     assert.equal(n, 1);
   }));
 
+test("moves and a new booking racing for one slot: exactly one gets it", (t) =>
+  withDb(t, async (s) => {
+    const r = await person(s, "Pat");
+    const held = await Promise.all(["10", "12", "14"].map((h, i) => book(s.db, { ...who, email: `h${i}@example.com`, resourceId: r.id, start: T(`2026-03-09T${h}:00:00Z`) })));
+    const tokens = held.map((x) => (x.ok ? x.token : assert.fail("setup booking failed")));
+    const target = T("2026-03-09T16:00:00Z");
+    const tries = await Promise.all([
+      ...tokens.map((tok) => reschedule(s.db, tok, target, NOW)),
+      book(s.db, { ...who, email: "new@example.com", resourceId: r.id, start: target }),
+    ]);
+    assert.equal(tries.filter((x) => x.ok).length, 1);
+    assert.deepEqual(tries.filter((x) => !x.ok).map((x) => !x.ok && x.reason), ["taken", "taken", "taken"]);
+    const [{ n }] = await s.db.sql`select count(*)::int as n from bookings where status = 'confirmed' and starts_at = ${target.toISOString()}::timestamptz`;
+    assert.equal(n, 1);
+  }));
+
+test("a booking that has started can no longer be cancelled by its link", (t) =>
+  withDb(t, async (s) => {
+    const r = await person(s, "Pat");
+    const b = await book(s.db, { ...who, resourceId: r.id, start: T("2026-03-09T10:00:00Z") });
+    assert.ok(b.ok);
+    const late = await cancelByToken(s.db, b.token, T("2026-03-09T10:05:00Z"));
+    assert.equal(!late.ok && late.reason, "closed");
+    assert.equal((await bookingByToken(s.db, b.token))!.status, "confirmed");
+  }));
+
 test("the lock is taken before the check: a booking committed while waiting is seen", (t) =>
   withDb(t, async (s) => {
     const r = await person(s, "Pat");
