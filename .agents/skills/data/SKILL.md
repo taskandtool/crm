@@ -1,6 +1,6 @@
 ---
 name: data
-description: "The project's database: one set of tables every app in the project uses (email as the key, additive schema files), and the Db handle for dev and production, settings, connection calls, email and spam checks. Use before creating or changing a table, or copying another skill. Not for getting a database (the platform's `database` skill)."
+description: "The project's one database, shared by every app: table rules (email links people, schema files only add), the Db handle, settings, connection calls, email and spam checks. Use before creating or changing a table, or copying another skill's code. Not for getting a database (the `database` skill)."
 ---
 
 # Data

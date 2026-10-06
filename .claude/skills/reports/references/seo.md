@@ -4,7 +4,7 @@
 
 Through the `google` connection: endpoints `google-gsc` and `google-ga4` on
 the gateway (`googleCall` in `seo.ts`). If the app does not hold it, ask with
-`request_connection("google", why=…, auth="oauth")`; the owner also needs
+`python3 ~/tools/taskandtool.py request-connection google --why "…"`; the owner also needs
 the Search Console and Analytics Data APIs enabled on their Google Cloud
 project.
 
@@ -24,7 +24,7 @@ project.
 - **The gateway answers only dev.** A report served in production cannot
   reach Google: a job on the machine fetches and
   `saveSnapshot`s, and the page renders `loadSnapshot`. The snapshot table
-  is made once by `createSnapshotTable(db)` in the app's setup script.
+  is this skill's `schema.sql`, applied at setup.
 
 ## The weekly SEO report for a client
 

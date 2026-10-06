@@ -1,6 +1,6 @@
 ---
 name: booking
-description: "Appointments in the project's Postgres: booking types with their hosts, hours and time off, the tested slot calculator, double-booking-safe booking, a time and its price inside a form, manage links, invites, reminders, calendar sync. Use for a booking page, availability, hours or calendars. Not for the form around a booking (forms)."
+description: "Appointments: booking types with hosts, hours and time off, tested slots, double-booking-safe booking, a time and its price inside a form, manage links, invites, reminders, calendar sync. Use for a booking page, availability, hours, appointments or calendars. Not for the form around a booking (forms)."
 ---
 
 # Booking

@@ -1,29 +1,82 @@
-// Every script answers --help (exit 0) and refuses a command it does not
-// have (exit 2, with a Try: line), before it opens any database.
+// Every script answers --help and -h (exit 0), and refuses a command, a flag
+// or an argument it does not take (exit 2, nothing on stdout, a Try: line on
+// stderr), before it opens any database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 
-const scripts = readdirSync("scripts").filter((f) => f.endsWith(".mjs") && !["check.mjs", "dev.mjs", "vendor.mjs"].includes(f));
-const run = (script: string, args: string[]) =>
-  spawnSync("node", [`scripts/${script}`, ...args], { encoding: "utf8", env: { ...process.env, DATABASE_URL: "" }, timeout: 60_000 });
+const scripts = readdirSync("scripts").filter((f) => f.endsWith(".mjs") && !["check.mjs", "dev.mjs", "vendor.mjs", "run.mjs"].includes(f));
+const run = (script: string, args: string[], env: Record<string, string> = {}) =>
+  spawnSync("node", [`scripts/${script}`, ...args], { encoding: "utf8", env: { ...process.env, DATABASE_URL: "", ...env }, timeout: 60_000 });
+
+/** A refusal: the exit code, nothing on stdout, and a Try: line on stderr. */
+function refused(r: ReturnType<typeof run>, status: number, what: string) {
+  assert.equal(r.status, status, `${what}: ${r.stderr}`);
+  assert.equal(r.stdout, "", `${what} prints nothing on stdout`);
+  assert.match(r.stderr, /\n {2}Try: \S/, `${what} says what to try`);
+  assert.doesNotMatch(r.stderr, /\n\s+at /, `${what}: no stack trace`);
+}
 
 for (const script of scripts) {
-  test(`${script} --help prints its usage and exits 0`, () => {
-    const r = run(script, ["--help"]);
-    assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, new RegExp(script.replace(".mjs", "")));
-  });
+  for (const h of ["--help", "-h"]) {
+    test(`${script} ${h} prints its usage and exits 0`, () => {
+      const r = run(script, [h]);
+      assert.equal(r.status, 0, r.stderr);
+      assert.match(r.stdout, new RegExp(script.replace(".mjs", "")));
+    });
+  }
 }
 
-for (const script of ["customers.mjs", "visits.mjs", "stages.mjs", "forms.mjs", "quotes.mjs", "invoices.mjs"]) {
-  test(`${script} refuses a command it does not have`, () => {
-    const r = run(script, ["nope"]);
-    assert.equal(r.status, 2);
-    assert.match(r.stderr, /Try: node scripts\//);
-  });
+const READ: Record<string, string[]> = {
+  "customers.mjs": ["list"], "visits.mjs": ["list"], "stages.mjs": ["list"], "inbox.mjs": ["list"], "forms.mjs": ["list"],
+  "quotes.mjs": ["list"], "invoices.mjs": ["list"], "import.mjs": ["file.csv"], "export.mjs": [], "migrate.mjs": [],
+};
+test("every script is in the bad-input table", () => assert.deepEqual(Object.keys(READ).sort(), [...scripts].sort()));
+
+for (const [script, args] of Object.entries(READ)) {
+  test(`${script} refuses an unknown flag`, () => refused(run(script, [...args, "--bogus"]), 2, `${script} --bogus`));
+  if (args.length && script !== "import.mjs") {
+    test(`${script} refuses a command it does not have`, () => refused(run(script, ["nope"]), 2, `${script} nope`));
+  }
 }
+
+test("a typo in a flag is refused, never a silent success", () => {
+  const r = run("customers.mjs", ["add", "Ann", "--emial", "ann@example.com"]);
+  refused(r, 2, "customers add --emial");
+  assert.match(r.stderr, /customers add: unknown flag --emial; valid: .*--email/);
+});
+
+test("stray arguments and malformed ones are misuse", () => {
+  refused(run("export.mjs", ["customers.csv"]), 2, "export with a stray argument");
+  refused(run("migrate.mjs", ["now"]), 2, "migrate with a stray argument");
+  refused(run("customers.mjs", ["list", "extra"]), 2, "customers list extra");
+  refused(run("inbox.mjs", ["add", "foo", "1"]), 2, "inbox add foo 1");
+  refused(run("inbox.mjs", ["done"]), 2, "inbox done with no id");
+  refused(run("import.mjs", []), 2, "import with no file");
+});
+
+test("import of a file that is not there is refused, before the database", () => {
+  const r = run("import.mjs", ["no-such-file.csv", "--dry-run"]);
+  refused(r, 1, "import of a missing file");
+  assert.match(r.stderr, /^import: cannot read .*no-such-file\.csv: ENOENT/);
+  const before = run("import.mjs", ["--dry-run", "no-such-file.csv"]);
+  assert.match(before.stderr, /^import: cannot read .*no-such-file\.csv/, "--dry-run takes no value, so the file before it is still the file");
+});
+
+test("no database is exit 1 with the ask for one", () => {
+  const r = run("customers.mjs", ["list"], { DATABASE_URL: "" });
+  if (!r.stderr.includes("DATABASE_URL is not set")) return; // a machine with /home/sprite/.env has one
+  refused(r, 1, "no DATABASE_URL");
+  assert.match(r.stderr, /^customers list: the project has no database yet/);
+  assert.match(r.stderr, /Try: python3 ~\/tools\/taskandtool\.py request-capability postgres/);
+});
+
+test("a database that does not answer is exit 1, not a stack trace", () => {
+  const r = run("stages.mjs", ["list"], { DATABASE_URL: "postgres://nobody@127.0.0.1:1/none" });
+  refused(r, 1, "an unreachable database");
+  assert.match(r.stderr, /^stages list: cannot reach the database \(ECONNREFUSED\)/);
+});
 
 // forms.mjs against a throwaway database: save a form from JSON (refusing a
 // bad one with the reason), list it, read it back, list its submissions.
@@ -50,15 +103,15 @@ test("forms.mjs saves, lists and shows a form, and refuses a broken one", { skip
     ] }));
     let r = forms("save", "order", "--file", join(dir, "order.json"));
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^forms save: made form order, 3 fields, 2 steps\nNext: /);
+    assert.match(r.stdout, /^forms save: made form order, 3 fields, 2 steps\n\nNext: /);
     r = forms("save", "order", "--file", join(dir, "order.json"));
-    assert.match(r.stdout, /^forms save: changed form order/, "saving again changes, never duplicates");
+    assert.match(r.stdout, /^forms save: unchanged form order/, "saving the same file again changes nothing");
     r = forms("list");
     assert.match(r.stdout, /order  Cookie order  2 steps \(payment\)  0 in/);
     r = forms("show", "order");
     assert.equal(JSON.parse(r.stdout).fields[1].items[0].price_cents, 3600);
     r = forms("submissions", "--form", "order");
-    assert.equal(r.stdout.trim(), "nothing has come in");
+    assert.equal(r.stdout.trim(), "forms submissions: nothing has come in on order");
     r = forms("submissions", "--form", "ordr");
     assert.equal(r.status, 1, "a form that is not there is wrong input, not an empty list");
     assert.match(r.stderr, /no form ordr\n  Try: node scripts\/forms\.mjs list/);
@@ -112,30 +165,30 @@ test("invoices.mjs bill and migrate.mjs, against a scratch database", { skip: !p
     const job = visit("ann@example.com", "Boiler service", "245.00");
     r = sh("invoices.mjs", "bill", "ann@example.com");
     assert.equal(r.status, 0, r.stderr + " (a $0 visit is not a second candidate)");
-    assert.match(r.stdout, /^drafted invoice #\d+ to Ann Lee <ann@example\.com>: Boiler service, \$245\.00/);
-    assert.match(r.stdout, new RegExp(`If the owner asked for it: node scripts/invoices\\.mjs bill ann@example\\.com --job ${job} --confirm; otherwise show them this and wait`));
+    assert.match(r.stdout, /^invoices bill: drafted invoice #\d+ to Ann Lee <ann@example\.com>: Boiler service, \$245\.00/);
+    assert.match(r.stdout, new RegExp(`If the owner asked for it: node scripts/invoices\\.mjs bill ann@example\\.com --job ${job} --confirm$`, "m"));
     r = sh("invoices.mjs", "bill", "ann@example.com");
-    assert.match(r.stdout, /^took the draft invoice #\d+/, "a second call takes the same draft");
+    assert.match(r.stdout, /^invoices bill: took the draft invoice #\d+/, "a second call takes the same draft");
     assert.equal(JSON.parse(sh("invoices.mjs", "list", "--customer", "ann@example.com", "--json").stdout).length, 1);
 
     r = sh("invoices.mjs", "bill", "ann@example.com", "--confirm");
     assert.equal(r.status, 1, "no Stripe here");
-    assert.match(r.stderr, /Try: request_connection\("stripe"/);
+    assert.match(r.stderr, /Try: python3 ~\/tools\/taskandtool\.py request-connection stripe/);
     assert.doesNotMatch(r.stderr, /\n\s+at /, "no stack trace");
 
     visit("ann@example.com", "Radiator bleed", "80.00");
     r = sh("invoices.mjs", "bill", "ann@example.com");
     assert.equal(r.status, 2, "two to choose from is a misuse");
     assert.match(r.stderr, /ask the owner which/);
-    assert.match(r.stderr, /Then: node scripts\/invoices\.mjs bill ann@example\.com --job <id>$/m, "names no job the owner did not choose");
+    assert.match(r.stderr, /Try: node scripts\/invoices\.mjs bill ann@example\.com --job <id>$/m, "names no job the owner did not choose");
     assert.doesNotMatch(r.stderr, /--confirm/, "a hint never sends");
 
     // As if the Boiler service invoice had just gone through Stripe: a retry without --job bills nothing else.
     await db.query(`update invoices set status = 'open', sent_at = now(), stripe_invoice_id = 'in_test' where visit_id = $1`, [job]);
     r = sh("invoices.mjs", "bill", "ann@example.com", "--confirm");
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^nothing new was sent: invoice #\d+ went to ann@example\.com \(sent .*\), so this looks like a repeat; left alone/);
-    assert.match(r.stdout, /Not invoiced yet:\n  #\d+ Radiator bleed/, "names the job still to bill");
+    assert.match(r.stdout, /^invoices bill: nothing new was sent: invoice #\d+ went to ann@example\.com \(sent .*\), so this looks like a repeat; left alone/);
+    assert.match(r.stdout, /not invoiced yet:\n    #\d+ Radiator bleed/, "names the job still to bill");
     assert.doesNotMatch(r.stdout, /--confirm/, "a hint never sends");
     assert.equal(JSON.parse(sh("invoices.mjs", "bill", "ann@example.com", "--json").stdout).outcome, "left_alone");
     assert.equal(JSON.parse(sh("invoices.mjs", "list", "--customer", "ann@example.com", "--json").stdout).length, 1, "no second invoice");

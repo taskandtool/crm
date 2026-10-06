@@ -3,7 +3,7 @@
 The business's customer record: what came in across the project (form
 submissions, bookings, payments), customers keyed by email, a pipeline of
 stages, notes of every call, and each job or visit. It runs in **dev** on this machine
-and in **production** on Cloudflare once deployed, team only in both. This
+and in **production** on Cloudflare once deployed. This
 repository *is* the app: the code at the root, the skill that knows how to
 work on it in `.claude/skills/crm/`, and `.taskandtool/setup.sh` for what
 the machine needs (dependencies, the `web` service). All of it is the
@@ -32,7 +32,7 @@ Use these rather than doing the same work by hand. Each answers `--help`;
 
 ```bash
 node scripts/inbox.mjs --since 7d               # what came in, and who it matched
-node scripts/customers.mjs add "Ann Lee" --email ann@example.com   # "added #12 Ann Lee [New]", or "already here, not added"
+node scripts/customers.mjs add "Ann Lee" --email ann@example.com   # "customers add: added #12 Ann Lee [New]", or "already here, not added"
 node scripts/visits.mjs add ann@example.com "Boiler service" --at "next friday 9:30"   # a job; --at also "tomorrow 2pm", in the business's zone; say back the date it prints
 node scripts/customers.mjs find "lee"           # customers; also note, stage, update, follow-up
 node scripts/visits.mjs list                    # jobs coming up; done, cancel, update --amount
@@ -57,8 +57,7 @@ node scripts/export.mjs --out customers.csv     # the list out
 - `schema.sql` is the CRM's tables (`customers`, `pipeline_stages`,
   `customer_notes`, `customer_visits`, and `crm_setup`, which records the
   schema last applied so a script skips setup while it is current),
-  applied at every start and every deploy. Additive only; never rename a
-  table.
+  applied at every start and every deploy.
 - `src/crm/` is every query and rule, named: customers, stages, notes,
   visits (jobs), quotes (a job from an accepted one), what came in,
   everything from one person, the import. Routes, scripts and
@@ -67,26 +66,16 @@ node scripts/export.mjs --out customers.csv     # the list out
   `src/views/` are the pages. `src/server.ts` is dev's entry (Node, with
   `src/db/client.ts`); `src/worker.ts` is production's (Cloudflare).
   `src/runtime.ts` is all that differs between them.
-- `src/booking/` is a copy of the `booking` skill's code: the Bookings
-  section (types, hosts, hours, calendars, the bookings) and the calendar
-  sync job. The Website's `/book` pages take the bookings.
-- `src/forms/` is a copy of the `forms` skill's pages (Forms: submissions by
-  form with their booking and payment, not finished, the editor).
-- `src/invoices/` is a copy of the `invoices` skill's code: quotes, invoices
-  through the owner's Stripe, tax rates, and Stripe's webhook events.
-  `src/payments/` and `src/reports/` hold what it uses of those skills.
-- `src/data/` and `src/admin/` are copies of the `data` and `admin`
-  business skills: the database handle, the additive check, the email key,
-  the guard, keyset paging, CSV, the list components.
+- `src/<skill>/` (`booking`, `forms`, `invoices`, `payments`, `reports`,
+  `data`, `admin`) are copies of the business skills' code.
 - `scripts/customers.mjs`, `visits.mjs`, `forms.mjs`, `quotes.mjs`, `invoices.mjs`,
   `inbox.mjs` and `stages.mjs` are your hands on the data from chat; `import.mjs` and `export.mjs` move CSV
   in and out. Every one answers `--help`.
 - `styles/theme.css` is the design as tokens; `DESIGN.md` explains them.
   `static/` is served as-is (the built CSS, the vendored htmx and
   SortableJS, `crm.js`).
-- `test/` runs with `npm test`, which prints a dot per test and then the
-  counts (tests, pass, fail, skipped) and any failure in full; the database
-  tests need `TEST_DATABASE_URL` and skip without it.
+- `test/` runs with `npm test`; the database tests need
+  `TEST_DATABASE_URL` and skip without it.
 
 ## The loop
 
@@ -94,7 +83,7 @@ node scripts/export.mjs --out customers.csv     # the list out
   and the server restarts on every change, so an edit is in dev on refresh.
   If the service is not running, re-run `bash ~/app/.taskandtool/setup.sh`
   (idempotent).
-- Every page needs `X-TaskTool-User`; to look from the machine,
+- To look from the machine:
   `curl -H 'X-TaskTool-User: you@example.com' localhost:3000/`.
 - `npm run check` before showing work (config and examples valid, the
   schema additive, the refuse list, the typecheck). `npm test` for the
@@ -103,24 +92,20 @@ node scripts/export.mjs --out customers.csv     # the list out
   restart web`, or `node scripts/migrate.mjs` for the schema alone.
 - `npm run deploy` publishes to production (schema, build, deploy), after
   the crm skill's checks.
-- Commit at milestones. Never commit `node_modules/`, `static/vendor/`,
-  `static/crm.css`, `dist/`, `build/`, an import file, or any credential.
+- Commit at milestones.
 
 ## Rules
 
-- Table names never change. The customer's words live in
-  `crm.config.json`; the tables stay `customers`, `pipeline_stages`,
-  `customer_notes`, `customer_visits`.
-- A person is their email; a customer is archived, never deleted.
+- The project's tables follow the `data` skill. The customer's words live
+  in `crm.config.json`, never in a table name.
+- A customer is archived, never deleted; a visit is cancelled.
 - What other apps write (submissions, bookings, payments) is read only,
   except a submission's status and a refund a team member confirms. The
   skills' tables the CRM sets up (forms, booking, payments, invoices) it
   writes through the skills' code.
 - Identity comes from the platform: `X-TaskTool-User`, or 404; only
   `/healthz` and Stripe's signed `/hooks/stripe` answer without it. The CRM
-  builds no login. It sends only through the owner's own sender and
-  Stripe, and only when the owner asked for it ("send Ann the invoice" is
-  the yes) or said yes to the preview.
+  builds no login.
 - Production stays team only; it is the business's customer list.
 - Colours and sizes are tokens in `styles/theme.css`. Markup never carries
   a hex value or a Tailwind default colour; `npm run check` refuses both.

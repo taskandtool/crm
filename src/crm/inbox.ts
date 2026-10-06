@@ -289,6 +289,13 @@ export async function markDone(db: Db, id: string, user: string): Promise<boolea
   return rows.length > 0;
 }
 
+/** A submission's status, or null when there is none by that id: what markDone found instead. */
+export async function submissionStatus(db: Db, id: string): Promise<string | null> {
+  if (!/^\d{1,18}$/.test(id)) return null;
+  const [row] = await db.sql<{ status: string }>`select status from submissions where id = ${id}::bigint`;
+  return row?.status ?? null;
+}
+
 export function sinceDays(days: number, now = new Date()): Date {
   return new Date(now.getTime() - days * 86_400_000);
 }

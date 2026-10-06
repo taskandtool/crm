@@ -22,13 +22,14 @@ and nothing else:
 | Balance | Read | Task & Tool checks a pasted key by reading it |
 
 Without invoices, the first three and Balance are enough. Ask with
-`request_connection("stripe", why, auth="api_key", delivery="edge")` and
-give the owner its `review_url`.
+`python3 ~/tools/taskandtool.py request-connection stripe --why "take
+payments" --auth api_key --delivery edge` and give the owner its review
+link.
 
-One grant with `delivery="edge"` serves both: dev (the machine) never holds
+One grant delivered to the edge serves both: dev (the machine) never holds
 the key and calls through the gateway; production has it bound into its
 Worker under the connection's `env_name` (`STRIPE_API_KEY` for slug
-`stripe`; read it in `list_connections()`) and calls Stripe directly. For
+`stripe`; read it in `python3 ~/tools/taskandtool.py list-connections`) and calls Stripe directly. For
 another slug: `stripeFrom(envOf(c), fetch, "stripe-eu")`.
 
 ## The webhook
@@ -44,7 +45,7 @@ another slug: `stripeFrom(envOf(c), fetch, "stripe-eu")`.
    app at another's.
 2. Its URL. A public production site: `https://<production host>/hooks/stripe`
    (the machine stays asleep). Otherwise (team only, or not deployed):
-   `inbound_url("/hooks/stripe")` from `tools/taskandtool.py`, which reaches
+   `python3 ~/tools/taskandtool.py inbound-url /hooks/stripe`, which reaches
    the machine asleep or not.
 3. The owner adds the endpoint in Stripe, Developers, Webhooks, with these
    events: `checkout.session.completed`,
@@ -56,7 +57,7 @@ another slug: `stripeFrom(envOf(c), fetch, "stripe-eu")`.
    `invoice.marked_uncollectible`, `invoice.deleted`.
    An app without invoices registers only the first six.
 4. They copy its signing secret (`whsec_…`) into the form from
-   `request_secret("STRIPE_WEBHOOK_SECRET")`, for this app alone (each
+   `python3 ~/tools/taskandtool.py request-secret STRIPE_WEBHOOK_SECRET`, for this app alone (each
    endpoint has its own secret); then
    `sprite-env services restart web`. Test and live mode are separate
    endpoints with separate secrets. After an inbound URL rotation, change

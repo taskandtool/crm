@@ -24,14 +24,14 @@ on a customer's page, which carries their details) books a caller in.
 
 **Messages.** A booking the team makes sends its confirmation, and the
 reminder job reminds every booker a day and an hour before, through the
-owner's email sender: Resend or Postmark granted to this app (ask with
-`request_connection("resend", why="send booking confirmations and
-reminders")` if `list_connections()` has neither), `NOTIFY_FROM` set to an
-address on a domain verified there, and `NOTIFY_VIA` when the connection's
-slug is not the vendor's name. With none, nothing is sent and the bookings
-stand. Schedule the reminders once (`/schedule-job`, after `list_jobs()`):
-`schedule_job("Booking reminders", "*/15 * * * *", command="npx tsx
-src/booking/reminders-job.ts", client_visible=False)`. A text message instead
+owner's email sender: Resend or Postmark granted to this app (if
+`python3 ~/tools/taskandtool.py list-connections` shows neither, ask with
+`python3 ~/tools/taskandtool.py request-connection resend --why "send booking confirmations and reminders"`),
+`NOTIFY_FROM` set to an address on a domain verified there, and
+`NOTIFY_VIA` when the connection's slug is not the vendor's name. With
+none, nothing is sent and the bookings stand. Schedule the reminders once,
+if `python3 ~/tools/taskandtool.py list-jobs` does not show them:
+`python3 ~/tools/taskandtool.py schedule-job "Booking reminders" --when "*/15 * * * *" --command "npx tsx src/booking/reminders-job.ts"`. A text message instead
 is a `Send` written against the owner's Twilio connection (the `booking`
 skill's "Messages and reminders"). Never send through Task & Tool.
 

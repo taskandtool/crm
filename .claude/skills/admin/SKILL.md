@@ -19,7 +19,7 @@ default, with two locks:
    Production starts the same way: the first deploy publishes it to the
    team, and only a person makes it public, with the switch in Task & Tool.
    So declare the prefix when you build it, before anyone makes the site
-   public: `add_private_path("/admin")` from `tools/taskandtool.py`, once per
+   public: `python3 ~/tools/taskandtool.py add-private-path /admin`, once per
    prefix (the `serving` skill: keeping a path for the team). Once the site
    is public, that path still asks for a Task & Tool sign-in and the rest is
    open. Only a person can make a declared path public. Do not link to it
@@ -75,32 +75,10 @@ the current filter: the link carries the same query string.
 
 ## htmx, and the same thing without it
 
-One URL answers three ways (`isPartial(c)` in `query.ts`):
-
-| Request | Answer |
-|---|---|
-| plain GET | the whole page in `AdminLayout` |
-| htmx, `after` set | `<TableRows>` alone: it replaces the Load more row |
-| htmx, otherwise | the `#results` block |
-
-- **A history restore is an htmx request that needs the whole page**
-  (`HX-History-Restore-Request`); `isPartial` already says no to it. Every
-  private response is `no-store`, so the browser never shows a fragment as a
-  page.
-- Without JavaScript, Load more opens the next page whole: offer "Back to
-  the newest" there. A row's status change answers htmx with `<TableRow>`
-  and a plain post with a 303.
-- **Bulk**: row checkboxes carry `form="bulk"` instead of sitting inside the
-  form, so Load more rows join it and row forms never nest. Read ids with
-  `formIds((await c.req.parseBody({ all: true })).id)`.
-- **After a plain POST**, 303 to the `return` field checked by `localPath`
-  (a path under the prefix, never a host), with `withFlash(ret, code, n)`.
-  `<Flash>` maps the code to the app's own words, so a crafted link cannot
-  put text on the page. An htmx request that receives a redirect follows
-  it and swaps the whole page into the target: answer htmx with the
-  fragment, not a 303.
-- Values a visitor sent render as text (hono/jsx escapes them) and never as
-  links: a stored `javascript:` URL is one click from running.
+One URL answers a plain request with the whole page and htmx with a
+fragment (`isPartial(c)`); a plain POST answers with a 303, htmx with the
+fragment. The table, history restores, bulk forms and flash messages:
+`references/htmx.md`.
 
 ## Files
 
@@ -119,8 +97,7 @@ One URL answers three ways (`isPartial(c)` in `query.ts`):
 | `example.tsx` | `adminRoutes(getDb, opts)`: all of the above over one table, tested end to end |
 | `test/` | component rendering, the core, and `example.tsx` against a scratch database |
 
-Copy the folder whole into `src/admin/` with its tests; keep the exports of
-`guard`, `layout`, `keyset` and `csv` as they are.
+Keep the exports of `guard`, `layout`, `keyset` and `csv` as they are.
 
 ## Adding a list for a new table
 

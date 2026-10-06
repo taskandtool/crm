@@ -50,7 +50,7 @@ try {
 
 and `scripts/forms.mjs` runs it under tsx with `/home/sprite/.env` loaded
 (copy another `.mjs` entry, or `tsx --env-file=/home/sprite/.env scripts/forms.ts`).
-`src/data/cli.ts` comes with it.
+`src/data/cli.mjs` comes with it.
 
 ## Steps, a booking and a payment
 
@@ -86,11 +86,11 @@ endpoint slug is not the vendor's name.
 
 | Where | What it needs |
 |---|---|
-| production (the Worker) | the key bound to the Worker (`request_connection("resend", why, delivery="edge")`) |
+| production (the Worker) | the key bound to the Worker (`python3 ~/tools/taskandtool.py request-connection resend --why "send form emails" --delivery edge`) |
 | dev (this machine) | nothing more: the gateway adds the key, which never reaches the machine |
 
 A bound key's env name is the connection's `env_name` in
-`list_connections()` (`<SLUG>_API_KEY`, so `RESEND_API_KEY` for slug
+`python3 ~/tools/taskandtool.py list-connections` (`<SLUG>_API_KEY`, so `RESEND_API_KEY` for slug
 `resend`); check it there rather than assuming. `sendEmail` returns
 `{ status: "sent" | "none" | "failed" }` and never throws; a failure is
 logged and the submission is already saved.

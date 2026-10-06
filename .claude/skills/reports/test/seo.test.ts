@@ -1,11 +1,13 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { scratch, why, type Scratch } from "../../data/test/scratch";
-import { createSnapshotTable, fetchSeo, googleCall, gscTotals, loadSnapshot, saveSnapshot, type SeoData } from "../seo";
+import { fetchSeo, googleCall, gscTotals, loadSnapshot, saveSnapshot, type SeoData } from "../seo";
 import { SeoReport } from "../seo-report";
 import { chromeArgs, findChrome, printToPdf } from "../print";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { applySchema } from "../../data/migrate";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -171,8 +173,9 @@ after(async () => t?.drop());
 
 test("a snapshot round-trips, and none saved yet is null", { skip: !process.env.TEST_DATABASE_URL && why }, async () => {
   assert.equal(await loadSnapshot(t!.db, "seo"), null, "no table yet is no snapshot");
-  await createSnapshotTable(t!.db);
-  await createSnapshotTable(t!.db); // setup runs on every start
+  const schema = readFileSync(fileURLToPath(new URL("../schema.sql", import.meta.url)), "utf8");
+  await applySchema(t!.db, schema);
+  await applySchema(t!.db, schema); // setup runs on every start
   assert.equal(await loadSnapshot(t!.db, "seo"), null);
   await saveSnapshot(t!.db, "seo", { a: 1 });
   await saveSnapshot(t!.db, "seo", { a: 2, s: "</script>" });

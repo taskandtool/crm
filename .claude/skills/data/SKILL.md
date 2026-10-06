@@ -1,20 +1,21 @@
 ---
 name: data
-description: "The project's database: one set of tables every app in the project uses (email as the key, additive schema files), and the Db handle for dev and production, settings, connection calls, email and spam checks. Use before creating or changing a table, or copying another skill. Not for getting a database (the platform's `database` skill)."
+description: "The project's one database, shared by every app: table rules (email links people, schema files only add), the Db handle, settings, connection calls, email and spam checks. Use before creating or changing a table, or copying another skill's code. Not for getting a database (the `database` skill)."
 ---
 
 # Data
 
-A project has one Postgres database, and every app granted it reads, writes
-and alters every table by its plain name. Website form submissions, bookings
-and payments live there, so a CRM installed later finds them already full.
+Every app in a project shares one Postgres database, so a CRM installed
+later finds the Website's form submissions, bookings and payments already
+there.
 
 Version: 0.1.1 (taskandtool/skills)
 
 ## The rules
 
-- **One database per project, one set of tables.** Every app sees every
-  table, so name a new table for what it holds (`quotes`, `report_snapshots`),
+- **One database per project, one set of tables, each by its plain name.**
+  Every app reads, writes and alters every table, so name a new table for
+  what it holds (`quotes`, `report_snapshots`),
   never for the app that made it.
 - **Look before you build.** Before creating anything, list what is there:
   `select table_name from information_schema.tables where table_schema = 'public'`.
@@ -79,7 +80,7 @@ Each app makes its handle from the driver it already uses:
   `gatewayFetch(env, slug, path, init)`. The gateway adds the key; it
   serves dev only, and production calls the vendor directly with the key
   the owner bound to it (`delivery="edge"`).
-  That key's env name is the connection's `env_name` in `list_connections()`
+  That key's env name is the connection's `env_name` in `python3 ~/tools/taskandtool.py list-connections`
   (`<SLUG>_API_KEY`); read it there rather than assuming it.
 - **Email** (`send.ts`): `sendEmail(env, mail)` through the owner's Resend or
   Postmark, set once by `NOTIFY_FROM` and `NOTIFY_VIA`
@@ -91,11 +92,11 @@ Each app makes its handle from the driver it already uses:
 
 ## Installing a skill's code into this app
 
-A skill's `.ts`/`.tsx` files are snippets: copy them into `src/<skill>/` and
-this skill's into `src/data/`, so `../data/db` resolves the same
-here as in the skills repo. Copy a skill's `test/` with it, and keep
-`src/data/` whole (`gateway.ts` and `test/scratch.ts` included): other
-skills import both. Then:
+Copy the files the app uses into `src/<skill>/`, with what they import
+(this skill's go in `src/data/`, so `../data/db` resolves as it does in the
+skills repo) and the tests that cover them (`data/test/scratch.ts` for any
+database test). The copy is this app's code: change it as the app needs,
+keeping the rules above and its tests passing. Then:
 
 1. Run its `schema.sql` with `applySchema` from the app's setup or start
    script (machine only, never per request):
@@ -108,18 +109,16 @@ skills import both. Then:
    `TEST_DATABASE_URL=postgres://… npx tsx --test src/<skill>/test/*.test.ts`
    (a role that may create databases; each test makes and drops its own).
 
-A machine-only file (a skill's `cli.ts`, booking's `sync.ts` and
+A machine-only file (`cli.mjs`, a skill's `cli.ts`, booking's `sync.ts` and
 `reminders-job.ts`, reports' `print.ts`) runs only on the machine and may
 import Node built-ins, so long as nothing the production Worker imports
-reaches it (`npm run check`). Leave it out until the app needs it.
-
-Adapt freely after copying: the copy is this app's code. Keep the rules above,
-and keep the tests passing.
+reaches it (`npm run check`). A `.ts` file imports `cli.mjs` by its full
+name (`../data/cli.mjs`), and the app's `tsconfig.json` needs `"allowJs": true`.
 
 ## When the database is not there
 
 No `DATABASE_URL` means the app has no database yet: ask the owner with
-`request_capability("postgres", why)` from `tools/taskandtool.py`.
+`python3 ~/tools/taskandtool.py request-capability postgres`.
 
 ## Files
 
@@ -134,5 +133,5 @@ No `DATABASE_URL` means the app has no database yet: ask the owner with
 | `send.ts` | `sendEmail`, `afterResponse` |
 | `spam.tsx` | `SpamFields`, `makeStamp`, `verdict` |
 | `token.ts` | `newToken`, `tokenHash`: a key a visitor holds, stored as its hash |
-| `cli.ts` | what every skill's command shares: arguments, usage, output, `machineEnv` (machine only) |
+| `cli.mjs` | what every script shares: arguments, usage, `done`, `fail`, `misused`, `machineEnv` (machine only) |
 | `test/` | the additive check, the handles, settings, sending, spam |

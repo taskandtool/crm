@@ -36,12 +36,11 @@ Set it up once, in this order:
 3. Invoices need the owner's Stripe: the `payments` skill's
    `references/setup.md` (a restricted test key first, with every
    permission listed there: refunds on the Payments page need Refunds),
-   and its webhook at
-   `inbound_url("/hooks/stripe")` from `tools/taskandtool.py` with the
+   and its webhook at the URL
+   `python3 ~/tools/taskandtool.py inbound-url /hooks/stripe` prints, with the
    invoice events, its signing secret as `STRIPE_WEBHOOK_SECRET`. This
    CRM is team only, so Stripe always reaches it there, never at
    production's address. After the secret is set, `sprite-env services
    restart web`.
 
-Sending follows the rule in `AGENTS.md`; `invoices.mjs bill` is the one step.
-The `invoices` skill has the rules; `src/invoices/` is its code.
+The `invoices` skill has the rules, sending among them; `src/invoices/` is its code.

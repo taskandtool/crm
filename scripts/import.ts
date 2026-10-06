@@ -1,13 +1,13 @@
 // CSV in: the customer list a business keeps today. Always --dry-run first
 // and show the owner the mapping. `node scripts/import.mjs --help`.
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { cfg } from "../src/config";
 import { decodeCsv, parseCsv } from "../src/crm/csv-read";
 import { guessMap, IMPORT_FIELDS, planRows, runImport } from "../src/crm/importer";
 import { firstOpenStage, listStages, resolveStage } from "../src/crm/stages";
 import { clean, parseTags } from "../src/crm/text";
-import { fail, flag, flags, has, parseArgs, who, withDb } from "./lib";
+import { done, fail, flag, flags, has, misused, noMore, parseArgs, plain, who, withDb } from "./lib";
 
 const HELP = `import.mjs <file.csv> [--dry-run] [--map field=Header,...] [--stage s] [--source s] [--tag t]... [--overwrite]
 
@@ -26,52 +26,50 @@ applies to new rows that do not say, and --tag is added to every row.
 Anyone left without a last contact gets the time of their latest form
 submission, booking or payment, by email. All or nothing: one transaction.
 
---dry-run prints the mapping and what would happen, and writes nothing.`;
+--dry-run prints the mapping and what would happen, and writes nothing.
+A second run of the same file changes nothing new. Errors go to stderr with a
+Try: line; exit 1 when refused, 2 when misused.`;
 
-const a = parseArgs(process.argv.slice(2));
-const [file] = a._;
-if (has(a, "help")) {
-  console.log(HELP);
-  process.exit(0);
-}
-if (!file) {
-  console.error(HELP);
-  process.exit(2);
-}
+// --dry-run and --overwrite take no value: `--dry-run customers.csv` keeps the file.
+const a = parseArgs(process.argv.slice(2), { bare: ["dry-run", "overwrite"] });
+const [file, ...extra] = a._;
+plain(a, HELP, "import", { flags: ["dry-run", "map", "stage", "source", "tag", "overwrite", "as"], args: true });
+if (!file) misused("import: name the CSV file", "node scripts/import.mjs customers.csv --dry-run");
+noMore(extra, 0, "import");
+const again = `node scripts/import.mjs ${file} --dry-run`;
 
 const path = resolve(process.env.CALLER_CWD ?? ".", file);
-let decoded: ReturnType<typeof decodeCsv>;
+let decoded!: ReturnType<typeof decodeCsv>;
 try {
   decoded = decodeCsv(readFileSync(path));
 } catch (e) {
-  fail(`cannot read ${path}: ${(e as Error).message}`);
+  fail(`import: cannot read ${path}: ${(e as NodeJS.ErrnoException).code ?? (e as Error).message}`, `ls ${dirname(path)}`);
 }
 let rows: string[][] = [];
 try {
   rows = parseCsv(decoded.text);
 } catch (e) {
-  fail(`${file}: ${(e as Error).message}; fix it in the spreadsheet and save as CSV again`);
+  fail(`import: ${file}: ${(e as Error).message}; fix it in the spreadsheet and save as CSV again`, again);
 }
-if (rows.length < 2) fail("the file has no data rows under a header row");
+if (rows.length < 2) fail(`import: ${file} has no data rows under a header row`, again);
 const headers = rows[0].map((h) => h.trim());
 const map = guessMap(headers, cfg.fields);
 for (const kv of (flag(a, "map") ?? "").split(",").filter(Boolean)) {
   const i = kv.indexOf("=");
-  if (i < 1) fail(`--map ${kv}: write field=Header`);
+  if (i < 1) misused(`import: --map ${kv}: write field=Header`, `${again} --map name=Name`);
   const field = kv.slice(0, i).trim();
   const header = kv.slice(i + 1).trim();
-  if (!IMPORT_FIELDS.includes(field) && !cfg.fields.some((f) => f.key === field)) fail(`--map ${kv}: no field ${field}`);
-  if (!headers.includes(header)) fail(`--map ${kv}: no header "${header}"; headers are ${headers.join(", ")}`);
+  if (!IMPORT_FIELDS.includes(field) && !cfg.fields.some((f) => f.key === field)) misused(`import: --map ${kv}: no field ${field}; fields: ${[...IMPORT_FIELDS, ...cfg.fields.map((f) => f.key)].join(", ")}`, again);
+  if (!headers.includes(header)) misused(`import: --map ${kv}: no header "${header}"; headers are ${headers.join(", ")}`, again);
   for (const [f, h] of Object.entries(map)) if (h === header && f !== field) delete map[f];
   map[field] = header;
 }
-if (!map.name && !map.first_name && !map.email && !map.phone) fail(`no name, email or phone column found; pass --map name=<Header> (headers: ${headers.join(", ")})`);
+if (!map.name && !map.first_name && !map.email && !map.phone) fail(`import: no name, email or phone column found (headers: ${headers.join(", ")})`, `${again} --map name=<Header>`);
 
 await withDb(async (db) => {
   const stages = await listStages(db);
   const stageArg = flag(a, "stage");
-  const def = stageArg ? resolveStage(stages, stageArg) : await firstOpenStage(db);
-  if (!def) fail(`no stage ${stageArg ?? ""}; stages: ${stages.map((s) => s.key).join(", ")}`);
+  const def = (stageArg ? resolveStage(stages, stageArg) : await firstOpenStage(db)) ?? misused(`import: no stage ${stageArg ?? ""}; stages: ${stages.map((s) => s.key).join(", ")}`, "node scripts/stages.mjs list");
   const plan = planRows(rows, map, cfg.fields, stages);
   const dry = has(a, "dry-run");
   const summary = await runImport(db, plan, {
@@ -83,14 +81,16 @@ await withDb(async (db) => {
     user: who(a),
   });
   const unmapped = headers.filter((h) => !Object.values(map).includes(h));
-  if (decoded.encoding !== "utf-8") console.log(`note: the file is not UTF-8; read it as ${decoded.encoding}. Check the names with accents below.`);
-  console.log("mapping: " + Object.entries(map).map(([f, h]) => `${f} <- "${h}"`).join(", "));
-  if (unmapped.length) console.log(`not imported: ${unmapped.map((h) => `"${h}"`).join(", ")} (--map field=Header to use one)`);
-  for (const w of plan.warnings) console.log("note: " + w);
-  if (summary.skipped) console.log(`skipped ${summary.skipped} row(s) with no name, email or phone`);
-  console.log(
-    `${summary.rows} rows: ${summary.created} new, ${summary.updated} existing updated, ${summary.unchanged} existing unchanged, ${summary.merged} folded into another row of the file`,
-  );
-  for (const e of summary.examples) console.log("  " + e);
-  console.log(dry ? "dry run: nothing written" : "imported");
+  done("import", dry ? `dry run of ${file}: nothing written` : `imported ${file}`, {
+    lines: [
+      ...(decoded.encoding !== "utf-8" ? [`note: the file is not UTF-8; read it as ${decoded.encoding}. Check the names with accents below.`] : []),
+      "mapping: " + Object.entries(map).map(([f, h]) => `${f} <- "${h}"`).join(", "),
+      ...(unmapped.length ? [`not imported: ${unmapped.map((h) => `"${h}"`).join(", ")} (--map field=Header to use one)`] : []),
+      ...plan.warnings.map((w) => "note: " + w),
+      ...(summary.skipped ? [`skipped ${summary.skipped} row(s) with no name, email or phone`] : []),
+      `${summary.rows} rows: ${summary.created} new, ${summary.updated} existing updated, ${summary.unchanged} existing unchanged, ${summary.merged} folded into another row of the file`,
+      ...summary.examples.map((e) => "  " + e),
+    ],
+    next: dry ? `show the owner the mapping, then: node scripts/import.mjs ${file}` : "node scripts/customers.mjs list",
+  });
 });

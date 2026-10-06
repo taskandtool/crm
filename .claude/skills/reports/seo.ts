@@ -6,7 +6,7 @@
 //   const call = googleCall(process.env);                                // through the gateway (data/gateway.ts)
 //   const period = lastFull("day", 28, zone, { lag: 3 });                // Search Console is final after ~3 days
 //   const data = await fetchSeo(call, { siteUrl: "sc-domain:acme.com", ga4Property: "123456789", period });
-//   await saveSnapshot(db, "seo", data);                                 // the table is made once, by createSnapshotTable at setup
+//   await saveSnapshot(db, "seo", data);                                 // the table is reports/schema.sql's
 //
 // The figures that are easy to get wrong:
 // - Totals come from the rows by date, never from the top-queries rows:
@@ -246,15 +246,9 @@ export async function fetchSeo(call: Call, opts: { siteUrl: string; ga4Property?
 
 // ---- Snapshots ----------------------------------------------------------------
 //
-// The latest figures per key, in report_snapshots. The job
-// on the machine saves; the page, wherever it runs, loads. The table is made
-// once, by createSnapshotTable in the app's setup script, not on every save.
-
-/** Make the snapshot table if it is not there. Run it from setup (machine only). */
-export async function createSnapshotTable(db: Db): Promise<void> {
-  await db.sql`create table if not exists report_snapshots (
-    key text primary key, data jsonb not null, fetched_at timestamptz not null default now())`;
-}
+// The latest figures per key, in report_snapshots (schema.sql, applied at
+// setup like every skill's tables). The job on the machine saves; the page,
+// wherever it runs, loads.
 
 /** Save the figures under a key ("seo", "seo:acme"), replacing the last ones. */
 export async function saveSnapshot(db: Db, key: string, data: unknown): Promise<void> {

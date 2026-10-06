@@ -85,6 +85,7 @@ src/app.tsx              the Hono app: the team-only gate, the routes
 src/crm/                 customers, stages, notes, visits, what came in, history, import
 src/views/               what came in, customers, a customer, visits, pipeline, stages
 src/booking/             a copy of the booking skill: the Bookings section, the calendar sync job
+src/forms/               a copy of the forms skill: submissions by form, the form editor
 src/invoices/            a copy of the invoices skill: quotes, invoices, tax rates, Stripe
 src/data/  src/admin/    copies of the data and admin business skills, and what is
 src/payments/ src/reports/   used of payments and reports

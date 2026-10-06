@@ -111,7 +111,7 @@ test("with a bound key the call goes to Stripe; without one, through the gateway
   await stripeFrom({ STRIPE_API_KEY: "wrong", STRIPE_EU_API_KEY: "sk_eu" }, other.f, "stripe-eu")("GET", "/v1/refunds");
   assert.equal((other.calls[0].init.headers as Record<string, string>).Authorization, "Bearer sk_eu");
 
-  assert.throws(() => stripeFrom({}), /request_connection/);
+  assert.throws(() => stripeFrom({}), /request-connection stripe/);
 });
 
 test("a POST without an idempotency key is refused before it is sent", async () => {

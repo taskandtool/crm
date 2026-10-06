@@ -40,10 +40,10 @@ live on the next page load; nothing to sync or deploy.
 
 **Connect a calendar** (in the CRM, which runs the sync). The job calls the endpoint `google-calendar` (the
 `google` connection, scope `calendar.events`) or `microsoft-calendar` (the
-`microsoft` connection, `Calendars.ReadWrite`). If `list_connections()` has
+`microsoft` connection, `Calendars.ReadWrite`). If `python3 ~/tools/taskandtool.py list-connections` shows
 neither, ask with
-`request_connection("google", why="read busy times and add bookings to your calendar")`
-or `request_connection("microsoft", why=…)`, give the owner the `review_url`,
+`python3 ~/tools/taskandtool.py request-connection google --why "read busy times and add bookings to your calendar"`
+(or `microsoft`), give the owner the review link,
 and stop until it is granted; a Google owner also enables the Calendar API
 on their Google Cloud project. Add the calendar on the person's page in the
 editor (People and hours) (`primary` is the main calendar), schedule the sync job (`references/calendar-sync.md`), run it

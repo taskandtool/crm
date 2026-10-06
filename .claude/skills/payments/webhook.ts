@@ -4,7 +4,7 @@
 //   app.route("/", stripeWebhook(getDb, {}));    // reads STRIPE_WEBHOOK_SECRET (data/env.ts)
 //
 // On the machine Stripe reaches it through the app's inbound URL
-// (`inbound_url("/hooks/stripe")`), which forwards path and body unchanged; an
+// (`python3 ~/tools/taskandtool.py inbound-url /hooks/stripe`), which forwards path and body unchanged; an
 // app served from its edge Worker takes it at its own public address.
 //
 // What it guarantees:

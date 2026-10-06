@@ -20,11 +20,11 @@ and delivery get there; one with no sender leaves it for one that has.
 
 **Reminders** are a job on the CRM's machine (`reminders-job.ts`, the command;
 `reminders.ts`, the sending), a day and an hour before by default.
-Schedule it once (`/schedule-job`; check `list_jobs()` first), every 15
+Schedule it once (`/schedule-job`; check `python3 ~/tools/taskandtool.py list-jobs` first), every 15
 minutes, not visible to clients:
 
-```python
-schedule_job("Booking reminders", "*/15 * * * *", command="npx tsx src/booking/reminders-job.ts", client_visible=False)
+```bash
+python3 ~/tools/taskandtool.py schedule-job "Booking reminders" --when "*/15 * * * *" --command "npx tsx src/booking/reminders-job.ts" --team-only
 ```
 
 `--before 1440,120` changes the times; it prints what was sent and what was
@@ -35,7 +35,7 @@ made after the reminder's time. With no sender each is recorded as
 `none`, so connecting one later reminds from then on.
 
 **The last mile is the owner's connection.** Email is Resend or Postmark
-(`list_connections()`; ask with `request_connection("resend", why=…)` if
+(`python3 ~/tools/taskandtool.py list-connections`; ask with `python3 ~/tools/taskandtool.py request-connection resend --why "…"` if
 neither is granted), then `NOTIFY_FROM` on a domain verified there. For a
 text instead, or as well, write a `Send` against the owner's Twilio
 connection through the gateway (the `connections` skill) and pass it to

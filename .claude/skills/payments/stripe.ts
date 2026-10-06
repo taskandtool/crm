@@ -42,12 +42,12 @@ export class StripeError extends Error {
 
 const API = "https://api.stripe.com";
 
-/** `slug` is the Stripe connection's endpoint slug when it is not `stripe` (list_connections()). */
+/** `slug` is the Stripe connection's endpoint slug when it is not `stripe` (list-connections). */
 export function stripeFrom(env: Env, fetchImpl: typeof fetch = fetch, slug = "stripe"): Stripe {
   const key = setting(env, keyName(slug));
   if (!key && !(setting(env, "PHOENIX_URL") && setting(env, "MACHINE_TOKEN"))) {
     throw new Error(
-      `No Stripe here: no ${keyName(slug)} binding and no gateway. Ask the owner with request_connection("stripe", why), with delivery="edge" for code that runs at the edge.`,
+      `No Stripe here: no ${keyName(slug)} binding and no gateway. Ask the owner: python3 ~/tools/taskandtool.py request-connection stripe --why "<what it is for>" --auth api_key --delivery edge`,
     );
   }
 

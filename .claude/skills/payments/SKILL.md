@@ -1,6 +1,6 @@
 ---
 name: payments
-description: "Takes money through the owner's own Stripe account: Checkout for an order, a deposit or a paid booking, status from the verified webhook, refunds and tax rates. Use when a form or booking takes payment, for the Stripe key or webhook, or a refund. Not for quotes and invoices (invoices) or Task & Tool's own billing."
+description: "Takes money through the owner's own Stripe: Checkout for an order, a deposit or a paid booking, status from the verified webhook, refunds and tax rates. Use when a form or booking takes payment, for the Stripe key or webhook, or a refund. Not for quotes and invoices (invoices) or Task & Tool billing."
 ---
 
 # Payments
@@ -66,9 +66,9 @@ payment (money)                   payments  payments
 
 ## The key and the webhook
 
-The owner pastes a restricted key (`rk_…`) as a connection with
-`delivery="edge"`; ask with `request_connection("stripe", why,
-auth="api_key", delivery="edge")`. Call Stripe with `stripeFrom(envOf(c))`
+The owner pastes a restricted key (`rk_…`) as a connection delivered to
+the edge; ask with `python3 ~/tools/taskandtool.py request-connection
+stripe --why "take payments" --auth api_key --delivery edge`. Call Stripe with `stripeFrom(envOf(c))`
 in a route and `stripeFrom(process.env)` in a script: dev goes through the
 gateway, production uses the key bound to its Worker. Making the key (its
 permissions) and registering the webhook (its URL and events):

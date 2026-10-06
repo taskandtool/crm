@@ -1,6 +1,6 @@
 ---
 name: invoices
-description: "Quote this job, send the invoice, who owes us: quotes with lines and tax sent through the owner's own email sender, and invoices made, emailed and collected by the owner's Stripe account, paid only by its webhook. Use for a quote, an estimate, an invoice, a Pay button or what a customer owes. Not for payment on a website (payments)."
+description: "Quotes and invoices: quote this job, send the invoice, who owes us. Quotes go through the owner's email sender; invoices are made, emailed and collected by their Stripe, paid only by its webhook. Use for a quote, estimate, invoice, Pay button or what a customer owes. Not for website payments (payments)."
 ---
 
 # Invoices
@@ -42,9 +42,9 @@ Version: 0.1.0 (taskandtool/skills)
 
 ## Keys and the webhook
 
-Invoices use the payments skill's Stripe connection (its "Keys and where
-they live", with Customers, Invoices and Tax Rates set to write) and its
-endpoint. Mount the endpoint with this skill's events:
+Invoices use the payments skill's Stripe connection (the key's
+permissions, Customers, Invoices and Tax Rates among them, are in its
+`references/setup.md`) and its endpoint. Mount the endpoint with this skill's events:
 
 ```ts
 app.route("/", stripeWebhook(getDb, { more: [invoiceEvents] }));
@@ -52,7 +52,7 @@ app.route("/", stripeWebhook(getDb, { more: [invoiceEvents] }));
 
 A team-only app (the CRM) mounts it before the team gate: Stripe signs in
 with the signature alone. The owner adds the invoice events to the
-endpoint (the payments skill's step 3). A paid invoice also writes a
+endpoint (step 3 of the webhook in that same file). A paid invoice also writes a
 `payments` row (`kind = 'invoice'`) with its payment intent, so refunds and
 revenue work as for any payment.
 

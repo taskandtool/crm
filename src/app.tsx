@@ -70,7 +70,7 @@ app.get("/healthz", (c) => {
 // Stripe's events, with quotes and invoices on: public, because Stripe signs
 // in with nothing but the signature, which payments/webhook.ts checks over the
 // raw body before anything else. Stripe reaches dev through the machine's
-// inbound URL, inbound_url("/hooks/stripe").
+// inbound URL (`python3 ~/tools/taskandtool.py inbound-url /hooks/stripe`).
 if (invoicesCfg) {
   // POST only: any other method falls through to the team gate and its 404.
   app.on("POST", "/hooks/stripe", async (c, next) => {

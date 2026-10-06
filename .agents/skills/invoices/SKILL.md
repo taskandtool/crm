@@ -1,6 +1,6 @@
 ---
 name: invoices
-description: "Quote this job, send the invoice, who owes us: quotes with lines and tax sent through the owner's own email sender, and invoices made, emailed and collected by the owner's Stripe account, paid only by its webhook. Use for a quote, an estimate, an invoice, a Pay button or what a customer owes. Not for payment on a website (payments)."
+description: "Quotes and invoices: quote this job, send the invoice, who owes us. Quotes go through the owner's email sender; invoices are made, emailed and collected by their Stripe, paid only by its webhook. Use for a quote, estimate, invoice, Pay button or what a customer owes. Not for website payments (payments)."
 ---
 
 # Invoices

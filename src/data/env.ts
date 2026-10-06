@@ -35,7 +35,7 @@ export function setting(env: Env, name: string): string | undefined {
 /**
  * The env name a connection's key has where the owner bound it (delivery
  * `edge` or `machine`): `<SLUG>_API_KEY`, so `resend` is RESEND_API_KEY and
- * `resend-2` is RESEND_2_API_KEY. list_connections() shows the real env_name.
+ * `resend-2` is RESEND_2_API_KEY. `python3 ~/tools/taskandtool.py list-connections` shows the real env_name.
  */
 export function keyName(slug: string): string {
   return slug.toUpperCase().replace(/[^A-Z0-9]+/g, "_") + "_API_KEY";

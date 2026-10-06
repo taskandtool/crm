@@ -391,21 +391,18 @@ export async function syncCalendars(db: Db, gw: Gateway, now = new Date()): Prom
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { default: pg } = await import("pg");
   const { fromPool } = await import("../data/pg");
-  const { machineEnv, misused } = await import("../data/cli");
+  const { fail, machineEnv, misused } = await import("../data/cli.mjs");
   const CMD = "npx tsx src/booking/sync.ts";
   const args = process.argv.slice(2);
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`usage: ${CMD}\n\nPushes bookings to the hosts' connected calendars and pulls their busy times, once. Schedule it every 15 minutes.`);
     process.exit(0);
   }
-  if (args.length) misused(`calendar sync: it takes no arguments (given ${args.join(" ")})\n  Try: ${CMD}`);
+  if (args.length) misused(`calendar sync: it takes no arguments (given ${args.join(" ")})`, CMD);
   // The machine's settings, so a run by hand from a chat shell sees what the scheduled job sees.
   const env = machineEnv();
   const missing = ["PHOENIX_URL", "MACHINE_TOKEN", "DATABASE_URL"].filter((k) => !env[k]);
-  if (missing.length) {
-    console.error(`calendar sync: ${missing.join(", ")} not set, here or in /home/sprite/.env\n  Try: run it on the machine as a scheduled job: ${CMD}`);
-    process.exit(1);
-  }
+  if (missing.length) fail(`calendar sync: ${missing.join(", ")} not set, here or in /home/sprite/.env`, `run it on the machine as a scheduled job: ${CMD}`);
   const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 2 });
   try {
     const r = await syncCalendars(fromPool(pool), (slug, path, init) => gatewayFetch(env, slug, path, init));
