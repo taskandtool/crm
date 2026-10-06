@@ -50,6 +50,33 @@ export function wallTime(v: unknown): string | null {
   return same ? `${y}-${mo}-${d} ${h}:${mi}:${sec}` : null;
 }
 
+const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+/**
+ * A wall time said the way the owner says it, resolved in `tz`: "today 9:30",
+ * "tomorrow 2pm", "friday 14:00", "next friday 9:30". A weekday, with or
+ * without "next", is the coming one, never today. Null for anything else.
+ */
+export function relativeWall(v: unknown, tz: string, now = new Date()): string | null {
+  if (typeof v !== "string") return null;
+  const m = v.trim().toLowerCase().match(/^(today|tomorrow|(?:next\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday))(?:\s+at)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
+  if (!m) return null;
+  let hour = +m[3];
+  const minute = m[4] ? +m[4] : 0;
+  if (m[5]) {
+    if (hour < 1 || hour > 12) return null;
+    hour = (hour % 12) + (m[5] === "pm" ? 12 : 0);
+  }
+  if (hour > 23 || minute > 59) return null;
+  const today = nowIn(tz, now).slice(0, 10);
+  const [y, mo, d] = today.split("-").map(Number);
+  const base = new Date(Date.UTC(y, mo - 1, d));
+  const ahead = m[1] === "today" ? 0 : m[1] === "tomorrow" ? 1 : ((DAYS.indexOf(m[2]) - base.getUTCDay() + 7) % 7) || 7;
+  base.setUTCDate(base.getUTCDate() + ahead);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${base.getUTCFullYear()}-${pad(base.getUTCMonth() + 1)}-${pad(base.getUTCDate())} ${pad(hour)}:${pad(minute)}:00`;
+}
+
 /** Now as a wall time in `tz`, for a datetime-local input's default. */
 export function nowIn(tz: string, now = new Date()): string {
   const p = Object.fromEntries(

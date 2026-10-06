@@ -2,7 +2,7 @@
 // `node scripts/stages.mjs --help`.
 import { STAGE_KINDS } from "../src/config-schema";
 import { addStage, archiveStage, editStage, moveStage, pickKind, resolveStage, restoreStage, stagesWithCounts, KIND_LABELS, type StageResult } from "../src/crm/stages";
-import { fail, flag, has, out, parseArgs, who, withDb } from "./lib";
+import { fail, flag, has, out, parseArgs, usage, who, withDb } from "./lib";
 
 const HELP = `stages.mjs <command> [--json] [--as <email>]
 
@@ -19,10 +19,7 @@ customers land in the first one.`;
 
 const a = parseArgs(process.argv.slice(2));
 const [cmd, ...rest] = a._;
-if (!cmd || has(a, "help")) {
-  console.log(HELP);
-  process.exit(cmd || has(a, "help") ? 0 : 1);
-}
+usage(a, cmd, ["list", "add", "rename", "kind", "move", "archive", "restore"], HELP, "stages");
 const json = has(a, "json");
 
 const WHY: Record<string, string> = {
@@ -72,7 +69,5 @@ await withDb(async (db) => {
       const s = find(rest[0]);
       return console.log(done(await restoreStage(db, s.key, user), `restored ${s.key}`));
     }
-    default:
-      fail(`unknown command ${cmd}\n\n${HELP}`);
   }
 });

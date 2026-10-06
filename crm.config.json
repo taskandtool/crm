@@ -28,5 +28,9 @@
     "fields": [],
     "currency": "USD"
   },
-  "booking": true
+  "booking": true,
+  "invoices": {
+    "name": "to fill",
+    "currency": "USD"
+  }
 }

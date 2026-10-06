@@ -5,6 +5,7 @@
 // next read.
 import { q, type Db } from "../data/db";
 import { normalizeEmail } from "../data/email";
+import { currencyCode, toMinor } from "../payments/money";
 import { checkSettings, isValidZone, parseWallTime, wallToInstant, type Settings } from "./slots";
 import { LOCATION_KINDS, toResource, toType, type BookingType, type LocationKind, type Resource } from "./book";
 
@@ -146,6 +147,8 @@ export type TypeFields = {
   name: unknown; slug: unknown; description?: unknown;
   duration_min: unknown; interval_min: unknown; buffer_before_min: unknown; buffer_after_min: unknown;
   min_notice_min: unknown; horizon_days: unknown; location_kind: unknown; location?: unknown; position?: unknown; active?: unknown;
+  /** Typed, like "120.00"; empty is free. In `currency` (default usd). */
+  price?: unknown; currency?: unknown;
 };
 
 export const LOCATION_LABELS: Record<LocationKind, string> = {
@@ -183,6 +186,11 @@ export function readType(f: TypeFields): { ok: true; value: Omit<BookingType, "i
   }
   const position = f.position === undefined || f.position === "" ? 0 : int(f.position);
   if (!Number.isFinite(position)) errors.position = "Use a whole number.";
+  const currency = currencyCode(typeof f.currency === "string" && f.currency.trim() ? f.currency : "usd");
+  const priceInput = typeof f.price === "string" ? f.price.trim().replace(/^\p{Sc}\s*/u, "") : "";
+  const price = priceInput && currency ? toMinor(priceInput, currency) : null;
+  if (!currency) errors.currency = "Use a currency code like usd.";
+  else if (priceInput && price === null) errors.price = "Enter a price like 120.00, or leave it empty for free.";
   if (Object.keys(errors).length) return { ok: false, errors };
   return {
     ok: true,
@@ -192,6 +200,7 @@ export function readType(f: TypeFields): { ok: true; value: Omit<BookingType, "i
       buffer_after_min: st.bufferAfterMin, min_notice_min: st.minNoticeMin, horizon_days: st.horizonDays,
       location_kind: kind!, location: kind === "our_place" || kind === "video" ? location : null,
       position, active: checked(f.active),
+      price_cents: price && price > 0 ? price : null, currency: price && price > 0 ? currency : null,
     },
   };
 }
@@ -204,9 +213,9 @@ export async function createType(db: Db, f: TypeFields, by: string, source: stri
   const v = r.value;
   const rows = await db.sql`
     insert into booking_types (slug, name, description, duration_min, interval_min, buffer_before_min, buffer_after_min,
-      min_notice_min, horizon_days, location_kind, location, position, active, source, updated_by)
+      min_notice_min, horizon_days, location_kind, location, position, active, price_cents, currency, source, updated_by)
     values (${v.slug}, ${v.name}, ${v.description}, ${v.duration_min}, ${v.interval_min}, ${v.buffer_before_min}, ${v.buffer_after_min},
-      ${v.min_notice_min}, ${v.horizon_days}, ${v.location_kind}, ${v.location}, ${v.position}, ${v.active}, ${source}, ${by})
+      ${v.min_notice_min}, ${v.horizon_days}, ${v.location_kind}, ${v.location}, ${v.position}, ${v.active}, ${v.price_cents}, ${v.currency}, ${source}, ${by})
     on conflict (slug) do nothing
     returning *`;
   return rows.length ? { ok: true, value: toType(rows[0]) } : { ok: false, errors: TAKEN };
@@ -222,7 +231,7 @@ export async function saveType(db: Db, id: string, f: TypeFields, by: string): P
       duration_min = ${v.duration_min}, interval_min = ${v.interval_min}, buffer_before_min = ${v.buffer_before_min},
       buffer_after_min = ${v.buffer_after_min}, min_notice_min = ${v.min_notice_min}, horizon_days = ${v.horizon_days},
       location_kind = ${v.location_kind}, location = ${v.location}, position = ${v.position}, active = ${v.active},
-      updated_by = ${by}, updated_at = now()
+      price_cents = ${v.price_cents}, currency = ${v.currency}, updated_by = ${by}, updated_at = now()
     where id = ${id}::bigint and not exists (select 1 from booking_types o where o.slug = ${v.slug} and o.id <> ${id}::bigint)
     returning *`;
   return rows.length ? { ok: true, value: toType(rows[0]) } : { ok: false, errors: TAKEN };

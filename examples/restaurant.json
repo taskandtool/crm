@@ -29,5 +29,6 @@
     ],
     "currency": "GBP"
   },
-  "booking": false
+  "booking": false,
+  "invoices": false
 }

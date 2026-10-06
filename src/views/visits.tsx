@@ -7,13 +7,16 @@ import { Flash } from "../admin/flash";
 import { DataTable, SearchBar, When, type TableSpec } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { StatusBadge, StatusForm, type StatusOption } from "../admin/status";
-import { cfg, ownerLabel, visitsCfg } from "../config";
+import { cfg, invoicesCfg, ownerLabel, visitsCfg } from "../config";
 import type { CustomField } from "../config-schema";
 import type { Customer } from "../crm/customers";
 import { fieldText } from "../crm/fields";
 import { money, nowIn } from "../crm/text";
 import { amountText, VISIT_STATUS_LABELS, VISIT_STATUSES, type OpenBooking, type Visit, type VisitFilter } from "../crm/visits";
 import { Layout } from "./layout";
+import { VisitMoney } from "./money";
+import type { Quote } from "../invoices/quotes";
+import type { Invoice } from "../invoices/invoices";
 import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, timeZone, Who } from "./ui";
 
 /** How many a customer's page shows. */
@@ -281,7 +284,9 @@ export function VisitsPage(p: {
 }
 
 /** One visit: the whole form, its status on its own, who added and changed it. */
-export function VisitPage(p: { user: string; visit: Visit; owners: string[]; flash: { code?: string | null; n?: string | null } }) {
+export function VisitPage(p: {
+  user: string; visit: Visit; owners: string[]; money: { quotes: Quote[]; invoices: Invoice[] } | null; flash: { code?: string | null; n?: string | null };
+}) {
   const r = p.visit;
   const self = `/visits/${r.id}`;
   return (
@@ -300,6 +305,20 @@ export function VisitPage(p: { user: string; visit: Visit; owners: string[]; fla
           <StatusForm action={`${self}/status`} current={r.status} options={VISIT_OPTIONS} returnTo={self} label="Status" />
         </span>
         {r.customer_phone ? <a href={`tel:${r.customer_phone.replace(/[^0-9+]/g, "")}`}>Call {r.customer_phone}</a> : null}
+        {invoicesCfg ? (
+          <a href={listUrl("/invoices/quotes/new", {
+            email: r.customer_email, name: r.customer_name, phone: r.customer_phone, visit: r.id, line: r.title,
+            unit: r.amount_cents === null ? null : amountText(r.amount_cents, r.currency ?? v.currency),
+            currency: r.amount_cents === null ? null : r.currency,
+          })}>Quote this {one}</a>
+        ) : null}
+        {invoicesCfg ? (
+          <a href={listUrl("/invoices/new", {
+            email: r.customer_email, name: r.customer_name, phone: r.customer_phone, visit: r.id, line: r.title,
+            unit: r.amount_cents === null ? null : amountText(r.amount_cents, r.currency ?? v.currency),
+            currency: r.amount_cents === null ? null : r.currency,
+          })}>Invoice this {one}</a>
+        ) : null}
       </div>
       <div class="grid gap-4 md:grid-cols-3">
         <div class="min-w-0 md:col-span-2">
@@ -312,15 +331,18 @@ export function VisitPage(p: { user: string; visit: Visit; owners: string[]; fla
             </form>
           </Section>
         </div>
-        <Section title="Record">
-          <FieldList
-            fields={[
-              { label: "Added", value: <Who at={r.created_at} by={r.created_by} /> },
-              { label: "Changed", value: <Who at={r.updated_at} by={r.updated_by} /> },
-            ]}
-          />
-          <p class="mt-3 text-label text-ink-3">Cancel rather than delete: a cancelled {one} stays on the record.</p>
-        </Section>
+        <div class="flex flex-col gap-4">
+          {p.money ? <VisitMoney {...p.money} /> : null}
+          <Section title="Record">
+            <FieldList
+              fields={[
+                { label: "Added", value: <Who at={r.created_at} by={r.created_by} /> },
+                { label: "Changed", value: <Who at={r.updated_at} by={r.updated_by} /> },
+              ]}
+            />
+            <p class="mt-3 text-label text-ink-3">Cancel rather than delete: a cancelled {one} stays on the record.</p>
+          </Section>
+        </div>
       </div>
     </Layout>
   );

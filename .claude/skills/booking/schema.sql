@@ -160,7 +160,7 @@ comment on column bookings.manage_token_hash is 'Hex SHA-256 of the manage link 
 alter table bookings add column if not exists event_key text default replace(gen_random_uuid()::text, '-', '');
 comment on column bookings.event_key is 'Random, never changes. sync.ts derives each calendar event''s id or tag from it.';
 
--- Reminders the job (reminders.ts) claimed, one row each: a reminder is for a
+-- Reminders the job (reminders-job.ts) claimed, one row each: a reminder is for a
 -- booking at one start time, so a booking that moves is reminded again, and a
 -- claimed row is never sent twice. status: sent, none (no sender connected),
 -- failed (detail says why), sending (claimed by a run that died).
@@ -174,3 +174,20 @@ create table if not exists booking_reminders (
   updated_at timestamptz not null default now(),
   primary key (booking_id, before_min, starts_at)
 );
+
+-- Paid booking types and bookings made by a form (the forms skill's booking
+-- step). A type's price is what a payment step charges for it. A booking
+-- made in a form holds its time until hold_until; one whose form is not
+-- complete (or being paid) by then is released (book.ts releaseLapsedHolds).
+alter table booking_types add column if not exists price_cents bigint check (price_cents >= 0);
+alter table booking_types add column if not exists currency text check (currency ~ '^[a-z]{3}$');
+alter table bookings add column if not exists submission_id bigint;
+alter table bookings add column if not exists hold_until timestamptz;
+create index if not exists bookings_submission on bookings (submission_id);
+create index if not exists bookings_hold on bookings (hold_until) where hold_until is not null;
+comment on column bookings.submission_id is 'The form submission that made it (forms skill), when a form did.';
+comment on column bookings.hold_until is 'Held for the rest of its form until then; released if the form is not complete or being paid by then.';
+-- A booking made in a form is confirmed when the form is complete
+-- (confirm.ts), once, by whichever app gets there first with a sender.
+alter table bookings add column if not exists confirmation_sent_at timestamptz;
+comment on column bookings.confirmation_sent_at is 'When the confirmation of a booking made in a form was sent, on the form completing. Null for a booking made any other way: its page confirms it at once.';

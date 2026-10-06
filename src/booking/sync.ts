@@ -1,7 +1,7 @@
 // MACHINE ONLY. The calendar sync job: never import this from a page or
 // from code that deploys to the edge. Pages read busy; this fills it.
 //
-// Run it every 15 minutes as a command job (SKILL.md, "Connect a calendar"):
+// Run it every 15 minutes as a command job (references/calendar-sync.md):
 //   npx tsx src/booking/sync.ts
 //
 // Each run, in this order:
@@ -391,16 +391,27 @@ export async function syncCalendars(db: Db, gw: Gateway, now = new Date()): Prom
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { default: pg } = await import("pg");
   const { fromPool } = await import("../data/pg");
-  const { PHOENIX_URL, MACHINE_TOKEN, DATABASE_URL } = process.env;
-  if (!PHOENIX_URL || !MACHINE_TOKEN || !DATABASE_URL) {
-    console.error("Needs PHOENIX_URL, MACHINE_TOKEN and DATABASE_URL: run it on the machine.");
+  const { machineEnv, misused } = await import("../data/cli");
+  const CMD = "npx tsx src/booking/sync.ts";
+  const args = process.argv.slice(2);
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(`usage: ${CMD}\n\nPushes bookings to the hosts' connected calendars and pulls their busy times, once. Schedule it every 15 minutes.`);
+    process.exit(0);
+  }
+  if (args.length) misused(`calendar sync: it takes no arguments (given ${args.join(" ")})\n  Try: ${CMD}`);
+  // The machine's settings, so a run by hand from a chat shell sees what the scheduled job sees.
+  const env = machineEnv();
+  const missing = ["PHOENIX_URL", "MACHINE_TOKEN", "DATABASE_URL"].filter((k) => !env[k]);
+  if (missing.length) {
+    console.error(`calendar sync: ${missing.join(", ")} not set, here or in /home/sprite/.env\n  Try: run it on the machine as a scheduled job: ${CMD}`);
     process.exit(1);
   }
-  const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 2 });
+  const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 2 });
   try {
-    const r = await syncCalendars(fromPool(pool), (slug, path, init) => gatewayFetch(process.env, slug, path, init));
-    console.log(`pushed ${r.pushed} bookings, pulled ${r.pulled} calendars`);
-    for (const e of r.errors) console.error(e);
+    const r = await syncCalendars(fromPool(pool), (slug, path, init) => gatewayFetch(env, slug, path, init));
+    console.log(`calendar sync: pushed ${r.pushed} booking${r.pushed === 1 ? "" : "s"}, pulled ${r.pulled} calendar${r.pulled === 1 ? "" : "s"}${r.errors.length ? `, ${r.errors.length} failed` : ""}`);
+    for (const e of r.errors) console.error(`  ${e}`);
+    if (r.errors.length) console.error("  Try: the booking admin's Calendars page shows each calendar's last error");
     process.exitCode = r.errors.length ? 1 : 0;
   } finally {
     await pool.end();

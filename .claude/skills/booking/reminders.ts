@@ -1,23 +1,19 @@
-// The reminder job (machine only): a message to each booker a set time
-// before their booking, through a `Send` (notify.ts; email by default).
+// The reminders: a message to each booker a set time before their booking,
+// through a `Send` (notify.ts; email by default). Edge-safe; the job's
+// command is reminders-job.ts (machine only).
 //
-//   npx tsx src/booking/reminders.ts                  # a day and an hour before
-//   npx tsx src/booking/reminders.ts --before 1440,120
-//
-// Schedule it every 15 minutes (the platform's floor), so an hour's
-// reminder goes 45 to 60 minutes before. Each reminder is claimed by a row
-// in booking_reminders before it is sent, so two runs never send one twice
-// and a failed send is not retried into a flood. The rules:
+// Each reminder is claimed by a row in booking_reminders before it is
+// sent, so two runs never send one twice and a failed send is not retried
+// into a flood. The rules:
 // - Only confirmed bookings still to come.
 // - Not when the booking was made after the reminder's time: someone who
 //   books an hour ahead was just sent the confirmation.
 // - Only the nearest reminder that is due: a job that was down for a day
 //   sends the hour's reminder, not both.
 // - A booking moved to a new time is reminded again for that time.
-import { pathToFileURL } from "node:url";
 import { q, type Db } from "../data/db";
 import { toBooking, toResource, toType } from "./book";
-import { bookingMessage, emailSend, type Send } from "./notify";
+import { bookingMessage, type Send } from "./notify";
 
 export const DEFAULT_BEFORE = [1440, 60];
 
@@ -40,6 +36,7 @@ export async function sendReminders(db: Db, send: Send, opts: { now?: Date; befo
           and b.starts_at - ${min}::int * interval '1 minute' <= ${now}::timestamptz
           and b.starts_at - ${shorter}::int * interval '1 minute' > ${now}::timestamptz
           and b.created_at < b.starts_at - ${min}::int * interval '1 minute'
+          and b.hold_until is null -- a booking made in a form, only once the form is complete
         order by b.starts_at
         limit ${limit}
         on conflict do nothing
@@ -73,27 +70,5 @@ async function remind(db: Db, send: Send, bookingId: string) {
     return await send({ to: booking.email, subject, text, replyTo: host.email });
   } catch (e) {
     return { status: "failed" as const, via: "send", error: e instanceof Error ? e.message : String(e) };
-  }
-}
-
-// `npx tsx src/booking/reminders.ts [--before 1440,60]`: one run; exits 1
-// when a send failed, so the job's run history shows why.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { default: pg } = await import("pg");
-  const { fromPool } = await import("../data/pg");
-  const i = process.argv.indexOf("--before");
-  const before = i > 0 ? process.argv[i + 1].split(",").map(Number) : DEFAULT_BEFORE;
-  if (!process.env.DATABASE_URL) {
-    console.error("Needs DATABASE_URL: run it on the machine.");
-    process.exit(1);
-  }
-  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
-  try {
-    const r = await sendReminders(fromPool(pool), emailSend(process.env), { before });
-    console.log(`reminders: ${r.sent} sent, ${r.none} with no sender connected, ${r.failed} failed`);
-    for (const e of r.errors) console.error(e);
-    process.exitCode = r.failed ? 1 : 0;
-  } finally {
-    await pool.end();
   }
 }

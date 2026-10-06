@@ -15,5 +15,5 @@ function has() {
   return parseArgs(process.argv.slice(2)).flags.help !== undefined;
 }
 await withDb(async () => {
-  console.log("schema applied");
-});
+  console.log("migrate: every schema file applied, stages seeded if there were none");
+}, { force: true });

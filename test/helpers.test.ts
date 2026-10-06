@@ -14,7 +14,7 @@ import { amountText, parseAmount } from "../src/crm/visits";
 import type { Stage } from "../src/crm/stages";
 import { resolveStage } from "../src/crm/stages";
 import { missingSentence } from "../src/crm/tables";
-import { money, nowIn, parseTags, slugify, wallTime, wallToInstant } from "../src/crm/text";
+import { money, nowIn, parseTags, relativeWall, slugify, wallTime, wallToInstant } from "../src/crm/text";
 
 const STAGES: Stage[] = [
   { key: "new", label: "New", position: 0, kind: "open", archived: false },
@@ -96,6 +96,21 @@ test("import mapping: headers by name, custom fields by key or label, first and 
   assert.deepEqual(r.fields, { truck: "Truck 1", age: 12 });
   assert.ok(plan.warnings.some((w) => w.includes("Someday")));
   assert.ok(plan.warnings.some((w) => w.includes("not addresses")));
+});
+
+test("relative wall times resolve in the business's zone", () => {
+  // Tuesday 6 October 2026, 23:30 in Chicago, already Wednesday in UTC.
+  const now = new Date("2026-10-07T04:30:00Z");
+  const tz = "America/Chicago";
+  assert.equal(relativeWall("next friday 9:30", tz, now), "2026-10-09 09:30:00");
+  assert.equal(relativeWall("Friday at 2pm", tz, now), "2026-10-09 14:00:00");
+  assert.equal(relativeWall("tuesday 9:00", tz, now), "2026-10-13 09:00:00", "the coming Tuesday, never today");
+  assert.equal(relativeWall("today 17:15", tz, now), "2026-10-06 17:15:00");
+  assert.equal(relativeWall("tomorrow 12am", tz, now), "2026-10-07 00:00:00");
+  assert.equal(relativeWall("tomorrow 12pm", tz, now), "2026-10-07 12:00:00");
+  assert.equal(relativeWall("tomorrow 13pm", tz, now), null);
+  assert.equal(relativeWall("someday 9:30", tz, now), null);
+  assert.equal(relativeWall("friday", tz, now), null, "a day needs its time");
 });
 
 test("small text helpers", () => {

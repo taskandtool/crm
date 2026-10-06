@@ -119,3 +119,18 @@ test("totals for a period and the one before come from one pass", { skip: !proce
   assert.deepEqual(row, { current: 2, previous: 1 });
   assert.throws(() => compareQuery("leads", { from: "2026-09-01", to: "2026-09-07" }, NY, { from: "2026-08-01", to: "2026-08-07" }));
 });
+
+test("a money source is charted one currency at a time, live money only", { skip: !process.env.TEST_DATABASE_URL && why }, async () => {
+  await t!.db.sql`create table if not exists invoices (id bigserial primary key, status text, livemode boolean, currency text, total_cents bigint, paid_at timestamptz)`;
+  await t!.db.sql`insert into invoices (status, livemode, currency, total_cents, paid_at) values
+    ('paid', true, 'usd', 10000, '2026-08-15T12:00:00Z'), ('paid', true, 'usd', 2500, '2026-09-02T12:00:00Z'),
+    ('paid', true, 'eur', 7000, '2026-09-03T12:00:00Z'), ('paid', false, 'usd', 99900, '2026-09-04T12:00:00Z'),
+    ('open', true, 'usd', 5000, null)`;
+  const p = { from: "2026-08-01", to: "2026-09-30" };
+  assert.deepEqual(await run(t!.db, seriesQuery("invoices_paid", p, "month", NY, "usd")), [{ bucket: "2026-08-01", value: 10000 }, { bucket: "2026-09-01", value: 2500 }]);
+  assert.deepEqual(await run(t!.db, seriesQuery("invoices_paid", p, "month", NY, "EUR")), [{ bucket: "2026-08-01", value: 0 }, { bucket: "2026-09-01", value: 7000 }]);
+  const [row] = await run(t!.db, compareQuery("invoices_paid", { from: "2026-09-01", to: "2026-09-30" }, NY, undefined, "usd"));
+  assert.deepEqual(row, { current: 2500, previous: 10000 });
+  assert.throws(() => seriesQuery("invoices_paid", p, "month", NY), /one currency at a time/);
+  assert.throws(() => seriesQuery("leads", p, "month", NY, "usd"), /not money/);
+});

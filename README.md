@@ -34,13 +34,20 @@ runs anywhere with Node 20 and a Postgres.
   installation, a video call), who takes each, everyone's hours, time off
   and Google or Outlook calendar, and every booking, with "Make it a job".
   The public booking page is the Website's; both use the same tables.
+- **Quotes and invoices**: a quote with lines and tax, previewed and
+  emailed as a PDF from your own email sender, marked accepted or declined;
+  then an invoice made in your Stripe account, which emails it and takes
+  the payment by card or bank on Stripe's page. Cash or a
+  check is marked paid there too. A customer's page shows what was
+  quoted, what they owe now and what they paid.
 - **A pipeline** of stages you name and order, with drag between them,
   or a select on each card without JavaScript.
 - **CSV import** of the list you keep today, matched by email then phone
   so nobody is added twice, with a dry run first.
 - **The AI's hands**: scripts to find, add, update, note, stage, tag,
   import and export customers from chat, add and close jobs or visits,
-  and list what came in.
+  quote and invoice, and list what came in. Sending anything to a customer
+  waits for your yes.
 
 ## Shaping it
 
@@ -63,7 +70,7 @@ is an additive line in `schema.sql`.
 - **Production, on Cloudflare:** `npm run deploy` applies the schema from
   the machine, builds, and deploys. It stays team only: Task & Tool signs
   your team in and tells the CRM who they are, which is the whole login.
-  Without that, every page answers 404.
+  Without that, every page answers 404, except Stripe's signed webhook.
 - Anywhere else: `npm install`, put `DATABASE_URL` (any Postgres) and
   `ADMIN_DEV_USER=<your email>` in the environment, `npm run dev`, and open
   `http://localhost:3000`. `npm run check` and `npm test` are the checks;
@@ -78,8 +85,10 @@ src/app.tsx              the Hono app: the team-only gate, the routes
 src/crm/                 customers, stages, notes, visits, what came in, history, import
 src/views/               what came in, customers, a customer, visits, pipeline, stages
 src/booking/             a copy of the booking skill: the Bookings section, the calendar sync job
-src/data/  src/admin/    copies of the data and admin business skills
-scripts/                 customers, visits, inbox, stages, import, export, migrate (--help)
+src/invoices/            a copy of the invoices skill: quotes, invoices, tax rates, Stripe
+src/data/  src/admin/    copies of the data and admin business skills, and what is
+src/payments/ src/reports/   used of payments and reports
+scripts/                 customers, visits, forms, quotes, invoices, inbox, stages, import, export, migrate (--help)
 styles/  static/         the tokens; the built CSS, vendored htmx and SortableJS, crm.js
 examples/                hvac, dental, restaurant, plumbing, counselor configs
 test/                    node:test
@@ -91,4 +100,5 @@ test/                    node:test
 
 Hono with server-rendered JSX, `pg` on Postgres with plain SQL, Tailwind
 v4 as tokens, htmx for the round trips, SortableJS for the pipeline. No
-client framework, no ORM, no login of its own, no email sent. MIT.
+client framework, no ORM, no login of its own; email only through your
+own sender, money only through your own Stripe. MIT.

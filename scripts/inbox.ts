@@ -6,7 +6,7 @@ import { addFromInbox, inboxPage, markDone, sinceDays, sourceOf, type InboxKind,
 import { firstOpenStage } from "../src/crm/stages";
 import { missingSentence } from "../src/crm/tables";
 import { money, wallTime, wallToInstant } from "../src/crm/text";
-import { fail, flag, has, local, out, parseArgs, who, withDb } from "./lib";
+import { fail, flag, has, local, out, parseArgs, usage, who, withDb } from "./lib";
 
 const HELP = `inbox.mjs [list] [--since 7d|YYYY-MM-DD (in the business's zone)] [--unmatched] [--limit 50] [--json]
 inbox.mjs add <submission|booking|payment> <id>     make a customer from it (or find the one it matches)
@@ -19,11 +19,8 @@ customer it matched by email (then phone), or "not a customer yet".
 ${cfg.time_zone}. --as records who acted (default CRM_USER, else AI).`;
 
 const a = parseArgs(process.argv.slice(2));
-if (has(a, "help")) {
-  console.log(HELP);
-  process.exit(0);
-}
 const [cmd = "list", ...rest] = a._;
+usage(a, cmd, ["list", "add", "done"], HELP, "inbox");
 const json = has(a, "json");
 
 function since(v: string | undefined): Date | null {
@@ -69,7 +66,5 @@ await withDb(async (db) => {
       const ok = await markDone(db, rest[0], user);
       return out(json, { ok }, () => (ok ? `submission ${rest[0]} marked done` : `submission ${rest[0]} is not new or read (or does not exist)`));
     }
-    default:
-      fail(`unknown command ${cmd}\n\n${HELP}`);
   }
 });

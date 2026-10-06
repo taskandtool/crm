@@ -27,5 +27,6 @@
     ],
     "currency": "USD"
   },
-  "booking": false
+  "booking": false,
+  "invoices": false
 }

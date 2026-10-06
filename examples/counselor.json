@@ -17,5 +17,6 @@
   "pipeline": false,
   "inbox": { "forms": "all", "exclude_forms": [], "bookings": false, "payments": false },
   "visits": false,
-  "booking": false
+  "booking": false,
+  "invoices": false
 }

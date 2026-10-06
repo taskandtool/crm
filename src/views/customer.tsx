@@ -6,7 +6,7 @@ import { FieldList, JsonData, Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
 import { StatusForm } from "../admin/status";
-import { cfg, ownerLabel, showBooking, visitsCfg, vocab } from "../config";
+import { cfg, invoicesCfg, ownerLabel, showBooking, visitsCfg, vocab } from "../config";
 import { listUrl } from "../admin/query";
 import type { Customer } from "../crm/customers";
 import type { HistoryItem } from "../crm/history";
@@ -20,6 +20,9 @@ import { firstText } from "./inbox";
 import { Layout } from "./layout";
 import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, stageOptions, timeZone, Who } from "./ui";
 import { CustomerVisits } from "./visits";
+import { CustomerMoney, type Owed } from "./money";
+import type { Quote } from "../invoices/quotes";
+import type { Invoice } from "../invoices/invoices";
 
 export function CustomerPage(p: {
   user: string;
@@ -30,6 +33,8 @@ export function CustomerPage(p: {
   history: HistoryItem[];
   present: Present;
   owners: string[];
+  /** Quotes and invoices, when they are on; null when off. */
+  money: { quotes: Quote[]; invoices: Invoice[]; owed: Owed[] } | null;
   flash: { code?: string | null; n?: string | null };
 }) {
   const c = p.customer;
@@ -53,6 +58,7 @@ export function CustomerPage(p: {
         {showBooking ? (
           <a href={listUrl("/bookings/new", { name: c.name, email: c.email, phone: c.phone, address: c.address })}>Book a time</a>
         ) : null}
+        {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", { email: c.email, name: c.name, phone: c.phone, address: c.address })}>New quote</a> : null}
         {c.email ? <a href={`mailto:${c.email}`} class="break-all">Email {c.email}</a> : null}
       </div>
       {c.archived_at ? (
@@ -70,6 +76,7 @@ export function CustomerPage(p: {
               <CustomerVisits c={c} visits={p.visits} owners={p.owners} />
             </Section>
           ) : null}
+          {p.money ? <CustomerMoney c={c} {...p.money} /> : null}
           <Section title="Details">
             <Details c={c} owners={p.owners} />
           </Section>

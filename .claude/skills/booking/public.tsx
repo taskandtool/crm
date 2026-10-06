@@ -23,22 +23,15 @@ import type { Db, GetDb } from "../data/db";
 import { envVar } from "../data/env";
 import { HONEYPOT, makeStamp, SpamFields, STAMP, verdict } from "../data/spam";
 import {
-  book, bookableTypes, bookingByToken, cancelByToken, hostsOf, openSlotsFor, reschedule, resourceById, typeById, typeBySlug, whereText,
+  book, bookableTypes, bookingByToken, releaseLapsedHolds, cancelByToken, hostsOf, openSlotsFor, reschedule, resourceById, typeById, typeBySlug, whereText,
   type Booking, type BookingType, type OpenSlot, type Resource,
 } from "./book";
 import { invite } from "./ics";
+import type { BookingNotice } from "./notify";
 import { byLocalDate, formatDate, formatSlot, formatTime, isValidZone, localDate, zoneLabel } from "./slots";
 
-export type BookingEvent = {
-  event: "booked" | "rescheduled" | "cancelled";
-  booking: Booking;
-  /** What was booked: its name and where it happens. */
-  type: BookingType;
-  /** Who takes it: the organizer of the invite. */
-  host: Resource;
-  /** The manage link, absolute: put it in the confirmation. */
-  manageUrl: string;
-};
+/** What the public pages report to onBooked and afterBook: always with the manage link, absolute. */
+export type BookingEvent = BookingNotice & { manageUrl: string };
 
 /** What a type's page says about where, before anyone books. */
 const typeWhere = (t: BookingType) =>
@@ -107,6 +100,7 @@ const q = (params: Record<string, string | null | undefined>) => {
 /** The open slots for the next days, grouped by the viewer's local date. */
 export async function upcoming(db: Db, type: BookingType, viewerZone: string, maxDays: number, opts: { hosts?: string[]; exceptBooking?: string } = {}) {
   const now = new Date();
+  await releaseLapsedHolds(db, now);
   const days = Math.min(type.horizon_days + 1, maxDays);
   const list = await openSlotsFor(db, type, now, new Date(now.getTime() + (days + 1) * 86_400_000), now, opts);
   return byLocalDate(list, viewerZone);

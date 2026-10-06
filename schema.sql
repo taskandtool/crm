@@ -108,3 +108,12 @@ comment on table customer_visits is 'A customer''s jobs, visits, appointments or
 comment on column customer_visits.booking_id is 'The booking this was made from, if any (the booking skill''s bookings.id).';
 comment on column customer_visits.starts_at is 'When it happens or happened; null while it is not scheduled yet.';
 comment on column customer_visits.amount_cents is 'What it was worth, in the minor units of currency (cents for USD). A record, not a payment: payments are their own table.';
+
+-- What the scripts last set up, so a script call skips setup when nothing
+-- changed: one row, the hash of the schema files setup applied.
+create table if not exists crm_setup (
+  name text primary key,
+  schema_hash text not null,
+  updated_at timestamptz not null default now()
+);
+comment on table crm_setup is 'The hash of the schema the CRM''s setup last applied; the command-line scripts skip setup while it matches.';

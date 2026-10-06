@@ -8,7 +8,7 @@ import { vocab } from "../config";
 import { sourceOf, type InboxRow } from "../crm/inbox";
 import { money } from "../crm/text";
 import { Layout } from "./layout";
-import { buttonClass, MESSAGES, primaryClass, timeZone } from "./ui";
+import { buttonClass, controlClass, MESSAGES, primaryClass, timeZone } from "./ui";
 
 const SUBMISSION: StatusOption[] = [
   { value: "new", label: "New", tone: "accent" },
@@ -34,6 +34,9 @@ export type InboxProps = {
   more: (cursor: string) => string;
   self: string;
   unmatched: boolean;
+  /** The form chosen, and the forms to choose from. */
+  form: string | null;
+  forms: { key: string; title: string }[];
   paged: boolean;
   missing: string | null;
   flash: { code?: string | null; n?: string | null };
@@ -46,6 +49,15 @@ export function InboxPage(p: InboxProps) {
       {/* The box applies on change (htmx swaps #results and pushes the URL,
           so back and refresh keep it); Apply is the same form without JS. */}
       <form method="get" action="/" hx-get="/" hx-target="#results" hx-swap="outerHTML" hx-push-url="true" class="mb-4 flex flex-wrap items-center gap-3 text-label text-ink-2">
+        {p.forms.length ? (
+          <label class="flex items-center gap-2">
+            From
+            <select name="form" hx-get="/" hx-trigger="change" hx-include="closest form" class={controlClass}>
+              <option value="">Everything</option>
+              {p.forms.map((f) => <option value={f.key} selected={f.key === p.form}>{f.title}</option>)}
+            </select>
+          </label>
+        ) : null}
         <label class="flex items-center gap-2">
           <input type="checkbox" name="unmatched" value="1" checked={p.unmatched} hx-get="/" hx-trigger="change" hx-include="closest form" />
           Only people who are not {vocab.many.toLowerCase()} yet
@@ -64,7 +76,7 @@ export function InboxResults(p: Pick<InboxProps, "rows" | "next" | "more" | "sel
       {p.missing && p.rows.length ? <p class="mb-4 text-label text-ink-3">{p.missing}</p> : null}
       {p.paged ? (
         <p class="mb-3 text-label">
-          <a href={p.unmatched ? "/?unmatched=1" : "/"}>Back to the newest</a>
+          <a href={p.self}>Back to the newest</a>
         </p>
       ) : null}
       {p.rows.length ? (

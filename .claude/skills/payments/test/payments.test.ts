@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { Hono } from "hono";
 import { applySchema } from "../../data/migrate";
 import { scratch, why, type Scratch } from "../../data/test/scratch";
-import { stripeWebhook } from "../webhook";
+import { stripeWebhook, type WebhookOptions } from "../webhook";
 import { startCheckout } from "../checkout";
 import { paymentsAdmin } from "../admin";
 import { stripeFrom, type Stripe } from "../stripe";
@@ -29,19 +29,19 @@ const noStripe: Stripe = async () => {
   throw new Error("Stripe must not be called");
 };
 
-function hook() {
+function hook(afterPaid?: WebhookOptions["afterPaid"]) {
   const app = new Hono();
-  app.route("/", stripeWebhook(() => s!.db, { secret: () => SECRET }));
+  app.route("/", stripeWebhook(() => s!.db, { secret: () => SECRET, afterPaid }));
   return app;
 }
 
 let n = 0;
-function send(type: string, object: object, opts: { id?: string; secret?: string } = {}) {
+function send(type: string, object: object, opts: { id?: string; secret?: string; afterPaid?: WebhookOptions["afterPaid"] } = {}) {
   const event = { id: opts.id ?? `evt_${++n}_${Date.now()}`, type, created: Math.floor(Date.now() / 1000), data: { object } };
   const body = JSON.stringify(event);
   const t = String(Math.floor(Date.now() / 1000));
   const v1 = createHmac("sha256", opts.secret ?? SECRET).update(`${t}.${body}`).digest("hex");
-  return hook().request("https://hooks.example/hooks/stripe", {
+  return hook(opts.afterPaid).request("https://hooks.example/hooks/stripe", {
     method: "POST",
     headers: { "stripe-signature": `t=${t},v1=${v1}`, "content-type": "application/json" },
     body,
@@ -86,6 +86,30 @@ test("a completed checkout marks the payment paid, from the webhook alone", asyn
   assert.equal(p.stripe_payment_intent_id, "pi_b1");
   assert.equal(p.email, "payer@example.com");
   assert.ok(p.paid_at);
+});
+
+test("afterPaid runs for an event that leaves the payment paid, and again on the retry after it failed", async (t) => {
+  if (!s) return t.skip(why);
+  const id = await pending("b9");
+  const calls: string[] = [];
+  let fail = true;
+  const afterPaid = async (_c: unknown, paymentId: string) => {
+    calls.push(paymentId);
+    if (fail) throw new Error("down");
+  };
+  const expired = await send("checkout.session.expired", session(await pending("b10"), "b10"), { afterPaid });
+  assert.equal(expired.status, 200);
+  assert.deepEqual(calls, [], "not for an event that leaves it unpaid");
+  const first = await send("checkout.session.completed", session(id, "b9"), { id: "evt_after", afterPaid });
+  assert.equal(first.status, 500, "a failure is a 500, so Stripe delivers again");
+  fail = false;
+  const again = await send("checkout.session.completed", session(id, "b9"), { id: "evt_after", afterPaid });
+  assert.equal(again.status, 200);
+  assert.deepEqual(calls, [String(id), String(id)], "the retry ran it again from the recorded row");
+  assert.equal((await row(id)).status, "paid");
+  // Refunded whole, its paid event never seen: not bought, so nothing follows.
+  await send("charge.refunded", charge(await pending("b11"), "b11", 5000, true), { afterPaid });
+  assert.equal(calls.length, 2, "not for a payment refunded whole");
 });
 
 test("the same event delivered twice is handled once", async (t) => {

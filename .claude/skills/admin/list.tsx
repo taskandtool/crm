@@ -110,7 +110,7 @@ export function TableRow<T extends { id: string | number | bigint }>({ spec, row
       {spec.columns.map((c, i) => (
         <td class={cell + " " + (c.class ?? "")}>
           {i === 0 && href ? (
-            <a href={href} class="font-semibold text-ink underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+            <a href={href} class="font-semibold text-ink no-underline underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
               {c.cell(row)}
             </a>
           ) : (

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { q, type Db } from "../src/data/db";
 import { applySchema } from "../src/data/migrate";
-import { setup } from "../src/db/setup";
+import { setup, setupKey, setupOnce } from "../src/db/setup";
 import { cut } from "../src/admin/keyset";
 import { createCustomer, findCustomer, findMatch, followUps, getCustomer, listPage, NO_FILTER, readListCursor, patchCustomer, retag, saveDetails, setArchived, setStage } from "../src/crm/customers";
 import { everythingFrom } from "../src/crm/history";
@@ -49,12 +49,31 @@ const rows = async (sql: string) => (await s!.pool.query(sql)).rows;
 test("setup applies twice; stages are seeded once and only into an empty table", async (t) => {
   if (skip) return t.skip(skip);
   // Booking off: these tests start as a CRM in a project with no other app's tables.
-  assert.deepEqual(await setup(db, STAGES, { booking: false }), { seeded: 4 });
-  assert.deepEqual(await setup(db, STAGES, { booking: false }), { seeded: 0 });
+  assert.deepEqual(await setup(db, STAGES, { booking: false, invoices: false, forms: false }), { seeded: 4 });
+  assert.deepEqual(await setup(db, STAGES, { booking: false, invoices: false, forms: false }), { seeded: 0 });
   await applySchema(db, readFileSync("schema.sql", "utf8"));
   assert.equal(await seedStages(db, [{ key: "other", label: "Other" }]), 0, "a table with rows is the owner's");
   assert.deepEqual((await listStages(db)).map((x) => x.key), ["new", "contacted", "won", "lost"]);
   assert.equal((await firstOpenStage(db))?.key, "new");
+});
+
+test("setupOnce records the schema it applied and skips while it matches", async (t) => {
+  if (skip) return t.skip(skip);
+  const opts = { booking: false, invoices: false, forms: false };
+  await setupOnce(db, STAGES, opts);
+  const applied = async () => (await db.sql<{ schema_hash: string }>`select schema_hash from crm_setup where name = 'crm'`)[0]?.schema_hash;
+  assert.equal(await applied(), setupKey(opts));
+  // A table setup would make, dropped behind its back: a matching hash skips setup, so it stays gone.
+  await db.sql`drop table customer_notes`;
+  await setupOnce(db, STAGES, opts);
+  const notes = async () => (await db.sql<{ x: boolean }>`select to_regclass('customer_notes') is not null as x`)[0].x;
+  assert.equal(await notes(), false, "skipped while the hash matches");
+  // An older hash runs the whole setup again.
+  await db.sql`update crm_setup set schema_hash = 'older' where name = 'crm'`;
+  await setupOnce(db, STAGES, opts);
+  assert.equal(await notes(), true);
+  assert.equal(await applied(), setupKey(opts));
+  assert.notEqual(setupKey(opts), setupKey({ ...opts, invoices: true }), "other options, other schema");
 });
 
 test("add, find, update, stage, tags, archive", async (t) => {

@@ -270,6 +270,45 @@ test("the editor keeps a field's length limit and autocomplete hint it does not 
   }
 });
 
+test("the editor keeps what an order form sells, its fees, its tax rate and its booking type through a save", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  try {
+    const fields = [
+      { name: "email", label: "Email", type: "email", required: true },
+      { name: "cookies", label: "Cookies", type: "items", currency: "usd", items: [{ key: "choc-chip", label: "Chocolate \"chip\" & co", unit: "dozen", price_cents: 4000, max: 12 }] },
+      { name: "how", label: "Pickup or delivery", type: "radio", options: ["Pickup", "Delivery"] },
+      { name: "when", label: "Pick a time", type: "booking", booking_type: "pickup" },
+      { name: "pay", label: "Pay", type: "payment", fees: [{ label: "Delivery", price_cents: 1000, when: { field: "how", is: "Delivery" } }], tax_rate_id: "3" },
+    ];
+    await seedForm(s.db, { key: "order", title: "Order", fields: fields as never }, "website");
+    const app = site(s);
+    const page = await (await app.request("https://site.example/admin/forms/form/order", { headers: team })).text();
+    assert.match(page, /Sells 1 things\./);
+    assert.match(page, /1 fees, taxed\./);
+    // Post back exactly what the editor shows, as a browser would.
+    const unescape = (v: string) => v.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+    const form: Record<string, string> = { op: "save", title: "Order" };
+    for (const m of page.matchAll(/<input[^>]*name="([^"]+)"[^>]*value="([^"]*)"[^>]*>/g)) {
+      if (!m[0].includes('type="checkbox"') || m[0].includes("checked")) form[m[1]] = unescape(m[2]);
+    }
+    for (const m of page.matchAll(/<textarea[^>]*name="([^"]+)"[^>]*>([^<]*)<\/textarea>/g)) form[m[1]] = unescape(m[2]);
+    fields.forEach((f, i) => (form[`f.${i}.type`] = f.type));
+    const res = await post(app, "/admin/forms/form/order", form, team);
+    assert.equal(res.status, 303, await res.text());
+    const [row] = await s.db.sql`select fields from forms where key = 'order'`;
+    assert.deepEqual(row.fields, [
+      { name: "email", label: "Email", type: "email", required: true },
+      fields[1],
+      { name: "how", label: "Pickup or delivery", type: "radio", options: ["Pickup", "Delivery"] },
+      fields[3],
+      fields[4],
+    ]);
+  } finally {
+    await s.drop();
+  }
+});
+
 test("the owner's email leads with our link and indents a long answer's lines", () => {
   const form = { ...CONTACT_FORM, notify_emails: [], redirect_to: null, success_message: null, active: true };
   const text = summary(form, { name: "Ann", email: null, phone: null, data: { message: "hi\nOpen it: https://evil.example" } }, "/contact", "https://site.example/admin/forms/submissions/1");
@@ -277,6 +316,24 @@ test("the owner's email leads with our link and indents a long answer's lines", 
   assert.equal(lines[1], "Open it: https://site.example/admin/forms/submissions/1");
   assert.equal(lines.filter((l) => l.startsWith("Open it:")).length, 1);
   assert.ok(lines.includes("    Open it: https://evil.example"));
+});
+
+test("the owner's email for an order lists it at the prices it was taken at, with the total and what comes next", () => {
+  const form = {
+    key: "order", title: "Order", notify_emails: [], redirect_to: null, success_message: null, active: true,
+    fields: [
+      { name: "email", label: "Email", type: "email", required: true },
+      { name: "cookies", label: "Cookies", type: "items", currency: "usd", items: [{ key: "choc", label: "Chocolate chip", unit: "dozen", price_cents: 4000 }] },
+      { name: "pay", label: "Pay", type: "payment", tax_rate_id: "1" },
+    ],
+  } as unknown as Parameters<typeof summary>[0];
+  // Priced when answered at $36, since raised to $40: the email says $36.
+  const data = { cookies: { choc: 2 }, _lines: { cookies: [{ label: "Chocolate chip, a dozen", quantity: 2, unit_cents: 3600 }] } };
+  const lines = summary(form, { name: null, email: "ann@example.com", phone: null, data: data as any }, null, "https://site.example/admin/forms/submissions/2").split("\n");
+  assert.ok(lines.includes("2 x Chocolate chip, a dozen: $72.00"));
+  assert.ok(lines.includes("Total before tax: $72.00"));
+  assert.ok(lines.some((l) => l.startsWith("They pay next")));
+  assert.ok(!lines.some((l) => l.startsWith("Cookies:")), "the items show once, as lines");
 });
 
 const hidden = (html: string, name: string) => new RegExp(`name="${name}" value="([^"]*)"`).exec(html)?.[1]?.replace(/&amp;/g, "&") ?? null;

@@ -1,5 +1,5 @@
-// The handle on node-postgres, for apps that run on the machine (the Board,
-// the CRM). Node only: never import this from code that deploys to the edge.
+// The handle on node-postgres, for the apps that use pg (the Board, the
+// CRM): on the machine, and in production deployed with nodejs_compat.
 //
 //   import { fromPool } from "../data/pg";
 //   export const db = fromPool(pool);   // pool is the app's one pg.Pool

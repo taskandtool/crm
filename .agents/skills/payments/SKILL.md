@@ -1,6 +1,6 @@
 ---
 name: payments
-description: "Taking money through the owner's Stripe account: Checkout for deposits and full payments, payment status from the verified webhook, payments linked to a booking or invoice, and the private payments list. Use for any charge, deposit, refund or payment status. Not for this platform's own billing."
+description: "Takes money through the owner's own Stripe account: Checkout for an order, a deposit or a paid booking, status from the verified webhook, refunds and tax rates. Use when a form or booking takes payment, for the Stripe key or webhook, or a refund. Not for quotes and invoices (invoices) or Task & Tool's own billing."
 ---
 
 # Payments

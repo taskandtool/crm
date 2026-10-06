@@ -15,6 +15,8 @@ export type InboxConfig = {
 };
 /** A customer's jobs, visits, appointments or events: its words, its own custom fields, the currency its amounts are in. */
 export type VisitsConfig = { one: string; many: string; fields: CustomField[]; currency?: string };
+/** Quotes and invoices: the name printed on them, their currency, standing terms, days to pay. */
+export type InvoicesConfig = { name: string; currency?: string; terms?: string; days_until_due?: number };
 export type Config = {
   business: string;
   vocabulary: { one: string; many: string };
@@ -32,6 +34,8 @@ export type Config = {
   booking?: boolean;
   /** The Website's booking pages, absolute ("https://acme.com/book"): a booking the team makes then mails a manage link there. */
   booking_page?: string;
+  /** Quotes and invoices (the invoices skill); false leaves them out. */
+  invoices?: InvoicesConfig | false;
 };
 
 export const KEY = /^[a-z0-9][a-z0-9_-]{0,39}$/;
@@ -97,6 +101,16 @@ export function validate(raw: unknown): string[] {
   if (c.booking !== undefined && typeof c.booking !== "boolean") out.push("booking must be true or false");
   if (c.booking_page !== undefined && !(typeof c.booking_page === "string" && /^https:\/\/[^\s/]+(\/\S*)?$/.test(c.booking_page))) {
     out.push('booking_page must be the Website\'s booking address, like "https://acme.com/book"');
+  }
+  if (c.invoices !== undefined && c.invoices !== false) {
+    const iv = c.invoices as Partial<InvoicesConfig> | null;
+    if (!iv || typeof iv !== "object" || Array.isArray(iv)) out.push('invoices must be false or an object, e.g. { "name": "Acme Plumbing", "currency": "USD" }');
+    else {
+      if (typeof iv.name !== "string" || !iv.name.trim()) out.push('invoices.name is the business name printed on quotes, e.g. "Acme Plumbing" (or "to fill")');
+      if (iv.currency !== undefined && !validCurrency(iv.currency)) out.push(`invoices.currency must be a currency code such as "USD" (got ${JSON.stringify(iv.currency)})`);
+      if (iv.terms !== undefined && (typeof iv.terms !== "string" || iv.terms.length > 2000)) out.push("invoices.terms must be text of up to 2000 characters");
+      if (iv.days_until_due !== undefined && !(Number.isInteger(iv.days_until_due) && iv.days_until_due >= 0 && iv.days_until_due <= 365)) out.push("invoices.days_until_due must be a whole number of days, 0 to 365");
+    }
   }
   if (c.visits !== undefined && c.visits !== false) {
     const vs = c.visits as Partial<VisitsConfig> | null;

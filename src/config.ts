@@ -20,3 +20,7 @@ export const showPipeline = cfg.pipeline !== false;
 export const showBooking = cfg.booking !== false;
 /** Jobs, visits, appointments or events, or null when the config turns them off. */
 export const visitsCfg = cfg.visits ? { ...cfg.visits, currency: cfg.visits.currency ?? "USD" } : null;
+/** Quotes and invoices, or null when the config turns them off. The name is blank until the business has given it. */
+export const invoicesCfg = cfg.invoices
+  ? { ...cfg.invoices, name: cfg.invoices.name === "to fill" ? "" : cfg.invoices.name.trim(), currency: (cfg.invoices.currency ?? visitsCfg?.currency ?? "USD").toLowerCase() }
+  : null;

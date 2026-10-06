@@ -1,181 +1,58 @@
 ---
 name: crm
-description: "Run and reshape this CRM: the levers (crm.config.json, stages, custom fields, jobs or visits, bookings, additive schema.sql), what came in, team-only production, and the scripts for customers, notes, jobs, import and export. Use for 'shape the CRM', 'add a customer', 'log a job', 'what can be booked', 'who got in touch', 'import my list', 'publish it'."
+description: "Runs and reshapes this CRM: customers keyed by email, what came in from the project's forms, bookings and payments, the pipeline, notes, jobs, its config and schema. Use for 'add a customer', 'log a job', 'who got in touch', 'import my list', 'shape the CRM'. Not for quotes and invoices (invoices)."
 ---
 
 # CRM
 
-This app is a customer record on Hono: server-rendered JSX, htmx for the
-round trips, SortableJS on the pipeline only, Postgres for the data, no
-client framework. **Dev** is this machine's `web` service; **production**
-is the same app deployed to Cloudflare. `AGENTS.md` says where things are;
-this file is how to change it.
+This app is a customer record on Hono: server-rendered JSX, htmx, SortableJS
+on the pipeline, Postgres, no client framework. **Dev** is this machine's
+`web` service; **production** is the same app on Cloudflare, team only.
+`AGENTS.md` says where things are and lists the commands; this file is how
+to change it.
+
+## Rules
+
+- **Email is the key**; phone is the fallback (its last ten digits, only
+  where one side has no email: `src/crm/phone.ts`). Inbox matching, Add as
+  customer, the scripts and the import all use this one rule.
+- **Never hard-delete** a customer, note or visit: archive, or cancel.
+- **Table names never change**; the config changes what people see.
+  `schema.sql` only adds (`npm run check` refuses anything else).
+- **Production stays team only**; every route but `/healthz` and Stripe's
+  signed `POST /hooks/stripe` keeps `teamOnly()`; every change is a POST
+  and records who made it.
+- **Real data only**: never invent customers, notes or history.
+- **Tokens only in markup, no em dashes in copy** (`npm run check`).
+- **Skill code is copied, not edited**: `src/data/`, `admin/`, `forms/`,
+  `booking/`, `payments/`, `invoices/` and `src/reports/` are the business
+  skills' files; change a skill in the skills repo.
+  `dev/starter_apps.sh skills check` fails on any copy that differs.
 
 ## The tables
 
-The project has one Postgres database, and every app in it uses the same
-tables by their plain names.
+The project has one Postgres database; every app uses the same tables by
+their plain names.
 
-- **The CRM's own:** `customers`, `pipeline_stages`, `customer_notes`,
-  `customer_visits` (`schema.sql`); and, with booking on, the booking
-  skill's tables (`src/booking/schema.sql`: `booking_types`,
-  `booking_type_hosts`, `resources`, hours, time off, calendars,
-  `bookings`), which the setup applies first. Booking and the Board read `customers` too, so its
-  columns keep their names and meanings.
-- **Other apps' tables it reads:** `submissions` (and `forms` for titles)
-  from the Website's forms, `bookings` (and `resources`) from Booking,
-  `payments` from Stripe checkouts. Any of them may be missing: the pages
-  leave a missing one out with a sentence, and every query checks first
-  (`src/crm/tables.ts`). The only column of another app's table the CRM
-  writes is `submissions.status`, `new`/`read` to `done` (Mark done).
-- **A person is their email.** `customers.email` is `citext`, unique when
-  present, stored through `normalizeEmail`. A customer may have only a
-  phone: phone is the fallback match (its last ten digits,
-  `src/crm/phone.ts`), and only where one side has no email, so two
-  people with different emails on one household phone stay two people.
-  Inbox matching, Add as customer, `customers.mjs add` and the import all
-  use this one rule; keep it that way.
+- **The CRM's own**: `customers`, `pipeline_stages`, `customer_notes`,
+  `customer_visits`, and `crm_setup` (`schema.sql`). Booking and the Board read `customers`
+  too, so its columns keep their names and meanings.
+- **The skills' tables it sets up and writes** (`src/db/setup.ts`): the
+  forms tables (it shows submissions and edits forms), the booking tables
+  when booking is on, and with invoices on the payments and invoices
+  tables (quotes, invoices, tax rates, refunds, the Stripe events).
+- **What other apps write that it reads**: submissions from the Website's
+  forms, its bookings and payments. Of those it changes only a submission's
+  status, and refunds a payment when a team member confirms one.
 
-## The four levers
+## Read next
 
-Everything a business wants changed is one of these.
-
-1. **`crm.config.json`**, read at start and validated (a bad file stops the
-   server with the reason; `npm run check` says it first).
-   - `vocabulary`: `{ "one": "Patient", "many": "Patients" }`.
-   - `stages`: `{ key, label, kind }`, kind `open`, `won` or `lost`.
-     **Seeded only into an empty `pipeline_stages`**, and the service seeded
-     the defaults the moment the database appeared. On a running CRM the
-     config's stages change nothing: use lever 2, then make the config
-     match so a fresh install gets the same.
-   - `sources`: suggestions for the Source field.
-   - `fields`: custom fields (lever 3).
-   - `owner_label`: what the owner column is called (`Technician`,
-     `Dentist`, `Provider`). An owner is a team member's email when they
-     sign in to Task & Tool, otherwise just their name (`Kim`): it is free
-     text, and the list filters by whatever is there. Use one form per
-     person, or the filter splits them.
-   - `time_zone`: an IANA name. Every time on a page, and the "when" of a
-     note, is in this zone; it ships as `UTC`, so setting it is part of
-     shaping. The machine's clock never decides.
-   - `default_view` (`list` or `pipeline`) and `pipeline` (`false` hides it,
-     for a business that only wants a record).
-   - `inbox`: `forms` is `"all"` or a list of form keys that count as
-     people getting in touch; `exclude_forms` drops some (`newsletter`);
-     `bookings` and `payments` turn those sources off. Find the form keys
-     with `select key, title from forms`.
-   - `visits`: what one job, visit, appointment or event is called
-     (`{ "one": "Job", "many": "Jobs" }`), its own custom `fields` (same
-     shape as lever 3), and the `currency` of its amounts; `false` turns
-     them off (the counselor). See "Jobs and visits" below.
-   - `booking`: `false` leaves out the team's side of booking (the
-     dentist whose practice software books, the counselor). On otherwise.
-   - `booking_page`: the Website's booking address (`https://acme.com/book`),
-     once it has one, so a booking the team makes mails a manage link there.
-   - `business`: one line about the business. It ships as `to fill`;
-     writing the real line retires the "Shape the CRM" suggestion.
-
-   After a change: `sprite-env services restart web`, then `npm run check`.
-
-2. **Stages are rows** in `pipeline_stages`, edited on `/stages` or with
-   `node scripts/stages.mjs`. New people land in the first open stage. A
-   stage is archived, never deleted, and only once nobody is in it
-   (`--move-to` moves them in the same transaction); there is always at
-   least one open stage.
-
-3. **A custom field needs no migration.** Add it to `fields`:
-   `{ "key": "truck", "label": "Truck", "type": "select", "options": ["Truck 1", "Truck 2"] }`
-   (types `text`, `number`, `date`, `select`, `phone`, `email`; keys are
-   `snake_case` and never a built-in column name). Values live in
-   `customers.fields` (jsonb) and show on the customer page, in the CSV,
-   in the import (header matched by key or label) and in the scripts
-   (`--field truck="Truck 2"`), and Add as customer fills it from a form
-answer whose name is the field's key (as it fills Address and Company from
-answers named `address` and `company`; a value the customer form would
-refuse is left out, and a customer who already has a value keeps it; a row
-with no phone takes the latest one that email gave). Removing one from the config hides it; the
-   data stays. Two limits to tell the owner when they matter: a custom
-   field holds one value per customer (which truck went to each job is a
-   visit field, below), and the list cannot filter by one (for "show me
-   everyone at the North location", use a tag or lever 4).
-
-4. **`schema.sql`, for a real column** (indexed, filtered, joined on). It is
-   applied by `applySchema` (`src/data/migrate.ts`) at every start and every
-   deploy, by every copy of this app at any version, so it only adds:
-
-   ```sql
-   alter table customers add column if not exists region text;
-   create index if not exists customers_region on customers (region);
-   ```
-
-   A new column gets its own `alter table ... add column if not exists`
-   line (a `create table if not exists` skips a table that is already
-   there). Never drop, rename or change a type; `applySchema` refuses the
-   file before running any of it. Name an index after its table. Then
-   restart, add it to `src/crm/customers.ts` and the views, `npm run check`
-   and `npm test`.
-
-## Jobs and visits
-
-`customer_visits` holds one row per occasion: a plumber's job, a dentist's
-visit, a restaurant's event. Each has what it was (`title`), when
-(`starts_at`, null while not scheduled), a status (`planned`, `done`,
-`cancelled`; never deleted), who did it (`owner`, `owner_label` names it),
-an amount in minor units with its `currency`, notes, and the config's
-`visits.fields` in `fields` (jsonb). Pages: `/visits` (coming up, soonest
-first, then Done and All, CSV of each) and a section on every customer's
-page. Two rules the code keeps: done counts as contact, and done is never
-in the future (one marked done early happened now); someone with a visit
-planned from now on is not a follow-up.
-
-A fact about the customer is a customer field (their system, their
-insurer); a fact about one occasion is a visit field (the truck that went,
-the party size, the reason for the visit). It is a record, not a
-schedule: times people book stay in `bookings`, and a booking becomes a
-visit only when the owner asks (`visits.mjs add`).
-
-## Bookings
-
-A customer books a **type** (an estimate visit, an installation, a video
-call) and one of its **hosts** takes it. Here, under Bookings, the team
-sets what can be booked (`/bookings/types`: length, buffers for travel,
-notice, where it happens: at their place, at ours, by phone, by video
-link), who takes each, each person's weekly hours, time off and Google or
-Outlook calendar (`/bookings/people`), and sees every booking. The public
-page that takes bookings is the Website's (`/book`, the booking skill's
-recipe): this CRM is private as a whole and never shows a booking page.
-Both read and write the same tables, so a change here is live there on the
-next load.
-
-Set it up by asking what people book, how long it takes, where it
-happens and who does it; add the people first, then the types, and tick
-who takes each. A type nobody takes stays off `/book`.
-
-The Schedule is the week by person; Book for someone (and "Book a time"
-on a customer's page, which carries their details) books a caller in.
-
-**Messages.** A booking the team makes sends its confirmation, and the
-reminder job reminds every booker a day and an hour before, through the
-owner's email sender: Resend or Postmark granted to this app (ask with
-`request_connection("resend", why="send booking confirmations and
-reminders")` if `list_connections()` has neither), `NOTIFY_FROM` set to an
-address on a domain verified there, and `NOTIFY_VIA` when the connection's
-slug is not the vendor's name. With none, nothing is sent and the bookings
-stand. Schedule the reminders once (`/schedule-job`, after `list_jobs()`):
-`schedule_job("Booking reminders", "*/15 * * * *", command="npx tsx
-src/booking/reminders.ts", client_visible=False)`. A text message instead
-is a `Send` written against the owner's Twilio connection (the `booking`
-skill's "Messages and reminders"). Never send through Task & Tool.
-
-A booking is a time on someone's calendar; a job is the record of the
-work. "Make it a job" (on the booking, on the customer's page, or in the
-Jobs page's "Booked, not a job yet") adds the customer if they are new
-(their address from a booking at their place) and a job carrying the
-booking's type, time, host and place, once per booking.
-
-Calendars, reminders and the booking skill's other rules are in the
-`booking` skill; the calendar sync job is `src/booking/sync.ts` (schedule
-it as that skill says, with `npx tsx src/booking/sync.ts`).
+| When | Read |
+|---|---|
+| Changing words, stages, custom fields, a real column; jobs or visits | `references/levers.md` |
+| What can be booked, hours, calendars, booking messages | `references/bookings.md` |
+| Forms here; setting up quotes, invoices, Stripe or the email sender | `references/money.md`, then the `invoices` skill |
+| Shaping the CRM for a business; importing or exporting a list | `references/shaping.md` |
 
 ## Dev, on this machine
 
@@ -186,8 +63,9 @@ curl -s -H 'X-TaskTool-User: you@example.com' localhost:3000/customers | head
 tail -50 /.sprite/logs/services/web.log
 ```
 
-Every path but `/healthz` answers 404 without `X-TaskTool-User`: that is
-the gate (`src/admin/guard.ts`), not a fault. If the service is missing,
+Every path but `/healthz` and Stripe's signed `/hooks/stripe` answers 404
+without `X-TaskTool-User`: that is the gate (`src/admin/guard.ts`), not a
+fault. If the service is missing,
 re-run `bash ~/app/.taskandtool/setup.sh` (idempotent). If `/healthz` stays
 503 the project has no Postgres yet: the owner adds it from the app's page,
 or ask with `request_capability("postgres", why)` from
@@ -215,112 +93,7 @@ Website) instead.
   signed-in team member and strips forged copies. `created_by`,
   `updated_by` and a note's `author` come from it; scripts record `--as`
   (default `AI`). Never build a login, and never loosen `teamOnly()`.
-- The CRM sends no email or text, and Task & Tool never sends for it. A
-  note of kind `email`, `call` or `text` records contact that happened
-  elsewhere. If the owner wants to send from here, that is their own
-  provider through the `data` skill's `send.ts`, built when asked.
-
-## Your hands: the scripts
-
-Every script answers `--help`, takes `--json`, and works on a fresh
-database (it runs the same setup the service does).
-
-```bash
-node scripts/inbox.mjs --since 7d                  # what came in, and who it matched
-node scripts/inbox.mjs --unmatched                 # people who are not customers yet
-node scripts/inbox.mjs add submission 412          # Add as customer
-node scripts/customers.mjs find "lee"
-node scripts/customers.mjs add "Ann Lee" --email ann@example.com --phone "555 010 2030" --source Referral --tag VIP --field system="Heat pump"
-node scripts/customers.mjs note ann@example.com "Booked a tune-up for Friday" --kind call --at "2026-10-02 14:30"
-node scripts/customers.mjs stage ann@example.com won
-node scripts/customers.mjs update 42 --owner sam@example.com --field next_service=2027-04-01
-node scripts/customers.mjs follow-up --days 14    # open customers gone quiet
-node scripts/visits.mjs list                      # coming up; --done, --all, --owner, --customer <who>
-node scripts/visits.mjs add ann@example.com "Annual tune-up" --at "2026-10-09 09:30" --owner Sam --field truck="Truck 2"
-node scripts/visits.mjs done 12                   # or cancel 12, plan 12
-node scripts/visits.mjs update 12 --amount 245.00 --notes "Replaced the igniter"
-node scripts/stages.mjs list
-node scripts/stages.mjs rename new "New enquiry"
-node scripts/stages.mjs archive quoted --move-to won
-```
-
-`<who>` is an id, an email or a phone number. `add` never makes a
-duplicate: an email or phone already here is reported instead.
-`--at` is a wall time in the business's zone.
-
-**Import:** always `--dry-run` first and show the owner the mapping and
-the counts, then run it.
-
-```bash
-node scripts/import.mjs ~/app/uploads/customers.csv --dry-run
-node scripts/import.mjs ~/app/uploads/customers.csv --map name=Client,phone="Cell #" --source "Old spreadsheet"
-```
-
-Headers match built-in names and custom fields, not `owner_label`: a
-`Hygienist` column needs `--map owner=Hygienist`. Imported people are
-created at the moment of the import, so give the file a `--source` (or
-`--tag`) that a "new customers" count can leave out.
-
-Rows match existing customers and each other by email, then phone (a
-row with neither matches by name a customer with neither). A match only
-gains (empty fields filled, tags added); `--overwrite` replaces
-values, stage included. Anyone left without a last contact gets the
-time of their latest submission, booking or payment, by email. The import
-is one transaction. `node
-scripts/export.mjs --out customers.csv` is the reverse, and its headers
-import back as they are.
-
-## Shaping the CRM for a business
-
-Read `crm.config.json`, the closest of `examples/` (a two-van HVAC shop, a
-dental practice, a restaurant with events, a plumber with three locations
-and eight trucks, a counselor who only wants a record), and what the
-project already knows: the owner's words, a Company Brain's notes, the
-Website's forms (`select key, title from forms`). Ask only what you cannot
-infer. Then:
-
-1. Write the config: words, stages, sources, fields, owner label, time
-   zone, view, inbox, visits (their name and fields, or `false`), the
-   business line.
-2. Make the live stages match with `scripts/stages.mjs` (rename, add, set
-   kind, archive with `--move-to`), since the defaults are already rows.
-   Rename in place rather than archive and re-add: the key stays (`new`
-   labelled `Enquiry`), which is fine, since nobody sees a key and every
-   script takes the label too.
-3. `sprite-env services restart web`, `npm run check`, then show the owner
-   What came in, a customer and the pipeline.
-
-A location or an insurer is a custom field; the truck that went or a
-party size is a visit field; a technician, dentist or hygienist is the
-owner. Name, email, phone,
-company, address, source, tags and owner are built in and always show;
-the config cannot hide them (hiding one is a small edit in
-`src/views/`, done only when asked). A practice that keeps clinical or
-therapy notes elsewhere keeps them out of this CRM: it is a contact
-record, and say so when shaping one.
-
-## Rules
-
-- Email is the key; phone is the fallback, by the one rule above.
-- Never hard-delete a customer, a note or a visit: archive, or cancel. The pages and scripts
-  have no delete, and adding one is the owner's explicit call.
-- Other apps' tables are read only, except `submissions.status`.
-- `schema.sql` only adds; table names never change; the config changes
-  what people see.
-- Production stays team only; every route keeps `teamOnly()`; every change
-  is a POST and records who made it.
-- Tokens only in markup (`npm run check`), no em dashes in copy.
-- Real data only: never invent customers, notes or history.
-
-`src/data/`, `src/admin/` and `src/booking/` are copies of the `data`,
-`admin` and `booking` business skills. The others (`forms`, `payments`,
-`reports`) come with this app as skills: when the owner asks for a report
-or an invoice here, copy from them rather than writing it fresh, with the
-`data` files they import. `npm run check` allows Node built-ins only in
-`src/server.ts`, `src/db/`, `src/booking/sync.ts` and
-`src/booking/reminders.ts`, so a skill's other machine-only file
-(`print.ts`) stays out of `src/`. A report
-here takes the handle as `c.get("db")` and the CRM's own `Layout`
-(`src/views/layout.tsx`) as its frame, given a `head` slot for
-`ChartScripts` and a nav link; `customer_visits` is the table for "jobs
-done per week" or "revenue by technician".
+- The CRM sends only booking messages and quotes, through the owner's own
+  sender, and invoices go out from the owner's Stripe; Task & Tool never
+  sends for it. A note of kind `email`, `call` or `text` records contact
+  that happened elsewhere.

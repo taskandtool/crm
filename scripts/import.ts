@@ -30,9 +30,13 @@ submission, booking or payment, by email. All or nothing: one transaction.
 
 const a = parseArgs(process.argv.slice(2));
 const [file] = a._;
-if (!file || has(a, "help")) {
+if (has(a, "help")) {
   console.log(HELP);
-  process.exit(file || has(a, "help") ? 0 : 1);
+  process.exit(0);
+}
+if (!file) {
+  console.error(HELP);
+  process.exit(2);
 }
 
 const path = resolve(process.env.CALLER_CWD ?? ".", file);

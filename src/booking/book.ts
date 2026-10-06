@@ -23,6 +23,7 @@
 //   hours, minimum notice and horizon hold for a hand-made POST too.
 import { q, type Db, type Query } from "../data/db";
 import { normalizeEmail } from "../data/email";
+import { newToken, tokenHash, TOKEN_SHAPE } from "../data/token";
 import { isValidZone, slots as openSlots, type Interval, type Settings, type Slot, type Window } from "./slots";
 
 /** A person who can be booked: their own zone, hours, time off and calendars. */
@@ -54,6 +55,9 @@ export type BookingType = {
   location: string | null;
   position: number;
   active: boolean;
+  /** What a payment step charges for it, in minor units of `currency`; null is free. */
+  price_cents: number | null;
+  currency: string | null;
 };
 
 export type Booking = {
@@ -106,7 +110,6 @@ export const settingsOf = (r: BookingType): Settings => ({
 });
 
 const asDate = (v: unknown) => (v instanceof Date ? v : new Date(String(v)));
-const idOrNull = (v: unknown) => (v === null || v === undefined ? null : String(v));
 
 /** A resources row as read by `select *` (bigint ids arrive as text from both drivers). */
 export function toResource(r: Record<string, any>): Resource {
@@ -120,6 +123,7 @@ export function toType(r: Record<string, any>): BookingType {
     duration_min: Number(r.duration_min), interval_min: Number(r.interval_min), buffer_before_min: Number(r.buffer_before_min),
     buffer_after_min: Number(r.buffer_after_min), min_notice_min: Number(r.min_notice_min), horizon_days: Number(r.horizon_days),
     location_kind: r.location_kind, location: r.location ?? null, position: Number(r.position), active: !!r.active,
+    price_cents: r.price_cents == null ? null : Number(r.price_cents), currency: r.currency ?? null,
   };
 }
 
@@ -243,22 +247,7 @@ export async function openSlotAt(db: Db, type: BookingType, start: Date, now = n
 // ---- the manage token ------------------------------------------------------
 
 /** 32 random bytes, base64url: the manage link. Shown once; only its hash is stored. */
-export function newToken(): string {
-  const b = crypto.getRandomValues(new Uint8Array(32));
-  return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-/**
- * Hex SHA-256 of a token. Looking a booking up by this hash is the
- * constant-time comparison: an attacker can time the index lookup only on a
- * hash, which tells them nothing about any real token.
- */
-export async function tokenHash(token: string): Promise<string> {
-  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
-  return [...new Uint8Array(d)].map((x) => x.toString(16).padStart(2, "0")).join("");
-}
-
-const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
+export { newToken, tokenHash } from "../data/token";
 
 // ---- the statements ----------------------------------------------------------
 
@@ -289,6 +278,10 @@ export type BookInput = {
   /** The app's slug, e.g. "website". */
   source: string;
   now?: Date;
+  /** The form submission it is for (the forms skill's booking step). */
+  submissionId?: string | null;
+  /** Held for a payment until then (releaseLapsedHolds). */
+  holdUntil?: Date | null;
 };
 
 export type BookResult =
@@ -328,6 +321,7 @@ export function bookingLocation(type: BookingType, input: { phone?: string | nul
 }
 
 export async function book(db: Db, input: BookInput): Promise<BookResult> {
+  await releaseLapsedHolds(db, input.now);
   const type = await typeById(db, input.typeId);
   if (!type || !type.active) return { ok: false, reason: "not_found" };
   const errors = checkBooker(input, type.location_kind);
@@ -356,13 +350,16 @@ export async function takeSlot(db: Db, type: BookingType, slot: OpenSlot, input:
   // booking was made longest ago (never booked first), then by id.
   const insert = q`
     insert into bookings
-      (type_id, resource_id, starts_at, ends_at, name, email, phone, location_kind, location, booker_time_zone, status, answers, manage_token_hash, source)
+      (type_id, resource_id, starts_at, ends_at, name, email, phone, location_kind, location, booker_time_zone, status, answers, manage_token_hash, source,
+       submission_id, hold_until)
     select ${type.id}::bigint, c.id, ${start}::timestamptz, ${end}::timestamptz, ${input.name.trim()}, ${normalizeEmail(input.email)},
            ${input.phone?.trim() || null}, ${type.location_kind}, ${where}, ${zone}, 'confirmed', ${JSON.stringify(input.answers ?? {})}::jsonb,
-           ${hash}, ${input.source}
+           ${hash}, ${input.source}, ${input.submissionId ?? null}::bigint, ${input.holdUntil ? input.holdUntil.toISOString() : null}::timestamptz
     from (
       select r.id from resources r
       where r.id = any(${slot.members}::bigint[]) and r.active
+        and (${input.submissionId ?? null}::bigint is null or not exists (
+          select 1 from bookings o where o.submission_id = ${input.submissionId ?? null}::bigint and o.status = 'confirmed'))
         and exists (select 1 from booking_type_hosts h where h.type_id = ${type.id}::bigint and h.resource_id = r.id)
         and not exists (
           select 1 from bookings b
@@ -384,10 +381,48 @@ export async function takeSlot(db: Db, type: BookingType, slot: OpenSlot, input:
     ) c
     returning *`;
 
-  const results = await db.transaction([...locks(slot.members), insert]);
+  // A form's submission books once: its lock first, so a double submit waits and then finds the first booking.
+  const forSubmission = input.submissionId ? [q`select pg_advisory_xact_lock(hashtext(${"booking.submission." + input.submissionId}::text))`] : [];
+  const results = await db.transaction([...forSubmission, ...locks(slot.members), insert]);
   const row = results[results.length - 1][0];
   if (!row) return { ok: false, reason: "taken" };
   return { ok: true, booking: toBooking(row), token };
+}
+
+/**
+ * Cancel the bookings held for a form that was not finished: past
+ * hold_until (confirmFormBooking clears it once the form is complete), and no
+ * payment for them (or their submission) other than one Stripe gave up on
+ * (cancelled, from checkout.session.expired). A payment pending, failed on one card but still
+ * open, or paid keeps the time. Their times are free again. Run before slots are listed or taken, and by the reminders job; it
+ * reads the payments skill's table only when the project has it.
+ */
+export async function releaseLapsedHolds(db: Db, now = new Date()): Promise<number> {
+  const at = now.toISOString();
+  // A table that is not there cannot be named even in a branch that never runs.
+  const [{ paying }] = await db.sql<{ paying: boolean }>`select to_regclass('payments') is not null as paying`;
+  const rows = paying
+    ? await db.sql`
+        update bookings b set status = 'cancelled', cancelled_at = ${at}::timestamptz, sequence = sequence + 1, updated_at = now(),
+               updated_by = 'form not finished in time'
+        where b.status = 'confirmed' and b.hold_until is not null and b.hold_until < ${at}::timestamptz
+          and not exists (
+            select 1 from payments p
+            where ((p.ref_type = 'booking' and p.ref_id = b.id::text) or (p.ref_type = 'submission' and p.ref_id = b.submission_id::text))
+              and p.status <> 'cancelled')
+        returning b.id`
+    : await db.sql`
+        update bookings b set status = 'cancelled', cancelled_at = ${at}::timestamptz, sequence = sequence + 1, updated_at = now(),
+               updated_by = 'form not finished in time'
+        where b.status = 'confirmed' and b.hold_until is not null and b.hold_until < ${at}::timestamptz
+        returning b.id`;
+  return rows.length;
+}
+
+/** The confirmed booking a form's submission made, or null. */
+export async function bookingForSubmission(db: Db, submissionId: string): Promise<Booking | null> {
+  const [r] = await db.sql`select * from bookings where submission_id = ${submissionId}::bigint and status = 'confirmed' order by id limit 1`;
+  return r ? toBooking(r) : null;
 }
 
 // ---- the manage link: look up, reschedule, cancel -----------------------------

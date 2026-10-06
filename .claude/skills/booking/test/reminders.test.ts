@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,7 +66,7 @@ test("a day before and an hour before, once each; the words name what, who, when
   }
 });
 
-test("the nearest due reminder only; none for a booking made after its time; none for a cancelled one", async (t) => {
+test("the nearest due reminder only; none for a booking made after its time, a cancelled one, or one whose form is unfinished", async (t) => {
   const s = await scratch();
   if (!s) return t.skip(why);
   try {
@@ -73,6 +74,8 @@ test("the nearest due reminder only; none for a booking made after its time; non
     await add("2026-03-10T15:00:00Z", "2026-03-01T00:00:00Z", "late-job@example.com"); // the job was down until 14:30
     await add("2026-03-10T15:00:00Z", "2026-03-10T09:00:00Z", "booked-today@example.com"); // made 6 hours ahead
     await add("2026-03-10T16:00:00Z", "2026-03-01T00:00:00Z", "gone@example.com", "cancelled");
+    const held = await add("2026-03-10T15:00:00Z", "2026-03-01T00:00:00Z", "still-paying@example.com");
+    await s.db.sql`update bookings set hold_until = '2026-03-10T15:00:00Z' where id = ${held}::bigint`;
     const { sent, send } = capture();
     const r = await sendReminders(s.db, send, { now: T("2026-03-10T14:30:00Z") });
     assert.deepEqual(sent.map((m) => m.to).sort(), ["booked-today@example.com", "late-job@example.com"]);
@@ -115,6 +118,41 @@ test("no sender is recorded and not retried; a failure is reported and not retri
     const runs = await Promise.all([1, 2, 3].map(() => sendReminders(s.db, both.send, { now: T("2026-03-11T14:10:00Z"), before: [60] })));
     assert.equal(runs.reduce((n, x) => n + x.sent, 0), 1);
     assert.equal(both.sent.length, 1);
+  } finally {
+    await s.drop();
+  }
+});
+
+const JOB = join(dirname(fileURLToPath(import.meta.url)), "..", "reminders-job.ts");
+/** The job's command, with only the environment named (no sender, no database unless given). */
+const job = (args: string[], env: Record<string, string> = {}) =>
+  spawnSync(process.execPath, ["--import", "tsx", JOB, ...args], { encoding: "utf8", env: { PATH: process.env.PATH ?? "", ...env } });
+
+test("the job's command: --help, bad options and no database say what to do", () => {
+  const help = job(["--help"]);
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /--before/);
+  for (const args of [["--before"], ["--before", "0,abc"], ["--soon"]]) {
+    const r = job(args);
+    assert.equal(r.status, 2, args.join(" "));
+    assert.match(r.stderr, /Try: npx tsx src\/booking\/reminders-job\.ts/);
+  }
+  const noDb = job(["--before", "60"]);
+  assert.equal(noDb.status, 1);
+  assert.match(noDb.stderr, /DATABASE_URL/);
+});
+
+test("the job's command: one line of what was sent and what was left alone", async (t) => {
+  const s = await scratch();
+  if (!s) return t.skip(why);
+  try {
+    const { add } = await setup(s);
+    assert.match(job([], { DATABASE_URL: s.url }).stdout, /^booking reminders: none due/);
+    const soon = new Date(Date.now() + 30 * 60_000).toISOString();
+    await add(soon, "2026-01-01T00:00:00Z");
+    const r = job(["--before=60"], { DATABASE_URL: s.url });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout, "booking reminders: 0 sent, 1 not sent (no email sender connected; recorded, not retried)\n");
   } finally {
     await s.drop();
   }

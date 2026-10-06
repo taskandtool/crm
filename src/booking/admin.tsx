@@ -30,6 +30,11 @@ import {
 } from "./hours";
 import { addDays, dayBounds, formatDate, formatSlot, formatTime, localDate, weekdayOf } from "./slots";
 import { chip, DayPicker, upcoming } from "./public";
+import { decimals } from "../payments/money";
+import type { BookingNotice } from "./notify";
+
+/** Minor units as the editor shows them: 12000 usd is "120.00". */
+const amountText = (cents: number, currency: string) => (cents / 10 ** decimals(currency)).toFixed(decimals(currency));
 
 export type BookingAdminOptions = {
   base: string;
@@ -43,6 +48,12 @@ export type BookingAdminOptions = {
    * AdminLayout. The booking sections then show as links at the top of the page.
    */
   Frame?: Frame;
+  /**
+   * false in an app that does not run the calendar sync (sync.ts runs in the
+   * CRM): the Calendars page and each person's calendars are left out, so no
+   * one adds a calendar that never syncs. Default true.
+   */
+  calendars?: boolean;
   /** The zone the Schedule shows; the first person's when absent. */
   timeZone?: string;
   /**
@@ -52,15 +63,12 @@ export type BookingAdminOptions = {
    */
   manageBase?: string;
   /** After the team books for someone: send the confirmation here (notify.ts). Never throws into the response. */
-  onBooked?: (c: Context<{ Variables: TeamVars }>, e: TeamBooked) => void | Promise<void>;
+  onBooked?: (c: Context<{ Variables: TeamVars }>, e: BookingNotice) => void | Promise<void>;
   /** More on a booking's page, beside its status: the CRM's customer and "Make it a job". */
   extra?: (c: Context<{ Variables: TeamVars }>, b: Booking) => Child | Promise<Child>;
 };
 
 export type Frame = (p: { title: string; user: string; children: Child }) => Child;
-
-/** A booking the team made for someone, for onBooked. */
-export type TeamBooked = { event: "booked"; booking: Booking; type: BookingType; host: Resource; manageUrl: string | null };
 
 /** The page: in the app's own frame with the booking sections on top, or AdminLayout with them as its nav. */
 function framed(c: Context<{ Variables: TeamVars }>, opts: BookingAdminOptions, links: NavItem[], current: string, title: string, body: Child, status = 200) {
@@ -150,13 +158,13 @@ export function bookingsPage(db: Db, f: Filter, after: Cursor | null, size: numb
         order by b.starts_at desc, b.id desc limit ${size + 1}`;
 }
 
-function nav(base: string, extra?: NavItem[]): NavItem[] {
-  return extra ?? [
+function nav(base: string, opts: BookingAdminOptions): NavItem[] {
+  return opts.nav ?? [
     { href: base, label: "Bookings" },
     { href: `${base}/schedule`, label: "Schedule" },
     { href: `${base}/types`, label: "What can be booked" },
     { href: `${base}/people`, label: "People and hours" },
-    { href: `${base}/calendars`, label: "Calendars" },
+    ...(opts.calendars === false ? [] : [{ href: `${base}/calendars`, label: "Calendars" }]),
   ];
 }
 
@@ -169,7 +177,7 @@ function StatusCell({ row, action, returnTo, swap }: { row: { status: string; na
 export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
   const base = opts.base.replace(/\/+$/, "");
   const size = opts.pageSize ?? 50;
-  const links = nav(base, opts.nav);
+  const links = nav(base, opts);
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
   app.route("/types", typeRoutes(getDb, { ...opts, base: `${base}/types`, nav: links }));
@@ -442,7 +450,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     return c.redirect(withFlash(`${base}/${r.booking.id}`, "booked"), 303);
   });
 
-  app.get("/calendars", async (c) => {
+  if (opts.calendars !== false) app.get("/calendars", async (c) => {
     const list = await calendars(getDb(c));
     return framed(c, opts, links, `${base}/calendars`, "Calendars", (
       <>
@@ -593,6 +601,9 @@ function TypeForm({ action, t, errors = {}, submit }: { action: string; t: Recor
       <Input label="Minimum notice (minutes)" name="min_notice_min" type="number" min={0} value={v("min_notice_min") || "120"} errors={errors} />
       <Input label="Bookable this many days ahead" name="horizon_days" type="number" min={0} max={730} value={v("horizon_days") || "60"} errors={errors} />
       <Input label="Order on the booking page" name="position" type="number" min={0} value={v("position") || "0"} errors={errors} />
+      <Input label="Price (optional)" name="price" value={v("price") || (t.price_cents != null ? amountText(Number(t.price_cents), String(t.currency ?? "usd")) : "")} errors={errors}
+        hint="Charged when it is booked through a form with a payment step. Empty is free." />
+      <Input label="Currency" name="currency" value={v("currency") || "usd"} errors={errors} />
       <Active value={t.active} label="Can be booked" />
       <div class="sm:col-span-2"><button class={buttonClass}>{submit}</button></div>
     </form>
@@ -617,7 +628,7 @@ const typeFields = (body: Record<string, unknown>): TypeFields => ({
   name: str(body.name), slug: str(body.slug), description: str(body.description), location_kind: str(body.location_kind), location: str(body.location),
   duration_min: str(body.duration_min), interval_min: str(body.interval_min), buffer_before_min: str(body.buffer_before_min),
   buffer_after_min: str(body.buffer_after_min), min_notice_min: str(body.min_notice_min), horizon_days: str(body.horizon_days),
-  position: str(body.position), active: str(one(body.active)),
+  position: str(body.position), active: str(one(body.active)), price: str(body.price), currency: str(body.currency),
 });
 const personFields = (body: Record<string, unknown>): PersonFields => ({
   name: str(body.name), email: str(body.email), time_zone: str(body.time_zone), active: str(one(body.active)),
@@ -771,7 +782,7 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
 
   async function editPage(c: Team, r: Resource, problems: { details?: { values: Record<string, unknown>; errors: Errors }; hours?: Errors; timeOff?: Errors; calendar?: Errors } = {}) {
     const d = getDb(c);
-    const [hours, off, cals, takes] = await Promise.all([weeklyHours(d, r.id), timeOffList(d, r.id), calendars(d, r.id), typesHostedBy(d, r.id)]);
+    const [hours, off, cals, takes] = await Promise.all([weeklyHours(d, r.id), timeOffList(d, r.id), opts.calendars === false ? [] : calendars(d, r.id), typesHostedBy(d, r.id)]);
     const self = `${base}/${r.id}`;
     const failed = Object.values(problems).some(Boolean);
     const today = localDate(new Date(), r.time_zone);
@@ -836,7 +847,7 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
             ) : <p class="text-ink-2">Nothing yet. Choose who takes each kind of booking under What can be booked.</p>}
           </Section>
 
-          <section id="calendars">
+          {opts.calendars === false ? null : <section id="calendars">
             <Section title="Calendars">
               <p class="mb-3 text-label text-ink-2">
                 Grant this app the Google Calendar or Microsoft Calendar connection in Task &amp; Tool first. Busy times are read every 15 minutes;
@@ -860,7 +871,7 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
                 <Err id="provider-error" text={problems.calendar?.provider} />
               </form>
             </Section>
-          </section>
+          </section>}
 
           <Section title="Details">
             <PersonForm action={self} r={problems.details?.values ?? r} errors={problems.details?.errors} submit="Save" />
@@ -930,6 +941,8 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
     await removeTimeOff(getDb(c), r.id, tid);
     return c.redirect(back(r, "time-off"), 303);
   });
+
+  if (opts.calendars === false) return app;
 
   app.post("/:id/calendars", async (c) => {
     const r = await load(c);

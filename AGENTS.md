@@ -9,22 +9,59 @@ work on it in `.claude/skills/crm/`, and `.taskandtool/setup.sh` for what
 the machine needs (dependencies, the `web` service). All of it is the
 owner's to change.
 
-The skill: `crm` (the tables, the levers, the loop, the scripts). Read it
-before changing the CRM rather than working from memory.
+## Start here
+
+Read the skill for what the owner asks before working from memory:
+
+- "Add a customer", "log a job", "who got in touch this week", "import my
+  list", stages, custom fields, shaping the CRM: `crm`.
+- "Send Ann the invoice" for a finished job: run
+  `node scripts/invoices.mjs bill <who> --confirm` straight away (it finds
+  the job, drafts and sends; with two jobs it lists them to ask which).
+- "Quote this job", "who owes us", a tax rate, other invoice work: `invoices`.
+- "Show me the orders", a form's questions, what someone filled in: `forms`.
+- The Stripe key, the webhook, a payment or a refund: `payments`.
+- What can be booked, hours, calendar sync: `booking`. A public booking
+  page is the Website's, not this app's.
+- A chart or a report: `reports`.
+
+## Commands
+
+Use these rather than doing the same work by hand. Each answers `--help`;
+`--json` where another script reads the output.
+
+```bash
+node scripts/inbox.mjs --since 7d               # what came in, and who it matched
+node scripts/customers.mjs add "Ann Lee" --email ann@example.com   # "added #12 Ann Lee [New]", or "already here, not added"
+node scripts/visits.mjs add ann@example.com "Boiler service" --at "next friday 9:30"   # a job; --at also "tomorrow 2pm", in the business's zone; say back the date it prints
+node scripts/customers.mjs find "lee"           # customers; also note, stage, update, follow-up
+node scripts/visits.mjs list                    # jobs coming up; done, cancel, update --amount
+node scripts/stages.mjs list                    # stages; rename, add, archive --move-to
+node scripts/forms.mjs submissions --form order # a form's submissions with their booking and payment; list, show, save
+node scripts/quotes.mjs send 7                  # prints the email; --confirm sends it
+node scripts/invoices.mjs bill ann@example.com --confirm   # "send Ann the invoice": their finished job, drafted and sent in one step
+node scripts/invoices.mjs send 3                # one invoice: what Stripe will do; --confirm does it
+node scripts/import.mjs file.csv --dry-run      # a list in; always the dry run first
+node scripts/export.mjs --out customers.csv     # the list out
+```
 
 ## Where things are
 
 - `crm.config.json` is the first lever: the words (`Patients`, `Guests`),
   the stages seeded on the first run, sources, custom fields, the owner's
   label, the time zone, the default view, which forms count as leads,
-  `visits` (what a job or visit is called, its own fields, or off) and
-  `booking` (the team's side of booking, or off).
+  `visits` (what a job or visit is called, its own fields, or off),
+  `booking` (the team's side of booking, or off) and `invoices` (the name
+  on quotes, the currency, or off).
   `examples/` holds five worked configs to read, not a switch.
 - `schema.sql` is the CRM's tables (`customers`, `pipeline_stages`,
-  `customer_notes`, `customer_visits`), applied at every start and every deploy. Additive
-  only; never rename a table.
-- `src/crm/` is every query and rule, named: customers, stages, notes, what
-  came in, everything from one person, the import. Routes, scripts and
+  `customer_notes`, `customer_visits`, and `crm_setup`, which records the
+  schema last applied so a script skips setup while it is current),
+  applied at every start and every deploy. Additive only; never rename a
+  table.
+- `src/crm/` is every query and rule, named: customers, stages, notes,
+  visits (jobs), quotes (a job from an accepted one), what came in,
+  everything from one person, the import. Routes, scripts and
   tests all go through it.
 - `src/app.tsx` is the Hono app: the team-only gate, the routes.
   `src/views/` are the pages. `src/server.ts` is dev's entry (Node, with
@@ -33,17 +70,23 @@ before changing the CRM rather than working from memory.
 - `src/booking/` is a copy of the `booking` skill's code: the Bookings
   section (types, hosts, hours, calendars, the bookings) and the calendar
   sync job. The Website's `/book` pages take the bookings.
+- `src/forms/` is a copy of the `forms` skill's pages (Forms: submissions by
+  form with their booking and payment, not finished, the editor).
+- `src/invoices/` is a copy of the `invoices` skill's code: quotes, invoices
+  through the owner's Stripe, tax rates, and Stripe's webhook events.
+  `src/payments/` and `src/reports/` hold what it uses of those skills.
 - `src/data/` and `src/admin/` are copies of the `data` and `admin`
   business skills: the database handle, the additive check, the email key,
   the guard, keyset paging, CSV, the list components.
-- `scripts/customers.mjs`, `visits.mjs`, `inbox.mjs` and `stages.mjs` are
-  your hands on the data from chat; `import.mjs` and `export.mjs` move CSV
+- `scripts/customers.mjs`, `visits.mjs`, `forms.mjs`, `quotes.mjs`, `invoices.mjs`,
+  `inbox.mjs` and `stages.mjs` are your hands on the data from chat; `import.mjs` and `export.mjs` move CSV
   in and out. Every one answers `--help`.
 - `styles/theme.css` is the design as tokens; `DESIGN.md` explains them.
   `static/` is served as-is (the built CSS, the vendored htmx and
   SortableJS, `crm.js`).
-- `test/` runs with `npm test`; the database tests need
-  `TEST_DATABASE_URL` and skip with a note without it.
+- `test/` runs with `npm test`, which prints a dot per test and then the
+  counts (tests, pass, fail, skipped) and any failure in full; the database
+  tests need `TEST_DATABASE_URL` and skip without it.
 
 ## The loop
 
@@ -69,9 +112,15 @@ before changing the CRM rather than working from memory.
   `crm.config.json`; the tables stay `customers`, `pipeline_stages`,
   `customer_notes`, `customer_visits`.
 - A person is their email; a customer is archived, never deleted.
-- Other apps' tables are read only, except `submissions.status`.
-- Identity comes from the platform: `X-TaskTool-User`, or 404. The CRM
-  builds no login and sends no email or text.
+- What other apps write (submissions, bookings, payments) is read only,
+  except a submission's status and a refund a team member confirms. The
+  skills' tables the CRM sets up (forms, booking, payments, invoices) it
+  writes through the skills' code.
+- Identity comes from the platform: `X-TaskTool-User`, or 404; only
+  `/healthz` and Stripe's signed `/hooks/stripe` answer without it. The CRM
+  builds no login. It sends only through the owner's own sender and
+  Stripe, and only when the owner asked for it ("send Ann the invoice" is
+  the yes) or said yes to the preview.
 - Production stays team only; it is the business's customer list.
 - Colours and sizes are tokens in `styles/theme.css`. Markup never carries
   a hex value or a Tailwind default colour; `npm run check` refuses both.

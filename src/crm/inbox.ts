@@ -45,6 +45,8 @@ export type InboxOptions = {
   since?: Date | null;
   /** Only rows with no matching customer. */
   unmatched?: boolean;
+  /** Only this form's submissions (no bookings or payments). */
+  form?: string | null;
 };
 
 export function makeInboxCursor(row: InboxRow): string {
@@ -79,6 +81,7 @@ export async function inboxPage(
   const ib = opts.inbox;
   const since = opts.since ?? null;
   const unmatched = !!opts.unmatched;
+  const form = opts.form ?? null;
   const n = size + 1;
   const ak = after?.k ?? null;
   const ar = after?.r ?? null;
@@ -105,6 +108,7 @@ export async function inboxPage(
         where s.status <> 'spam'
           and (${all}::boolean or s.form_key = any(${keys}::text[]))
           and not (s.form_key = any(${exclude}::text[]))
+          and (${form}::text is null or s.form_key = ${form}::text)
           and (${since}::timestamptz is null or s.created_at >= ${since}::timestamptz)
           and (not ${unmatched}::boolean or m.id is null)
           and (${ak}::timestamptz is null or (s.created_at, 0, s.id) < (${ak}::timestamptz, ${ar}::int, ${aid}::bigint))
@@ -112,7 +116,7 @@ export async function inboxPage(
         limit ${n}`,
     );
   }
-  if (p.bookings && ib.bookings !== false) {
+  if (p.bookings && ib.bookings !== false && !form) {
     // bookings references resources and booking_types, so both are there too.
     jobs.push(
       db.sql<BookingRow>`
@@ -137,7 +141,7 @@ export async function inboxPage(
         limit ${n}`,
     );
   }
-  if (p.payments && ib.payments !== false) {
+  if (p.payments && ib.payments !== false && !form) {
     // Money that actually moved: a checkout nobody finished is not news.
     jobs.push(
       db.sql<PaymentRow>`
@@ -293,3 +297,12 @@ const b64url = (s: string) =>
   btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const fromB64url = (s: string) =>
   new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (ch) => ch.charCodeAt(0)));
+
+/** The forms What came in counts (crm.config.json's inbox), for its filter; none before any app made the forms table. */
+export async function formChoices(db: Db, ib: InboxConfig): Promise<{ key: string; title: string }[]> {
+  const [{ has }] = await db.sql<{ has: boolean }>`select to_regclass('forms') is not null as has`;
+  if (!has) return [];
+  const all = await db.sql<{ key: string; title: string }>`select key, title from forms order by title, key`;
+  const exclude = ib.exclude_forms ?? [];
+  return all.filter((f) => (ib.forms === "all" || ib.forms.includes(f.key)) && !exclude.includes(f.key));
+}

@@ -1,5 +1,6 @@
 // The Hono app: the team-only gate, the database for the request, the
-// routes. The whole CRM is private: every path but /healthz needs the
+// routes. The whole CRM is private: every path but /healthz and Stripe's
+// signed /hooks/stripe needs the
 // X-TaskTool-User header Task & Tool's edge sets for a signed-in team member
 // (admin/guard.ts), and answers 404 without it. Every change is a POST,
 // checked same-origin by the same guard, and records who made it.
@@ -11,7 +12,7 @@ import { teamOnly } from "./admin/guard";
 import { cut, everyPage } from "./admin/keyset";
 import { TableRows } from "./admin/list";
 import { idParam, isPartial, listUrl, localPath, str } from "./admin/query";
-import { cfg, showBooking, showPipeline, visitsCfg, KEY } from "./config";
+import { cfg, invoicesCfg, showBooking, showPipeline, visitsCfg, KEY } from "./config";
 import { normalizeEmail } from "./data/email";
 import {
   byStage, createCustomer, facets, findMatch, getCustomer, listPage, readListCursor, saveDetails, setArchived, setStage,
@@ -20,7 +21,7 @@ import {
 import { csvColumns } from "./crm/columns";
 import { readFields } from "./crm/fields";
 import { everythingFrom } from "./crm/history";
-import { addFromInbox, inboxPage, markDone, readInboxCursor, type InboxKind } from "./crm/inbox";
+import { addFromInbox, formChoices, inboxPage, markDone, readInboxCursor, type InboxKind } from "./crm/inbox";
 import { addNote, listNotes, pickNoteKind } from "./crm/notes";
 import { phoneKey } from "./crm/phone";
 import { addVisit, bookingsWithoutJob, customerVisits, getVisit, visitFromBooking, parseAmount, pickVisitStatus, saveVisit, setVisitStatus, visitCsvColumns, visitOwners, visitsPage, type Visit, type VisitFilter, type VisitInput } from "./crm/visits";
@@ -35,12 +36,24 @@ import { Layout, WaitingView } from "./views/layout";
 import { Pipeline, PipelinePage, PER_COLUMN, type PipelineData } from "./views/pipeline";
 import { StagesPage } from "./views/stages";
 import { bookingAdmin } from "./booking/admin";
-import { emailSend, notifyBooking } from "./booking/notify";
+import { confirmFormBooking } from "./booking/confirm";
+import { emailSend, emailSender, notifyBooking } from "./booking/notify";
 import { envOf } from "./data/env";
 import { afterResponse } from "./data/send";
 import { Section } from "./admin/detail";
 import type { Db } from "./data/db";
 import { buttonClass } from "./views/ui";
+import { invoicesAdmin } from "./invoices/admin";
+import { formsAdmin } from "./forms/admin";
+import { completePaidSubmission } from "./forms/store";
+import { paymentsAdmin } from "./payments/admin";
+import { invoiceEvents } from "./invoices/webhook";
+import { stripeWebhook } from "./payments/webhook";
+import { quoteById, quotesFor } from "./invoices/quotes";
+import { invoicesFor, owed } from "./invoices/invoices";
+import { run, seriesQuery, todayIn } from "./reports/sql";
+import { PaidByMonth } from "./views/money";
+import { jobFromQuote } from "./crm/quotes";
 import { CUSTOMER_VISITS, visitParams, VisitPage, VisitResults, VisitsPage, visitSpec } from "./views/visits";
 
 type C = Context<AppEnv>;
@@ -53,6 +66,40 @@ app.get("/healthz", (c) => {
   if (opened.db && opened.close) void opened.close().catch(() => {});
   return opened.db ? c.text("ok") : c.text("waiting for the database", 503);
 });
+
+// Stripe's events, with quotes and invoices on: public, because Stripe signs
+// in with nothing but the signature, which payments/webhook.ts checks over the
+// raw body before anything else. Stripe reaches dev through the machine's
+// inbound URL, inbound_url("/hooks/stripe").
+if (invoicesCfg) {
+  // POST only: any other method falls through to the team gate and its 404.
+  app.on("POST", "/hooks/stripe", async (c, next) => {
+    const opened = c.env.runtime.open();
+    // 503: Stripe delivers again until the database is up.
+    if (!opened.db) return c.text("waiting for the database", 503);
+    c.set("db", opened.db);
+    try {
+      await next();
+    } finally {
+      if (opened.close) closeAfter(c, opened.close);
+    }
+  });
+  // A form that ends in payment is complete once it is paid, and the booking
+  // it made is confirmed then, by whichever app on the project gets there
+  // first with a sender (booking/confirm.ts); a failed send is a 500, so
+  // Stripe delivers again.
+  app.route("/", stripeWebhook((c) => (c as unknown as C).var.db, {
+    more: [invoiceEvents],
+    afterPaid: async (c, paymentId) => {
+      const db = (c as unknown as C).var.db;
+      const id = await completePaidSubmission(db, paymentId);
+      if (!id) return;
+      const book = cfg.booking_page ?? null;
+      const sent = await confirmFormBooking(db, id, emailSender(envOf(c)), { domain: book ? new URL(book).host : "localhost", manageBase: book });
+      if (sent.status === "failed") throw new Error(`booking confirmation for submission ${id}: ${sent.error}`);
+    },
+  }));
+}
 
 app.use("*", teamOnly() as unknown as MiddlewareHandler<AppEnv>);
 
@@ -99,9 +146,11 @@ const back = (c: C, path: string, code: string) => c.redirect(backTo(path, code)
 
 app.get("/", async (c) => {
   const unmatched = c.req.query("unmatched") === "1";
+  const asked = c.req.query("form") ?? "";
+  const form = /^[a-z0-9][a-z0-9-]{0,62}$/.test(asked) ? asked : null;
   const after = readInboxCursor(c.req.query("after"));
-  const { rows, next, present } = await inboxPage(c.var.db, { inbox: cfg.inbox, unmatched }, after, PAGE);
-  const filter = { unmatched: unmatched ? "1" : null };
+  const { rows, next, present } = await inboxPage(c.var.db, { inbox: cfg.inbox, unmatched, form }, after, PAGE);
+  const filter = { unmatched: unmatched ? "1" : null, form };
   const self = listUrl("/", filter);
   const more = (cur: string) => listUrl("/", { ...filter, after: cur });
   if (isPartial(c) && after) return c.html(<InboxRows rows={rows} next={next} more={more} self={self} />);
@@ -109,7 +158,8 @@ app.get("/", async (c) => {
   // The filter box (htmx): everything under it.
   if (isPartial(c)) return c.html(<InboxResults rows={rows} next={next} more={more} self={self} unmatched={unmatched} paged={false} missing={missing} />);
   return c.html(
-    <InboxPage user={c.var.user} rows={rows} next={next} more={more} self={self} unmatched={unmatched} paged={!!after} missing={missing} flash={flashOf(c)} />,
+    <InboxPage user={c.var.user} rows={rows} next={next} more={more} self={self} unmatched={unmatched} form={form} forms={await formChoices(c.var.db, cfg.inbox)}
+      paged={!!after} missing={missing} flash={flashOf(c)} />,
   );
 });
 
@@ -191,12 +241,16 @@ app.get("/customers/:id", async (c) => {
   const id = idParam(c.req.param("id"));
   const customer = id ? await getCustomer(db, id) : null;
   if (!customer) return c.notFound();
-  const [stages, notes, visits, history, f] = await Promise.all([
+  const [stages, notes, visits, history, f, money] = await Promise.all([
     listStages(db), listNotes(db, customer.id), visitsCfg ? customerVisits(db, customer.id, CUSTOMER_VISITS) : [], everythingFrom(db, customer), facets(db),
+    invoicesCfg && customer.email
+      ? Promise.all([quotesFor(db, { email: customer.email }), invoicesFor(db, { email: customer.email }), owed(db, customer.email)])
+      : null,
   ]);
   const owners = [...new Set([c.var.user, ...f.owners])];
   return c.html(
-    <CustomerPage user={c.var.user} customer={customer} stages={stages} notes={notes} visits={visits} history={history.items} present={history.present} owners={owners} flash={flashOf(c)} />,
+    <CustomerPage user={c.var.user} customer={customer} stages={stages} notes={notes} visits={visits} history={history.items} present={history.present} owners={owners}
+      money={invoicesCfg ? { quotes: money?.[0] ?? [], invoices: money?.[1] ?? [], owed: money?.[2] ?? [] } : null} flash={flashOf(c)} />,
   );
 });
 
@@ -349,9 +403,11 @@ app.get("/visits/:id", async (c) => {
   const id = idParam(c.req.param("id"));
   const visit = id ? await getVisit(db, id) : null;
   if (!visit) return c.notFound();
-  const [vo, f] = await Promise.all([visitOwners(db), facets(db)]);
+  const [vo, f, money] = await Promise.all([
+    visitOwners(db), facets(db), invoicesCfg ? Promise.all([quotesFor(db, { visitId: visit.id }), invoicesFor(db, { visitId: visit.id })]) : null,
+  ]);
   const owners = [...new Set([c.var.user, ...vo, ...f.owners])];
-  return c.html(<VisitPage user={c.var.user} visit={visit} owners={owners} flash={flashOf(c)} />);
+  return c.html(<VisitPage user={c.var.user} visit={visit} owners={owners} money={money ? { quotes: money[0], invoices: money[1] } : null} flash={flashOf(c)} />);
 });
 
 app.post("/visits/:id", async (c) => {
@@ -438,6 +494,137 @@ if (showBooking) {
                   <button class={buttonClass}>Make it a {visitsCfg.one.toLowerCase()}</button>
                 </form>
               )
+            ) : null}
+          </Section>
+        );
+      },
+    }),
+  );
+}
+
+// ---- forms ---------------------------------------------------------------------
+// The forms skill's pages in the CRM's frame: every form's submissions,
+// filtered by form ("orders" is the order form), each with the booking and
+// payment it led to, the ones nobody finished, and the form editor. The
+// Website takes the submissions; both read the same tables.
+
+app.route(
+  "/forms",
+  formsAdmin(dbOf, {
+    base: "/forms",
+    css: "/crm.css",
+    source: "crm",
+    timeZone: cfg.time_zone,
+    nav: [
+      { href: "/forms/submissions", label: "Submissions" },
+      { href: "/forms", label: "Forms" },
+    ],
+    links: {
+      ...(showBooking ? { booking: (id: string) => `/bookings/${id}` } : {}),
+      ...(invoicesCfg ? { payment: (id: string) => `/invoices/payments/${id}` } : {}),
+    },
+    Frame: ({ title, user, children }) => (
+      <Layout title={title} user={user} section="forms">
+        {children}
+      </Layout>
+    ),
+  }),
+);
+
+// ---- quotes and invoices ------------------------------------------------------
+// The invoices skill's pages in the CRM's frame. A quote leaves through the
+// owner's own sender, with a PDF where this runtime can print one (dev); an
+// invoice through the owner's Stripe account, which emails it.
+
+/** Make it a job: an accepted quote's customer (matched, or added), then its job. */
+app.post("/invoices/quotes/:id/job", async (c) => {
+  if (!invoicesCfg || !visitsCfg) return c.notFound();
+  const id = idParam(c.req.param("id"));
+  const qt = id ? await quoteById(c.var.db, id) : null;
+  if (!qt) return c.notFound();
+  if (qt.status !== "accepted") return back(c, `/invoices/quotes/${qt.id}`, "not-now");
+  const r = await jobFromQuote(c.var.db, qt, c.var.user);
+  if (!r) return back(c, "/stages", "last-open");
+  return back(c, `/visits/${r.visitId}`, "visit-added");
+});
+
+if (invoicesCfg) {
+  // Every payment, where a refund is made: in the CRM's frame, before the invoice pages take /invoices/*.
+  app.route(
+    "/invoices/payments",
+    paymentsAdmin(dbOf, {
+      base: "/invoices/payments",
+      css: "/crm.css",
+      timeZone: cfg.time_zone,
+      Frame: ({ title, user, children }) => (
+        <Layout title={title} user={user} section="invoices">
+          {children}
+        </Layout>
+      ),
+    }),
+  );
+  app.route(
+    "/invoices",
+    invoicesAdmin(dbOf, {
+      base: "/invoices",
+      css: "/crm.css",
+      source: "crm",
+      timeZone: cfg.time_zone,
+      business: invoicesCfg.name,
+      currency: invoicesCfg.currency,
+      terms: invoicesCfg.terms,
+      print: (c, html) => (c as unknown as C).env.runtime.print?.(html) ?? Promise.resolve(null),
+      Frame: ({ title, user, children }) => (
+        <Layout title={title} user={user} section="invoices">
+          {children}
+        </Layout>
+      ),
+      // Beside a quote: whose it is here, and its job.
+      daysUntilDue: invoicesCfg.days_until_due,
+      nav: [
+        { href: "/invoices/quotes", label: "Quotes" },
+        { href: "/invoices", label: "Invoices" },
+        { href: "/invoices/payments", label: "Payments" },
+        { href: "/invoices/tax-rates", label: "Tax rates" },
+      ],
+      // Paid by month: this month and the eleven before, one row per currency ever paid in.
+      invoicesTop: async (c) => {
+        const db = dbOf(c);
+        const currencies = await db.sql<{ currency: string }>`select distinct currency from invoices where status = 'paid' and livemode is true order by 1`;
+        if (!currencies.length) return null;
+        const to = todayIn(cfg.time_zone);
+        const first = new Date(Date.UTC(Number(to.slice(0, 4)), Number(to.slice(5, 7)) - 12, 1)).toISOString().slice(0, 10);
+        const rows = await Promise.all(currencies.map(async ({ currency }) => ({
+          currency, months: await run<{ bucket: string; value: number }>(db, seriesQuery("invoices_paid", { from: first, to }, "month", cfg.time_zone, currency)),
+        })));
+        return <PaidByMonth rows={rows} />;
+      },
+      // Beside an invoice: whose it is here, and its job.
+      invoiceExtra: async (c, inv) => {
+        const customer = await findMatch(dbOf(c), inv.email, inv.phone);
+        if (!customer && !inv.visit_id) return null;
+        return (
+          <Section title={cfg.vocabulary.one}>
+            {customer ? <p class="mb-2"><a href={`/customers/${customer.id}`}>{customer.name}</a></p> : null}
+            {inv.visit_id && visitsCfg ? <p><a href={`/visits/${inv.visit_id}`}>The {visitsCfg.one.toLowerCase()}</a></p> : null}
+          </Section>
+        );
+      },
+      quoteExtra: async (c, qt) => {
+        const db = dbOf(c);
+        const customer = await findMatch(db, qt.email, qt.phone);
+        const job = visitsCfg?.one.toLowerCase();
+        return (
+          <Section title={cfg.vocabulary.one}>
+            {customer ? <p class="mb-3"><a href={`/customers/${customer.id}`}>{customer.name}</a></p> : <p class="mb-3 text-ink-2">Not a {cfg.vocabulary.one.toLowerCase()} yet.</p>}
+            {visitsCfg ? (
+              qt.visit_id ? (
+                <p><a href={`/visits/${qt.visit_id}`}>The {job}</a></p>
+              ) : qt.status === "accepted" ? (
+                <form method="post" action={`/invoices/quotes/${qt.id}/job`}>
+                  <button class={buttonClass}>Make it a {job}</button>
+                </form>
+              ) : null
             ) : null}
           </Section>
         );

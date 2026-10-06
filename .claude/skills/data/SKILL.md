@@ -1,6 +1,6 @@
 ---
 name: data
-description: "The project's database: one set of tables every app in the project uses (email as the key, additive schema files), and the Db handle for dev and production, settings, connection calls, email and spam checks. Use before creating or changing a table, or copying another skill. Not for files or media."
+description: "The project's database: one set of tables every app in the project uses (email as the key, additive schema files), and the Db handle for dev and production, settings, connection calls, email and spam checks. Use before creating or changing a table, or copying another skill. Not for getting a database (the platform's `database` skill)."
 ---
 
 # Data
@@ -9,7 +9,7 @@ A project has one Postgres database, and every app granted it reads, writes
 and alters every table by its plain name. Website form submissions, bookings
 and payments live there, so a CRM installed later finds them already full.
 
-Version: 0.1.0 (taskandtool/skills)
+Version: 0.1.1 (taskandtool/skills)
 
 ## The rules
 
@@ -108,9 +108,10 @@ skills import both. Then:
    `TEST_DATABASE_URL=postgres://… npx tsx --test src/<skill>/test/*.test.ts`
    (a role that may create databases; each test makes and drops its own).
 
-A machine-only file (booking's `sync.ts`, reports' `print.ts`) imports Node
-built-ins, which an app that deploys `src/` to Cloudflare refuses there
-(`npm run check`). Leave it out until the app needs it.
+A machine-only file (a skill's `cli.ts`, booking's `sync.ts` and
+`reminders-job.ts`, reports' `print.ts`) runs only on the machine and may
+import Node built-ins, so long as nothing the production Worker imports
+reaches it (`npm run check`). Leave it out until the app needs it.
 
 Adapt freely after copying: the copy is this app's code. Keep the rules above,
 and keep the tests passing.
@@ -125,11 +126,13 @@ No `DATABASE_URL` means the app has no database yet: ask the owner with
 | File | What it is |
 |---|---|
 | `db.ts` | `Db`, `GetDb`, `q` |
-| `neon.ts`, `pg.ts` | the two handles: Neon HTTP (edge and machine), node-postgres (machine only) |
+| `neon.ts`, `pg.ts` | the two handles: Neon HTTP (edge and machine), node-postgres (the machine, and production deployed with `nodejs_compat`) |
 | `migrate.ts` | `applySchema`, the additive check |
 | `email.ts` | `normalizeEmail` |
 | `env.ts` | `envVar`, `envOf`, `setting`, `keyName` |
 | `gateway.ts` | `gatewayFetch` (machine only at run time) |
 | `send.ts` | `sendEmail`, `afterResponse` |
 | `spam.tsx` | `SpamFields`, `makeStamp`, `verdict` |
+| `token.ts` | `newToken`, `tokenHash`: a key a visitor holds, stored as its hash |
+| `cli.ts` | what every skill's command shares: arguments, usage, output, `machineEnv` (machine only) |
 | `test/` | the additive check, the handles, settings, sending, spam |

@@ -7,10 +7,11 @@
 // database up the moment it appears. Off-platform the file does not exist
 // and the env var is the whole story. Node only.
 import { existsSync, readFileSync } from "node:fs";
-import { cfg, showBooking } from "../config";
+import { cfg, invoicesCfg, showBooking } from "../config";
 import type { Db } from "../data/db";
 import { fromPool } from "../data/pg";
 import type { DbState, Runtime } from "../runtime";
+import { printPdf } from "../pdf";
 import { openPool } from "./pool";
 import { setup } from "./setup";
 
@@ -50,7 +51,7 @@ export async function start(log: (msg: string) => void = console.log): Promise<v
       await p.query("select 1");
       state = "migrating";
       const handle = fromPool(p);
-      const { seeded } = await setup(handle, cfg.stages, { booking: showBooking });
+      const { seeded } = await setup(handle, cfg.stages, { booking: showBooking, invoices: !!invoicesCfg });
       if (seeded) log(`seeded ${seeded} pipeline stages from crm.config.json`);
       db = handle;
       state = "ready";
@@ -69,5 +70,5 @@ export async function start(log: (msg: string) => void = console.log): Promise<v
 
 // Dev's runtime: the one handle this server keeps, once it is ready.
 export function machineRuntime(): Runtime {
-  return { open: () => (state === "ready" && db ? { db } : { db: null, state, error: lastError }) };
+  return { open: () => (state === "ready" && db ? { db } : { db: null, state, error: lastError }), print: printPdf };
 }

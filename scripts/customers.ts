@@ -11,9 +11,9 @@ import { addNote, listNotes, pickNoteKind, NOTE_KINDS } from "../src/crm/notes";
 import { phoneKey } from "../src/crm/phone";
 import { customerVisits } from "../src/crm/visits";
 import { firstOpenStage, listStages, resolveStage } from "../src/crm/stages";
-import { clean, parseTags, wallTime } from "../src/crm/text";
+import { clean, parseTags, relativeWall, wallTime } from "../src/crm/text";
 import { normalizeEmail } from "../src/data/email";
-import { fail, flag, flags, fmtCustomer, has, local, out, parseArgs, resolveCustomer, who, withDb } from "./lib";
+import { fail, flag, flags, fmtCustomer, has, local, out, parseArgs, resolveCustomer, usage, who, withDb, misused } from "./lib";
 
 const HELP = `customers.mjs <command> [...] [--json] [--as <email>]
 
@@ -28,7 +28,7 @@ const HELP = `customers.mjs <command> [...] [--json] [--as <email>]
   stage <who> <stage>                  a stage key or label
   tag <who> <tag>... [--remove]
   note <who> "<text>" [--kind ${NOTE_KINDS.join("|")}] [--at "YYYY-MM-DD HH:MM"]
-                                       --at is in the business's zone (${cfg.time_zone}); default now
+                                       --at is in the business's zone (${cfg.time_zone}), also "today 14:30"; default now
   archive <who> [--undo]               never deletes
   follow-up [--days 14]                open ${cfg.vocabulary.many.toLowerCase()} nobody has been in touch with for that long
 
@@ -38,10 +38,7 @@ ${cfg.fields.length ? cfg.fields.map((f) => `  ${f.key} (${f.type}${f.options ? 
 
 const a = parseArgs(process.argv.slice(2));
 const [cmd, ...rest] = a._;
-if (!cmd || has(a, "help")) {
-  console.log(HELP);
-  process.exit(cmd || has(a, "help") ? 0 : 1);
-}
+usage(a, cmd, ["list", "find", "show", "add", "update", "stage", "tag", "note", "archive", "follow-up"], HELP, "customers");
 const json = has(a, "json");
 
 function fieldFlags(): ReturnType<typeof readFields> {
@@ -181,8 +178,8 @@ await withDb(async (db) => {
       const kind = pickNoteKind(flag(a, "kind") ?? "note");
       if (!kind) fail(`--kind must be one of ${NOTE_KINDS.join(", ")}`);
       const at = flag(a, "at");
-      const wall = at ? wallTime(at) : null;
-      if (at && !wall) fail(`--at ${at}: write it as "YYYY-MM-DD HH:MM", in ${cfg.time_zone}`);
+      const wall = at ? (wallTime(at) ?? relativeWall(at, cfg.time_zone)) : null;
+      if (at && !wall) misused(`--at ${at}: write it as "YYYY-MM-DD HH:MM", or "today 14:30", in ${cfg.time_zone}\n  Try: --at "today 14:30"`);
       const n = await addNote(db, c.id, { kind, body, at: wall, timeZone: cfg.time_zone }, user);
       if (!n) fail("not found");
       return out(json, n, () => `noted on ${c.name}: ${kind} at ${local(n.happened_at)} (${cfg.time_zone})`);
@@ -204,7 +201,5 @@ await withDb(async (db) => {
       );
     }
 
-    default:
-      fail(`unknown command ${cmd}\n\n${HELP}`);
   }
 });

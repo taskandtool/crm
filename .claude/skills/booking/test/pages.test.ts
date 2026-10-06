@@ -342,3 +342,24 @@ test("the team books for someone: carried details, a time, the confirmation sent
     await s.drop();
   }
 });
+
+test("an app without the calendar sync shows no calendars to add, and refuses one posted anyway", async (t) => {
+  const s = await scratch();
+  if (!s) return t.skip(why);
+  try {
+    const pat = await intro(s);
+    const app = new Hono();
+    app.route("/admin/bookings", bookingAdmin(() => s.db, { base: "/admin/bookings", css: "/site.css", source: "website", calendars: false }));
+    const people = await (await app.request(`/admin/bookings/people/${pat.id}`, { headers: team })).text();
+    assert.match(people, /Weekly hours|Time off/);
+    assert.doesNotMatch(people, /id="calendars"|Add calendar/);
+    assert.doesNotMatch(await (await app.request("/admin/bookings", { headers: team })).text(), /href="\/admin\/bookings\/calendars"/);
+    assert.equal((await app.request("/admin/bookings/calendars", { headers: team })).status, 404);
+    const res = await app.request(`/admin/bookings/people/${pat.id}/calendars`, form({ provider: "google", external_id: "primary" }, team));
+    assert.equal(res.status, 404);
+    const [{ n }] = await s.db.sql<{ n: number }>`select count(*)::int as n from calendars`;
+    assert.equal(n, 0);
+  } finally {
+    await s.drop();
+  }
+});

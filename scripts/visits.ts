@@ -3,18 +3,15 @@
 import { cut } from "../src/admin/keyset";
 import { cfg, visitsCfg } from "../src/config";
 import { readFields } from "../src/crm/fields";
-import { clean, nowIn, wallTime } from "../src/crm/text";
+import { clean, nowIn, relativeWall, wallTime } from "../src/crm/text";
 import {
   addVisit, amountText, customerVisits, getVisit, parseAmount, pickVisitStatus, saveVisit, setVisitStatus, visitsPage,
   VISIT_STATUSES, type Visit, type VisitInput,
 } from "../src/crm/visits";
-import { fail, flag, flags, has, local, out, parseArgs, resolveCustomer, who, withDb } from "./lib";
+import { fail, flag, flags, has, local, out, parseArgs, resolveCustomer, usage, who, withDb, misused } from "./lib";
 
-if (!visitsCfg) fail('visits are off: crm.config.json has "visits": false (or none). Turn them on with { "one": "Job", "many": "Jobs", "fields": [] }.');
-const v = visitsCfg;
-const one = v.one.toLowerCase();
-
-const HELP = `visits.mjs <command> [...] [--json] [--as <email>]      ${v.many} in this CRM
+const OFF = 'visits are off: crm.config.json has "visits": false (or none). Turn them on with { "one": "Job", "many": "Jobs", "fields": [] }.';
+const HELP = ((v) => !v ? OFF : `visits.mjs <command> [...] [--json] [--as <email>]      ${v.many} in this CRM
 
   list [--done | --all] [--owner o] [--find text] [--limit 50]
                                        coming up (planned, soonest first), done, or all (newest first)
@@ -26,17 +23,17 @@ const HELP = `visits.mjs <command> [...] [--json] [--as <email>]      ${v.many} 
                                        "" clears a value (--at "" is not scheduled)
   done <id> | cancel <id> | plan <id>  done with no time, or one still to come, happened now
 
-<who> is a customer's id, email or phone. --at is in the business's zone
+<who> is a customer's id, email or phone. --at also takes "next friday 9:30", "tomorrow 2pm"; it is in the business's zone
 (${cfg.time_zone}). --amount is in ${v.currency}. Custom fields (--field):
 ${v.fields.length ? v.fields.map((f) => `  ${f.key} (${f.type}${f.options ? ": " + f.options.join(", ") : ""})`).join("\n") : "  none declared in crm.config.json's visits"}
---as records who acted (default CRM_USER, else AI).`;
+--as records who acted (default CRM_USER, else AI).`)(visitsCfg);
 
 const a = parseArgs(process.argv.slice(2));
 const [cmd, ...rest] = a._;
-if (!cmd || has(a, "help")) {
-  console.log(HELP);
-  process.exit(cmd || has(a, "help") ? 0 : 1);
-}
+usage(a, cmd, ["list", "show", "add", "update", "done", "cancel", "plan"], HELP, "visits");
+if (!visitsCfg) fail(OFF);
+const v = visitsCfg;
+const one = v.one.toLowerCase();
 const json = has(a, "json");
 
 function fieldFlags() {
@@ -56,8 +53,8 @@ function atFlag(current: string | null): string | null {
   if (!has(a, "at")) return current;
   const at = flag(a, "at") ?? "";
   if (!at.trim()) return null;
-  const wall = wallTime(at);
-  if (!wall) fail(`--at ${at}: write it as "YYYY-MM-DD HH:MM", in ${cfg.time_zone}`);
+  const wall = wallTime(at) ?? relativeWall(at, cfg.time_zone);
+  if (!wall) misused(`--at ${at}: write it as "YYYY-MM-DD HH:MM", or "next friday 9:30", "tomorrow 2pm", in ${cfg.time_zone}\n  Try: --at "next friday 9:30"`);
   return wall;
 }
 
@@ -149,7 +146,5 @@ await withDb(async (db) => {
       return out(json, changed, () => fmt(changed));
     }
 
-    default:
-      fail(`unknown command ${cmd}\n\n${HELP}`);
   }
 });

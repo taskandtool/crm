@@ -10,9 +10,9 @@
 //
 // Another connector is another Send: a text through the owner's Twilio,
 // written by the app's AI against the gateway, takes the same message and
-// returns the same `Sent`. The reminder job (reminders.ts) takes one too.
-import type { Env } from "../data/env";
-import { sendEmail, type Sent } from "../data/send";
+// returns the same `Sent`. The reminder job (reminders-job.ts) takes one too.
+import { setting, type Env } from "../data/env";
+import { sendEmail, senderOf, type Sent } from "../data/send";
 import { whereText, type Booking, type BookingType, type Resource } from "./book";
 import { icsContentType, invite, type IcsMethod } from "./ics";
 import { formatSlot, isValidZone } from "./slots";
@@ -29,6 +29,11 @@ export type Message = {
 
 /** Delivers one message; never throws (a failure is a `failed` Sent). */
 export type Send = (m: Message) => Promise<Sent>;
+
+/** emailSend, or null when this app has no sender set up (no connection, or no NOTIFY_FROM): say so before claiming work only a sender can do. */
+export function emailSender(env: Env, doFetch: typeof fetch = fetch): Send | null {
+  return typeof senderOf(env) === "string" || !setting(env, "NOTIFY_FROM") ? null : emailSend(env, doFetch);
+}
 
 /** Email through the connected sender, the invite attached. */
 export function emailSend(env: Env, doFetch: typeof fetch = fetch): Send {
@@ -86,13 +91,26 @@ export function bookingMessage(kind: MessageKind, a: About): { subject: string; 
 }
 
 /**
+ * A booking made, moved or cancelled, as every booking page reports it to its
+ * onBooked: the public pages, the team's, and a form's booking step.
+ * manageUrl is the booker's own link to change or cancel, when there is one.
+ */
+export type BookingNotice = {
+  event: "booked" | "rescheduled" | "cancelled";
+  booking: Booking;
+  type: BookingType;
+  host: Resource;
+  manageUrl: string | null;
+};
+
+/**
  * Tell the booker about a booking, a move or a cancel, with the calendar
  * invite (REQUEST, or CANCEL with a higher SEQUENCE) when the host has an
  * email to organize it from.
  */
 export function notifyBooking(
   send: Send,
-  e: { event: "booked" | "rescheduled" | "cancelled"; booking: Booking; type: BookingType; host: Resource; manageUrl: string | null },
+  e: BookingNotice,
   opts: { domain: string },
 ): Promise<Sent> {
   const { subject, text } = bookingMessage(e.event, e);

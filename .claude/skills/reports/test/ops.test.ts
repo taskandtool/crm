@@ -28,7 +28,7 @@ test("a project with only forms gets leads and a one-step funnel, and says what 
     ('contact', 'ann@example.com', 'website', 'new', '{"message": "again"}', '2026-09-21T15:00:00Z'),
     ('contact', 'old@example.com', 'website', 'new', '{}', '2026-08-20T15:00:00Z')`;
   const data = await loadOps(db, { period, grain: "week", zone: NY });
-  assert.deepEqual(data.tables, { submissions: true, forms: true, bookings: false, payments: false });
+  assert.deepEqual(data.tables, { submissions: true, forms: true, bookings: false, payments: false, paymentTotals: false });
   assert.equal(data.leads?.current, 3);
   assert.equal(data.leads?.previous, 1);
   // Where they came from: the UTM source first, else the referrer's host, else direct. Never the app's slug.

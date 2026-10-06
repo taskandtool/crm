@@ -69,7 +69,7 @@ export async function loadOps(db: Db, opts: { period: Period; grain: Grain; zone
     tables.submissions ? run<{ form: string; leads: number }>(db, leadsByFormQuery(period, zone, tables)) : null,
     tables.bookings ? compared(db, "bookings", period, previous, grain, zone) : null,
     tables.bookings ? run<{ id: string; name: string | null; email: string; status: string; starts_at: string }>(db, recentBookingsQuery()) : null,
-    tables.payments ? run<Revenue>(db, revenueQuery(period, zone, previous)) : null,
+    tables.payments ? run<Revenue>(db, revenueQuery(period, zone, previous, { totals: tables.paymentTotals })) : null,
     funnel ? run<{ step: string; people: number }>(db, funnel) : null,
   ]);
   return {

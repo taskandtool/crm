@@ -30,5 +30,10 @@
     ],
     "currency": "USD"
   },
-  "booking": true
+  "booking": true,
+  "invoices": {
+    "name": "to fill",
+    "currency": "USD",
+    "days_until_due": 14
+  }
 }

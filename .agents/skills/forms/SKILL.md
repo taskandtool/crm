@@ -1,6 +1,6 @@
 ---
 name: forms
-description: "Forms as rows in the project's database: a form's fields in forms, every submission in submissions (the CRM reads it), spam checks, a form on a public page in dev and production, the private submissions list and form editor. Use for any form a visitor sends. Not for team-only settings or a login."
+description: "Forms as rows in the project's database: contact forms, surveys and orders, with steps, things to buy, a booking step and a payment step, and every submission in the one table the CRM reads. Use for any form a visitor fills in or an order page. Not for team-only settings or a login."
 ---
 
 # Forms

@@ -24,12 +24,17 @@ import type { Stripe } from "./stripe";
 
 export type PaymentKind = "deposit" | "full" | "invoice" | "other";
 
+/** One line on Stripe's page: a quantity at a price in minor units, with the Stripe tax rate (tax.ts stripeTaxRate) when taxed. */
+export type CheckoutLine = { name: string; quantity: number; unitCents: number; taxRate?: string | null };
+
 export type CheckoutInput = {
   kind: PaymentKind;
   refType: string;
   refId: string;
-  /** Minor units of `currency` (money.ts toMinor). */
+  /** Minor units of `currency` (money.ts toMinor); with `lines`, their total before tax. */
   amountCents: number;
+  /** Several lines (an order); without them, one line of `amountCents` named by `description`. */
+  lines?: CheckoutLine[];
   currency: string;
   /** Shown to the payer on Stripe's page as the line item. */
   description: string;
@@ -49,6 +54,12 @@ export async function startCheckout(db: Db, stripe: Stripe, input: CheckoutInput
   const currency = currencyCode(input.currency);
   if (!currency) throw new Error(`not a currency code: ${input.currency}`);
   if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) throw new Error("amountCents must be a positive integer in minor units");
+  const lines = input.lines ?? [{ name: input.description, quantity: 1, unitCents: input.amountCents }];
+  // The row's amount is what the webhook checks the paid session's subtotal against, so the lines must make it.
+  if (lines.some((l) => !Number.isSafeInteger(l.quantity) || l.quantity <= 0 || !Number.isSafeInteger(l.unitCents) || l.unitCents < 0)
+    || lines.reduce((n, l) => n + l.quantity * l.unitCents, 0) !== input.amountCents) {
+    throw new Error("each line needs a whole quantity and a price in minor units, and together they make amountCents");
+  }
   const email = input.email ? normalizeEmail(input.email) : null;
   // Random per row: it ties Stripe's events to this row and no other, even when
   // another project on the same Stripe account has a payment with the same id.
@@ -75,9 +86,11 @@ export async function startCheckout(db: Db, stripe: Stripe, input: CheckoutInput
         success_url: input.successUrl,
         cancel_url: input.cancelUrl,
         expires_at: input.expiresAt ? Math.floor(input.expiresAt.getTime() / 1000) : undefined,
-        line_items: [
-          { quantity: 1, price_data: { currency, unit_amount: input.amountCents, product_data: { name: input.description } } },
-        ],
+        line_items: lines.map((l) => ({
+          quantity: l.quantity,
+          price_data: { currency, unit_amount: l.unitCents, product_data: { name: l.name.slice(0, 250) } },
+          tax_rates: l.taxRate ? [l.taxRate] : undefined,
+        })),
         metadata: tag,
         // Copied onto the charge, so refund and failure events find the row too.
         payment_intent_data: { metadata: tag, description: input.description },

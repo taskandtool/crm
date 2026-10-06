@@ -47,6 +47,20 @@ const get = (path: string, headers: Record<string, string> = ME, rt = runtime) =
 const post = (path: string, form: Record<string, string>, headers: Record<string, string> = { ...ME, origin: HOST }) =>
   app.request(HOST + path, { method: "POST", body: new URLSearchParams(form), headers: { ...headers, "content-type": "application/x-www-form-urlencoded" } }, { runtime });
 
+test("Stripe's webhook is the one other path without a sign-in, and it wants a signature", async (t) => {
+  if (skip) return t.skip(skip);
+  process.env.STRIPE_WEBHOOK_SECRET = "whsec_crm_test";
+  try {
+    const res = await app.request(HOST + "/hooks/stripe", { method: "POST", body: "{}", headers: { host: "crm.example", "stripe-signature": "t=1,v1=00" } }, { runtime });
+    assert.equal(res.status, 400);
+    assert.equal(await res.text(), "bad signature");
+    assert.equal((await app.request(HOST + "/hooks/stripe", { headers: { host: "crm.example" } }, { runtime })).status, 404, "POST only");
+    assert.equal((await app.request(HOST + "/hooks/stripe/x", { method: "POST", headers: { host: "crm.example" } }, { runtime })).status, 404);
+  } finally {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  }
+});
+
 test("no identity: 404 everywhere but /healthz", async (t) => {
   if (skip) return t.skip(skip);
   for (const p of ["/", "/customers", "/customers/1", "/customers/export.csv", "/pipeline", "/stages", "/nope"]) {
@@ -322,6 +336,137 @@ test("bookings in the CRM: its own frame, a type and a person, Make it a job fro
   html = await (await get("/bookings/schedule")).text();
   assert.match(html, /<a href="\/bookings" aria-current="page"[^>]*>Bookings<\/a>/, "inside the CRM's frame");
   assert.match(html, /Times are in UTC\./, "the CRM's zone");
+});
+
+test("quotes in the CRM: from a job, sent, accepted, made a job; Make it a job once", async (t) => {
+  if (skip) return t.skip(skip);
+  const made = await post("/customers", { name: "Quin Quote", email: "quin@example.com", phone: "555 777 0000" });
+  const cid = made.headers.get("location")!.match(/\/customers\/(\d+)/)![1];
+  let html = await (await get(`/customers/${cid}`)).text();
+  assert.match(html, /<a href="\/invoices"[^>]*>Invoices<\/a>/, "in the nav");
+  assert.match(html, /href="\/invoices\/quotes\/new\?email=quin%40example\.com&amp;name=Quin\+Quote/);
+
+  // Quote this job: the job's title and amount are the first line.
+  const job = await post(`/customers/${cid}/visits`, { title: "Water heater swap", status: "planned", amount: "1,200.00" });
+  const vid = job.headers.get("location")!.match(/\/visits\/(\d+)/)![1];
+  html = await (await get(`/visits/${vid}`)).text();
+  const quoteLink = /href="(\/invoices\/quotes\/new\?[^"]+)">Quote this visit</.exec(html)![1].replace(/&amp;/g, "&");
+  html = await (await get(quoteLink)).text();
+  assert.match(html, /<nav aria-label="CRM"/, "the CRM's own frame");
+  assert.match(html, /<nav aria-label="Quotes and invoices"/);
+  assert.match(html, /value="Water heater swap"/);
+  assert.match(html, /value="1200\.00"/);
+  assert.match(html, /Payment due within 30 days\./, "the config's standing terms");
+  assert.match(html, new RegExp(`name="visit_id" value="${vid}"`));
+
+  const body = new URLSearchParams({ email: "quin@example.com", name: "Quin Quote", currency: "usd", valid_until: "2099-01-31", visit_id: vid, notes: "", terms: "" });
+  for (const [d, u] of [["Water heater swap", "1200.00"], ["", ""]]) {
+    body.append("description", d); body.append("quantity", ""); body.append("unit", u); body.append("tax_rate_id", "");
+  }
+  const res = await app.request(HOST + "/invoices/quotes", { method: "POST", body, headers: { ...ME, origin: HOST, "content-type": "application/x-www-form-urlencoded" } }, { runtime });
+  assert.equal(res.status, 303);
+  const qid = res.headers.get("location")!.match(/\/invoices\/quotes\/(\d+)/)![1];
+  html = await (await get(`/invoices/quotes/${qid}`)).text();
+  assert.match(html, /\$1,200\.00/);
+  assert.match(html, new RegExp(`<a href="/customers/${cid}">Quin Quote</a>`));
+  assert.match(html, new RegExp(`<a href="/visits/${vid}">The visit</a>`));
+
+  // No sender connected here: nothing goes, and the page says to send it yourself.
+  const send = await post(`/invoices/quotes/${qid}/send`, {});
+  assert.match(decodeURIComponent(send.headers.get("location")!.replace(/\+/g, " ")), /Nothing was sent: no email sender is connected/);
+  assert.equal((await post(`/invoices/quotes/${qid}/sent`, {})).headers.get("location"), `/invoices/quotes/${qid}?saved=marked-sent`);
+  assert.equal((await post(`/invoices/quotes/${qid}/decide`, { answer: "accepted" })).headers.get("location"), `/invoices/quotes/${qid}?saved=accepted`);
+
+  // A quote for someone new, accepted with no job: Make it a job adds them, once.
+  const nb = new URLSearchParams({ email: "new@example.com", name: "Nia New", currency: "usd", valid_until: "", visit_id: "", notes: "", terms: "", address: "9 Elm St" });
+  nb.append("description", "Gutter clean"); nb.append("quantity", "1"); nb.append("unit", "180"); nb.append("tax_rate_id", "");
+  const r2 = await app.request(HOST + "/invoices/quotes", { method: "POST", body: nb, headers: { ...ME, origin: HOST, "content-type": "application/x-www-form-urlencoded" } }, { runtime });
+  const q2 = r2.headers.get("location")!.match(/\/invoices\/quotes\/(\d+)/)![1];
+  assert.equal((await post(`/invoices/quotes/${q2}/job`, {})).headers.get("location"), `/invoices/quotes/${q2}?saved=not-now`, "only an accepted quote");
+  await post(`/invoices/quotes/${q2}/decide`, { answer: "accepted" });
+  assert.match(await (await get(`/invoices/quotes/${q2}`)).text(), /Not a customer yet\.[\s\S]*Make it a visit/);
+  const [one, two] = await Promise.all([post(`/invoices/quotes/${q2}/job`, {}), post(`/invoices/quotes/${q2}/job`, {})]);
+  assert.equal(one.headers.get("location"), two.headers.get("location"));
+  const jobUrl = one.headers.get("location")!;
+  assert.match(jobUrl, /^\/visits\/\d+\?saved=visit-added$/);
+  html = await (await get(jobUrl)).text();
+  assert.match(html, /<h1[^>]*>Gutter clean<\/h1>/);
+  assert.match(html, />Nia New<\/a>/);
+  assert.match(html, /value="180\.00"/);
+  const [{ n }] = await db.sql<{ n: number }>`select count(*)::int as n from customer_visits where title = 'Gutter clean'`;
+  assert.equal(n, 1);
+  const [nia] = await db.sql<{ address: string; source: string }>`select address, source from customers where email = 'new@example.com'`;
+  assert.deepEqual({ ...nia }, { address: "9 Elm St", source: "Quote" });
+
+  // Invoice this job: the job's line on a new invoice; the quote's invoice from Make the invoice.
+  html = await (await get(`/visits/${vid}`)).text();
+  assert.match(html, /href="\/invoices\/new\?[^"]*line=Water\+heater\+swap[^"]*">Invoice this visit</);
+  const inv = await post(`/invoices/quotes/${qid}/invoice`, {});
+  const iid = inv.headers.get("location")!.match(/^\/invoices\/(\d+)\?saved=invoice-created$/)![1];
+  html = await (await get(`/invoices/${iid}`)).text();
+  assert.match(html, /<a href="\/invoices" aria-current="page"[^>]*>Invoices<\/a>/, "the CRM's nav");
+  assert.match(html, new RegExp(`<a href="/customers/${cid}">Quin Quote</a>`));
+  assert.match(html, new RegExp(`<a href="/visits/${vid}">The visit</a>`));
+
+  // What is quoted, owed and paid: on the customer's page and the job's, and paid by month on the list.
+  html = await (await get(`/customers/${cid}`)).text();
+  assert.match(html, /<h2[^>]*>Quotes and invoices<\/h2>/);
+  assert.match(html, new RegExp(`<a href="/invoices/quotes/${qid}">Quote Q-\\d+</a>`));
+  assert.match(html, new RegExp(`<a href="/invoices/${iid}">Draft invoice</a>`));
+  assert.doesNotMatch(html, /Owes /, "a draft is not owed");
+  await db.sql`update invoices set status = 'open', livemode = true, number = 'ACME-0042', due_date = '2099-01-31' where id = ${iid}::bigint`;
+  html = await (await get(`/customers/${cid}`)).text();
+  assert.match(html, /Owes \$1,200\.00 on an open invoice\./);
+  assert.match(html, /Invoice ACME-0042<\/a>[\s\S]*?due January 31, 2099/);
+  html = await (await get(`/visits/${vid}`)).text();
+  assert.match(html, /<h2[^>]*>Quote and invoice<\/h2>[\s\S]*Invoice ACME-0042/);
+  assert.doesNotMatch(await (await get("/invoices")).text(), /Paid by month/, "nothing paid yet");
+  await db.sql`update invoices set status = 'paid', paid_at = now() where id = ${iid}::bigint`;
+  html = await (await get("/invoices")).text();
+  assert.match(html, /Paid by month[\s\S]*\$1,200\.00/);
+  assert.doesNotMatch(await (await get(`/customers/${cid}`)).text(), /Owes /);
+
+  assert.equal((await get(`/invoices/quotes/${qid}`, { host: "crm.example" })).status, 404, "team only");
+  assert.equal((await get(`/invoices/${iid}`, { host: "crm.example" })).status, 404, "team only");
+  assert.equal((await post(`/invoices/quotes/${qid}/decide`, { answer: "declined" }, { ...ME, origin: "https://evil.example" })).status, 403);
+});
+
+test("forms in the CRM: submissions by form, an order with its payment, What came in by form", async (t) => {
+  if (skip) return t.skip(skip);
+  const fields = [
+    { name: "name", label: "Name", type: "text", required: true },
+    { name: "email", label: "Email", type: "email", required: true },
+    { name: "cookies", label: "Cookies", type: "items", currency: "usd", items: [{ key: "choc-chip", label: "Chocolate chip", unit: "dozen", price_cents: 4000 }] },
+    { name: "pay", label: "Pay", type: "payment" },
+  ];
+  await db.sql`insert into forms (key, title, fields) values ('order', 'Cookie order', ${JSON.stringify(fields)}::jsonb) on conflict (key) do nothing`;
+  const [order] = await db.sql<{ id: string }>`
+    insert into submissions (form_key, name, email, data, source) values ('order', 'Olive Order', 'olive@example.com', '{"cookies": {"choc-chip": 2}}', 'website')
+    returning id::text as id`;
+  const [pay] = await db.sql<{ id: string }>`
+    insert into payments (email, amount_cents, total_cents, currency, status, kind, ref_type, ref_id, livemode)
+    values ('olive@example.com', 8000, 8660, 'usd', 'paid', 'full', 'submission', ${order.id}, true) returning id::text as id`;
+
+  let html = await (await get("/forms/submissions?form=order")).text();
+  assert.match(html, /<nav aria-label="CRM"/, "the CRM's own frame");
+  assert.match(html, /<a href="\/forms\/submissions" aria-current="page"[^>]*>Forms<\/a>/);
+  assert.match(html, /Olive Order/);
+  assert.match(html, /Paid \$86\.60/);
+  assert.doesNotMatch(html, /Pat Doe/, "only the order form's");
+
+  html = await (await get(`/forms/submissions/${order.id}`)).text();
+  assert.match(html, /2 x Chocolate chip, a dozen/);
+  assert.match(html, new RegExp(`href="/invoices/payments/${pay.id}"`));
+  assert.equal((await get(`/invoices/payments/${pay.id}`)).status, 200, "the payment, in the CRM");
+  assert.equal((await get("/forms/submissions/unfinished")).status, 200);
+
+  html = await (await get("/?form=order")).text();
+  assert.match(html, /Olive Order/);
+  assert.doesNotMatch(html, /Pat Doe/);
+  assert.match(html, /<option value="order" selected="">Cookie order<\/option>/);
+  assert.match(await (await get("/")).text(), /Pat Doe/, "everything, unfiltered");
+
+  assert.equal((await get("/forms/submissions", { host: "crm.example" })).status, 404, "team only");
 });
 
 // Review regressions.
