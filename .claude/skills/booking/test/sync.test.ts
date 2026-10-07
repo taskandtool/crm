@@ -22,7 +22,7 @@ function fake(routes: Record<string, (c: Call) => Response | Promise<Response>>)
   const calls: Call[] = [];
   const f = (async (url: string, init: RequestInit = {}) => {
     const h = new Headers(init.headers);
-    const path = url.slice(`${PHX}/api/sprite/gateway`.length);
+    const path = url.slice(`${PHX}/api/machine/gateway`.length);
     const c: Call = { method: init.method ?? "GET", url, path, auth: h.get("authorization"), prefer: h.get("prefer"), body: init.body ? JSON.parse(String(init.body)) : null };
     calls.push(c);
     const key = Object.keys(routes).find((k) => {
@@ -197,7 +197,7 @@ test("Google: events.list through the gateway replaces the calendar's busy rows"
     assert.deepEqual(r, { pushed: 0, pulled: 1, errors: [] });
     assert.equal(calls.length, 2);
     const u = new URL(calls[0].url);
-    assert.equal(u.pathname, "/api/sprite/gateway/google-calendar/calendar/v3/calendars/pat%40example.com/events");
+    assert.equal(u.pathname, "/api/machine/gateway/google-calendar/calendar/v3/calendars/pat%40example.com/events");
     assert.equal(calls[0].auth, "Bearer mt-1");
     assert.equal(u.searchParams.get("singleEvents"), "true", "recurring events come back as their instances");
     assert.equal(u.searchParams.get("timeMin"), "2026-03-01T00:00:00.000Z");

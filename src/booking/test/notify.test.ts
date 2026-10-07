@@ -34,7 +34,7 @@ test("a cancel through the gateway on the machine is cancel.ics with the machine
   const { calls, f } = capture();
   const env = { NOTIFY_VIA: "postmark", PHOENIX_URL: "https://phx", MACHINE_TOKEN: "mt", NOTIFY_FROM: "hi@acme.com" };
   assert.deepEqual(await sendInvite(env, { ...mail, method: "CANCEL" }, f), { status: "sent", via: "gateway:postmark" });
-  assert.equal(calls[0].url, "https://phx/api/sprite/gateway/postmark/email");
+  assert.equal(calls[0].url, "https://phx/api/machine/gateway/postmark/email");
   assert.equal(calls[0].headers.get("authorization"), "Bearer mt");
   assert.equal(calls[0].body.Attachments[0].Name, "cancel.ics");
   assert.equal(calls[0].body.Attachments[0].ContentType, "text/calendar; charset=utf-8; method=CANCEL");

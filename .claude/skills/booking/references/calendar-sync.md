@@ -22,7 +22,7 @@ owner's own event at the same time stays busy. Do not read busy times from
 Google free/busy: it merges intervals and carries no ids.
 
 Calls go through the gateway with the machine token
-(`$PHOENIX_URL/api/sprite/gateway/google-calendar/...`, `microsoft-calendar`).
+(`$PHOENIX_URL/api/machine/gateway/google-calendar/...`, `microsoft-calendar`).
 Google is `events.list` with `singleEvents=true`, paged by `nextPageToken`;
 free (transparent), cancelled and declined events are not busy. Microsoft is
 `calendarView` with `Prefer: outlook.timezone="UTC"` and the tag `$expand`ed,

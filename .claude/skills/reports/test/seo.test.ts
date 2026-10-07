@@ -58,8 +58,8 @@ test("the SEO figures come through the gateway and their ratios from the totals"
 
   assert.equal(f.calls.length, 7);
   for (const c of f.calls) assert.equal(c.auth, "Bearer mt_1");
-  assert.ok(f.calls.some((c) => c.url === "https://tt.example/api/sprite/gateway/google-gsc/webmasters/v3/sites/sc-domain%3Aacme.com/searchAnalytics/query"));
-  assert.ok(f.calls.some((c) => c.url === "https://tt.example/api/sprite/gateway/google-ga4/v1beta/properties/123:runReport"));
+  assert.ok(f.calls.some((c) => c.url === "https://tt.example/api/machine/gateway/google-gsc/webmasters/v3/sites/sc-domain%3Aacme.com/searchAnalytics/query"));
+  assert.ok(f.calls.some((c) => c.url === "https://tt.example/api/machine/gateway/google-ga4/v1beta/properties/123:runReport"));
   const prevCall = f.calls.find((c) => c.url.includes("google-gsc") && c.body.dimensions?.[0] === "date" && c.body.startDate !== period.from)!;
   assert.deepEqual([prevCall.body.startDate, prevCall.body.endDate], ["2026-08-29", "2026-08-31"]);
 

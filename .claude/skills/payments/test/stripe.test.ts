@@ -103,7 +103,7 @@ test("with a bound key the call goes to Stripe; without one, through the gateway
 
   const gw = fakeFetch(200, { data: [] });
   await stripeFrom({ PHOENIX_URL: "https://tt.example/", MACHINE_TOKEN: "mt" }, gw.f)("GET", "/v1/refunds", { limit: 3 });
-  assert.equal(gw.calls[0].url, "https://tt.example/api/sprite/gateway/stripe/v1/refunds?limit=3");
+  assert.equal(gw.calls[0].url, "https://tt.example/api/machine/gateway/stripe/v1/refunds?limit=3");
   assert.equal(new Headers(gw.calls[0].init.headers).get("authorization"), "Bearer mt");
 
   // A connection whose slug is not "stripe" has its own key name.

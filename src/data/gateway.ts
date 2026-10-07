@@ -1,6 +1,6 @@
 // A call to a connection through the Task & Tool gateway, from the machine.
 // The gateway adds the vendor's credential, so no key is ever here: the
-// request goes to `${PHOENIX_URL}/api/sprite/gateway/<slug><vendor path>` with
+// request goes to `${PHOENIX_URL}/api/machine/gateway/<slug><vendor path>` with
 // `Authorization: Bearer ${MACHINE_TOKEN}`. Both exist only on the app's
 // machine, so code at the edge cannot use this; there a key the owner bound
 // to the Worker is called directly.
@@ -20,5 +20,5 @@ export async function gatewayFetch(env: Env, slug: string, path: string, init: R
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${token}`);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  return doFetch(`${base.replace(/\/+$/, "")}/api/sprite/gateway/${slug}${path}`, { ...init, headers, signal: init.signal ?? AbortSignal.timeout(60_000) });
+  return doFetch(`${base.replace(/\/+$/, "")}/api/machine/gateway/${slug}${path}`, { ...init, headers, signal: init.signal ?? AbortSignal.timeout(60_000) });
 }

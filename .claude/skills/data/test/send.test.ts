@@ -50,7 +50,7 @@ test("envOf reads the request's settings by name, and keyName is the connection'
 test("the gateway call carries the machine token to the slug's path; off the machine it fails plainly", async () => {
   const r = recorder();
   await gatewayFetch({ PHOENIX_URL: "https://tt.example/", MACHINE_TOKEN: "mt" }, "google-calendar", "/calendar/v3/x", { method: "POST", body: "{}" }, r.f);
-  assert.equal(r.calls[0].url, "https://tt.example/api/sprite/gateway/google-calendar/calendar/v3/x");
+  assert.equal(r.calls[0].url, "https://tt.example/api/machine/gateway/google-calendar/calendar/v3/x");
   assert.equal(r.calls[0].headers.get("authorization"), "Bearer mt");
   assert.equal(r.calls[0].headers.get("content-type"), "application/json");
   await assert.rejects(gatewayFetch({}, "stripe", "/v1/x", {}, r.f), /only from the app's machine/);
@@ -88,7 +88,7 @@ test("NOTIFY_VIA with a slug reads that connection's key name, else goes through
 
   const env = { NOTIFY_VIA: "postmark:postmark-2", PHOENIX_URL: "https://tt.example/", MACHINE_TOKEN: "mt", NOTIFY_FROM: "site@biz.example" };
   assert.deepEqual(await sendEmail(env, msg, r.f), { status: "sent", via: "gateway:postmark-2" });
-  assert.equal(r.calls[1].url, "https://tt.example/api/sprite/gateway/postmark-2/email");
+  assert.equal(r.calls[1].url, "https://tt.example/api/machine/gateway/postmark-2/email");
   assert.equal(r.calls[1].headers.get("authorization"), "Bearer mt");
   assert.equal(r.calls[1].headers.get("x-postmark-server-token"), null);
   assert.equal(r.calls[1].body.To, "owner@example.com");

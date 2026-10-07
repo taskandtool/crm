@@ -208,7 +208,7 @@ test("checkout records the payment first, stores the session, and sends an idemp
     successUrl: "https://site.example/thanks", cancelUrl: "https://site.example/book",
   });
   assert.equal(out.url, "https://checkout.stripe.com/c/pay/cs_new");
-  assert.equal(calls[0].url, "https://tt.example/api/sprite/gateway/stripe/v1/checkout/sessions");
+  assert.equal(calls[0].url, "https://tt.example/api/machine/gateway/stripe/v1/checkout/sessions");
   const headers = Object.fromEntries(new Headers(calls[0].init.headers));
   const [{ match_key }] = await s.db.sql`select match_key from payments where id = ${out.paymentId}`;
   assert.match(match_key, /^[0-9a-f-]{36}$/);
