@@ -8,7 +8,7 @@
 //   - no em dashes in the interface copy
 //   - only the dev-only files under src/ import a Node built-in, so the
 //     code production runs on Cloudflare stays portable
-//   - the manifest, the skill and its adapter, the vendored scripts are there
+//   - the manifest, the skill, the vendored scripts are there
 //   - the typecheck passes
 // Exit 1 with the findings when something is off.
 import { spawnSync } from "node:child_process";
@@ -76,7 +76,6 @@ for (const file of walk("src").filter((f) => /\.tsx?$/.test(f) && !nodeOnly.has(
 // the conventions the platform reads
 if (!existsSync("starter-app.json")) findings.push("starter-app.json is missing");
 if (!existsSync(".claude/skills/crm/SKILL.md")) findings.push(".claude/skills/crm/SKILL.md is missing");
-if (!existsSync(".agents/skills/crm/SKILL.md")) findings.push(".agents/skills/crm/SKILL.md (the Codex adapter) is missing");
 if (!existsSync("static/vendor/htmx.min.js") || !existsSync("static/vendor/Sortable.min.js")) findings.push("static/vendor is missing: run npm run vendor");
 
 // typecheck

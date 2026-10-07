@@ -93,7 +93,7 @@ scripts/                 customers, visits, forms, quotes, invoices, inbox, stag
 styles/  static/         the tokens; the built CSS, vendored htmx and SortableJS, crm.js
 examples/                hvac, dental, restaurant, plumbing, counselor configs
 test/                    node:test
-.claude/skills/crm/      the skill the AI reads; .agents/skills/crm/ is the Codex adapter
+.claude/skills/crm/      the skill the AI reads (Claude or Codex)
 .taskandtool/setup.sh    what the machine needs; idempotent
 ```
 
