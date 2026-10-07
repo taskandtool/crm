@@ -19,7 +19,7 @@ infer. Then:
    Rename in place rather than archive and re-add: the key stays (`new`
    labelled `Enquiry`), which is fine, since nobody sees a key and every
    script takes the label too.
-3. `sprite-env services restart web`, `npm run check`, then show the owner
+3. `python3 ~/tools/taskandtool.py restart`, `npm run check`, then show the owner
    What came in, a customer and the pipeline.
 
 A location or an insurer is a custom field; the truck that went or a

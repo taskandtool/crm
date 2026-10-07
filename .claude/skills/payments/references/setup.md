@@ -59,6 +59,6 @@ another slug: `stripeFrom(envOf(c), fetch, "stripe-eu")`.
 4. They copy its signing secret (`whsec_…`) into the form from
    `python3 ~/tools/taskandtool.py request-secret STRIPE_WEBHOOK_SECRET`, for this app alone (each
    endpoint has its own secret); then
-   `sprite-env services restart web`. Test and live mode are separate
+   `python3 ~/tools/taskandtool.py restart`. Test and live mode are separate
    endpoints with separate secrets. After an inbound URL rotation, change
    the URL in Stripe too.

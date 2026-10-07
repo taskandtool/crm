@@ -46,7 +46,7 @@ Everything a business wants changed is one of these.
    - `business`: one line about the business. It ships as `to fill`;
      writing the real line retires the "Shape the CRM" suggestion.
 
-   After a change: `sprite-env services restart web`, then `npm run check`.
+   After a change: `python3 ~/tools/taskandtool.py restart`, then `npm run check`.
 
 2. **Stages are rows** in `pipeline_stages`, edited on `/stages` or with
    `node scripts/stages.mjs`. New people land in the first open stage. A

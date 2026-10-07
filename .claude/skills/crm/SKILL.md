@@ -39,10 +39,9 @@ the business skills' code in `src/` are kept.
 ## Dev, on this machine
 
 ```bash
-sprite-env services get web
+python3 ~/tools/taskandtool.py logs                 # state and the end of the log
 curl -s -o /dev/null -w '%{http_code}\n' localhost:3000/healthz      # 200 once the database is ready
 curl -s -H 'X-TaskTool-User: you@example.com' localhost:3000/customers | head
-tail -50 /.sprite/logs/services/web.log
 ```
 
 A 404 without the header is the gate (`src/admin/guard.ts`), not a fault.

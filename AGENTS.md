@@ -88,8 +88,7 @@ node scripts/export.mjs --out customers.csv     # the list out
 - `npm run check` before showing work (config and examples valid, the
   schema additive, the refuse list, the typecheck). `npm test` for the
   tests.
-- After a change to `schema.sql` or the config: `sprite-env services
-  restart web`, or `node scripts/migrate.mjs` for the schema alone.
+- After a change to `schema.sql` or the config: `python3 ~/tools/taskandtool.py restart`, or `node scripts/migrate.mjs` for the schema alone.
 - `npm run deploy` publishes to production (schema, build, deploy), after
   the crm skill's checks.
 - Commit at milestones.

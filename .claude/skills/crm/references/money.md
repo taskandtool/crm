@@ -40,7 +40,6 @@ Set it up once, in this order:
    `python3 ~/tools/taskandtool.py inbound-url /hooks/stripe` prints, with the
    invoice events, its signing secret as `STRIPE_WEBHOOK_SECRET`. This
    CRM is team only, so Stripe always reaches it there, never at
-   production's address. After the secret is set, `sprite-env services
-   restart web`.
+   production's address. After the secret is set, `python3 ~/tools/taskandtool.py restart`.
 
 The `invoices` skill has the rules, sending among them; `src/invoices/` is its code.

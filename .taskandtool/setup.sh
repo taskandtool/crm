@@ -26,7 +26,7 @@ if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
 fi
 node_major="$(node -p 'process.versions.node.split(".")[0]')"
 if [ "$node_major" -lt 20 ]; then
-  echo "Node $(node --version) found; the CRM needs Node 20 or newer (see /.sprite/llm-dev.txt for the version manager)" >&2
+  echo "Node $(node --version) found; the CRM needs Node 20 or newer (nvm install 22)" >&2
   exit 1
 fi
 
@@ -57,17 +57,9 @@ npm run --silent css
 # /home/sprite/.env, which the service sources at start. This is what the
 # manifest's `ready` check looks for, so a failure here is the one outcome
 # worth exiting non-zero for.
-if command -v sprite-env >/dev/null 2>&1; then
-  if sprite-env services get web >/dev/null 2>&1; then
-    echo "== restarting the web service"
-    sprite-env services restart web >/dev/null 2>&1 || true
-  else
-    echo "== registering the web service (npm run dev on port 3000)"
-    sprite-env services create web \
-      --cmd bash --args "-c,set -a; . /home/sprite/.env; set +a; exec npm run dev" \
-      --dir "$APP" --env "PORT=3000" --http-port 3000
-    echo "web service registered"
-  fi
+if [ -f "$HOME/tools/taskandtool.py" ]; then
+  echo "== serving dev (npm run dev on port 3000)"
+  python3 "$HOME/tools/taskandtool.py" serve "npm run dev" --port 3000
 fi
 
 echo "== crm starter app setup done"
