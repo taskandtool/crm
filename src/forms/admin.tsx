@@ -880,20 +880,24 @@ function Editor(props: {
 }
 
 function NewForm({ action, key_ = "", title = "", errors = {} }: { action: string; key_?: string; title?: string; errors?: Errors }) {
+  // The hint and any problem sit under the row, so the two fields and the
+  // button line up whatever each one has to say.
   return (
-    <form method="post" action={action} class="mt-6 flex flex-wrap items-end gap-3">
-      <label class={fieldCls}>
-        New form title
-        <input name="title" value={title} required class={controlClass} aria-invalid={errors.title ? "true" : undefined} aria-describedby={errors.title ? "new-title-p" : undefined} />
-        <Problem id="new-title-p" text={errors.title} />
-      </label>
-      <label class={fieldCls}>
-        Key
-        <input name="key" value={key_} required pattern="[a-z0-9][a-z0-9\-]*" placeholder="quote-request" class={controlClass} aria-invalid={errors.key ? "true" : undefined} aria-describedby="new-key-help new-key-p" />
-        <span id="new-key-help">Used in the form's address. It cannot be changed later.</span>
-        <Problem id="new-key-p" text={errors.key} />
-      </label>
-      <button class={buttonClass}>Create the form</button>
+    <form method="post" action={action} class="mt-6">
+      <div class="flex flex-wrap items-end gap-3">
+        <label class={fieldCls}>
+          New form title
+          <input name="title" value={title} required class={controlClass} aria-invalid={errors.title ? "true" : undefined} aria-describedby={errors.title ? "new-title-p" : undefined} />
+        </label>
+        <label class={fieldCls}>
+          Key
+          <input name="key" value={key_} required pattern="[a-z0-9][a-z0-9\-]*" placeholder="quote-request" class={controlClass} aria-invalid={errors.key ? "true" : undefined} aria-describedby="new-key-help new-key-p" />
+        </label>
+        <button class={buttonClass}>Create the form</button>
+      </div>
+      <p id="new-key-help" class="mt-1 text-label text-ink-2">The key is used in the form's address. It cannot be changed later.</p>
+      <Problem id="new-title-p" text={errors.title} />
+      <Problem id="new-key-p" text={errors.key} />
     </form>
   );
 }
