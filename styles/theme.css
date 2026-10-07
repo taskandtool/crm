@@ -12,25 +12,25 @@
   --animate-*: initial;
 
   /* Grounds */
-  --color-canvas: #f4f2ee;                    /* the page */
+  --color-canvas: #f5f6f8;                    /* the page */
   --color-surface: #ffffff;                   /* a card, a panel that floats */
-  --color-panel: #e9e6df;                     /* a column, a tinted band */
+  --color-panel: #e9ebef;                     /* a column, a tinted band */
 
   /* Text */
-  --color-ink: #1c1a17;                       /* 15:1 on canvas */
-  --color-ink-2: #4f4a43;                     /* secondary, 7.9:1 on canvas */
-  --color-ink-3: #6b655c;                     /* metadata, 5.2:1 on canvas, 4.6:1 on panel */
+  --color-ink: #15171c;                       /* 16.6:1 on canvas */
+  --color-ink-2: #454a54;                     /* secondary, 8.2:1 on canvas */
+  --color-ink-3: #5e6470;                     /* metadata, 5.5:1 on canvas, 5.0:1 on panel */
 
   /* The one action colour */
-  --color-accent: #2f5bea;                    /* 4.9:1 on canvas, 4.4:1 on panel: a ring, never text on panel */
+  --color-accent: #2f5bea;                    /* 5.1:1 on canvas, 4.6:1 on panel */
   --color-accent-ink: #ffffff;
 
   /* Lines */
-  --color-line: rgb(28 26 23 / 0.12);
-  --color-line-strong: rgb(28 26 23 / 0.5);   /* input and button edges: 3.2:1 on panel, the 3:1 a control boundary needs */
+  --color-line: rgb(21 23 28 / 0.12);
+  --color-line-strong: rgb(21 23 28 / 0.5);   /* input and button edges: 3.2:1 on panel, the 3:1 a control boundary needs */
 
   /* Type: an app's density, one family */
-  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: ui-sans-serif, system-ui, sans-serif;
   --text-title: 1.25rem;
   --text-title--line-height: 1.25;
   --text-copy: 0.9375rem;
@@ -41,6 +41,6 @@
   /* Edges and depth */
   --radius-control: 0.375rem;
   --radius-card: 0.625rem;
-  --shadow-card: 0 1px 1px rgb(28 26 23 / 0.06);
-  --shadow-lift: 0 1px 2px rgb(28 26 23 / 0.08), 0 10px 24px -10px rgb(28 26 23 / 0.25);
+  --shadow-card: 0 1px 2px rgb(21 23 28 / 0.06);
+  --shadow-lift: 0 1px 2px rgb(21 23 28 / 0.08), 0 10px 24px -10px rgb(21 23 28 / 0.25);
 }

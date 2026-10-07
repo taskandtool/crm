@@ -16,6 +16,19 @@
   input, select, textarea, button { font: inherit; color: inherit; }
   button:disabled { opacity: 0.5; cursor: default; }
   ::placeholder { color: var(--color-ink-3); opacity: 1; }
+  /* Controls: one height, and the browser's own select chrome replaced by a
+     chevron. A data URI cannot read a token: keep its stroke (%235e6470)
+     in step with --color-ink-3. */
+  input:not([type="checkbox"], [type="radio"], [type="hidden"]), select { min-height: 2rem; }
+  select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%235e6470' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 0.75rem;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator, input[type="datetime-local"]::-webkit-calendar-picker-indicator { opacity: 0.55; cursor: pointer; }
+  input[type="checkbox"], input[type="radio"] { accent-color: var(--color-accent); }
   summary::-webkit-details-marker { display: none; }
   /* SortableJS states on the pipeline */
   .sortable-ghost { opacity: 0.4; }
@@ -25,3 +38,7 @@
     *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   }
 }
+
+/* Outside the layers, so it outranks the padding utilities on a control:
+   room for the chevron. */
+select { padding-right: 1.75rem; }

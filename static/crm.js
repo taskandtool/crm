@@ -1,9 +1,9 @@
-// The CRM's only client script: drag on the pipeline. Everything else is
-// plain forms and htmx attributes. A drop posts the same stage change the
-// card's own select makes, and the server's answer (the whole pipeline)
-// replaces the board, so a drop that fails leaves nothing pretending it
-// worked. Without this file, or without JavaScript, each card's select and
-// Save button do the same.
+// The CRM's only client script: drag on the pipeline, and a pipeline card
+// that opens on a click. Everything else is plain forms and htmx attributes.
+// A drop posts the same stage change the card's own select makes, and the
+// server's answer (the whole pipeline) replaces the board, so a drop that
+// fails leaves nothing pretending it worked. Without this file, or without
+// JavaScript, each card's select and Save button do the same.
 (function () {
   function wire() {
     if (!window.Sortable || !window.htmx) return;
@@ -18,7 +18,11 @@
         // On a phone a swipe across a card scrolls the board; press and hold to drag.
         delay: 250,
         delayOnTouchOnly: true,
-        filter: "a, button, input, select, option, label",
+        // Pointer-driven rather than the browser's own drag, so a drag can
+        // start on the name link and a drop never also opens the customer.
+        forceFallback: true,
+        fallbackTolerance: 4,
+        filter: "button, input, select, option, label",
         preventOnFilter: false,
         onEnd: function (evt) {
           var stage = evt.to.dataset.stage;
@@ -35,6 +39,14 @@
       });
     });
   }
+  // A click anywhere on a pipeline card opens the customer, as the name does;
+  // the card's stage select keeps its own click.
+  document.addEventListener("click", function (e) {
+    var card = e.target.closest && e.target.closest("#pipeline [data-customer-id]");
+    if (!card || e.target.closest("a, button, input, select, label, form")) return;
+    var link = card.querySelector("a[href]");
+    if (link) link.click();
+  });
   document.addEventListener("DOMContentLoaded", wire);
   document.addEventListener("htmx:afterSettle", wire);
 })();

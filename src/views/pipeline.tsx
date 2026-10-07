@@ -83,8 +83,8 @@ export function Pipeline({ data }: { data: PipelineData }) {
 function Card({ c, options, stray }: { c: Customer; options: ReturnType<typeof stageOptions>; stray: boolean }) {
   const sub = [c.company, c.phone || c.email].filter(Boolean).join(" · ");
   return (
-    <li data-customer-id={c.id} class="cursor-grab rounded-card border border-line bg-surface p-2 shadow-card">
-      <a href={`/customers/${c.id}`} class="font-semibold no-underline underline-offset-2 hover:underline">
+    <li data-customer-id={c.id} class="cursor-pointer rounded-card border border-line bg-surface px-3 py-2 shadow-card hover:border-line-strong">
+      <a href={`/customers/${c.id}`} class="font-semibold no-underline">
         {c.name}
       </a>
       {sub ? <p class="truncate text-label text-ink-2">{sub}</p> : null}

@@ -328,7 +328,7 @@ test("bookings in the CRM: its own frame, a type and a person, Make it a job fro
   // From the customer's page, Book a time carries who they are into Book for someone.
   const lee = (await db.sql<{ id: string }>`select id::text as id from customers where email = 'lee@example.com'`)[0].id;
   html = await (await get(`/customers/${lee}`)).text();
-  const bookLink = /href="(\/bookings\/new\?[^"]+)">Book a time</.exec(html)![1].replace(/&amp;/g, "&");
+  const bookLink = /href="(\/bookings\/new\?[^"]+)"[^>]*>Book a time</.exec(html)![1].replace(/&amp;/g, "&");
   assert.match(bookLink, /name=Lee\+Wong&email=lee%40example\.com/);
   html = await (await get(bookLink)).text();
   assert.match(html, /<h1[^>]*>Book a time for Lee Wong<\/h1>/);

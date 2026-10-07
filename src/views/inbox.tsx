@@ -8,7 +8,7 @@ import { vocab } from "../config";
 import { sourceOf, type InboxRow } from "../crm/inbox";
 import { money } from "../crm/text";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, MESSAGES, primaryClass, timeZone } from "./ui";
+import { buttonClass, controlClass, linkButtonClass, MESSAGES, primaryClass, timeZone } from "./ui";
 
 const SUBMISSION: StatusOption[] = [
   { value: "new", label: "New", tone: "accent" },
@@ -113,7 +113,7 @@ export function InboxRows({ rows, next, more, self }: { rows: InboxRow[]; next: 
       ))}
       {next ? (
         <li class="px-4 py-3 text-center">
-          <a href={more(next)} hx-get={more(next)} hx-target="closest li" hx-swap="outerHTML" hx-push-url="false" class={buttonClass + " inline-block no-underline"}>
+          <a href={more(next)} hx-get={more(next)} hx-target="closest li" hx-swap="outerHTML" hx-push-url="false" class={linkButtonClass}>
             Load more
           </a>
         </li>

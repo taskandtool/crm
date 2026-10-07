@@ -15,6 +15,8 @@ export { buttonClass, controlClass };
 export const primaryClass =
   "rounded-control border border-accent bg-accent px-3 py-1 text-label font-semibold text-accent-ink hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 export const labelClass = "flex flex-col gap-1 text-label text-ink-2";
+/** A link that does an action (call, book, quote): it looks like a button. */
+export const linkButtonClass = buttonClass + " inline-block no-underline";
 
 /** Stage options for a select or badge: open stages strong, won in the accent, lost muted. */
 export function stageOptions(stages: Stage[]): StatusOption[] {

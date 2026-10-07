@@ -18,7 +18,7 @@ import { money, nowIn } from "../crm/text";
 import { whereText, type Booking } from "../booking/book";
 import { firstText } from "./inbox";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, stageOptions, timeZone, Who } from "./ui";
+import { buttonClass, controlClass, CustomInput, Field, linkButtonClass, MESSAGES, primaryClass, stageOptions, timeZone, Who } from "./ui";
 import { CustomerVisits } from "./visits";
 import { CustomerMoney, type Owed } from "./money";
 import type { Quote } from "../invoices/quotes";
@@ -54,12 +54,12 @@ export function CustomerPage(p: {
           <span class="text-label text-ink-2" aria-hidden="true">Stage</span>
           <StatusForm action={`${self}/stage`} current={c.stage} options={options} returnTo={self} label="Stage" />
         </span>
-        {c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`}>Call {c.phone}</a> : null}
+        {c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`} class={linkButtonClass}>Call {c.phone}</a> : null}
         {showBooking ? (
-          <a href={listUrl("/bookings/new", { name: c.name, email: c.email, phone: c.phone, address: c.address })}>Book a time</a>
+          <a href={listUrl("/bookings/new", { name: c.name, email: c.email, phone: c.phone, address: c.address })} class={linkButtonClass}>Book a time</a>
         ) : null}
-        {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", { email: c.email, name: c.name, phone: c.phone, address: c.address })}>New quote</a> : null}
-        {c.email ? <a href={`mailto:${c.email}`} class="break-all">Email {c.email}</a> : null}
+        {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", { email: c.email, name: c.name, phone: c.phone, address: c.address })} class={linkButtonClass}>New quote</a> : null}
+        {c.email ? <a href={`mailto:${c.email}`} class={linkButtonClass} title={c.email}>Email</a> : null}
       </div>
       {c.archived_at ? (
         <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">
