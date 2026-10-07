@@ -47,7 +47,7 @@ export function Layout(props: { title: string; user: string; section: Section; d
                 </a>
               ))}
             </nav>
-            <span class="ml-auto max-w-56 truncate text-label text-ink-3" title="Signed in through Task & Tool">
+            <span class="ml-auto hidden max-w-56 truncate text-label text-ink-3 sm:inline" title="Signed in through Task & Tool">
               {user}
             </span>
           </div>
