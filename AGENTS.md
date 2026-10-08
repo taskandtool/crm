@@ -23,13 +23,13 @@ Read the skill for what the owner asks before working from memory:
 - "Show me the orders", a form's questions, what someone filled in: `forms`.
 - The Stripe key, the webhook, a payment or a refund: `payments`.
 - What can be booked, hours, calendar sync: `booking`. A public booking
-  page is the Website's, not this app's.
+  page belongs to the Website app, not this one.
 - A chart or a report: `reports`.
 
 ## Commands
 
 Use these rather than doing the same work by hand. Each answers `--help`;
-`--json` where another script reads the output.
+add `--json` where another script reads the output.
 
 ```bash
 node scripts/inbox.mjs --since 7d               # the Inbox, and who each matched
@@ -59,8 +59,8 @@ node scripts/export.mjs --out customers.csv     # the list out
   `booking` (the team's side of booking, or off) and `invoices` (the name
   on quotes, the currency, or off).
   `examples/` holds five worked configs to read, not a switch.
-- `schema.sql` is the CRM's tables (`customers`, `pipeline_stages` (their
-  statuses), `deals`, `deal_stages`, `follow_ups`, `customer_notes`,
+- `schema.sql` is the CRM's tables (`customers`, `pipeline_stages` (the
+  customer statuses), `deals`, `deal_stages`, `follow_ups`, `customer_notes`,
   `customer_visits`, and `crm_setup`, which records the schema last applied
   so a script skips setup while it is current), applied at every start and
   every deploy.
@@ -76,7 +76,7 @@ node scripts/export.mjs --out customers.csv     # the list out
 - `src/<skill>/` (`booking`, `forms`, `invoices`, `payments`, `reports`,
   `data`, `admin`) are copies of the business skills' code.
 - `scripts/customers.mjs`, `deals.mjs`, `follow-ups.mjs`, `visits.mjs`, `forms.mjs`, `quotes.mjs`, `invoices.mjs`,
-  `inbox.mjs` and `stages.mjs` are your hands on the data from chat; `import.mjs` and `export.mjs` move CSV
+  `inbox.mjs` and `stages.mjs` are how you work on the data from chat; `import.mjs` and `export.mjs` move CSV
   in and out. Every one answers `--help`.
 - `styles/theme.css` is the design as tokens; `DESIGN.md` explains them.
   `static/` is served as-is (the built CSS, the vendored htmx and
@@ -89,7 +89,7 @@ node scripts/export.mjs --out customers.csv     # the list out
 - `npm run dev` is what the `web` service runs: Tailwind rebuilds the CSS
   and the server restarts on every change, so an edit is in dev on refresh.
   If the service is not running, re-run `bash ~/app/.taskandtool/setup.sh`
-  (idempotent).
+  (it is safe to run again).
 - To look from the machine:
   `curl -H 'X-TaskTool-User: you@example.com' localhost:3000/`.
 - `npm run check` before showing work (config and examples valid, the
@@ -108,8 +108,8 @@ node scripts/export.mjs --out customers.csv     # the list out
   a follow-up is done. A merge waits for the owner's yes.
 - What other apps write (submissions, bookings, payments) is read only,
   except a submission's status and a refund a team member confirms. The
-  skills' tables the CRM sets up (forms, booking, payments, invoices) it
-  writes through the skills' code.
+  CRM writes the skills' tables it sets up (forms, booking, payments,
+  invoices) through the skills' code.
 - Identity comes from the platform: `X-TaskTool-User`, or 404; only
   `/healthz` and Stripe's signed `/hooks/stripe` answer without it. The CRM
   builds no login.
