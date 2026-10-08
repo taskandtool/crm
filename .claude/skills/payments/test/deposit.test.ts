@@ -47,7 +47,7 @@ test("afterBook takes the deposit; the manage page shows it once Stripe says it 
     // As in SKILL.md, with the test's Stripe in place of stripeFrom(envOf(c)).
     app.route("/book", bookingPages(getDb, {
       base: "/book", domain: "acme.com", css: "/site.css", source: "website",
-      afterBook: async (c, e) => {
+      afterBook: async (_c, e) => {
         const { url } = await startCheckout(getDb(), stripe, {
           kind: "deposit", refType: "booking", refId: e.booking.id,
           amountCents: 5000, currency: "usd", description: `Deposit: ${e.type.name} with ${e.host.name}`,
@@ -62,7 +62,7 @@ test("afterBook takes the deposit; the manage page shows it once Stripe says it 
 
     const html = await (await app.request("/book/intro?tz=UTC")).text();
     const start = new URL(/href="(\/book\/intro\/confirm\?start=[^"]+)"/.exec(html)![1].replace(/&amp;/g, "&"), "http://x").searchParams.get("start")!;
-    const _started = await makeStamp("booking:intro", undefined, Date.now() - 10_000);
+    const _started = await makeStamp("booking:intro", Date.now() - 10_000);
     const res = await app.request("/book/intro", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },

@@ -280,8 +280,10 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
           : cmd === "expire" ? await expireQuote(db, id, by)
           : await decideQuote(db, id, cmd === "accept" ? "accepted" : "declined", by);
         if (!r.ok && r.status === TO[cmd]) {
+          // a decline that stopped before its Pay link was voided finishes here
+          const note = cmd === "decline" ? await closePayLink(db, () => stripeOr(cli.env, at), id, by) : null;
           if (json) return out(true, await quoteById(db, id), String);
-          return done(at, `quote ${id} is already ${r.status}; left alone`, { next: `node scripts/quotes.mjs show ${id}` });
+          return done(at, `quote ${id} is already ${r.status}; left alone`, { lines: note ? [note] : [], next: `node scripts/quotes.mjs show ${id}` });
         }
         if (!r.ok) fail(r.reason === "not_found" ? `${at}: no quote ${id}` : `${at}: quote ${id} is ${r.status}; nothing changed`, `node scripts/quotes.mjs show ${id}`);
         if (cmd === "mark-sent") await cli.afterSend?.(db, { kind: "quote", id, email: r.value.email }, by);

@@ -146,6 +146,7 @@ export async function microsoftBusy(gw: Gateway, calendarId: string, from: Date,
       const span = e.isAllDay
         ? { start: dayBounds(e.start.dateTime.slice(0, 10), zone).start, end: dayBounds(e.end.dateTime.slice(0, 10), zone).start }
         : { start: graphUtc(e.start.dateTime), end: graphUtc(e.end.dateTime) };
+      if (!(span.end > span.start)) continue;
       out.push({ id: String(e.id), tag, ...span });
     }
     const next: unknown = body?.["@odata.nextLink"];
@@ -402,7 +403,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   // The machine's settings, so a run by hand from a chat shell sees what the scheduled job sees.
   const env = machineEnv();
   const missing = ["PHOENIX_URL", "MACHINE_TOKEN", "DATABASE_URL"].filter((k) => !env[k]);
-  if (missing.length) fail(`calendar sync: ${missing.join(", ")} not set, here or in /home/sprite/.env`, `run it on the machine as a scheduled job: ${CMD}`);
+  if (missing.length) fail(`calendar sync: ${missing.join(", ")} not set, here or in ~/.env`, `run it on the machine as a scheduled job: ${CMD}`);
   const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 2 });
   try {
     const r = await syncCalendars(fromPool(pool), (slug, path, init) => gatewayFetch(env, slug, path, init));
@@ -410,6 +411,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     for (const e of r.errors) console.error(`  ${e}`);
     if (r.errors.length) console.error("  Try: the booking admin's Calendars page shows each calendar's last error");
     process.exitCode = r.errors.length ? 1 : 0;
+  } catch (e) {
+    // the database or the gateway, never a stack trace in the job's run history
+    fail(`calendar sync: ${(e instanceof Error && (e.message || (e as { code?: string }).code)) || String(e)}`, `${CMD}, once the database answers`);
   } finally {
     await pool.end();
   }

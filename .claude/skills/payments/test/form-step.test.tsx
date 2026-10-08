@@ -90,7 +90,7 @@ test("an order: two kinds of cookies and delivery, taxed, paid through Checkout 
     assert.match(await (await app.request(HOST + "/order")).text(), /Step 1 of 2/);
     let res = await send(app, "/forms/order", {
       name: "Ann Lee", email: "ann@example.com", "cookies[choc-chip]": "2", "cookies[pb]": "1", how: "Delivery", address: "1 Elm St",
-      company_website: "", _started: await makeStamp("order", undefined, Date.now() - 10_000),
+      company_website: "", _started: await makeStamp("order", Date.now() - 10_000),
     });
     const next = res.headers.get("location")!;
     const key = new URL(next, HOST).searchParams.get("k")!;
@@ -165,7 +165,7 @@ test("a form with nothing to pay carries on without Stripe", (t) =>
     await seedForm(s.db, { key: "order", title: "Order", fields: [...ORDER.map((f) => (f.type === "items" ? { ...f, required: false } : f)), { name: "pay", label: "Pay", type: "payment" }] }, "website");
     const f = fakeStripe();
     const app = site(s, f.stripe);
-    let res = await send(app, "/forms/order", { name: "Bo", email: "bo@example.com", how: "Pickup", company_website: "", _started: await makeStamp("order", undefined, Date.now() - 10_000) });
+    let res = await send(app, "/forms/order", { name: "Bo", email: "bo@example.com", how: "Pickup", company_website: "", _started: await makeStamp("order", Date.now() - 10_000) });
     const key = new URL(res.headers.get("location")!, HOST).searchParams.get("k")!;
     assert.match(await (await app.request(HOST + res.headers.get("location"))).text(), /nothing to pay/);
     res = await send(app, "/forms/order", { _draft: key });

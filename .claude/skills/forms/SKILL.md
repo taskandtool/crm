@@ -27,7 +27,7 @@ Version: 0.2.0 (taskandtool/skills)
   needs the owner's latest definition, a fresh spam stamp and the visit's
   UTM. A pre-rendered page is a static file, served in place of the Worker.
 - **Spam** is a honeypot and a 3-second minimum on the server
-  (`data/spam.tsx`), with `SPAM_SECRET` set so the stamp is signed. A bot is
+  (`data/spam.tsx`), nothing to set up. A bot is
   thanked and dropped; a post too fast is kept as spam and nobody is told.
 - **No IP addresses**: store only what the visitor typed, the page, and
   where they came from (`data._utm`, the referrer's host in `data._referrer`).

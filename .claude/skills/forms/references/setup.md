@@ -5,7 +5,7 @@ Read when an app takes its first form, mounts the form pages, or sets up the own
 ## Add a form to a page
 
 The Website already has steps 2, 3 and 5 done (`src/business.tsx`, `scripts/forms.mjs`):
-there, make the form with `node scripts/forms.mjs save`, set `SPAM_SECRET`, then do steps 4 and 6.
+there, make the form with `node scripts/forms.mjs save`, then do steps 4 and 6.
 
 1. Look: `select key, title, fields from forms`. Reuse a form that
    fits; otherwise pick a key (`quote-request`).
@@ -25,8 +25,7 @@ there, make the form with `node scripts/forms.mjs save`, set `SPAM_SECRET`, then
    module out of `src/pages/index.ts` (listing it there would pre-render
    it), and add its nav link to `site.nav` by hand.
 5. Mount `formsAdmin(getDb, { base: "/admin/forms", css, timeZone, source: "<app slug>" })`
-   at `/admin/forms` (see the `admin` skill for where private views live),
-   and set `SPAM_SECRET`.
+   at `/admin/forms` (see the `admin` skill for where private views live).
 6. Set up telling the owner ("Telling the owner", below) or say there is no sender, then post a
    test submission in dev and find it in `/admin/forms/submissions`.
 
@@ -38,9 +37,10 @@ so the AI never writes SQL against `forms`. `scripts/forms.ts`:
 ```ts
 import pg from "pg";
 import { formsCli } from "../src/forms/cli";
+import { machineEnv } from "../src/data/cli.mjs";
 import { fromPool } from "../src/data/pg";
 
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
+const pool = new pg.Pool({ connectionString: machineEnv().DATABASE_URL, max: 2 });
 try {
   await formsCli(process.argv.slice(2), { withDb: (fn) => fn(fromPool(pool)), source: "<app slug>", timeZone: "America/Denver" });
 } finally {
@@ -48,9 +48,9 @@ try {
 }
 ```
 
-and `scripts/forms.mjs` runs it under tsx with `/home/sprite/.env` loaded
-(copy another `.mjs` entry, or `tsx --env-file=/home/sprite/.env scripts/forms.ts`).
-`src/data/cli.mjs` comes with it.
+and `scripts/forms.mjs` runs it under tsx (copy another `.mjs` launcher and
+`scripts/run.mjs`). `src/data/cli.mjs` comes with it; `machineEnv()` reads
+`~/.env`, which a chat shell may not have loaded.
 
 ## Steps, a booking and a payment
 

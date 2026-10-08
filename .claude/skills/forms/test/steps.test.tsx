@@ -95,7 +95,7 @@ test("a form with steps: a draft between pages, a submission once the questions 
     assert.doesNotMatch(first, /What brings you here/);
 
     // Page 1: a draft, no submission yet.
-    const stamp = await makeStamp("intake", undefined, Date.now() - 10_000);
+    const stamp = await makeStamp("intake", Date.now() - 10_000);
     let res = await send(app, "/forms/intake", { name: "Ann Lee", email: "Ann@Example.com", company_website: "", _started: stamp, _page: "/intake" });
     assert.equal(res.status, 303);
     assert.match(res.headers.get("location")!, /^\/forms\/intake\/next\?k=/);
@@ -157,7 +157,7 @@ test("an unfinished form stays a draft; a made-up key starts again; an unwired s
     const app = new Hono();
     app.route("/", formRoutes(() => s.db, { source: "website", page: pageOf }));
     app.route("/admin/forms", formsAdmin(() => s.db, { base: "/admin/forms", css: "/x.css", timeZone: "UTC", source: "website" }));
-    const stamp = await makeStamp("intake", undefined, Date.now() - 10_000);
+    const stamp = await makeStamp("intake", Date.now() - 10_000);
     let res = await send(app, "/forms/intake", { name: "Bo", email: "bo@example.com", company_website: "", _started: stamp });
     const key = keyOf(res.headers.get("location"));
     assert.equal((await s.db.sql`select count(*)::int as n from submission_drafts where submission_id is null`)[0].n, 1);
@@ -201,7 +201,7 @@ test("a form with two pages and nothing after: the submission is made on the las
     ] }, "website");
     const app = new Hono();
     app.route("/", formRoutes(() => s.db, { source: "website", page: pageOf }));
-    const stamp = await makeStamp("survey", undefined, Date.now() - 10_000);
+    const stamp = await makeStamp("survey", Date.now() - 10_000);
     let res = await send(app, "/forms/survey", { email: "cy@example.com", company_website: "", _started: stamp });
     const key = keyOf(res.headers.get("location"));
     res = await send(app, "/forms/survey", { _draft: key, rating: "Well" });
@@ -223,7 +223,7 @@ test("consent on two pages keeps both wordings; a page posted twice is applied o
     ] }, "website");
     const app = new Hono();
     app.route("/", formRoutes(() => s.db, { source: "website", page: pageOf }));
-    let res = await send(app, "/forms/join", { email: "di@example.com", privacy: "yes", company_website: "", _started: await makeStamp("join", undefined, Date.now() - 10_000) });
+    let res = await send(app, "/forms/join", { email: "di@example.com", privacy: "yes", company_website: "", _started: await makeStamp("join", Date.now() - 10_000) });
     const key = keyOf(res.headers.get("location"));
     res = await send(app, "/forms/join", { _draft: key, _step: "1", news: "yes" });
     // The same page again, arriving after the first was saved: nothing is applied to page 3.

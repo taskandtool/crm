@@ -42,7 +42,7 @@ async function setUp(t: { skip: (m: string) => void }) {
   return s;
 }
 
-const oldStamp = () => makeStamp("contact", undefined, Date.now() - 10_000);
+const oldStamp = () => makeStamp("contact", Date.now() - 10_000);
 
 test("a submission is stored with the email lowered and the rest in data, then 303 to thanks", async (t) => {
   const s = await setUp(t);
@@ -105,7 +105,7 @@ test("a bot is thanked: the honeypot drops it, a too-fast post is kept as spam",
     assert.equal(nostamp.status, 303);
     assert.equal((await s.db.sql`select count(*)::int as n from submissions`)[0].n, 0);
 
-    const fast = await post(app, "/forms/contact", { ...good, _started: await makeStamp("contact", undefined) });
+    const fast = await post(app, "/forms/contact", { ...good, _started: await makeStamp("contact") });
     assert.equal(fast.status, 303);
     const rows = await s.db.sql`select status from submissions`;
     assert.deepEqual(rows, [{ status: "spam" }]);

@@ -62,6 +62,9 @@ try {
   console.log(r.sent || r.none || r.failed ? `booking reminders: ${parts.join(", ")}` : `booking reminders: none due (${before.join(", ")} minutes before)`);
   for (const e of r.errors) console.error(`  ${e}`);
   process.exitCode = r.failed ? 1 : 0;
+} catch (e) {
+  // the database, never a stack trace in the job's run history
+  fail(`booking reminders: ${(e instanceof Error && (e.message || (e as { code?: string }).code)) || String(e)}`, `${CMD}, once the database answers`);
 } finally {
   await pool.end();
 }

@@ -4,7 +4,7 @@
 // two spam fields (data/spam.tsx) and where the visitor came from
 // (origin.ts). Ids carry the form key, so two forms can sit on one page.
 //
-//   <FormView form={form} stamp={await makeStamp(form.key, secret)} page={c.req.path} origin={originFields(c)} />
+//   <FormView form={form} stamp={await makeStamp(form.key)} page={c.req.path} origin={originFields(c)} />
 //
 // Usually reached through embedForm (routes.tsx), which loads the row and
 // makes the stamp.

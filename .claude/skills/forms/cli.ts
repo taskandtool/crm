@@ -37,7 +37,7 @@ const HELP = `forms.mjs <command> [...] [--json]      the project's forms and wh
 A field is { "name", "label", "type", "required"? }; types: text, email, tel, textarea, select,
 checkbox, radio (with "options"), date, number, consent, items (with "currency" and "items":
 [{ "key", "label", "price_cents", "unit"?, "image"?, "max"? }]), page (starts a new step),
-booking (with "booking_type": a booking type's slug), payment (last; "fees"?: [{ "label",
+booking (with "booking_type": a booking type's slug), payment (last; "currency"?, "fees"?: [{ "label",
 "price_cents", "when"?: { "field", "is" } }], "tax_rate_id"?). Name fields name, email and phone
 so the CRM finds the person.
 

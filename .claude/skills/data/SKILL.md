@@ -88,7 +88,7 @@ Each app makes its handle from the driver it already uses:
   `afterResponse(c, …)` so the visitor does not wait and the Worker does not
   stop before it is sent.
 - **Spam** (`spam.tsx`): every public form carries `<SpamFields>` and is
-  checked with `verdict`; set `SPAM_SECRET` so the stamp is signed.
+  checked with `verdict`.
 
 ## Installing a skill's code into this app
 

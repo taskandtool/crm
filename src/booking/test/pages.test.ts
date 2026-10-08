@@ -69,7 +69,7 @@ test("a visitor books, sees the time in their zone, downloads the invite, and ca
     assert.match(await res.text(), /GMT\+5:30/);
 
     // A bad email comes back with the error next to the field, and nothing stored.
-    const _started = await makeStamp("booking:intro", undefined, Date.now() - 10_000);
+    const _started = await makeStamp("booking:intro", Date.now() - 10_000);
     res = await app.request("/book/intro", form({ start, tz: "Asia/Kolkata", name: "Ann", email: "nope", _started }));
     assert.equal(res.status, 422);
     assert.match(await res.text(), /id="email-error"/);
@@ -200,7 +200,7 @@ test("the confirm form has the spam fields: a filled honeypot or a forged stamp 
     assert.doesNotMatch(confirm, /company_site|class="hidden"/);
 
     const who = { start, tz: "UTC", name: "Bot", email: "bot@example.com", phone: "555 010 0000" };
-    const old = await makeStamp("booking:intro", undefined, Date.now() - 10_000);
+    const old = await makeStamp("booking:intro", Date.now() - 10_000);
     let res = await app.request("/book/intro", form({ ...who, _started: old, company_website: "http://spam" }));
     assert.equal(res.status, 303);
     assert.equal(res.headers.get("location"), "/book/intro");
@@ -235,7 +235,7 @@ test("afterBook can send the booker on (a deposit); the manage page shows the de
         return send;
       },
     }));
-    const _started = await makeStamp("booking:intro", undefined, Date.now() - 10_000);
+    const _started = await makeStamp("booking:intro", Date.now() - 10_000);
 
     // Nothing returned: the manage page as usual, and no payments table is no deposit line.
     let { start } = await firstSlot(app);
@@ -283,7 +283,7 @@ test("in an app's own frame, the booking pages keep their sections and the extra
     }));
     app.route("/book", bookingPages(() => s.db, { base: "/book", domain: "acme.com", css: "/site.css", source: "website" }));
     const { start } = await firstSlot(app);
-    const _started = await makeStamp("booking:intro", undefined, Date.now() - 10_000);
+    const _started = await makeStamp("booking:intro", Date.now() - 10_000);
     await app.request("/book/intro", form({ start, tz: "UTC", name: "Ann", email: "ann@example.com", phone: "555 010 0001", _started }));
     const html = await (await app.request("/bookings/types", { headers: team })).text();
     assert.match(html, /^<main data-frame="crm"><h1>What can be booked<\/h1><p>owner@example\.com<\/p><nav aria-label="Booking"/);

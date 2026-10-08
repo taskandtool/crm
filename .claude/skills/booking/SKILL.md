@@ -43,7 +43,7 @@ Version: 0.4.0 (taskandtool/skills)
   moved, cancelled, reminder, each naming what, with whom, when in the
   booker's zone and where. Delivery is a `Send`: `emailSend(env)` is email
   through `data/send.ts` (Resend or Postmark, set once by `NOTIFY_FROM`
-  and `NOTIFY_VIA`, the forms skill's "Telling the owner"). No sender:
+  and `NOTIFY_VIA`, the forms skill's `references/setup.md`, "Telling the owner"). No sender:
   nothing is sent and the booking stands; the manage page's .ics download
   is the invite. Another connector is another `Send` (`references/messages.md`).
 - **A customer books a type; a host takes it.** A type's time is open

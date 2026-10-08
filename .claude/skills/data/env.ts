@@ -5,7 +5,7 @@
 // counts only when it is a string, and anything else falls through to the
 // process. Edge-safe: `process` is looked up, never assumed.
 //
-//   const secret = envVar(c, "SPAM_SECRET");
+//   const url = envVar(c, "DATABASE_URL");
 //   const sent = await sendEmail(envOf(c), { ... });     // code that takes an Env
 //   const stripe = stripeFrom(envOf(c));
 import type { Context } from "hono";

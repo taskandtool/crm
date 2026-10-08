@@ -26,5 +26,4 @@ decision.
   `Referrer-Policy: no-referrer`. A lost link cannot be recovered; the team
   can still change the booking.
 - **The confirm form is spam-checked** with the forms' honeypot and minimum
-  fill time (`data/spam.tsx`); set `SPAM_SECRET` so the stamp is
-  signed. A bot is sent back to the day's times and nothing is booked.
+  fill time (`data/spam.tsx`). A bot is sent back to the day's times and nothing is booked.

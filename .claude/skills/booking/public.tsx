@@ -20,7 +20,6 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type { Child } from "hono/jsx";
 import type { Db, GetDb } from "../data/db";
-import { envVar } from "../data/env";
 import { HONEYPOT, makeStamp, SpamFields, STAMP, verdict } from "../data/spam";
 import {
   book, bookableTypes, bookingByToken, releaseLapsedHolds, cancelByToken, hostsOf, openSlotsFor, reschedule, resourceById, typeById, typeBySlug, whereText,
@@ -433,7 +432,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     const start = new Date(c.req.query("start") ?? "");
     if (Number.isNaN(start.getTime())) return c.redirect(`${base}/${t.slug}`, 303);
     const zone = viewerZone(c, host?.time_zone ?? hosts[0]?.time_zone ?? "UTC");
-    return confirmForm(c, t, host, start, zone, await makeStamp(spamScope(t), envVar(c, "SPAM_SECRET")));
+    return confirmForm(c, t, host, start, zone, await makeStamp(spamScope(t)));
   });
 
   app.post("/:slug", async (c) => {
@@ -448,12 +447,11 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     const back = `${base}/${t.slug}`;
     if (Number.isNaN(start.getTime())) return c.redirect(back, 303);
     const values = { name: s("name"), email: s("email"), phone: s("phone"), address: s("address"), notes: s("notes") };
-    const secret = envVar(c, "SPAM_SECRET");
     // A bot is sent back to the day's times, as if nothing happened. A person
     // whose browser filled the form in under the minimum time confirms again.
-    const v = await verdict(spamScope(t), { honeypot: body[HONEYPOT] ?? "", stamp: body[STAMP] }, secret);
+    const v = await verdict(spamScope(t), { honeypot: body[HONEYPOT] ?? "", stamp: body[STAMP] });
     if (v === "drop") return c.redirect(back, 303);
-    if (v === "fast") return confirmForm(c, t, host, start, zone, await makeStamp(spamScope(t), secret), values, {}, "Please check your details and press Book it again.");
+    if (v === "fast") return confirmForm(c, t, host, start, zone, await makeStamp(spamScope(t)), values, {}, "Please check your details and press Book it again.");
     const notes = values.notes.trim().slice(0, 2000);
 
     const result = await book(getDb(c), {

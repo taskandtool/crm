@@ -82,7 +82,7 @@ test("a paid intake: questions, a time held inside the form, the price charged, 
     const send = (fields: Record<string, string>) =>
       app.request(HOST + "/forms/intake", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", host: "counsel.example" }, body: new URLSearchParams(fields).toString() });
 
-    let res = await send({ name: "Ann Lee", email: "ann@example.com", goal: "Sleep better", company_website: "", _started: await makeStamp("intake", undefined, Date.now() - 10_000) });
+    let res = await send({ name: "Ann Lee", email: "ann@example.com", goal: "Sleep better", company_website: "", _started: await makeStamp("intake", Date.now() - 10_000) });
     const step = res.headers.get("location")!;
     const key = new URL(step, HOST).searchParams.get("k")!;
 
@@ -187,7 +187,7 @@ test("a booking made in a form is confirmed once, when the form is complete, wit
     const post = (path: string, body: Record<string, string>) =>
       app.request(HOST + path, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", host: "counsel.example" }, body: new URLSearchParams(body).toString() });
 
-    const step = (await post("/forms/intake", { name: "Ann Lee", email: "ann@example.com", goal: "Sleep better", company_website: "", _started: await makeStamp("intake", undefined, Date.now() - 10_000) })).headers.get("location")!;
+    const step = (await post("/forms/intake", { name: "Ann Lee", email: "ann@example.com", goal: "Sleep better", company_website: "", _started: await makeStamp("intake", Date.now() - 10_000) })).headers.get("location")!;
     assert.equal(mail.length, 0, "the questions alone confirm nothing");
     const html = await (await app.request(HOST + step)).text();
     const hidden = (n: string) => new RegExp(`name="${n}" value="([^"]*)"`).exec(html)![1].replace(/&amp;/g, "&");
@@ -223,7 +223,7 @@ test("a paid form's booking is confirmed on payment, by whichever app has a send
     }));
     const post = (body: Record<string, string>) =>
       app.request(HOST + "/forms/intake", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", host: "counsel.example" }, body: new URLSearchParams(body).toString() });
-    const step = (await post({ name: "Ann Lee", email: "ann@example.com", goal: "Sleep better", company_website: "", _started: await makeStamp("intake", undefined, Date.now() - 10_000) })).headers.get("location")!;
+    const step = (await post({ name: "Ann Lee", email: "ann@example.com", goal: "Sleep better", company_website: "", _started: await makeStamp("intake", Date.now() - 10_000) })).headers.get("location")!;
     const key = new URL(step, HOST).searchParams.get("k")!;
     const start = /name="start" value="([^"]+)"/.exec(await (await app.request(HOST + step)).text())![1];
     await post({ _draft: key, _step: "1", start });

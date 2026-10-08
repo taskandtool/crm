@@ -20,7 +20,7 @@
 import { Hono, type Context } from "hono";
 import type { Child } from "hono/jsx";
 import type { Db, GetDb } from "../data/db";
-import { envOf, envVar } from "../data/env";
+import { envOf } from "../data/env";
 import { afterResponse, sendEmail } from "../data/send";
 import { HONEYPOT, MIN_FILL_MS, STAMP, makeStamp, verdict } from "../data/spam";
 import { newToken, tokenHash, TOKEN_SHAPE } from "../data/token";
@@ -89,8 +89,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
 
     // A bot is told it succeeded, so it learns nothing to adapt to.
     const stamp = one(input[STAMP]);
-    const secret = envVar(c, "SPAM_SECRET");
-    const v = await verdict(form.key, { honeypot: one(input[HONEYPOT]), stamp }, secret, Date.now(), opts.minFillMs ?? MIN_FILL_MS);
+    const v = await verdict(form.key, { honeypot: one(input[HONEYPOT]), stamp }, Date.now(), opts.minFillMs ?? MIN_FILL_MS);
     if (v === "drop") return thanks();
     if (stepped) return takeStep(c, db, form, steps, input, v);
 
@@ -360,7 +359,7 @@ async function firstPage(c: Context, form: Form) {
   const first = steps[0]?.kind === "fields" ? steps[0] : null;
   const step = steps.length > 1 && first ? { index: 0, count: steps.length, label: first.label } : undefined;
   return (
-    <FormView form={form} fields={first?.fields} step={step} stamp={await makeStamp(form.key, envVar(c, "SPAM_SECRET"))} page={c.req.path} origin={originFields(c)} />
+    <FormView form={form} fields={first?.fields} step={step} stamp={await makeStamp(form.key)} page={c.req.path} origin={originFields(c)} />
   );
 }
 
