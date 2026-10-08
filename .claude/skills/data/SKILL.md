@@ -111,9 +111,10 @@ keeping the rules above and its tests passing. Then:
 
 A machine-only file (`cli.mjs`, a skill's `cli.ts`, booking's `sync.ts` and
 `reminders-job.ts`, reports' `print.ts`) runs only on the machine and may
-import Node built-ins, so long as nothing the production Worker imports
-reaches it (`npm run check`). A `.ts` file imports `cli.mjs` by its full
-name (`../data/cli.mjs`), and the app's `tsconfig.json` needs `"allowJs": true`.
+import Node built-ins. Nothing the production Worker imports may reach it;
+the app's `npm run check` fails if it does. A `.ts` file imports `cli.mjs`
+by its full name (`../data/cli.mjs`), and the app's `tsconfig.json` needs
+`"allowJs": true`.
 
 ## When the database is not there
 

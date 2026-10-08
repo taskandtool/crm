@@ -15,9 +15,9 @@ It sends the booked, moved or cancelled message with the calendar invite
 A booking made inside a form is confirmed when the form is complete
 (`confirm.ts`): wire `confirmFormBooking` into the forms routes'
 `onComplete` and the payments webhook's `afterPaid` (that file's header
-shows both). It claims the booking first, so it sends once, whichever app
-and delivery get there first; an app with no sender leaves it for one that
-has a sender.
+shows both). It claims the booking first, so the message goes once,
+whichever app, and whichever of the two hooks, gets there first; an app with
+no sender leaves it for one that has a sender.
 
 **Reminders** are a job on the CRM's machine (`reminders-job.ts`, the command;
 `reminders.ts`, the sending), a day and an hour before by default.

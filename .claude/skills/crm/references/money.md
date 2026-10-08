@@ -6,13 +6,13 @@ Read when setting up quotes and invoices, connecting Stripe or an email sender f
 
 Under Forms: every submission from the project's forms, filtered by form
 ("my orders" is the order form's), each with the booking and payment it led
-to, the ones someone started and did not finish, and the form editor. What
-came in filters by form too. People fill in the forms on the Website;
-this CRM shows and edits them. `node scripts/forms.mjs` lists, shows and
-saves forms (from JSON) and lists a form's submissions with their booking
-and payment. The `forms` skill has the field types (steps, things to buy, a
-booking step, a payment step); the `payments` skill's "Submissions,
-bookings and payments" says how the three link.
+to, the ones someone started and did not finish, and the form editor. The
+Inbox filters by form too. People fill in the forms on the Website; this CRM
+shows and edits them. `node scripts/forms.mjs` lists, shows and saves forms
+(from JSON) and lists a form's submissions with their booking and payment.
+The `forms` skill has the field types (steps, things to buy, a booking step,
+a payment step); the `payments` skill's "Submissions, bookings and payments"
+says how the three link.
 
 ## Quotes and invoices
 
@@ -32,7 +32,8 @@ Set it up once, in this order:
 
 1. The name in `invoices` (lever 1), and the tax rates (`node
    scripts/quotes.mjs tax-rate "Sales tax" 8.25`), when they charge tax.
-2. Quotes need an email sender, as Messages under Bookings says.
+2. Quotes need the email sender bookings use (the Messages paragraph of
+   `references/bookings.md`).
 3. Invoices need the owner's Stripe, set up by the `payments` skill's
    `references/setup.md`: a restricted test key first, with every
    permission listed there (refunds on the Payments page need Refunds).

@@ -22,9 +22,10 @@ Version: 0.4.0 (taskandtool/skills)
   in dev or in production. The sync job copies busy times into `busy`;
   the page reads that. So production's Worker needs only `DATABASE_URL`, never
   a calendar token, and works the same whichever calendar the owner uses.
-- **The jobs are the CRM's.** Calendar sync and reminders run there;
-  other apps book into the same tables and mount `bookingAdmin` with
-  `calendars: false`. No CRM, no sync or reminders: offer it.
+- **The jobs are the CRM's.** Calendar sync and reminders run there; other
+  apps book into the same tables and mount `bookingAdmin` with
+  `calendars: false`. Without the CRM in the project there is no sync and no
+  reminders: offer the owner the CRM Starter App.
 - **Store instants, show local.** Bookings and time off are `timestamptz`.
   Weekly hours are wall times in the person's `time_zone`. Show a booker
   times in *their* zone and name it ("Times are in Asia/Kolkata"); show the

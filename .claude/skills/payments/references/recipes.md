@@ -64,5 +64,6 @@ builds it (`refund-<intent>-<refunded so far>-<amount>`).
 Not handled: `charge.refund.updated`, disputes, subscriptions. Another
 skill's events (the invoices skill's) are an `EventHandler` in `more`,
 recording each event once in `stripe_events` and applying it in one
-transaction. Either way: name the statuses it may move from in the SQL,
-and add a test that sends it out of order.
+transaction. Whichever way you add it, the event's update names the statuses
+the row may move from (the `from` list in `webhook.ts`), so a late event
+never moves a status backwards, and a test sends the event out of order.
