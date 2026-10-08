@@ -77,9 +77,9 @@ Each app makes its handle from the driver it already uses:
   takes an `Env`. Never `c.env ?? process.env`: on the machine `c.env` is
   node-server's `{ incoming, outgoing }`, so that reads nothing.
 - **A connection** (`gateway.ts`):
-  `gatewayFetch(env, slug, path, init)`. The gateway adds the key; it
-  serves dev only, and production calls the vendor directly with the key
-  the owner bound to it (`delivery="edge"`).
+  `gatewayFetch(env, slug, path, init)`. The gateway adds the key, and it
+  serves dev only. Production calls the vendor directly, with the key the
+  owner bound to the production Worker (`delivery="edge"`).
   That key's env name is the connection's `env_name` in `python3 ~/tools/taskandtool.py list-connections`
   (`<SLUG>_API_KEY`); read it there rather than assuming it.
 - **Email** (`send.ts`): `sendEmail(env, mail)` through the owner's Resend or

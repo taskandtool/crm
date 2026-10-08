@@ -28,8 +28,8 @@ Version: 0.2.1 (taskandtool/skills)
   percentage points (`change="points"`).
 - **Money**: one figure per currency, never a sum across currencies.
   Revenue is `amount_cents - refunded_cents` for `paid`,
-  `partially_refunded` and `refunded` payments placed by `paid_at` (else
-  `created_at`: a refund handled first can leave `paid_at` empty), leaving
+  `partially_refunded` and `refunded` payments, dated by `paid_at` (or by
+  `created_at` when a refund handled first left `paid_at` empty), leaving
   out `livemode = false`. Minor units are Stripe's, not Intl's (`fromMinor`: yen
   have none, ISK counts hundredths).
 - **People are emails**: the funnel matches across tables on
@@ -108,8 +108,8 @@ hand-over is a deliverable (`work` skill), and a deliverable is a file:
 | `print.ts` | `printToPdf`, `findChrome`, `fileUrl`. Machine only |
 | `test/` | copy with the files and keep green |
 
-Copy `client.js` with `charts.tsx` (its test reads it from
-there), and serve `client.js` as a static file too. `ops.tsx` imports `seo-report.tsx`, which
+Copy `client.js` with `charts.tsx` (the charts test reads `client.js`
+from beside it), and serve `client.js` as a static file too. `ops.tsx` imports `seo-report.tsx`, which
 imports `seo.ts`, so keep those even without Google. `print.ts` is machine
 only: leave it and `test/seo.test.ts` out of an app that deploys `src/` to
 Cloudflare until a PDF is wanted.

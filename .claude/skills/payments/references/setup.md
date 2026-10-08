@@ -40,8 +40,8 @@ another slug: `stripeFrom(envOf(c), fetch, "stripe-eu")`.
    and confirms its booking (booking's `confirm.ts` header has the lines),
    with `more: [invoiceEvents]` where the invoices skill is carried. It
    answers POST `/hooks/stripe` and reads `STRIPE_WEBHOOK_SECRET`. In a
-   team-only app, mount it before the team gate: Stripe signs in with the
-   signature alone. Each app is its own endpoint in Stripe; never point one
+   team-only app, mount it before the team gate: Stripe has no sign-in, only
+   the signature. Each app is its own endpoint in Stripe; never point one
    app at another's.
 2. Its URL. A public production site: `https://<production host>/hooks/stripe`
    (the machine stays asleep). Otherwise (team only, or not deployed):
@@ -56,7 +56,7 @@ another slug: `stripeFrom(envOf(c), fetch, "stripe-eu")`.
    `invoice.payment_failed`, `invoice.voided`,
    `invoice.marked_uncollectible`, `invoice.deleted`.
    An app without invoices registers only the first six.
-4. They copy its signing secret (`whsec_…`) into the form from
+4. The owner copies the endpoint's signing secret (`whsec_…`) into the form from
    `python3 ~/tools/taskandtool.py request-secret STRIPE_WEBHOOK_SECRET`, for this app alone (each
    endpoint has its own secret); then
    `python3 ~/tools/taskandtool.py restart`. Test and live mode are separate

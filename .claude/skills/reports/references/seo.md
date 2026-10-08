@@ -35,7 +35,7 @@ project.
    `<ReportDocument><SeoReport data notes /></ReportDocument>`, `printToPdf`
    to `out/seo-<to>.pdf`, and print the path. Where the app has a database
    (the Website, the CRM), also `saveSnapshot(db, "seo", data)` for step 4.
-   The deliverable needs none: Marketing makes this report with no
+   The deliverable needs no database: Marketing makes this report with no
    database at all.
 3. Schedule it as a prompt job on a weekday from Thursday, when last week is
    final: the job runs the script, writes two or three sentences of notes

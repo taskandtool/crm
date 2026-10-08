@@ -15,8 +15,9 @@ It sends the booked, moved or cancelled message with the calendar invite
 A booking made inside a form is confirmed when the form is complete
 (`confirm.ts`): wire `confirmFormBooking` into the forms routes'
 `onComplete` and the payments webhook's `afterPaid` (that file's header
-shows both). It claims the booking first, so it sends once whichever app
-and delivery get there; one with no sender leaves it for one that has.
+shows both). It claims the booking first, so it sends once, whichever app
+and delivery get there first; an app with no sender leaves it for one that
+has a sender.
 
 **Reminders** are a job on the CRM's machine (`reminders-job.ts`, the command;
 `reminders.ts`, the sending), a day and an hour before by default.
@@ -27,8 +28,8 @@ minutes, not visible to clients:
 python3 ~/tools/taskandtool.py schedule-job "Booking reminders" --when "*/15 * * * *" --command "npx tsx src/booking/reminders-job.ts" --team-only
 ```
 
-`--before 1440,120` changes the times; it prints what was sent and what was
-left alone, and exits 1 when a send failed. Each reminder is claimed in
+`--before 1440,120` changes the times. The job prints what was sent and
+what was left alone, and exits 1 when a send failed. Each reminder is claimed in
 `booking_reminders` before it is sent, so it goes once; a moved booking is
 reminded again; only the nearest due reminder goes; none for a booking
 made after the reminder's time. With no sender each is recorded as

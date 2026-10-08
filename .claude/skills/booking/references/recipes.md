@@ -46,6 +46,6 @@ neither, ask with
 (or `microsoft`), give the owner the review link,
 and stop until it is granted; a Google owner also enables the Calendar API
 on their Google Cloud project. Add the calendar on the person's page in the
-editor (People and hours) (`primary` is the main calendar), schedule the sync job (`references/calendar-sync.md`), run it
+editor's People and hours (`primary` is the main calendar), schedule the sync job (`references/calendar-sync.md`), run it
 once by hand (`npx tsx src/booking/sync.ts`) and check the Calendars page
 for a sync time and no error.

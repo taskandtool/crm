@@ -24,7 +24,7 @@ the business skills' code in `src/` are kept.
   `customers` too, so its columns keep their names and meanings.
 - **The skills' tables it sets up and writes** (`src/db/setup.ts`): the
   forms tables (it shows submissions and edits forms), the booking tables
-  when booking is on, and with invoices on the payments and invoices
+  when booking is on, and, when invoices are on, the payments and invoices
   tables (quotes, invoices, tax rates, refunds, the Stripe events).
 
 ## Read next

@@ -14,11 +14,11 @@ infer. Then:
 1. Write the config: words, statuses, deals (their name, stages and lost
    reasons), sources, fields, owner label, time zone, inbox, visits (their
    name and fields, or `false`), the business line.
-2. Make the live statuses and deal stages match with `scripts/stages.mjs`
-   (`--statuses` for a customer's; rename, add, set kind, archive with
-   `--move-to`), since the defaults are already rows. Rename in place
-   rather than archive and re-add: the key stays (`new` labelled
-   `Enquiry`), which is fine, since nobody sees a key and every script
+2. The defaults are already rows, so make the live statuses and deal
+   stages match with `scripts/stages.mjs` (`--statuses` for a customer's;
+   rename, add, set kind, archive with `--move-to`). Rename in place
+   rather than archive and re-add. A rename keeps the key (`new` labelled
+   `Enquiry`); that is fine, since nobody sees a key and every script
    takes the label too.
 3. `python3 ~/tools/taskandtool.py restart`, `npm run check`, then show the owner
    the Inbox, a customer and the deals board.
@@ -33,8 +33,8 @@ owner. Name, email, phone,
 company, address, source, tags and owner are built in and always show;
 the config cannot hide them (hiding one is a small edit in
 `src/views/`, done only when asked). A practice that keeps clinical or
-therapy notes elsewhere keeps them out of this CRM: it is a contact
-record, and say so when shaping one.
+therapy notes elsewhere keeps them out of this CRM, which is a contact
+record; say so when shaping one.
 
 ## Import and export
 
@@ -52,9 +52,9 @@ created at the moment of the import, so give the file a `--source` (or
 `--tag`) that a "new customers" count can leave out.
 
 Rows match existing customers and each other by email, then phone (a
-row with neither matches by name a customer with neither). A match only
-gains (empty fields filled, tags added); `--overwrite` replaces
-values, status included. Anyone left without a last contact gets the
+row with neither matches, by name, a customer who also has neither). A
+match only gains: empty fields are filled and tags added. `--overwrite`
+replaces values, status included. Anyone left without a last contact gets the
 time of their latest submission, booking or payment, by email. The import
 is one transaction. `node
 scripts/export.mjs --out customers.csv` is the reverse, and its headers

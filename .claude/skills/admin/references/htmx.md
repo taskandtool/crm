@@ -21,11 +21,11 @@ One URL answers three ways (`isPartial(c)` in `query.ts`):
 - **Bulk**: row checkboxes carry `form="bulk"` instead of sitting inside the
   form, so Load more rows join it and row forms never nest. Read ids with
   `formIds((await c.req.parseBody({ all: true })).id)`.
-- **After a plain POST**, 303 to the `return` field checked by `localPath`
-  (a path under the prefix, never a host), with `withFlash(ret, code, n)`.
-  `<Flash>` maps the code to the app's own words, so a crafted link cannot
-  put text on the page. An htmx request that receives a redirect follows
-  it and swaps the whole page into the target: answer htmx with the
-  fragment, not a 303.
+- **After a plain POST**, redirect (303) to the `return` field, checked by
+  `localPath` (a path under the prefix, never a host), with
+  `withFlash(ret, code, n)`. `<Flash>` maps the code to the app's own words,
+  so a crafted link cannot put text on the page. Answer htmx with the
+  fragment, not a 303: an htmx request that receives a redirect follows it
+  and swaps the whole page into the target.
 - Values a visitor sent render as text (hono/jsx escapes them) and never as
   links: a stored `javascript:` URL is one click from running.

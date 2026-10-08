@@ -8,8 +8,8 @@ description: "Quotes and invoices: quote this job, send the invoice, who owes us
 A quote is ours: a document the team sends through the owner's sender
 (`data/send.ts`). An invoice is Stripe's: made in the owner's Stripe
 account (Stripe Invoicing), emailed by Stripe, paid on Stripe's hosted page
-(it lasts 30 days past the due date, at most 120, then offers to resend). Both live in the project's tables, so every app reads
-what a customer was quoted, owes and paid. On `data`, `admin` and
+(the page lasts 30 days past the due date, at most 120, then offers to resend). Both live in the project's tables, so every app reads
+what a customer was quoted, owes and paid. Builds on `data`, `admin` and
 `payments`.
 
 Version: 0.1.0 (taskandtool/skills)
@@ -17,8 +17,8 @@ Version: 0.1.0 (taskandtool/skills)
 ## The rules
 
 - **The owner asking for it is the yes**: "send Ann the invoice", "void
-  #12" is run with `--confirm`, then say what went to whom. When you are
-  the one suggesting it, or which item or amount is meant is unclear, run
+  #12" is run with `--confirm`, then say what went to whom. When you
+  suggested it, or it is unclear which item or amount is meant, run
   it without `--confirm` (the CRM's `scripts/quotes.mjs` and
   `scripts/invoices.mjs` print exactly what would happen), show that, and
   wait. This covers sending a quote or invoice, marking paid, voiding and
@@ -50,9 +50,9 @@ permissions, Customers, Invoices and Tax Rates among them, are in its
 app.route("/", stripeWebhook(getDb, { more: [invoiceEvents] }));
 ```
 
-A team-only app (the CRM) mounts it before the team gate: Stripe signs in
-with the signature alone. The owner adds the invoice events to the
-endpoint (step 3 of the webhook in that same file). A paid invoice also writes a
+A team-only app (the CRM) mounts it before the team gate: Stripe has no
+sign-in, only the signature. The owner adds the invoice events to the
+endpoint (step 3 of "The webhook" in the payments skill's `references/setup.md`). A paid invoice also writes a
 `payments` row (`kind = 'invoice'`) with its payment intent, so refunds and
 revenue work as for any payment.
 

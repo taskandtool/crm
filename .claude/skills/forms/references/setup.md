@@ -4,8 +4,8 @@ Read when an app takes its first form, mounts the form pages, or sets up the own
 
 ## Add a form to a page
 
-The Website has steps 2, 3 and 5 done (`src/business.tsx`, `scripts/forms.mjs`):
-make the form with `node scripts/forms.mjs save`, set `SPAM_SECRET`, then steps 4 and 6.
+The Website already has steps 2, 3 and 5 done (`src/business.tsx`, `scripts/forms.mjs`):
+there, make the form with `node scripts/forms.mjs save`, set `SPAM_SECRET`, then do steps 4 and 6.
 
 1. Look: `select key, title, fields from forms`. Reuse a form that
    fits; otherwise pick a key (`quote-request`).
@@ -21,13 +21,13 @@ make the form with `node scripts/forms.mjs save`, set `SPAM_SECRET`, then steps 
 4. Serve the page as a route, not a pre-rendered page:
    `app.get("/contact", async (c) => c.html(render(Contact.page, <Contact.Body form={await embedForm(c, getDb(c), "contact")} />)))`.
    `embedForm` is null when the form is missing or switched off; say so in
-   the page instead of showing nothing. On the Website the page module is
-   then not listed in `src/pages/index.ts` (that would pre-render it), so
-   its nav link goes in `site.nav` by hand.
+   the page instead of showing nothing. On the Website, leave the page
+   module out of `src/pages/index.ts` (listing it there would pre-render
+   it), and add its nav link to `site.nav` by hand.
 5. Mount `formsAdmin(getDb, { base: "/admin/forms", css, timeZone, source: "<app slug>" })`
    at `/admin/forms` (see the `admin` skill for where private views live),
    and set `SPAM_SECRET`.
-6. Set up telling the owner (above) or say there is no sender, then post a
+6. Set up telling the owner ("Telling the owner", below) or say there is no sender, then post a
    test submission in dev and find it in `/admin/forms/submissions`.
 
 ## The command
@@ -76,10 +76,10 @@ When a form sells things, load `cart.js` on every page (the Website:
 
 ## Telling the owner
 
-The owner's email comes once the questions are answered, with what was
+The owner is emailed once the questions are answered, with what was
 ordered and its total; a booking and a payment follow it, and the
-submission shows them. Configured once for every skill that sends
-(bookings use the same):
+submission shows them. Sending is configured once for every skill that
+sends (bookings use the same settings):
 `NOTIFY_FROM`, an address on a domain verified with the vendor, and
 `NOTIFY_VIA=resend` or `postmark`, with `:<slug>` when the connection's
 endpoint slug is not the vendor's name.
@@ -98,7 +98,8 @@ logged and the submission is already saved.
 ## A `leads` table
 
 A Website without this skill keeps its contact form in a `leads` table. When
-the project has one, copy it once, from the machine, then write only to
+the project has one, copy its rows once, from the machine, with the SQL
+below, then write only to
 `submissions` with form key `contact`. Never drop `leads`: it is the owner's
 data.
 

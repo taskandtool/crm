@@ -5,8 +5,8 @@ Read for the request each heading names.
 ## A deposit on a booking page
 
 The booking skill makes the booking; this skill takes the money, in
-`bookingPages`' `afterBook`, whose URL the booker is sent to instead of the
-manage page (`test/deposit.test.ts`). A paid booking type through a form is
+`bookingPages`' `afterBook`. It returns a Checkout URL, and the booker is
+sent there instead of the manage page (`test/deposit.test.ts`). A paid booking type through a form is
 simpler: the form's `booking` and `payment` steps (the forms skill).
 
 ```ts

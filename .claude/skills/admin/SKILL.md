@@ -15,7 +15,7 @@ Version: 0.1.0 (taskandtool/skills)
 Private views sit under one prefix (`/admin`, `/reports`) and are private by
 default, with two locks:
 
-1. **Task & Tool decides who reaches the path.** Dev is the team's only.
+1. **Task & Tool decides who reaches the path.** Only the team reaches dev.
    Production starts the same way: the first deploy publishes it to the
    team, and only a person makes it public, with the switch in Task & Tool.
    So declare the prefix when you build it, before anyone makes the site
@@ -26,9 +26,10 @@ default, with two locks:
    from public pages.
 2. **The app checks who arrived.** Mount the views as a sub-app with
    `admin.use("*", teamOnly())` (`guard.ts`). It answers 404 to any request
-   without `X-TaskTool-User`, which only Task & Tool's edge sets from a
-   verified sign-in and strips from visitors, so a path that was never
-   declared stays shut in production too. The header is also who acted.
+   without `X-TaskTool-User`. Only Task & Tool's edge sets that header, from
+   a verified sign-in, and it strips the header from visitors' requests, so
+   a path that was never declared stays shut in production too. The header
+   also names who acted.
    The team is signed in by the platform, so never build a login for them.
 
 - **Other audiences, when the owner asks.** The business's own clients can
@@ -44,9 +45,10 @@ default, with two locks:
 - **One `/admin`, a section per skill.** Each skill's views mount under it
   (`/admin/forms`, `/admin/bookings`) on one guarded sub-app, all passing the
   same `nav`; `/admin` itself redirects to the list the owner reads most.
-- Local runs off the platform: `ADMIN_DEV_USER=you@example.com`, honoured
-  only for a localhost URL on a loopback connection with no proxy headers (the
-  Host header alone is whatever the sender typed).
+- Running locally, off the platform: set `ADMIN_DEV_USER=you@example.com`.
+  It is honoured only for a localhost URL on a loopback connection with no
+  proxy headers (the Host header alone is not enough: it is whatever the
+  sender typed).
 
 ## Lists
 
@@ -79,8 +81,8 @@ only for a format ("Separate tags with commas"), never to explain the page.
 
 `csvResponse(name, columns, everyPage((after, size) => listPage(db, f, after, size)))`:
 `everyPage` (`keyset.ts`) walks the list's own keyset query 500 rows at a
-time and `csvResponse` (`csv.ts`) streams it, BOM first so Excel reads UTF-8,
-with formula cells defused so a submitted "=HYPERLINK(…)" stays text. Export
+time. `csvResponse` (`csv.ts`) streams the rows, BOM first so Excel reads
+UTF-8, with formula cells defused so a submitted "=HYPERLINK(…)" stays text. Export
 the current filter: the link carries the same query string.
 
 ## htmx, and the same thing without it

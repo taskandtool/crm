@@ -25,12 +25,12 @@ Version: 0.2.0 (taskandtool/skills)
   validation and the editor; the browser's `required` is a convenience.
 - **A page with a form is rendered per request**, never pre-rendered: it
   needs the owner's latest definition, a fresh spam stamp and the visit's
-  UTM. A pre-rendered page is a static file that wins over the Worker.
+  UTM. A pre-rendered page is a static file, served in place of the Worker.
 - **Spam** is a honeypot and a 3-second minimum on the server
   (`data/spam.tsx`), with `SPAM_SECRET` set so the stamp is signed. A bot is
   thanked and dropped; a post too fast is kept as spam and nobody is told.
-- **No IP addresses**: only what they typed, the page, and where they came
-  from (`data._utm`, the referrer's host in `data._referrer`).
+- **No IP addresses**: store only what the visitor typed, the page, and
+  where they came from (`data._utm`, the referrer's host in `data._referrer`).
 - **Marketing needs a `consent` field**, unticked; `data._consent` keeps
   the exact words agreed to. A contact form is not permission to market.
 - **The owner is emailed only through their own sender** (`data/send.ts`);
@@ -41,9 +41,10 @@ Version: 0.2.0 (taskandtool/skills)
 A form's fields say all of it; `node scripts/forms.mjs --help` lists every
 field type with its settings.
 
-- `page` starts a step; one question a page is a `page` before each.
-  Answers wait as a draft and become a submission when the questions are
-  done; the rest are listed as not finished and nobody is emailed. A
+- `page` starts a step; for one question per page, put a `page` before
+  each question. Answers wait as a draft and become a submission when the
+  questions are done; drafts never finished are listed as not finished,
+  and nobody is emailed about them. A
   submission is complete (`completed_at`) once its last step is done; one
   that ends in payment completes when Stripe says paid (the webhook's
   `afterPaid` calls `completePaidSubmission`). `onComplete` is what the
@@ -58,8 +59,8 @@ field type with its settings.
   skills once the app wires them (`references/setup.md`). How a submission,
   its booking and its payment link: the payments skill's "Submissions,
   bookings and payments".
-- What it costs is `priceOf` (`price.ts`): items, the fees that apply, a
-  booking's price, from the stored definition, never the page.
+- `priceOf` (`price.ts`) says what a submission costs: items, the fees that
+  apply, a booking's price, from the stored definition, never from the page.
 
 ## Files
 

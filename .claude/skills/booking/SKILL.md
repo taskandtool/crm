@@ -34,8 +34,8 @@ Version: 0.4.0 (taskandtool/skills)
   first (daylight saving, the booking transaction, invites, the manage link);
   `npm test` holds them.
 - **The double-booking window.** An event added to the calendar since the
-  last sync is not in `busy` yet, so that time can be booked. Both
-  then show in the owner's calendar. Say so if the owner asks; syncing every
+  last sync is not in `busy` yet, so that time can be booked. The event
+  and the booking then both show in the owner's calendar. Say so if the owner asks; syncing every
   15 minutes keeps it small. Bookings never double-book each other.
 - **Messages go through the owner's sender only.** Task & Tool sends no
   email for an app. The words are `bookingMessage` (`notify.ts`): booked,
@@ -49,11 +49,11 @@ Version: 0.4.0 (taskandtool/skills)
   when any of its active hosts is free in their own hours and zone, using
   the type's rules. The booker may pick a host (`?host=`); otherwise the
   booking goes to the free host whose latest booking was made longest ago
-  (never booked first), chosen inside the transaction. One person's hours
+  (a host never booked goes first), chosen inside the transaction. One person's hours
   are shared by every type they take: a booking of one closes the others.
-- **Where it happens is the type's, kept on the booking.** At their place
-  asks for the address; a phone call asks for the number; at ours and a
-  video call carry the type's address or link. The booking stores the
+- **Where it happens is the type's, kept on the booking.** A type at their
+  place asks for the address; a phone call asks for the number; a type at
+  ours or a video call carries the type's address or link. The booking stores the
   place as it was when booked, so changing a type's link or address never
   moves a booking already made. A meeting link is shown on the manage page
   and in the invite, never on the public type page.
@@ -73,11 +73,12 @@ sync.
 A form's `booking` step (`bookingStep(getDb, { source })` in
 `form-step.tsx`) books the person the questions named; the booking names
 the submission (`submission_id`), the payment step charges the type's
-`price_cents`, and it is confirmed when the form is complete (`confirm.ts`). The
-time is held 45 minutes (`hold_until`); `releaseLapsedHolds`, run before
-times are listed or taken, cancels it only when the form is not complete and
-no payment was started or its checkout expired, and the form then sends them back to pick again
-(`stillValid`). How the three link: the payments skill's "Submissions,
+`price_cents`, and the booking is confirmed when the form is complete
+(`confirm.ts`). The time is held for 45 minutes (`hold_until`).
+`releaseLapsedHolds` runs before times are listed or taken. It cancels a
+held booking only when the form is not complete and either no payment was
+started or its checkout expired; the form then sends the person back to
+pick a time again (`stillValid`). How the three link: the payments skill's "Submissions,
 bookings and payments".
 
 ## Files

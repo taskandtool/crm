@@ -44,8 +44,8 @@ payment (money)                   payments  payments
 ```
 
 - An order is never a new table: up to three rows, each in the table that
-  owns it, linked from the later to the earlier, the person their email on
-  each. "My orders" is a form's submissions. No skill writes another's
+  owns it, linked from the later row to the earlier, with the person's
+  email on each. "My orders" is a form's submissions. No skill writes another's
   table; showing them together is a read (forms `linked.ts`).
 - Three ways to ask for money, all rows in `payments`:
   - **Pay now** on our page (an order, a paid booking, a deposit): a form's
@@ -56,8 +56,8 @@ payment (money)                   payments  payments
   - **A standing link** (a bio, a flyer): a one-page form with a `payment`
     step, at `/forms/<key>/start`; each click opens a fresh Checkout.
   Never make Stripe Payment Links: their payments name nothing here. A link
-  the owner made in Stripe can sit on a page; say its payments will not
-  show beside a form.
+  the owner made in Stripe can sit on a page; tell the owner its payments
+  will not show beside a form.
 - **Every app that takes payments has its own webhook.** The Website and
   the CRM never know of each other, so each mounts `stripeWebhook` and gets
   its own Stripe endpoint and its own `STRIPE_WEBHOOK_SECRET`. An event both

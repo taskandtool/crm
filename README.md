@@ -2,8 +2,8 @@
 
 The customer record for a small business: everyone who got in touch, in
 one place, and what happens next. Its first screen is the **Inbox**:
-across the project (form submissions from the Website, bookings, payments),
-newest first, each matched to a customer by email or offered as a new one
+everything that came in across the project (form submissions from the
+Website, bookings, payments), newest first, each matched to a customer by email or offered as a new one
 or a new deal, under four figures: leads this week, follow-ups due, the
 open pipeline and what was won this month. Then the follow-ups due, the
 deals on a board you drag between stages, the customers themselves, a
@@ -73,11 +73,11 @@ statuses and deal stages seeded on the first run (and what a deal is
 called), sources, custom fields (`text`, `number`, `date`, `select`,
 `phone`, `email`, no migration needed), what the owner is called, the
 time zone, which forms count as leads, and what a visit is called and
-records. `examples/` has
-five worked configs. Ask the AI to shape the CRM for your business; it
-reads them, asks what it cannot infer, and sets it up. Statuses and deal
-stages are rows after the first run (the Stages page). A field that deserves a real column
-is an additive line in `schema.sql`.
+records. `examples/` has five worked configs. Ask the AI to shape the CRM
+for your business; it reads them, asks what it cannot infer, and sets it
+up. After the first run, statuses and deal stages are rows, edited on the
+Stages page. A field that deserves a real column is an additive line in
+`schema.sql`.
 
 ## How it runs
 
