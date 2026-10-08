@@ -68,7 +68,7 @@ await withDb(async (db) => {
     }
     case "add": {
       const [kind, id] = rest;
-      const stage = (await firstOpenStage(db)) ?? fail(`${at}: there is no open stage for a new customer to land in`, 'node scripts/stages.mjs add "New"');
+      const stage = (await firstOpenStage(db, "customers")) ?? fail(`${at}: there is no open status for a new customer to land in`, 'node scripts/stages.mjs add "Lead" --statuses');
       const r = (await addFromInbox(db, kind as InboxKind, id, stage.key, user, cfg.fields)) ?? fail(`${at}: no ${kind} ${id} (or it is spam)`, "node scripts/inbox.mjs --unmatched");
       if (json) return out(true, r, String);
       return done(at, r.created ? `added #${r.customer.id} ${r.customer.name}` : `#${r.customer.id} ${r.customer.name} is already a customer; left alone`, {

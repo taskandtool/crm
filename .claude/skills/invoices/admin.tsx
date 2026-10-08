@@ -43,6 +43,8 @@ import { closePayLink, markPaidOutOfBand, markUncollectible, payLinkForQuote, se
 
 type Ctx = Context<{ Variables: TeamVars }>;
 export type Frame = (p: { title: string; user: string; children: Child }) => Child;
+/** What went out, and to whom. */
+export type SentDoc = { kind: "quote" | "invoice"; id: string; email: string };
 
 export type InvoicesAdminOptions = {
   base: string;
@@ -71,6 +73,10 @@ export type InvoicesAdminOptions = {
   quoteExtra?: (c: Ctx, qt: Quote) => Child | Promise<Child>;
   /** More on an invoice's page: the CRM's customer and job. */
   invoiceExtra?: (c: Ctx, inv: Invoice) => Child | Promise<Child>;
+  /** After a quote or an invoice goes to its customer (sent, or marked sent): the CRM counts it as contact. Throwing shows nothing; the send stands. */
+  afterSend?: (c: Ctx, doc: SentDoc) => Promise<void>;
+  /** After a person marks a quote accepted or declined here: the CRM wins the deal it is for. Throwing shows nothing; the answer stands. */
+  afterDecide?: (c: Ctx, qt: Quote) => Promise<void>;
   /** More at the top of the invoices list: the CRM's paid-by-month table. */
   invoicesTop?: (c: Ctx) => Child | Promise<Child>;
   /** Days a new invoice gives to pay; default 30. */
@@ -139,14 +145,14 @@ function formLines(body: Record<string, unknown>): { description: string; quanti
 
 type FormValues = {
   email: string; name: string; phone: string; address: string; currency: string; valid_until: string; notes: string; terms: string;
-  days_until_due: string; visit_id: string; lines: { description: string; quantity: string; unit: string; tax_rate_id: string }[];
+  days_until_due: string; visit_id: string; deal_id: string; lines: { description: string; quantity: string; unit: string; tax_rate_id: string }[];
 };
 
 function readForm(body: Record<string, unknown>): FormValues {
   return {
     email: str(body.email), name: str(body.name), phone: str(body.phone), address: str(body.address), currency: str(body.currency),
     valid_until: str(body.valid_until), notes: str(body.notes), terms: str(body.terms), days_until_due: str(body.days_until_due),
-    visit_id: str(body.visit_id), lines: formLines(body),
+    visit_id: str(body.visit_id), deal_id: str(body.deal_id), lines: formLines(body),
   };
 }
 
@@ -242,7 +248,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const currency = (qy("currency") || opts.currency || "usd").toLowerCase();
     const values: FormValues = {
       email: qy("email"), name: qy("name"), phone: qy("phone"), address: qy("address"), currency,
-      valid_until: addDays(todayIn(opts.timeZone), opts.validDays ?? 30), notes: "", terms: opts.terms ?? "", days_until_due: "", visit_id: qy("visit"),
+      valid_until: addDays(todayIn(opts.timeZone), opts.validDays ?? 30), notes: "", terms: opts.terms ?? "", days_until_due: "", visit_id: qy("visit"), deal_id: qy("deal"),
       lines: qy("line") ? [{ description: qy("line"), quantity: "1", unit: qy("unit"), tax_rate_id: "" }] : [],
     };
     return editor(c, { title: "New quote", action: qbase, values, errors: {}, current: qbase });
@@ -340,7 +346,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     if (qt.status !== "draft") return c.redirect(`${qbase}/${qt.id}`, 302);
     const values: FormValues = {
       email: qt.email, name: qt.name ?? "", phone: qt.phone ?? "", address: qt.address ?? "", currency: qt.currency,
-      valid_until: qt.valid_until ?? "", notes: qt.notes ?? "", terms: qt.terms ?? "", days_until_due: "", visit_id: qt.visit_id ?? "",
+      valid_until: qt.valid_until ?? "", notes: qt.notes ?? "", terms: qt.terms ?? "", days_until_due: "", visit_id: qt.visit_id ?? "", deal_id: qt.deal_id ?? "",
       lines: linesOf(qt),
     };
     return editor(c, { title: `Edit quote ${qt.number}`, action: `${qbase}/${qt.id}`, values, errors: {}, current: `${qbase}/${qt.id}` });
@@ -403,6 +409,11 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     ));
   });
 
+  // The app's afterSend, when it has one; a failure is logged, never the person's problem.
+  const sent = async (c: Ctx, doc: SentDoc) => {
+    if (opts.afterSend) await opts.afterSend(c, doc).catch((e) => console.error(`${doc.kind} ${doc.id}: afterSend: ${e instanceof Error ? e.message : e}`));
+  };
+
   app.post("/quotes/:id/send", async (c) => {
     const qt = await load(c);
     if (!qt) return c.notFound();
@@ -428,6 +439,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
         : `The email did not go: ${r.sent.error}`;
       return c.redirect(listUrl(`${self}/send`, { problem }), 303);
     }
+    await sent(c, { kind: "quote", id: qt.id, email: qt.email });
     return back(c, self, r.printError ? "sent-no-pdf" : "sent");
   });
 
@@ -436,6 +448,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     if (!id) return c.notFound();
     const r = await markSent(getDb(c), id, c.get("user"));
     if (!r.ok && r.reason === "not_found") return c.notFound();
+    if (r.ok) await sent(c, { kind: "quote", id, email: r.value.email });
     return back(c, `${qbase}/${id}`, r.ok ? "marked-sent" : "not-now");
   });
 
@@ -446,6 +459,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     if (answer !== "accepted" && answer !== "declined") return back(c, `${qbase}/${id}`, "not-now");
     const r = await decideQuote(getDb(c), id, answer, c.get("user"));
     if (!r.ok && r.reason === "not_found") return c.notFound();
+    if (r.ok && opts.afterDecide) await opts.afterDecide(c, r.value).catch((e) => console.error(`quote ${id}: afterDecide: ${e instanceof Error ? e.message : e}`));
     if (r.ok && answer === "declined") {
       const note = await closePayLink(getDb(c), () => stripeOf(c), id, c.get("user"));
       if (note?.startsWith("Its Pay button could not")) return c.redirect(listUrl(`${qbase}/${id}`, { saved: "declined", problem: note }), 303);
@@ -535,7 +549,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const qy = (k: string) => (c.req.query(k) ?? "").slice(0, 500);
     const values: FormValues = {
       email: qy("email"), name: qy("name"), phone: qy("phone"), address: qy("address"), currency: (qy("currency") || opts.currency || "usd").toLowerCase(),
-      valid_until: "", notes: "", terms: "", days_until_due: String(opts.daysUntilDue ?? 30), visit_id: qy("visit"),
+      valid_until: "", notes: "", terms: "", days_until_due: String(opts.daysUntilDue ?? 30), visit_id: qy("visit"), deal_id: "",
       lines: qy("line") ? [{ description: qy("line"), quantity: "1", unit: qy("unit"), tax_rate_id: "" }] : [],
     };
     return invoiceEditor(c, { title: "New invoice", action: base, values, errors: {}, current: base });
@@ -622,7 +636,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     if (inv.status !== "draft" || inv.stripe_invoice_id) return c.redirect(`${base}/${inv.id}`, 302);
     const values: FormValues = {
       email: inv.email, name: inv.name ?? "", phone: inv.phone ?? "", address: inv.address ?? "", currency: inv.currency,
-      valid_until: "", notes: inv.notes ?? "", terms: "", days_until_due: String(inv.days_until_due), visit_id: inv.visit_id ?? "", lines: linesOf(inv),
+      valid_until: "", notes: inv.notes ?? "", terms: "", days_until_due: String(inv.days_until_due), visit_id: inv.visit_id ?? "", deal_id: "", lines: linesOf(inv),
     };
     return invoiceEditor(c, { title: "Edit draft invoice", action: `${base}/${inv.id}`, values, errors: {}, current: `${base}/${inv.id}` });
   });
@@ -699,6 +713,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       if (!act.allowed(inv)) return back(c, self, "not-now");
       const r = await act.run(c, inv);
       if (!r.ok) return c.redirect(listUrl(`${self}/${act.path}`, { problem: r.message }), 303);
+      if (act.path === "send") await sent(c, { kind: "invoice", id: inv.id, email: inv.email });
       return back(c, self, act.done);
     });
   }
@@ -810,6 +825,7 @@ function DocForm({ kind, action, v, errors, rates, cancel }: { kind: "quote" | "
       {problems ? <p role="alert" class="rounded-card border border-line-strong bg-panel px-4 py-2">Fix what is marked below. Nothing was saved.</p> : null}
       {errors.status ? <p role="alert" class="rounded-card border border-line-strong bg-panel px-4 py-2">{errors.status}</p> : null}
       <input type="hidden" name="visit_id" value={v.visit_id} />
+      {kind === "quote" ? <input type="hidden" name="deal_id" value={v.deal_id} /> : null}
       <Section title="Who it is for">
         <div class="grid gap-3 sm:grid-cols-2">
           <label class={fieldClass}>Email<input name="email" type="email" required value={v.email} maxlength={254} class={controlClass} />{err("email")}</label>

@@ -1,10 +1,12 @@
 # CRM
 
 The customer record for a small business: everyone who got in touch, in
-one place, and what happened next. Its first screen is **what came in**
+one place, and what happens next. Its first screen is **what came in**
 across the project (form submissions from the Website, bookings, payments),
-newest first, each matched to a customer by email or offered as a new one.
-Then the customers themselves, a pipeline you drag between stages, a
+newest first, each matched to a customer by email or offered as a new one
+or a new deal, under four figures: leads this week, follow-ups due, the
+open pipeline and what was won this month. Then the follow-ups due, the
+deals on a board you drag between stages, the customers themselves, a
 timeline of notes and calls per customer, and their jobs or visits: what
 was done, when, by whom, for how much. It works the minute it
 is installed and is shaped for the business by talking to the app's AI:
@@ -18,13 +20,25 @@ runs anywhere with Node 20 and a Postgres.
 ## What is in the box
 
 - **What came in**: form submissions (not spam), bookings and paid
-  payments from the project's other apps, with Add as customer and Mark
-  done. A source the project does not have yet is simply left out.
-- **Customers**, keyed by email (a phone alone is fine too): search by
-  name, email, phone or company, filter by stage, tag and owner, export the
-  filter as CSV, archive (never delete).
-- **A customer's page**: details and custom fields, stage, tags, owner,
-  a notes timeline, and everything they sent, booked and paid.
+  payments from the project's other apps, with Add as customer, Add as
+  deal (a returning customer's new enquiry too) and Mark done. A source
+  the project does not have yet is simply left out.
+- **Follow-ups**: a call, email, meeting, text or task due on a day, by
+  one person. Due (overdue first, then today), Upcoming and Nothing
+  planned, mine or everyone's; the next one at the top of a customer's
+  page and on every card. Done goes on the timeline. A new lead gets a
+  "Call back" for that day, and a morning email lists what is due.
+- **Deals**: one piece of work being won, for one customer, who may have
+  many. Stages you name, a value (a quote's total until one is typed),
+  an owner, an expected close; won makes them a customer, a quote's yes
+  wins it, a lost one keeps why. Make it a job once won.
+- **Customers**, keyed by email (a phone alone is fine too), each with a
+  status (Lead, Customer, Not a fit): search by name, email, phone or
+  company, filter by status, tag and owner, export the filter as CSV,
+  archive (never delete), and merge two records of one person.
+- **A customer's page**: follow-ups, deals, details and custom fields,
+  status, tags, owner, a notes timeline, and everything they sent,
+  booked and paid, and every quote and invoice sent to them.
 - **Jobs, visits or events** (the config names them): one per occasion,
   planned, done or cancelled, with who did it, an amount and its own
   fields (which truck, which room). A list of what is coming up and what
@@ -40,25 +54,27 @@ runs anywhere with Node 20 and a Postgres.
   the payment by card or bank on Stripe's page. Cash or a
   check is marked paid there too. A customer's page shows what was
   quoted, what they owe now and what they paid.
-- **A pipeline** of stages you name and order, with drag between them,
-  or a select on each card without JavaScript.
+- **The deals board**: a column per stage with its count and total, drag
+  between them, or a select on each card without JavaScript.
 - **CSV import** of the list you keep today, matched by email then phone
   so nobody is added twice, with a dry run first.
-- **The AI's hands**: scripts to find, add, update, note, stage, tag,
-  import and export customers from chat, add and close jobs or visits,
-  quote and invoice, and list what came in. Sending anything to a customer
+- **The AI's hands**: scripts to find, add, update, note, tag, merge,
+  import and export customers from chat, add and move deals, plan and
+  tick off follow-ups, add and close jobs or visits, quote and invoice,
+  and list what came in. Sending anything to a customer, and a merge,
   waits for your yes.
 
 ## Shaping it
 
 `crm.config.json` holds the words (`Patients`, `Guests`, `Clients`), the
-stages seeded on the first run, sources, custom fields (`text`, `number`,
-`date`, `select`, `phone`, `email`, no migration needed), what the owner
-is called, the time zone, which forms count as leads, and what a visit
-is called and records. `examples/` has
+statuses and deal stages seeded on the first run (and what a deal is
+called), sources, custom fields (`text`, `number`, `date`, `select`,
+`phone`, `email`, no migration needed), what the owner is called, the
+time zone, which forms count as leads, and what a visit is called and
+records. `examples/` has
 five worked configs. Ask the AI to shape the CRM for your business; it
-reads them, asks what it cannot infer, and sets it up. Stages are rows
-after the first run (the Stages page). A field that deserves a real column
+reads them, asks what it cannot infer, and sets it up. Statuses and deal
+stages are rows after the first run (the Stages page). A field that deserves a real column
 is an additive line in `schema.sql`.
 
 ## How it runs
@@ -79,17 +95,17 @@ is an additive line in `schema.sql`.
 ## Layout
 
 ```
-crm.config.json          the levers: words, stages, sources, fields, zone, inbox
+crm.config.json          the levers: words, statuses, deals, sources, fields, zone, inbox
 schema.sql               the tables, additive only, applied at start and deploy
 src/app.tsx              the Hono app: the team-only gate, the routes
-src/crm/                 customers, stages, notes, visits, what came in, history, import
-src/views/               what came in, customers, a customer, visits, pipeline, stages
+src/crm/                 customers, stages, deals, follow-ups, notes, visits, what came in, history, merge, import
+src/views/               what came in, follow-ups, deals, customers, a customer, visits, stages
 src/booking/             a copy of the booking skill: the Bookings section, the calendar sync job
 src/forms/               a copy of the forms skill: submissions by form, the form editor
 src/invoices/            a copy of the invoices skill: quotes, invoices, tax rates, Stripe
 src/data/  src/admin/    copies of the data and admin business skills, and what is
 src/payments/ src/reports/   used of payments and reports
-scripts/                 customers, visits, forms, quotes, invoices, inbox, stages, import, export, migrate (--help)
+scripts/                 customers, deals, follow-ups, visits, forms, quotes, invoices, inbox, stages, import, export, migrate (--help)
 styles/  static/         the tokens; the built CSS, vendored htmx and SortableJS, crm.js
 examples/                hvac, dental, restaurant, plumbing, counselor configs
 test/                    node:test
@@ -100,6 +116,6 @@ test/                    node:test
 ## Stack
 
 Hono with server-rendered JSX, `pg` on Postgres with plain SQL, Tailwind
-v4 as tokens, htmx for the round trips, SortableJS for the pipeline. No
+v4 as tokens, htmx for the round trips, SortableJS for the deals board. No
 client framework, no ORM, no login of its own; email only through your
 own sender, money only through your own Stripe. MIT.

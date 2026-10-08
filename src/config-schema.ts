@@ -15,18 +15,23 @@ export type InboxConfig = {
 };
 /** A customer's jobs, visits, appointments or events: its words, its own custom fields, the currency its amounts are in. */
 export type VisitsConfig = { one: string; many: string; fields: CustomField[]; currency?: string };
+/** Deals: what one piece of work being won is called, the stages seeded on the first run, the currency of their values, and the reasons offered when one is lost. */
+export type DealsConfig = { one: string; many: string; stages: StageConfig[]; currency?: string; lost_reasons?: string[] };
+/** Follow-ups: whether a lead added from What came in gets a "Call back" due that day. On unless false. */
+export type FollowUpsConfig = { new_lead?: boolean };
 /** Quotes and invoices: the name printed on them, their currency, standing terms, days to pay. */
 export type InvoicesConfig = { name: string; currency?: string; terms?: string; days_until_due?: number };
 export type Config = {
   business: string;
   vocabulary: { one: string; many: string };
-  stages: StageConfig[];
+  /** A customer's status (Lead, Customer, Not a fit), seeded on the first run. */
+  statuses: StageConfig[];
+  deals: DealsConfig;
+  follow_ups?: FollowUpsConfig;
   sources: string[];
   fields: CustomField[];
   owner_label?: string;
   time_zone: string;
-  default_view: "list" | "pipeline";
-  pipeline?: boolean;
   inbox: InboxConfig;
   /** false (or absent) turns them off. */
   visits?: VisitsConfig | false;
@@ -46,7 +51,7 @@ const FORM_KEY = /^[a-z0-9][a-z0-9-]{0,62}$/;
 // built-in columns, so they may not reuse a built-in name.
 // The built-in columns' CSV headers (crm/columns.ts): a custom field labelled
 // the same would export two "Email" columns and import into the wrong one.
-export const BUILT_IN_HEADERS = ["id", "name", "email", "phone", "company", "address", "stage", "source", "tags", "owner", "notes", "last contact (utc)", "added (utc)", "changed (utc)", "archived (utc)"];
+export const BUILT_IN_HEADERS = ["id", "name", "email", "phone", "company", "address", "stage", "status", "source", "tags", "owner", "notes", "last contact (utc)", "added (utc)", "changed (utc)", "archived (utc)"];
 // The same for a visit's custom fields (crm/visits.ts's CSV columns).
 export const VISIT_BUILT_IN = ["id", "customer", "customer_id", "title", "status", "starts_at", "when", "owner", "amount", "amount_cents", "currency", "notes", "created_at", "updated_at", "created_by", "updated_by"];
 export const VISIT_HEADERS = ["id", "customer", "customer email", "customer phone", "what", "status", "notes", "added (utc)"];
@@ -63,18 +68,20 @@ export function validate(raw: unknown): string[] {
   const v = c.vocabulary;
   if (!v || typeof v.one !== "string" || typeof v.many !== "string" || !v.one.trim() || !v.many.trim()) out.push('vocabulary needs one and many, e.g. { "one": "Patient", "many": "Patients" }');
 
-  if (!Array.isArray(c.stages) || c.stages.length === 0) out.push("stages must list at least one stage");
+  out.push(...stageProblems(c.statuses, "statuses", "status", "new people"));
+  const dl = c.deals as Partial<DealsConfig> | undefined;
+  if (!dl || typeof dl !== "object" || Array.isArray(dl)) out.push('deals must be an object, e.g. { "one": "Deal", "many": "Deals", "stages": [...] }');
   else {
-    const keys = new Set<string>();
-    c.stages.forEach((s, i) => {
-      if (!s || typeof s !== "object") return out.push(`stages[${i}] is not an object`);
-      if (!KEY.test(s.key ?? "")) out.push(`stages[${i}].key must match ${KEY}`);
-      if (keys.has(s.key)) out.push(`stages[${i}].key ${s.key} repeats`);
-      keys.add(s.key);
-      if (typeof s.label !== "string" || !s.label.trim()) out.push(`stages[${i}].label is missing`);
-      if (s.kind !== undefined && !STAGE_KINDS.includes(s.kind)) out.push(`stages[${i}].kind must be open, won or lost`);
-    });
-    if (!c.stages.some((s) => (s?.kind ?? "open") === "open")) out.push("stages needs at least one open stage, where new people land");
+    if (typeof dl.one !== "string" || typeof dl.many !== "string" || !dl.one.trim() || !dl.many.trim()) out.push('deals needs one and many, e.g. { "one": "Deal", "many": "Deals" }');
+    out.push(...stageProblems(dl.stages, "deals.stages", "stage", "new deals"));
+    if (dl.currency !== undefined && !validCurrency(dl.currency)) out.push(`deals.currency must be a currency code such as "USD" (got ${JSON.stringify(dl.currency)})`);
+    if (dl.lost_reasons !== undefined && !(Array.isArray(dl.lost_reasons) && dl.lost_reasons.every((r) => typeof r === "string" && r.trim() && r.length <= 100))) {
+      out.push("deals.lost_reasons must be a list of short reasons (it may be empty)");
+    }
+  }
+  const fu = c.follow_ups as Partial<FollowUpsConfig> | undefined;
+  if (fu !== undefined && (!fu || typeof fu !== "object" || Array.isArray(fu) || (fu.new_lead !== undefined && typeof fu.new_lead !== "boolean"))) {
+    out.push('follow_ups must be an object, e.g. { "new_lead": true }');
   }
 
   if (!Array.isArray(c.sources) || c.sources.some((s) => typeof s !== "string" || !s.trim())) out.push("sources must be a list of names (it may be empty)");
@@ -82,9 +89,6 @@ export function validate(raw: unknown): string[] {
   out.push(...fieldProblems(c.fields, "fields", BUILT_IN, BUILT_IN_HEADERS));
   if (c.owner_label !== undefined && (typeof c.owner_label !== "string" || !c.owner_label.trim())) out.push("owner_label must be a word such as Owner or Technician");
   if (typeof c.time_zone !== "string" || !validTimeZone(c.time_zone)) out.push(`time_zone must be an IANA zone name such as "America/Chicago" or "UTC" (got ${JSON.stringify(c.time_zone)})`);
-  if (c.default_view !== "list" && c.default_view !== "pipeline") out.push("default_view must be list or pipeline");
-  if (c.pipeline !== undefined && typeof c.pipeline !== "boolean") out.push("pipeline must be true or false");
-  if (c.default_view === "pipeline" && c.pipeline === false) out.push("default_view is pipeline but pipeline is false");
 
   const ib = c.inbox;
   if (!ib || typeof ib !== "object") out.push('inbox must be an object, e.g. { "forms": "all" }');
@@ -128,6 +132,24 @@ export function validate(raw: unknown): string[] {
       if (vs.currency !== undefined && !validCurrency(vs.currency)) out.push(`visits.currency must be a currency code such as "USD" or "GBP" (got ${JSON.stringify(vs.currency)})`);
     }
   }
+  return out;
+}
+
+// A list of statuses or deal stages: slug keys, no repeats, a known kind, and
+// at least one open one for new rows to land in.
+function stageProblems(list: unknown, at: string, one: string, landing: string): string[] {
+  const out: string[] = [];
+  if (!Array.isArray(list) || list.length === 0) return [`${at} must list at least one ${one}`];
+  const keys = new Set<string>();
+  (list as StageConfig[]).forEach((s, i) => {
+    if (!s || typeof s !== "object") return out.push(`${at}[${i}] is not an object`);
+    if (!KEY.test(s.key ?? "")) out.push(`${at}[${i}].key must match ${KEY}`);
+    if (keys.has(s.key)) out.push(`${at}[${i}].key ${s.key} repeats`);
+    keys.add(s.key);
+    if (typeof s.label !== "string" || !s.label.trim()) out.push(`${at}[${i}].label is missing`);
+    if (s.kind !== undefined && !STAGE_KINDS.includes(s.kind)) out.push(`${at}[${i}].kind must be open, won or lost`);
+  });
+  if (!(list as StageConfig[]).some((s) => (s?.kind ?? "open") === "open")) out.push(`${at} needs at least one open ${one}, where ${landing} land`);
   return out;
 }
 

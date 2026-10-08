@@ -37,6 +37,9 @@ create table if not exists quotes (
 create unique index if not exists quotes_number on quotes (number);
 create index if not exists quotes_email on quotes (email, created_at desc);
 create index if not exists quotes_visit on quotes (visit_id);
+-- The CRM deal a quote is for, as visit_id names its job.
+alter table quotes add column if not exists deal_id bigint;
+create index if not exists quotes_deal on quotes (deal_id) where deal_id is not null;
 create index if not exists quotes_recent on quotes (created_at desc, id desc);
 
 -- amount_cents is quantity x unit_cents, rounded; tax_cents the tax on it

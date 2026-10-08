@@ -1,12 +1,12 @@
 ---
 name: crm
-description: "Runs and reshapes this CRM: customers keyed by email, what came in from the project's forms, bookings and payments, the pipeline, notes, jobs, its config and schema. Use for 'add a customer', 'log a job', 'who got in touch', 'import my list', 'shape the CRM'. Not for quotes and invoices (invoices)."
+description: "Runs and reshapes this CRM: customers keyed by email, what came in from the project's forms, bookings and payments, deals, follow-ups, notes, jobs, its config and schema. Use for 'add a customer', 'who should I follow up with', 'add a deal', 'log a job', 'import my list', 'merge these two', 'shape the CRM'. Not for quotes and invoices (invoices)."
 ---
 
 # CRM
 
 This app is a customer record on Hono: server-rendered JSX, htmx, SortableJS
-on the pipeline, Postgres, no client framework. `AGENTS.md` has the rules,
+on the deals board, Postgres, no client framework. `AGENTS.md` has the rules,
 where things are and the commands; this file is how to change it. The
 project's tables follow the `data` skill, which also says how the copies of
 the business skills' code in `src/` are kept.
@@ -31,7 +31,7 @@ the business skills' code in `src/` are kept.
 
 | When | Read |
 |---|---|
-| Changing words, stages, custom fields, a real column; jobs or visits | `references/levers.md` |
+| Changing words, statuses, deal stages, custom fields, a real column; jobs, deals, follow-ups, the morning email, merging | `references/levers.md` |
 | What can be booked, hours, calendars, booking messages | `references/bookings.md` |
 | Forms here; setting up quotes, invoices, Stripe or the email sender | `references/money.md`, then the `invoices` skill |
 | Shaping the CRM for a business; importing or exporting a list | `references/shaping.md` |

@@ -56,6 +56,10 @@ export type InvoicesCli = {
   person?: (db: Db, ref: string) => Promise<Person | null>;
   /** When the app has quotes and invoices switched off: the line that says so. */
   off?: string | null;
+  /** After a quote or an invoice goes to its customer (sent, or marked sent): the CRM counts it as contact. */
+  afterSend?: (db: Db, doc: { kind: "quote" | "invoice"; id: string; email: string }, by: string) => Promise<void>;
+  /** After accept or decline: what the app did about it (the CRM wins the deal), as lines to print. */
+  afterDecide?: (db: Db, qt: Quote, by: string) => Promise<string[]>;
   /** The app's own commands: their help lines, what each does, and the flags each takes (unchecked when not given). */
   more?: { help: string; commands: Record<string, Extra>; flags?: Record<string, string[]> };
 };
@@ -112,12 +116,12 @@ export const problems = (errors: Record<string, string>) =>
     if (line) return `--line ${Number(line[1]) + 1} (${FIELD_NAMES[line[2]] ?? line[2]}): ${v}`;
     if (k === "status") return v;
     if (k === "lines") return `--line: ${v}`;
-    return `--${k === "visit_id" ? "job" : k === "days_until_due" ? "days" : k.replace(/_/g, "-")}: ${v}`;
+    return `--${k === "visit_id" ? "job" : k === "deal_id" ? "deal" : k === "days_until_due" ? "days" : k.replace(/_/g, "-")}: ${v}`;
   }).join("\n");
 
 // ---- quotes -------------------------------------------------------------------
 
-const QUOTE_FIELDS = ["line", "name", "phone", "address", "valid-until", "notes", "terms", "job", "currency", "as"];
+const QUOTE_FIELDS = ["line", "name", "phone", "address", "valid-until", "notes", "terms", "job", "deal", "currency", "as"];
 const QUOTE_FLAGS: Record<string, string[]> = {
   list: ["status", "find", "limit", "customer"], show: [], add: QUOTE_FIELDS, edit: QUOTE_FIELDS, send: ["pay", "confirm", "as"],
   "mark-sent": ["as"], accept: ["as"], decline: ["as"], expire: ["as"], "tax-rates": [], "tax-rate": ["inclusive", "as"],
@@ -134,7 +138,7 @@ export async function quotesCli(argv: string[], cli: InvoicesCli): Promise<void>
   list --customer <who>
   show <id>
   add <who> --line "<what>|[qty|]<price>[|<tax rate>]"... [--name n] [--phone p] [--address a]
-            [--valid-until YYYY-MM-DD] [--notes n] [--terms t] [--job <id>] [--currency ${cli.currency}]
+            [--valid-until YYYY-MM-DD] [--notes n] [--terms t] [--job <id>] [--deal <id>] [--currency ${cli.currency}]
   edit <id> [the same flags]           a draft only; --line replaces every line
   send <id> [--pay]                    prints exactly what would go to whom; sends nothing. --pay adds a
                                        Pay button: Stripe's page for these lines; paying it accepts the quote
@@ -164,7 +168,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
   const local = (d: Date | string) => localTime(d, cli.timeZone);
   const fmt = (r: Quote) =>
     [`#${r.id}`, r.number, `[${shownStatus(r, todayIn(cli.timeZone))}]`, r.name ? `${r.name} <${r.email}>` : r.email, money(r.total_cents, r.currency),
-      r.valid_until ? `valid until ${r.valid_until}` : "", r.visit_id ? `job #${r.visit_id}` : ""].filter(Boolean).join("  ");
+      r.valid_until ? `valid until ${r.valid_until}` : "", r.visit_id ? `job #${r.visit_id}` : "", r.deal_id ? `deal #${r.deal_id}` : ""].filter(Boolean).join("  ");
   const quoteOr = async (db: Db, id: string | undefined) => {
     if (!id || !ID.test(id)) misused(`${at}: name a quote by its id (#12 is 12)`, "node scripts/quotes.mjs list");
     return (await quoteById(db, id)) ?? fail(`${at}: no quote ${id}`, "node scripts/quotes.mjs list");
@@ -217,7 +221,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         if (current) {
           f = {
             email: current.email, name: current.name, phone: current.phone, address: current.address, currency: current.currency,
-            valid_until: current.valid_until, notes: current.notes, terms: current.terms, visit_id: current.visit_id,
+            valid_until: current.valid_until, notes: current.notes, terms: current.terms, visit_id: current.visit_id, deal_id: current.deal_id,
             lines: current.lines.map((l) => ({ description: l.description, quantity: l.quantity, unit: amountInput(l.unit_cents, current.currency), tax_rate_id: l.tax_rate_id ?? "" })),
           };
         } else {
@@ -229,7 +233,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
           if (has(a, flagName)) f[k] = flag(a, flagName) ?? "";
         };
         set("name", "name"); set("phone", "phone"); set("address", "address"); set("valid_until", "valid-until");
-        set("notes", "notes"); set("terms", "terms"); set("visit_id", "job"); set("currency", "currency");
+        set("notes", "notes"); set("terms", "terms"); set("visit_id", "job"); set("deal_id", "deal"); set("currency", "currency");
         if (has(a, "line")) f.lines = lineFlags(a, rates, "quotes");
         const r = current ? await saveQuote(db, current.id, f, by) : await createQuote(db, f, by, cli.source);
         if (!r.ok) fail(`${at}: not saved\n${problems(r.errors)}`, "node scripts/quotes.mjs --help");
@@ -259,6 +263,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         const r = await sendQuote(db, qt, rates, doc, { send: (mail) => sendEmail(cli.env, mail), print: cli.print, replyTo: flag(a, "as") ?? null, by, payUrl });
         if (r.sent.status === "none") fail(`${at}: nothing was sent: ${r.sent.why}\n  Give the owner the text to send themselves, then mark it sent`, `node scripts/quotes.mjs send ${qt.id}, without --confirm, for the text; then node scripts/quotes.mjs mark-sent ${qt.id}`);
         if (r.sent.status === "failed") fail(`${at}: the email did not go: ${r.sent.error}`, "python3 ~/tools/taskandtool.py list-connections, to check the email sender");
+        await cli.afterSend?.(db, { kind: "quote", id: qt.id, email: qt.email }, by);
         if (json) return out(true, { sent: true, pdf: r.pdf }, String);
         return done(at, `sent quote ${qt.number} to ${qt.email}${r.pdf ? " with its PDF" : r.printError ? ` without a PDF (${r.printError})` : " (no browser here: the lines are in the email)"}`, {
           lines: payUrl ? [`with a Pay button: ${payUrl}`] : [],
@@ -279,9 +284,11 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
           return done(at, `quote ${id} is already ${r.status}; left alone`, { next: `node scripts/quotes.mjs show ${id}` });
         }
         if (!r.ok) fail(r.reason === "not_found" ? `${at}: no quote ${id}` : `${at}: quote ${id} is ${r.status}; nothing changed`, `node scripts/quotes.mjs show ${id}`);
+        if (cmd === "mark-sent") await cli.afterSend?.(db, { kind: "quote", id, email: r.value.email }, by);
         const note = cmd === "decline" ? await closePayLink(db, () => stripeOr(cli.env, at), id, by) : null;
+        const after = (cmd === "accept" || cmd === "decline") && cli.afterDecide ? await cli.afterDecide(db, r.value, by) : [];
         if (json) return out(true, r.value, String);
-        return done(at, `${DONE[cmd]} ${fmt(r.value)}`, { lines: note ? [note] : [], next: cmd === "accept" ? `node scripts/invoices.mjs from-quote ${id}` : undefined });
+        return done(at, `${DONE[cmd]} ${fmt(r.value)}`, { lines: [...(note ? [note] : []), ...after], next: cmd === "accept" ? `node scripts/invoices.mjs from-quote ${id}` : undefined });
       }
 
       case "tax-rates": {
@@ -486,6 +493,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         if (cmd === "send") {
           const r = await sendInvoice(db, stripe, inv.id, by);
           if (!r.ok) fail(`${at}: ${r.message}`, `node scripts/invoices.mjs show ${inv.id}`);
+          await cli.afterSend?.(db, { kind: "invoice", id: inv.id, email: inv.email }, by);
           if (json) return out(true, r.invoice, String);
           return done(at, `sent ${fmt(r.invoice)}`, { lines: [`their payment page: ${r.invoice.hosted_url ?? "(Stripe will add it)"}`], next: `node scripts/invoices.mjs show ${inv.id}` });
         }

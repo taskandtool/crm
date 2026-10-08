@@ -1,5 +1,5 @@
 // crm.config.json, read once and validated. The first lever the AI pulls to
-// shape the CRM: the words, the stages seeded on the first run, sources,
+// shape the CRM: the words, the statuses and deal stages seeded on the first run, sources,
 // custom fields, the business's time zone, what counts as a lead, what a
 // visit is called. Nothing here changes a table name.
 import config from "../crm.config.json";
@@ -15,7 +15,12 @@ if (problems.length) {
 export const cfg = config as Config;
 export const vocab = cfg.vocabulary;
 export const ownerLabel = cfg.owner_label ?? "Owner";
-export const showPipeline = cfg.pipeline !== false;
+/** Deals: their words, stages seeded on the first run, currency, reasons offered when one is lost. */
+export const dealsCfg = { ...cfg.deals, currency: cfg.deals.currency ?? "USD", lost_reasons: cfg.deals.lost_reasons ?? [] };
+/** A lead added from What came in gets a "Call back" follow-up due that day. */
+export const newLeadFollowUp = cfg.follow_ups?.new_lead !== false;
+/** What the first run seeds. */
+export const seeds = { statuses: cfg.statuses, dealStages: cfg.deals.stages };
 /** The team's side of booking: what can be booked, who takes it, their hours and calendars, and the bookings. */
 export const showBooking = cfg.booking !== false;
 /** Jobs, visits, appointments or events, or null when the config turns them off. */

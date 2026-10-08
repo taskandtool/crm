@@ -12,6 +12,8 @@ await (which === "quotes" ? quotesCli : invoicesCli)(argv, {
   timeZone: "UTC",
   source: "test",
   env: {},
+  afterSend: async (_db, doc) => void console.error(`after send: ${doc.kind} ${doc.email}`),
+  afterDecide: async (_db, qt) => [`after: ${qt.status}${qt.deal_id ? ` deal ${qt.deal_id}` : ""}`],
   withDb: async (fn) => {
     if (!process.env.CLI_DB) {
       console.error("the database was opened");

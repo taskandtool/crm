@@ -1,8 +1,8 @@
 // Bringing the database up to what this CRM needs: the two extensions every
 // project database has (made here too, for a Postgres off Task & Tool),
 // the forms skill's tables, the booking skill's tables when booking is on, schema.sql, the payments and invoices skills' tables when quotes and invoices are on, through applySchema (additive only, safe to run by every app at
-// any version, behind the lock every app shares), and the configured stages
-// on the very first run. Machine only: the service runs it at start and
+// any version, behind the lock every app shares), and the configured
+// statuses and deal stages on the very first run. Machine only: the service runs it at start and
 // `npm run deploy` runs it before production sees new code. Never per request.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -12,13 +12,16 @@ import { applySchema } from "../data/migrate";
 import type { StageConfig } from "../config-schema";
 import { seedStages } from "../crm/stages";
 
+/** What the first run seeds: crm.config.json's statuses and deals.stages. */
+export type Seeds = { statuses: StageConfig[]; dealStages: StageConfig[] };
+
 export const SCHEMA_FILE = fileURLToPath(new URL("../../schema.sql", import.meta.url));
 export const BOOKING_SCHEMA_FILE = fileURLToPath(new URL("../booking/schema.sql", import.meta.url));
 export const FORMS_SCHEMA_FILE = fileURLToPath(new URL("../forms/schema.sql", import.meta.url));
 export const PAYMENTS_SCHEMA_FILE = fileURLToPath(new URL("../payments/schema.sql", import.meta.url));
 export const INVOICES_SCHEMA_FILE = fileURLToPath(new URL("../invoices/schema.sql", import.meta.url));
 
-export async function setup(db: Db, stages: StageConfig[], opts: { booking: boolean; invoices?: boolean; forms?: boolean } = { booking: true, invoices: true, forms: true }): Promise<{ seeded: number }> {
+export async function setup(db: Db, seeds: Seeds, opts: { booking: boolean; invoices?: boolean; forms?: boolean } = { booking: true, invoices: true, forms: true }): Promise<{ seeded: number }> {
   // On Neon the app's login may not create extensions; they are there
   // already, and IF NOT EXISTS returns before asking for the privilege.
   for (const create of [() => db.sql`create extension if not exists citext`, () => db.sql`create extension if not exists pg_trgm`]) {
@@ -38,7 +41,7 @@ export async function setup(db: Db, stages: StageConfig[], opts: { booking: bool
     await applySchema(db, readFileSync(PAYMENTS_SCHEMA_FILE, "utf8"));
     await applySchema(db, readFileSync(INVOICES_SCHEMA_FILE, "utf8"));
   }
-  return { seeded: await seedStages(db, stages) };
+  return { seeded: (await seedStages(db, "customers", seeds.statuses)) + (await seedStages(db, "deals", seeds.dealStages)) };
 }
 
 type SetupOpts = { booking: boolean; invoices?: boolean; forms?: boolean };
@@ -63,7 +66,7 @@ export function setupKey(opts: SetupOpts): string {
  * without crm_setup, or with an older hash, gets the whole setup, and so
  * does `force` (migrate.mjs, which deploy runs, repairs as well as applies).
  */
-export async function setupOnce(db: Db, stages: StageConfig[], opts: SetupOpts, force = false): Promise<void> {
+export async function setupOnce(db: Db, seeds: Seeds, opts: SetupOpts, force = false): Promise<void> {
   const key = setupKey(opts);
   if (!force) {
     try {
@@ -73,7 +76,7 @@ export async function setupOnce(db: Db, stages: StageConfig[], opts: SetupOpts, 
       // No crm_setup yet: a new database, or one set up before it existed.
     }
   }
-  await setup(db, stages, opts);
+  await setup(db, seeds, opts);
   await db.sql`insert into crm_setup (name, schema_hash) values ('crm', ${key})
     on conflict (name) do update set schema_hash = excluded.schema_hash, updated_at = now()`;
 }

@@ -32,9 +32,13 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     assert.ok(rate.ok);
     const mail: Email[] = [];
     let answer: Sent = { status: "sent", via: "fake" };
+    const decided: string[] = [];
+    const went: string[] = [];
     const app = new Hono();
     app.route("/invoices", invoicesAdmin(() => s.db, {
       base: "/invoices", css: "/site.css", source: "crm", timeZone: "America/Denver", business: "Acme Fencing",
+      afterDecide: async (_c, qt) => void decided.push(`${qt.status} ${qt.deal_id}`),
+      afterSend: async (_c, doc) => void went.push(`${doc.kind} ${doc.email}`),
       send: async (_c, m) => (mail.push(m), answer),
       print: async (_c, html) => new TextEncoder().encode("%PDF " + html.length),
     }));
@@ -43,11 +47,12 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     assert.equal((await app.request(HOST + "/invoices/quotes")).status, 404);
 
     // A job hands over who and the first line.
-    let res = await app.request(...get("/invoices/quotes/new?email=ann@example.com&name=Ann%20Lee&visit=12&line=Fence%20repair&unit=450.00"));
+    let res = await app.request(...get("/invoices/quotes/new?email=ann@example.com&name=Ann%20Lee&visit=12&deal=5&line=Fence%20repair&unit=450.00"));
     let html = await res.text();
     assert.equal(res.status, 200);
     assert.match(html, /value="Fence repair"/);
     assert.match(html, /name="visit_id" value="12"/);
+    assert.match(html, /name="deal_id" value="5"/);
 
     // A bad price: the form again with the row marked, nothing saved.
     res = await app.request(...post("/invoices/quotes", {
@@ -61,7 +66,7 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     assert.equal((await s.db.sql`select count(*)::int as n from quotes`)[0].n, 0);
 
     res = await app.request(...post("/invoices/quotes", {
-      email: "ann@example.com", name: "Ann Lee", currency: "usd", valid_until: "2026-11-30", visit_id: "12", notes: "Gate included.", terms: "",
+      email: "ann@example.com", name: "Ann Lee", currency: "usd", valid_until: "2026-11-30", visit_id: "12", deal_id: "5", notes: "Gate included.", terms: "",
       description: ["Fence repair", "Haul away", ""], quantity: ["", "", ""], unit: ["450.00", "12.50", ""], tax_rate_id: [rate.value.id, "", ""],
     }));
     assert.equal(res.status, 303);
@@ -70,6 +75,7 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     const made = await quoteById(s.db, id);
     assert.equal(made!.total_cents, String(45000 + 4500 + 1250));
     assert.equal(made!.visit_id, "12");
+    assert.equal(made!.deal_id, "5");
     assert.equal(made!.created_by, "pat@team.example");
 
     html = await (await app.request(...get(`/invoices/quotes/${id}`))).text();
@@ -79,7 +85,7 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
 
     // Edit while a draft.
     res = await app.request(...post(`/invoices/quotes/${id}`, {
-      email: "ann@example.com", name: "Ann Lee", currency: "usd", valid_until: "2026-11-30", visit_id: "12", notes: "Gate included.", terms: "Net 30.",
+      email: "ann@example.com", name: "Ann Lee", currency: "usd", valid_until: "2026-11-30", visit_id: "12", deal_id: "5", notes: "Gate included.", terms: "Net 30.",
       description: ["Fence repair"], quantity: ["2"], unit: ["450.00"], tax_rate_id: [""],
     }));
     assert.equal(res.status, 303);
@@ -104,6 +110,7 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     assert.equal(res.status, 303);
     assert.match(res.headers.get("location")!, /\/send\?problem=Nothing\+was\+sent/);
     assert.equal((await quoteById(s.db, id))!.status, "draft");
+    assert.deepEqual(went, [], "nothing went, so afterSend does not run");
 
     answer = { status: "sent", via: "fake" };
     res = await app.request(...post(`/invoices/quotes/${id}/send`, {}));
@@ -115,6 +122,7 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     assert.match(m.attachments![0].filename, /^Quote Q-\d{4}\.pdf$/);
     const sent = await quoteById(s.db, id);
     assert.equal(sent!.status, "sent");
+    assert.deepEqual(went, ["quote ann@example.com"]);
 
     // Sent: no more edits.
     res = await app.request(...post(`/invoices/quotes/${id}`, {
@@ -129,6 +137,7 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     assert.match(res.headers.get("location")!, /saved=accepted$/);
     res = await app.request(...post(`/invoices/quotes/${id}/decide`, { answer: "declined" }));
     assert.match(res.headers.get("location")!, /saved=not-now$/);
+    assert.deepEqual(decided, ["accepted 5"], "afterDecide runs once, for the answer that took");
     assert.equal((await quoteById(s.db, id))!.decided_by, "pat@team.example");
     // An accepted quote is not sent again.
     res = await app.request(...post(`/invoices/quotes/${id}/send`, {}));

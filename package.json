@@ -1,7 +1,7 @@
 {
   "name": "crm",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "description": "A small business's customer record: what came in across the project, customers keyed by email, a pipeline, notes, jobs, bookings, quotes and invoices. Server-rendered on Hono, on the project's Postgres, shaped by its AI; runs in dev on its machine and in production on Cloudflare, team only.",
   "scripts": {
@@ -12,7 +12,7 @@
     "vendor": "node scripts/vendor.mjs",
     "postinstall": "node scripts/vendor.mjs",
     "check": "node scripts/check.mjs",
-    "test": "tsx --import ./test/pin-config.mjs --test --test-reporter=./test/reporter.mjs test/config.test.ts test/helpers.test.ts test/db.test.ts test/http.test.ts src/admin/test/admin-core.test.ts src/booking/test/book.test.ts src/booking/test/pages.test.ts src/booking/test/slots.test.ts src/booking/test/zones.test.ts src/booking/test/ics.test.ts src/booking/test/sync.test.ts src/booking/test/notify.test.ts src/booking/test/reminders.test.ts src/invoices/test/documents.test.ts src/invoices/test/pages.test.ts src/invoices/test/stripe.test.ts src/forms/test/fields.test.ts src/forms/test/items.test.tsx src/forms/test/cli.test.ts src/invoices/test/cli.test.ts src/data/test/cli.test.ts test/scripts.test.ts",
+    "test": "tsx --import ./test/pin-config.mjs --test --test-reporter=./test/reporter.mjs test/config.test.ts test/helpers.test.ts test/db.test.ts test/sales.test.ts test/http.test.ts src/admin/test/admin-core.test.ts src/booking/test/book.test.ts src/booking/test/pages.test.ts src/booking/test/slots.test.ts src/booking/test/zones.test.ts src/booking/test/ics.test.ts src/booking/test/sync.test.ts src/booking/test/notify.test.ts src/booking/test/reminders.test.ts src/invoices/test/documents.test.ts src/invoices/test/pages.test.ts src/invoices/test/stripe.test.ts src/forms/test/fields.test.ts src/forms/test/items.test.tsx src/forms/test/cli.test.ts src/invoices/test/cli.test.ts src/data/test/cli.test.ts test/scripts.test.ts",
     "deploy": "node scripts/migrate.mjs && npm run build && python3 ~/tools/taskandtool.py deploy dist --worker build/worker.mjs --flag nodejs_compat"
   },
   "engines": {

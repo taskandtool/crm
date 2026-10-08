@@ -1,13 +1,26 @@
 {
   "business": "A family heating and cooling company with two service vans: repairs, replacements and maintenance plans for homes in one metro area.",
   "vocabulary": { "one": "Customer", "many": "Customers" },
-  "stages": [
-    { "key": "new", "label": "New request", "kind": "open" },
-    { "key": "visit-booked", "label": "Visit booked", "kind": "open" },
-    { "key": "estimate-sent", "label": "Estimate sent", "kind": "open" },
-    { "key": "won", "label": "Job won", "kind": "won" },
-    { "key": "lost", "label": "Went elsewhere", "kind": "lost" }
+  "statuses": [
+    { "key": "lead", "label": "Lead", "kind": "open" },
+    { "key": "customer", "label": "Customer", "kind": "won" },
+    { "key": "member", "label": "Comfort club member", "kind": "won" },
+    { "key": "not-a-fit", "label": "Not a fit", "kind": "lost" }
   ],
+  "deals": {
+    "one": "Request",
+    "many": "Requests",
+    "currency": "USD",
+    "stages": [
+      { "key": "new", "label": "New request", "kind": "open" },
+      { "key": "visit-booked", "label": "Visit booked", "kind": "open" },
+      { "key": "estimate-sent", "label": "Estimate sent", "kind": "open" },
+      { "key": "won", "label": "Job won", "kind": "won" },
+      { "key": "lost", "label": "Went elsewhere", "kind": "lost" }
+    ],
+    "lost_reasons": ["Price", "Went with another company", "Repaired it themselves", "No reply"]
+  },
+  "follow_ups": { "new_lead": true },
   "sources": ["Website", "Google", "Phone", "Referral", "Repeat customer", "Truck sign"],
   "fields": [
     { "key": "system", "label": "System", "type": "select", "options": ["Gas furnace", "Heat pump", "Central AC", "Boiler", "Mini-split", "Other"] },
@@ -18,8 +31,6 @@
   ],
   "owner_label": "Tech",
   "time_zone": "America/Chicago",
-  "default_view": "pipeline",
-  "pipeline": true,
   "inbox": { "forms": "all", "exclude_forms": ["newsletter"], "bookings": true, "payments": true },
   "visits": {
     "one": "Job",

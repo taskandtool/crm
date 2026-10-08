@@ -32,21 +32,49 @@ test("every example is valid, shaped, and the five businesses are there", () => 
   assert.equal(plumbing.fields[0].key, "location");
   assert.deepEqual(plumbing.visits.fields.map((f: { key: string }) => f.key).slice(0, 2), ["truck", "location"]);
   const counselor = JSON.parse(readFileSync("examples/counselor.json", "utf8"));
-  assert.deepEqual(counselor.stages.map((s: { label: string }) => s.label), ["New", "Contacted", "Closed"]);
-  assert.equal(counselor.pipeline, false);
+  assert.deepEqual(counselor.statuses.map((s: { label: string }) => s.label), ["New", "Contacted", "Current client", "Closed"]);
+  assert.equal(counselor.deals.many, "Enquiries", "every CRM has a deal pipeline, named for the business");
   assert.equal(counselor.visits, false, "sessions are noted elsewhere");
+  // A trade's pipeline is per job, so a returning customer gets a new one; their status says who they are.
+  const hvac = JSON.parse(readFileSync("examples/hvac.json", "utf8"));
+  assert.deepEqual(hvac.deals.stages.map((s: { label: string }) => s.label), ["New request", "Visit booked", "Estimate sent", "Job won", "Went elsewhere"]);
+  assert.deepEqual(hvac.statuses.map((s: { kind: string }) => s.kind), ["open", "won", "won", "lost"]);
 });
 
-test("stages need an open one, slug keys, no repeats and a known kind", () => {
+test("statuses and deal stages each need an open one, slug keys, no repeats and a known kind", () => {
   const c = good();
-  c.stages = [{ key: "won", label: "Won", kind: "won" }];
-  assert.ok(validate(c).some((p) => p.includes("open stage")));
+  c.statuses = [{ key: "won", label: "Won", kind: "won" }];
+  c.deals.stages = [{ key: "lost", label: "Lost", kind: "lost" }];
+  assert.ok(validate(c).some((p) => p.startsWith("statuses needs at least one open status")));
+  assert.ok(validate(c).some((p) => p.startsWith("deals.stages needs at least one open stage")));
   const d = good();
-  d.stages.push({ key: "Big Deal", label: "x" }, { key: "new", label: "again" }, { key: "maybe", label: "Maybe", kind: "perhaps" });
+  d.statuses.push({ key: "Big Deal", label: "x" }, { key: "lead", label: "again" }, { key: "maybe", label: "Maybe", kind: "perhaps" });
   const p = validate(d);
   assert.ok(p.some((x) => x.includes("must match")));
   assert.ok(p.some((x) => x.includes("repeats")));
   assert.ok(p.some((x) => x.includes("open, won or lost")));
+  // The two lists are separate: a deal stage may share a status's key.
+  const e = good();
+  e.deals.stages.unshift({ key: "lead", label: "Lead", kind: "open" });
+  assert.deepEqual(validate(e), []);
+});
+
+test("deals need words and stages; a currency and lost reasons when given; follow-ups an object", () => {
+  const c = good();
+  delete c.deals;
+  assert.ok(validate(c).some((p) => p.startsWith("deals must be an object")));
+  const d = good();
+  d.deals = { one: "", many: "Deals", stages: [], currency: "dollars", lost_reasons: ["", 3] };
+  const p = validate(d);
+  assert.ok(p.some((x) => x.includes("deals needs one and many")));
+  assert.ok(p.some((x) => x.includes("deals.stages must list")));
+  assert.ok(p.some((x) => x.includes("deals.currency")));
+  assert.ok(p.some((x) => x.includes("deals.lost_reasons")));
+  const f = good();
+  f.follow_ups = { new_lead: "yes" };
+  assert.ok(validate(f).some((x) => x.includes("follow_ups must be an object")));
+  delete f.follow_ups;
+  assert.deepEqual(validate(f), [], "follow_ups is optional");
 });
 
 test("custom fields: known types, select options, no built-in or repeated keys", () => {
@@ -98,19 +126,13 @@ test("visits: off, or words, their own fields and a currency", () => {
   assert.ok(validate(d).some((x) => x.includes("visits must be false or an object")));
 });
 
-test("time zone, views and inbox rules are checked", () => {
+test("time zone and inbox rules are checked", () => {
   const c = good();
   c.time_zone = "Mars/Olympus";
-  c.default_view = "board";
   c.inbox = { forms: "some" };
   const p = validate(c);
   assert.ok(p.some((x) => x.includes("IANA")));
-  assert.ok(p.some((x) => x.includes("default_view")));
   assert.ok(p.some((x) => x.includes("inbox.forms")));
-  const d = good();
-  d.default_view = "pipeline";
-  d.pipeline = false;
-  assert.ok(validate(d).some((x) => x.includes("pipeline is false")));
   const e = good();
   e.inbox = { forms: ["contact", "quote"], exclude_forms: ["newsletter"], bookings: false };
   assert.deepEqual(validate(e), []);

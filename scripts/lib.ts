@@ -4,7 +4,7 @@
 // service runs, skipped while crm_setup says it is current), so it works on a
 // fresh project too.
 import type pg from "pg";
-import { cfg, invoicesCfg, showBooking } from "../src/config";
+import { cfg, invoicesCfg, seeds, showBooking } from "../src/config";
 import { fail, flag, localTime, machineEnv, misused, parseArgs, type Args } from "../src/data/cli.mjs";
 import type { Db } from "../src/data/db";
 import { fromPool } from "../src/data/pg";
@@ -12,7 +12,7 @@ import { databaseUrl } from "../src/db/client";
 import { openPool } from "../src/db/pool";
 import { setupOnce } from "../src/db/setup";
 import type { Customer } from "../src/crm/customers";
-import { findCustomer } from "../src/crm/customers";
+import { findCustomer, sentTo } from "../src/crm/customers";
 import type { InvoicesCli } from "../src/invoices/cli";
 import { printPdf } from "../src/pdf";
 
@@ -36,7 +36,7 @@ export async function withDb<T>(fn: (db: Db, pool: pg.Pool) => Promise<T>, opts:
   const db = fromPool(pool);
   try {
     try {
-      await setupOnce(db, cfg.stages, { booking: showBooking, invoices: !!invoicesCfg }, opts.force);
+      await setupOnce(db, seeds, { booking: showBooking, invoices: !!invoicesCfg }, opts.force);
     } catch (e) {
       const err = e as Error & { code?: string };
       return fail(`${at}: ${unreachable(err) ? `cannot reach the database (${err.code})` : `the database could not be set up: ${err.message}`}`, "node scripts/migrate.mjs");
@@ -103,6 +103,8 @@ export function cliSettings(script: "quotes" | "invoices"): InvoicesCli {
     source: "crm",
     env: machineEnv(),
     print: printPdf,
+    // A quote or an invoice that went out is contact with the customer.
+    afterSend: (db, doc, by) => sentTo(db, doc.email, by),
     person: async (db, ref) => {
       const c = await findCustomer(db, ref);
       return c ? { email: c.email, name: c.name, phone: c.phone, address: c.address } : null;

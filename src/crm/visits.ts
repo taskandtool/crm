@@ -32,6 +32,8 @@ export type Visit = Keyed & {
   created_at: Date;
   updated_at: Date;
   booking_id: string | null;
+  /** The deal it was made from, if any. */
+  deal_id: string | null;
   customer_name: string;
   customer_email: string | null;
   customer_phone: string | null;
@@ -241,13 +243,44 @@ export async function visitFromBooking(db: Db, bookingId: string, customerId: st
   return v ? getVisit(db, v.id) : null;
 }
 
+/**
+ * "Make it a job" from a won deal: a planned visit for its customer, titled
+ * as the deal, worth what the deal shows. One per deal: the deal is locked
+ * first, so a second click returns the first.
+ */
+export async function visitFromDeal(db: Db, dealId: string, user: string): Promise<{ visit: Visit; created: boolean } | null> {
+  if (!/^\d{1,18}$/.test(dealId)) return null;
+  const [, made] = await db.transaction([
+    q`select id from deals where id = ${dealId}::bigint for update`,
+    q`insert into customer_visits (customer_id, deal_id, title, status, owner, amount_cents, currency, created_by, updated_by)
+      select d.customer_id, d.id, d.title, 'planned', d.owner, d.value_cents, case when d.value_cents is not null then d.currency end, ${user}, ${user}
+      from deals d
+      where d.id = ${dealId}::bigint and not exists (select 1 from customer_visits v where v.deal_id = d.id)
+      returning id::text as id`,
+  ]);
+  const fresh = (made[0] as { id: string } | undefined)?.id;
+  const id = fresh ?? (await db.sql<{ id: string }>`select id::text as id from customer_visits where deal_id = ${dealId}::bigint order by id limit 1`)[0]?.id;
+  const visit = id ? await getVisit(db, id) : null;
+  return visit ? { visit, created: !!fresh } : null;
+}
+
+/** The jobs made from a deal. */
+export function dealVisits(db: Db, dealId: string): Promise<Visit[]> {
+  return db.sql<Visit>`
+    select v.*, to_char(coalesce(v.starts_at, v.created_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k,
+           c.name as customer_name, c.email::text as customer_email, c.phone as customer_phone
+    from customer_visits v join customers c on c.id = v.customer_id
+    where v.deal_id = ${dealId}::bigint
+    order by v.id`;
+}
+
 export type OpenBooking = { id: string; starts_at: Date; name: string; email: string; type_name: string | null; host_name: string | null; customer_id: string | null };
 
 /** Confirmed bookings still to come that no job was made from, soonest first: the "booked, not a job yet" list. */
 export function bookingsWithoutJob(db: Db, limit = 20): Promise<OpenBooking[]> {
   return db.sql<OpenBooking>`
     select b.id::text as id, b.starts_at, b.name, b.email::text as email, t.name as type_name, r.name as host_name,
-           (select c.id::text from customers c where c.email = b.email order by c.archived_at nulls first, c.id limit 1) as customer_id
+           (select c.id::text from customers c where c.email = b.email or c.other_emails @> array[lower(b.email::text)] order by c.archived_at nulls first, c.id limit 1) as customer_id
     from bookings b
     left join booking_types t on t.id = b.type_id
     left join resources r on r.id = b.resource_id

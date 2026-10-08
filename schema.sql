@@ -99,7 +99,7 @@ create index if not exists customer_visits_status_when on customer_visits (statu
 alter table customer_visits add column if not exists booking_id bigint;
 create unique index if not exists customer_visits_booking on customer_visits (booking_id) where booking_id is not null;
 
-comment on table pipeline_stages is 'The CRM pipeline, one row per stage, edited by the owner. customers.stage holds a key. Seeded once from crm.config.json.';
+comment on table pipeline_stages is 'A customer''s statuses (Lead, Customer, Not a fit), one row each, edited by the owner. customers.stage holds a key. Seeded once from crm.config.json statuses.';
 comment on table customers is 'One row per customer, keyed by email when there is one (unique, case-blind). fields holds the custom fields crm.config.json declares. Archived, never deleted, from the CRM.';
 comment on column customers.owner is 'Who looks after this customer: usually a team member''s email.';
 comment on column customers.last_contact_at is 'The latest call, email, meeting or text noted, or when the person first got in touch.';
@@ -108,6 +108,104 @@ comment on table customer_visits is 'A customer''s jobs, visits, appointments or
 comment on column customer_visits.booking_id is 'The booking this was made from, if any (the booking skill''s bookings.id).';
 comment on column customer_visits.starts_at is 'When it happens or happened; null while it is not scheduled yet.';
 comment on column customer_visits.amount_cents is 'What it was worth, in the minor units of currency (cents for USD). A record, not a payment: payments are their own table.';
+
+-- Deals: one piece of work the team is trying to win, for one customer, in
+-- the deal pipeline. A customer has as many as they bring over the years.
+-- deal_stages is the deal pipeline as rows, the same shape as
+-- pipeline_stages (which holds the customers' statuses); crm.config.json's
+-- deals.stages seeds it once.
+create table if not exists deal_stages (
+  key         text primary key check (key ~ '^[a-z0-9][a-z0-9_-]{0,39}$'),
+  label       text not null,
+  position    integer not null default 0,
+  kind        text not null default 'open' check (kind in ('open', 'won', 'lost')),
+  archived    boolean not null default false,
+  updated_by  citext,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create table if not exists deals (
+  id                bigserial primary key,
+  customer_id       bigint not null references customers (id) on delete cascade,
+  title             text not null,
+  stage             text not null,
+  stage_changed_at  timestamptz not null default now(),
+  value_cents       bigint check (value_cents >= 0),
+  currency          text,
+  owner             citext,
+  expected_close    date,
+  closed_at         timestamptz,
+  lost_reason       text,
+  notes             text,
+  archived_at       timestamptz,
+  created_by        citext,
+  updated_by        citext,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+
+create index if not exists deals_customer on deals (customer_id, created_at desc, id desc);
+create index if not exists deals_stage_updated on deals (stage, updated_at desc, id desc);
+create index if not exists deals_closed on deals (closed_at) where closed_at is not null;
+
+-- Follow-ups: the next thing to do for a customer (and the deal it is for),
+-- due on a day in the business's zone, at a time or any time that day,
+-- by one person. Ticked off, never deleted.
+create table if not exists follow_ups (
+  id           bigserial primary key,
+  customer_id  bigint not null references customers (id) on delete cascade,
+  deal_id      bigint references deals (id) on delete set null,
+  kind         text not null default 'call' check (kind in ('call', 'email', 'meeting', 'text', 'task')),
+  title        text not null,
+  due_on       date not null,
+  due_time     time,
+  owner        citext,
+  done_at      timestamptz,
+  done_by      citext,
+  created_by   citext,
+  updated_by   citext,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+create index if not exists follow_ups_open on follow_ups (due_on, due_time, id) where done_at is null;
+create index if not exists follow_ups_customer_open on follow_ups (customer_id, due_on) where done_at is null;
+create index if not exists follow_ups_owner_open on follow_ups (owner, due_on) where done_at is null;
+
+-- The morning email, claimed once per person per day before it is sent, so
+-- two runs never send it twice and a failed send is not retried into a flood.
+create table if not exists follow_up_digests (
+  email       citext not null,
+  day         date not null,
+  status      text not null default 'claimed' check (status in ('claimed', 'sent', 'none', 'failed')),
+  detail      text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  primary key (email, day)
+);
+
+-- A job made from a won deal names it.
+alter table customer_visits add column if not exists deal_id bigint;
+create index if not exists customer_visits_deal on customer_visits (deal_id) where deal_id is not null;
+
+-- Merging: the addresses a customer also goes by (the merged record's,
+-- lower case, as data/email.ts stores every address; text[] because pg reads
+-- a citext[] back as a string), so
+-- what the project's other tables hold under those addresses is still theirs,
+-- and on the merged record, the one it went into.
+alter table customers add column if not exists other_emails text[] not null default '{}';
+alter table customers add column if not exists merged_into bigint;
+create index if not exists customers_other_emails on customers using gin (other_emails);
+
+comment on table deal_stages is 'The deal pipeline, one row per stage, edited by the owner. deals.stage holds a key. Seeded once from crm.config.json deals.stages.';
+comment on table deals is 'Work the team is trying to win, one customer each: its stage, value, owner and expected close. Won or lost stages set closed_at. Archived, never deleted.';
+comment on column deals.value_cents is 'What it is worth, in minor units of currency. Blank: the latest quote made for it stands in.';
+comment on column deals.stage_changed_at is 'When the stage last moved: a quote accepted after it wins the deal; one accepted before does not undo a later move.';
+comment on table follow_ups is 'The next things to do for a customer: a call, email, meeting, text or task due on a day (in the business''s zone), by one person. Done ones keep done_at and done_by.';
+comment on table follow_up_digests is 'The morning email of due follow-ups, claimed once per person per day.';
+comment on column customers.other_emails is 'Other addresses this customer goes by, from a merge: matched everywhere their email is.';
+comment on column customers.merged_into is 'The customer this record was merged into; set on the archived duplicate.';
 
 -- What the scripts last set up, so a script call skips setup when nothing
 -- changed: one row, the hash of the schema files setup applied.

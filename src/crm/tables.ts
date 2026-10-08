@@ -1,12 +1,13 @@
 // Which of the other apps' tables this project has. The CRM reads
 // `submissions` (and `forms` for their titles) from the forms skill,
-// `bookings` (and `resources`) from booking, and `payments` from payments.
+// `bookings` (and `resources`) from booking, `payments` from payments, and
+// `quotes` and `invoices` from invoices.
 // Any of them may be missing: a project with no Website has no submissions.
 // `to_regclass` resolves a name exactly as an unqualified query would, so a
 // table found here is the one the next query reads.
 import type { Db } from "../data/db";
 
-export type Present = { submissions: boolean; forms: boolean; bookings: boolean; resources: boolean; payments: boolean };
+export type Present = { submissions: boolean; forms: boolean; bookings: boolean; resources: boolean; payments: boolean; quotes: boolean; invoices: boolean };
 
 export async function present(db: Db): Promise<Present> {
   const [r] = await db.sql<Present>`
@@ -14,7 +15,9 @@ export async function present(db: Db): Promise<Present> {
            to_regclass('forms') is not null as forms,
            to_regclass('bookings') is not null as bookings,
            to_regclass('resources') is not null as resources,
-           to_regclass('payments') is not null as payments`;
+           to_regclass('payments') is not null as payments,
+           to_regclass('quotes') is not null as quotes,
+           to_regclass('invoices') is not null as invoices`;
   return r;
 }
 

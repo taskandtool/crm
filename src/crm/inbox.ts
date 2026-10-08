@@ -100,10 +100,10 @@ export async function inboxPage(
         from submissions s
         left join lateral (
           select c.id, c.name, c.archived_at from customers c
-          where (s.email is not null and c.email = s.email)
+          where (s.email is not null and (c.email = s.email or c.other_emails @> array[lower(s.email::text)]))
              or ((c.email is null or s.email is null) and length(regexp_replace(regexp_replace(coalesce(s.phone, ''), '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g')) >= 7
                  and right(regexp_replace(regexp_replace(c.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10) = right(regexp_replace(regexp_replace(s.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10))
-          order by (s.email is not null and c.email = s.email) desc, c.archived_at nulls first, c.id
+          order by (s.email is not null and (c.email = s.email or c.other_emails @> array[lower(s.email::text)])) desc, c.archived_at nulls first, c.id
           limit 1) m on true
         where s.status <> 'spam'
           and (${all}::boolean or s.form_key = any(${keys}::text[]))
@@ -129,10 +129,10 @@ export async function inboxPage(
         left join booking_types t on t.id = b.type_id
         left join lateral (
           select c.id, c.name, c.archived_at from customers c
-          where (b.email is not null and c.email = b.email)
+          where (b.email is not null and (c.email = b.email or c.other_emails @> array[lower(b.email::text)]))
              or ((c.email is null or b.email is null) and length(regexp_replace(regexp_replace(coalesce(b.phone, ''), '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g')) >= 7
                  and right(regexp_replace(regexp_replace(c.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10) = right(regexp_replace(regexp_replace(b.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10))
-          order by (b.email is not null and c.email = b.email) desc, c.archived_at nulls first, c.id
+          order by (b.email is not null and (c.email = b.email or c.other_emails @> array[lower(b.email::text)])) desc, c.archived_at nulls first, c.id
           limit 1) m on true
         where (${since}::timestamptz is null or b.created_at >= ${since}::timestamptz)
           and (not ${unmatched}::boolean or m.id is null)
@@ -152,7 +152,7 @@ export async function inboxPage(
         from payments p
         left join lateral (
           select c.id, c.name, c.archived_at from customers c
-          where p.email is not null and c.email = p.email
+          where p.email is not null and (c.email = p.email or c.other_emails @> array[lower(p.email::text)])
           order by c.archived_at nulls first, c.id
           limit 1) m on true
         where p.status in ('paid', 'refunded', 'partially_refunded')
@@ -192,8 +192,9 @@ export function sourceOf(row: { kind: InboxKind; form_key?: string; form_title?:
  *   submission.
  *
  * When the person is already a customer, that one is returned, with only
- * its empty values filled from the row (customers.ts fillBlanks). Null when
- * the row does not exist (or is spam).
+ * its empty values filled from the row (customers.ts fillBlanks). `source`
+ * is what the row was, in words ("Get a quote", "Booking: Estimate"). Null
+ * when the row does not exist (or is spam).
  */
 export async function addFromInbox(
   db: Db,
@@ -202,7 +203,7 @@ export async function addFromInbox(
   stage: string,
   user: string,
   defs: CustomField[] = [],
-): Promise<{ customer: Customer; created: boolean } | null> {
+): Promise<{ customer: Customer; created: boolean; source: string } | null> {
   if (!/^\d{1,18}$/.test(id)) return null;
   const p = await presentTables(db);
   type Src = { name: string | null; email: string | null; phone: string | null; created_at: Date; source: string; data: Record<string, unknown> | null };
@@ -237,8 +238,8 @@ export async function addFromInbox(
     user,
     { bareName: true },
   );
-  if (r.created) return r;
-  return { customer: await fillBlanks(db, r.customer, { phone, ...extra }, user), created: false };
+  if (r.created) return { ...r, source: row.source };
+  return { customer: await fillBlanks(db, r.customer, { phone, ...extra }, user), created: false, source: row.source };
 }
 
 /**

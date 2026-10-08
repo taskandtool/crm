@@ -1,13 +1,26 @@
 {
   "business": "A plumbing company with three locations and eight trucks: emergency calls, repairs and estimates for homes and small commercial buildings.",
   "vocabulary": { "one": "Customer", "many": "Customers" },
-  "stages": [
-    { "key": "new-call", "label": "New call", "kind": "open" },
-    { "key": "scheduled", "label": "Visit scheduled", "kind": "open" },
-    { "key": "estimate-sent", "label": "Estimate sent", "kind": "open" },
-    { "key": "won", "label": "Job won", "kind": "won" },
-    { "key": "lost", "label": "Lost", "kind": "lost" }
+  "statuses": [
+    { "key": "lead", "label": "Lead", "kind": "open" },
+    { "key": "customer", "label": "Customer", "kind": "won" },
+    { "key": "commercial", "label": "Commercial account", "kind": "won" },
+    { "key": "not-a-fit", "label": "Not a fit", "kind": "lost" }
   ],
+  "deals": {
+    "one": "Request",
+    "many": "Requests",
+    "currency": "USD",
+    "stages": [
+      { "key": "new-call", "label": "New call", "kind": "open" },
+      { "key": "scheduled", "label": "Visit scheduled", "kind": "open" },
+      { "key": "estimate-sent", "label": "Estimate sent", "kind": "open" },
+      { "key": "won", "label": "Job won", "kind": "won" },
+      { "key": "lost", "label": "Lost", "kind": "lost" }
+    ],
+    "lost_reasons": ["Price", "Went with another plumber", "Outside our area", "No reply"]
+  },
+  "follow_ups": { "new_lead": true },
   "sources": ["Website", "Google", "Phone", "Home warranty", "Property manager", "Referral"],
   "fields": [
     { "key": "location", "label": "Location", "type": "select", "options": ["North", "Downtown", "South"] },
@@ -17,8 +30,6 @@
   ],
   "owner_label": "Technician",
   "time_zone": "America/Denver",
-  "default_view": "pipeline",
-  "pipeline": true,
   "inbox": { "forms": "all", "exclude_forms": ["careers"], "bookings": true, "payments": true },
   "visits": {
     "one": "Job",

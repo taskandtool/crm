@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { csvCell } from "../src/admin/csv";
 import type { CustomField } from "../src/config-schema";
 import { decodeCsv, parseCsv, parseDate } from "../src/crm/csv-read";
@@ -15,6 +16,7 @@ import type { Stage } from "../src/crm/stages";
 import { resolveStage } from "../src/crm/stages";
 import { missingSentence } from "../src/crm/tables";
 import { money, nowIn, parseTags, relativeWall, slugify, wallTime, wallToInstant } from "../src/crm/text";
+import { readXlsx } from "../src/crm/xlsx-read";
 
 const STAGES: Stage[] = [
   { key: "new", label: "New", position: 0, kind: "open", archived: false },
@@ -137,7 +139,7 @@ test("the inbox cursor round-trips and refuses anything else", () => {
 });
 
 test("one sentence for the tables a project lacks", () => {
-  const none = { submissions: false, forms: false, bookings: false, resources: false, payments: false };
+  const none = { submissions: false, forms: false, bookings: false, resources: false, payments: false, quotes: false, invoices: false };
   assert.match(missingSentence(none, { submissions: true, bookings: true, payments: true })!, /no form submissions, bookings or payments yet/);
   assert.match(missingSentence({ ...none, submissions: true, forms: true }, { submissions: true, bookings: false, payments: true })!, /no payments yet/);
   assert.equal(missingSentence({ ...none, submissions: true, bookings: true, payments: true }, { submissions: true, bookings: true, payments: true }), null);
@@ -221,4 +223,15 @@ test("amounts: minor units in the currency's own decimals, a comma only ever tho
   assert.equal(amountText(5, "USD"), "0.05");
   assert.equal(amountText(5000, "JPY"), "5000");
   assert.equal(amountText(null, "USD"), "");
+});
+
+test("xlsx: the first sheet as rows, shared and inline text, dates, gaps, from Excel-style writers", () => {
+  const want = [
+    ["Name", "Email", "Phone", "Last contact", "Notes"],
+    ["Lee, Ann", "ann@example.com", "5551234567", "2026-03-04", 'said "hi" & <left>'],
+    ["Bob", "bob@example.com", "", "", "Café ✓"],
+    ["Cy", "", "", "", "only notes"],
+  ];
+  for (const f of ["test/fixtures/customers.xlsx", "test/fixtures/customers-libreoffice.xlsx"]) assert.deepEqual(readXlsx(readFileSync(f)), want, f);
+  assert.throws(() => readXlsx(Buffer.from("Name,Email\n")), /not an .xlsx/);
 });

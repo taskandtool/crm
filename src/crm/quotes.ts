@@ -20,7 +20,7 @@ export async function jobFromQuote(
 ): Promise<{ visitId: string; customer: Customer } | null> {
   let customer = await findMatch(db, qt.email, qt.phone);
   if (!customer) {
-    const stage = await firstOpenStage(db);
+    const stage = await firstOpenStage(db, "customers");
     if (!stage) return null;
     customer = (await createCustomer(db, { name: qt.name ?? qt.email, email: qt.email, phone: qt.phone, stage: stage.key, source: "Quote" }, user)).customer;
     if (qt.address) await db.sql`update customers set address = ${qt.address} where id = ${customer.id}::bigint and address is null`;
@@ -29,8 +29,8 @@ export async function jobFromQuote(
   const [, made] = await db.transaction([
     q`select visit_id from quotes where id = ${qt.id}::bigint for update`,
     q`with v as (
-        insert into customer_visits (customer_id, title, status, amount_cents, currency, notes, created_by, updated_by)
-        select ${customer.id}::bigint, ${title}, 'planned', ${qt.total_cents}::bigint, ${qt.currency.toUpperCase()}, ${`From quote ${qt.number}.`}, ${user}, ${user}
+        insert into customer_visits (customer_id, deal_id, title, status, amount_cents, currency, notes, created_by, updated_by)
+        select ${customer.id}::bigint, ${qt.deal_id}::bigint, ${title}, 'planned', ${qt.total_cents}::bigint, ${qt.currency.toUpperCase()}, ${`From quote ${qt.number}.`}, ${user}, ${user}
         where exists (select 1 from quotes where id = ${qt.id}::bigint and visit_id is null)
         returning id)
       update quotes set visit_id = (select id from v), updated_by = ${user}, updated_at = now()

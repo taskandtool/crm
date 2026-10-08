@@ -7,12 +7,13 @@ import { q, type Db } from "../src/data/db";
 import { applySchema } from "../src/data/migrate";
 import { setup, setupKey, setupOnce } from "../src/db/setup";
 import { cut } from "../src/admin/keyset";
-import { createCustomer, findCustomer, findMatch, followUps, getCustomer, listPage, NO_FILTER, readListCursor, patchCustomer, retag, saveDetails, setArchived, setStage } from "../src/crm/customers";
+import { createCustomer, findCustomer, findMatch, getCustomer, listPage, NO_FILTER, readListCursor, patchCustomer, retag, saveDetails, setArchived, setStage } from "../src/crm/customers";
 import { everythingFrom } from "../src/crm/history";
 import { parseCsv } from "../src/crm/csv-read";
 import { guessMap, planRows, runImport } from "../src/crm/importer";
 import { addFromInbox, inboxPage, markDone, readInboxCursor, type InboxRow } from "../src/crm/inbox";
 import { addNote, listNotes } from "../src/crm/notes";
+import { nothingPlanned } from "../src/crm/follow-ups";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, restoreStage, seedStages } from "../src/crm/stages";
 import { missingSentence, present } from "../src/crm/tables";
 import { addVisit, bookingsWithoutJob, customerVisits, saveVisit, setVisitStatus, visitFromBooking, visitsPage, type VisitInput } from "../src/crm/visits";
@@ -25,6 +26,12 @@ const STAGES: StageConfig[] = [
   { key: "won", label: "Won", kind: "won" },
   { key: "lost", label: "Lost", kind: "lost" },
 ];
+const DEAL_STAGES: StageConfig[] = [
+  { key: "new", label: "New", kind: "open" },
+  { key: "won", label: "Won", kind: "won" },
+  { key: "lost", label: "Lost", kind: "lost" },
+];
+const SEEDS = { statuses: STAGES, dealStages: DEAL_STAGES };
 const INBOX = { forms: "all" as const, exclude_forms: ["newsletter"] };
 const ME = "ann@team.example";
 
@@ -49,28 +56,28 @@ const rows = async (sql: string) => (await s!.pool.query(sql)).rows;
 test("setup applies twice; stages are seeded once and only into an empty table", async (t) => {
   if (skip) return t.skip(skip);
   // Booking off: these tests start as a CRM in a project with no other app's tables.
-  assert.deepEqual(await setup(db, STAGES, { booking: false, invoices: false, forms: false }), { seeded: 4 });
-  assert.deepEqual(await setup(db, STAGES, { booking: false, invoices: false, forms: false }), { seeded: 0 });
+  assert.deepEqual(await setup(db, SEEDS, { booking: false, invoices: false, forms: false }), { seeded: 7 }, "four statuses and three deal stages");
+  assert.deepEqual(await setup(db, SEEDS, { booking: false, invoices: false, forms: false }), { seeded: 0 });
   await applySchema(db, readFileSync("schema.sql", "utf8"));
-  assert.equal(await seedStages(db, [{ key: "other", label: "Other" }]), 0, "a table with rows is the owner's");
-  assert.deepEqual((await listStages(db)).map((x) => x.key), ["new", "contacted", "won", "lost"]);
-  assert.equal((await firstOpenStage(db))?.key, "new");
+  assert.equal(await seedStages(db, "customers", [{ key: "other", label: "Other" }]), 0, "a table with rows is the owner's");
+  assert.deepEqual((await listStages(db, "customers")).map((x) => x.key), ["new", "contacted", "won", "lost"]);
+  assert.equal((await firstOpenStage(db, "customers"))?.key, "new");
 });
 
 test("setupOnce records the schema it applied and skips while it matches", async (t) => {
   if (skip) return t.skip(skip);
   const opts = { booking: false, invoices: false, forms: false };
-  await setupOnce(db, STAGES, opts);
+  await setupOnce(db, SEEDS, opts);
   const applied = async () => (await db.sql<{ schema_hash: string }>`select schema_hash from crm_setup where name = 'crm'`)[0]?.schema_hash;
   assert.equal(await applied(), setupKey(opts));
   // A table setup would make, dropped behind its back: a matching hash skips setup, so it stays gone.
   await db.sql`drop table customer_notes`;
-  await setupOnce(db, STAGES, opts);
+  await setupOnce(db, SEEDS, opts);
   const notes = async () => (await db.sql<{ x: boolean }>`select to_regclass('customer_notes') is not null as x`)[0].x;
   assert.equal(await notes(), false, "skipped while the hash matches");
   // An older hash runs the whole setup again.
   await db.sql`update crm_setup set schema_hash = 'older' where name = 'crm'`;
-  await setupOnce(db, STAGES, opts);
+  await setupOnce(db, SEEDS, opts);
   assert.equal(await notes(), true);
   assert.equal(await applied(), setupKey(opts));
   assert.notEqual(setupKey(opts), setupKey({ ...opts, invoices: true }), "other options, other schema");
@@ -157,39 +164,39 @@ test("notes stamp who and when, in the business zone, and move the last contact"
 
 test("stages: add, rename, kind, move, archive (refused while in use or last open), restore", async (t) => {
   if (skip) return t.skip(skip);
-  const add = await addStage(db, "Estimate sent", "open", ME);
+  const add = await addStage(db, "customers", "Estimate sent", "open", ME);
   assert.ok(add.ok && add.stage?.key === "estimate-sent");
-  const again = await addStage(db, "Estimate sent", "open", ME);
+  const again = await addStage(db, "customers", "Estimate sent", "open", ME);
   assert.ok(again.ok && again.stage?.key === "estimate-sent-2");
-  await moveStage(db, "estimate-sent", "up", ME);
-  await moveStage(db, "estimate-sent", "up", ME);
-  assert.deepEqual((await listStages(db)).map((x) => x.key).slice(0, 4), ["new", "contacted", "estimate-sent", "won"]);
-  assert.ok((await editStage(db, "estimate-sent", { label: "Quoted" }, ME)).ok);
+  await moveStage(db, "customers", "estimate-sent", "up", ME);
+  await moveStage(db, "customers", "estimate-sent", "up", ME);
+  assert.deepEqual((await listStages(db, "customers")).map((x) => x.key).slice(0, 4), ["new", "contacted", "estimate-sent", "won"]);
+  assert.ok((await editStage(db, "customers", "estimate-sent", { label: "Quoted" }, ME)).ok);
 
   const { customer } = await createCustomer(db, { name: "Ivy", email: "ivy@example.com", stage: "estimate-sent" }, ME);
-  assert.deepEqual(await archiveStage(db, "estimate-sent", null, ME), { ok: false, reason: "in-use", count: 1 });
-  assert.deepEqual(await archiveStage(db, "estimate-sent", "nowhere", ME), { ok: false, reason: "bad-target" });
-  assert.deepEqual(await archiveStage(db, "estimate-sent", "contacted", ME), { ok: true });
+  assert.deepEqual(await archiveStage(db, "customers", "estimate-sent", null, ME), { ok: false, reason: "in-use", count: 1 });
+  assert.deepEqual(await archiveStage(db, "customers", "estimate-sent", "nowhere", ME), { ok: false, reason: "bad-target" });
+  assert.deepEqual(await archiveStage(db, "customers", "estimate-sent", "contacted", ME), { ok: true });
   assert.equal((await getCustomer(db, customer.id))!.stage, "contacted");
-  assert.ok(!(await listStages(db)).some((x) => x.key === "estimate-sent"));
-  assert.ok((await restoreStage(db, "estimate-sent", ME)).ok);
-  assert.equal((await listStages(db)).at(-1)?.key, "estimate-sent");
+  assert.ok(!(await listStages(db, "customers")).some((x) => x.key === "estimate-sent"));
+  assert.ok((await restoreStage(db, "customers", "estimate-sent", ME)).ok);
+  assert.equal((await listStages(db, "customers")).at(-1)?.key, "estimate-sent");
 
   // There is always an open stage.
-  for (const k of ["estimate-sent", "estimate-sent-2"]) assert.ok((await archiveStage(db, k, null, ME)).ok);
-  const open = (await listStages(db)).filter((x) => x.kind === "open").map((x) => x.key);
+  for (const k of ["estimate-sent", "estimate-sent-2"]) assert.ok((await archiveStage(db, "customers", k, null, ME)).ok);
+  const open = (await listStages(db, "customers")).filter((x) => x.kind === "open").map((x) => x.key);
   assert.deepEqual(open, ["new", "contacted"]);
   await db.sql`update customers set stage = 'new' where stage = 'contacted'`;
-  assert.ok((await archiveStage(db, "contacted", null, ME)).ok);
-  assert.deepEqual(await archiveStage(db, "new", "won", ME), { ok: false, reason: "last-open" });
-  assert.deepEqual(await editStage(db, "new", { kind: "won" }, ME), { ok: false, reason: "last-open" });
-  assert.ok((await restoreStage(db, "contacted", ME)).ok);
+  assert.ok((await archiveStage(db, "customers", "contacted", null, ME)).ok);
+  assert.deepEqual(await archiveStage(db, "customers", "new", "won", ME), { ok: false, reason: "last-open" });
+  assert.deepEqual(await editStage(db, "customers", "new", { kind: "won" }, ME), { ok: false, reason: "last-open" });
+  assert.ok((await restoreStage(db, "customers", "contacted", ME)).ok);
 });
 
 test("what came in, with none of the other apps' tables", async (t) => {
   if (skip) return t.skip(skip);
   const p = await present(db);
-  assert.deepEqual(p, { submissions: false, forms: false, bookings: false, resources: false, payments: false });
+  assert.deepEqual(p, { submissions: false, forms: false, bookings: false, resources: false, payments: false, quotes: false, invoices: false });
   const page = await inboxPage(db, { inbox: INBOX }, null, 10);
   assert.deepEqual(page.rows, []);
   assert.match(missingSentence(page.present, { submissions: true, bookings: true, payments: true })!, /no form submissions, bookings or payments/);
@@ -349,13 +356,12 @@ test("Add as customer keeps what the person gave: address, custom fields, a phon
   assert.equal(paid!.customer.phone, "555 818 4545", "the latest non-empty phone, spam left out");
 });
 
-test("follow-ups are open customers gone quiet", async (t) => {
+test("nothing planned: everyone in play with no follow-up and nothing booked", async (t) => {
   if (skip) return t.skip(skip);
   const { customer } = await createCustomer(db, { name: "Quiet", email: "quiet@example.com", stage: "new", last_contact_at: "2026-01-01T00:00:00Z" }, ME);
-  const list = await followUps(db, 30);
-  assert.ok(list.some((c) => c.id === customer.id));
+  assert.ok((await nothingPlanned(db, null, 500)).some((c) => c.id === customer.id), "an open status with nothing planned");
   await setStage(db, customer.id, "won", ME);
-  assert.ok(!(await followUps(db, 30)).some((c) => c.id === customer.id), "won is not a follow-up");
+  assert.ok(!(await nothingPlanned(db, null, 500)).some((c) => c.id === customer.id), "a won status with no open deal is not in play");
 });
 
 test("import: dedupe by email then phone, fill only what is empty, dry run writes nothing", async (t) => {
@@ -371,7 +377,7 @@ test("import: dedupe by email then phone, fill only what is empty, dry run write
       ",,,,,,just a note",
     ].join("\n"),
   );
-  const stages = await listStages(db);
+  const stages = await listStages(db, "customers");
   const plan = planRows(csv, guessMap(csv[0], []), [], stages);
   const before = await rows("select id, name, email::text, phone, company, tags, stage, notes, updated_at from customers order by id");
 
@@ -429,7 +435,7 @@ test("import gives a customer with no last contact their latest submission, book
         ('fresh@example.com', 'Fresh', 100, 'usd', 'pending', '2026-09-09 10:00+00')`,
   ]);
   const csv = parseCsv(["Name,Email,Last contact", "Undated,UNDATED@example.com,", "Dated,dated@example.com,", "Fresh,fresh@example.com,", "Sheet,sheet@example.com,2026-03-03"].join("\n"));
-  const plan = planRows(csv, guessMap(csv[0], []), [], await listStages(db));
+  const plan = planRows(csv, guessMap(csv[0], []), [], await listStages(db, "customers"));
 
   const dry = await runImport(db, plan, { dryRun: true, defaultStage: "new", user: ME });
   assert.deepEqual([dry.created, dry.updated, dry.unchanged], [2, 1, 1]);
@@ -485,7 +491,7 @@ test("a phone with an extension matches the same number without one, in every qu
   assert.equal(row?.customer_id, customer.id);
   const history = await everythingFrom(db, customer);
   assert.ok(history.items.some((i) => i.kind === "submission"), "the submission shows on the customer");
-  const plan = planRows(parseCsv("Name,Phone,Company\nOffice,5556061000 x 3,Ext Co"), { name: "Name", phone: "Phone", company: "Company" }, [], await listStages(db));
+  const plan = planRows(parseCsv("Name,Phone,Company\nOffice,5556061000 x 3,Ext Co"), { name: "Name", phone: "Phone", company: "Company" }, [], await listStages(db, "customers"));
   const r = await runImport(db, plan, { defaultStage: "new", user: ME });
   assert.deepEqual([r.created, r.updated], [0, 1]);
   assert.equal((await getCustomer(db, customer.id))!.company, "Ext Co");
@@ -512,24 +518,24 @@ test("customer list paging walks rows tied to the microsecond exactly once", asy
 test("two stage changes at once cannot leave the pipeline without an open stage", async (t) => {
   if (skip) return t.skip(skip);
   // Make the open stages exactly two empty ones.
-  const a = await addStage(db, "Race A", "open", ME);
-  const b = await addStage(db, "Race B", "open", ME);
+  const a = await addStage(db, "customers", "Race A", "open", ME);
+  const b = await addStage(db, "customers", "Race B", "open", ME);
   assert.ok(a.ok && b.ok);
-  const others = (await listStages(db)).filter((x) => x.kind === "open" && x.key !== a.stage!.key && x.key !== b.stage!.key);
-  for (const o of others) await editStage(db, o.key, { kind: "lost" }, ME);
-  const results = await Promise.all([archiveStage(db, a.stage!.key, null, ME), archiveStage(db, b.stage!.key, null, ME)]);
+  const others = (await listStages(db, "customers")).filter((x) => x.kind === "open" && x.key !== a.stage!.key && x.key !== b.stage!.key);
+  for (const o of others) await editStage(db, "customers", o.key, { kind: "lost" }, ME);
+  const results = await Promise.all([archiveStage(db, "customers", a.stage!.key, null, ME), archiveStage(db, "customers", b.stage!.key, null, ME)]);
   assert.equal(results.filter((r) => r.ok).length, 1, JSON.stringify(results));
   assert.ok(results.some((r) => !r.ok && r.reason === "last-open"));
-  assert.ok((await firstOpenStage(db)) !== null);
+  assert.ok((await firstOpenStage(db, "customers")) !== null);
   // Two kind changes at once: the same rule.
-  const c = await addStage(db, "Race C", "open", ME);
-  const left = (await listStages(db)).filter((x) => x.kind === "open").map((x) => x.key);
+  const c = await addStage(db, "customers", "Race C", "open", ME);
+  const left = (await listStages(db, "customers")).filter((x) => x.kind === "open").map((x) => x.key);
   assert.equal(left.length, 2);
-  const kinds = await Promise.all(left.map((k) => editStage(db, k, { kind: "won" }, ME)));
+  const kinds = await Promise.all(left.map((k) => editStage(db, "customers", k, { kind: "won" }, ME)));
   assert.equal(kinds.filter((r) => r.ok).length, 1);
-  assert.ok((await firstOpenStage(db)) !== null);
+  assert.ok((await firstOpenStage(db, "customers")) !== null);
   // Put things back for anything after this.
-  for (const o of others) await editStage(db, o.key, { kind: "open" }, ME);
+  for (const o of others) await editStage(db, "customers", o.key, { kind: "open" }, ME);
   assert.ok(c.ok);
 });
 
@@ -546,7 +552,7 @@ test("visits: planned, done and cancelled; done counts as contact; the list's vi
   assert.equal((await getCustomer(db, customer.id))!.last_contact_at, null, "planned is not contact");
   // Someone with a visit coming up is not waiting on a follow-up.
   await db.sql`update customers set last_contact_at = now() - interval '60 days' where id = ${customer.id}::bigint`;
-  assert.ok(!(await followUps(db, 30)).some((c) => c.id === customer.id));
+  assert.ok(!(await nothingPlanned(db, null, 500)).some((c) => c.id === customer.id));
 
   const unscheduled = await addVisit(db, customer.id, { ...base, title: "Quote the duct work" }, ME);
   assert.equal(unscheduled!.starts_at, null);

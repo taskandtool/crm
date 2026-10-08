@@ -4,18 +4,29 @@
     "one": "Customer",
     "many": "Customers"
   },
-  "stages": [
-    { "key": "new", "label": "New", "kind": "open" },
-    { "key": "contacted", "label": "Contacted", "kind": "open" },
-    { "key": "won", "label": "Won", "kind": "won" },
-    { "key": "lost", "label": "Lost", "kind": "lost" }
+  "statuses": [
+    { "key": "lead", "label": "Lead", "kind": "open" },
+    { "key": "customer", "label": "Customer", "kind": "won" },
+    { "key": "not-a-fit", "label": "Not a fit", "kind": "lost" }
   ],
+  "deals": {
+    "one": "Deal",
+    "many": "Deals",
+    "currency": "USD",
+    "stages": [
+      { "key": "new", "label": "New", "kind": "open" },
+      { "key": "contacted", "label": "Contacted", "kind": "open" },
+      { "key": "quoted", "label": "Quote sent", "kind": "open" },
+      { "key": "won", "label": "Won", "kind": "won" },
+      { "key": "lost", "label": "Lost", "kind": "lost" }
+    ],
+    "lost_reasons": ["Price", "Went with someone else", "No reply", "Not a fit"]
+  },
+  "follow_ups": { "new_lead": true },
   "sources": ["Website", "Phone", "Referral", "Walk-in"],
   "fields": [],
   "owner_label": "Owner",
   "time_zone": "UTC",
-  "default_view": "list",
-  "pipeline": true,
   "inbox": {
     "forms": "all",
     "exclude_forms": [],

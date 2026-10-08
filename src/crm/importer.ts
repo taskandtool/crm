@@ -147,7 +147,7 @@ export async function runImport(db: Db, plan: Plan, opts: ImportOptions): Promis
   const known = emails.length || keys.length || names.length
     ? await db.sql<Customer>`
         select c.* from customers c
-        where c.email = any(${emails}::citext[])
+        where c.email = any(${emails}::citext[]) or c.other_emails && ${emails.map((e) => e.toLowerCase())}::text[]
            or right(regexp_replace(regexp_replace(c.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10) = any(${keys}::text[])
            or (c.email is null and length(regexp_replace(regexp_replace(coalesce(c.phone, ''), '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g')) < 7 and lower(c.name) = any(${names}::text[]))
         order by c.archived_at nulls first, c.id`
@@ -180,6 +180,8 @@ export async function runImport(db: Db, plan: Plan, opts: ImportOptions): Promis
     };
     // Lists are ordered active first, so the first customer to claim a key keeps it.
     if (!(t.values.email && byEmail.has(t.values.email.toLowerCase()))) index(t);
+    // A row with an address they also go by (a merge) is theirs too.
+    for (const e of c.other_emails ?? []) if (!byEmail.has(e.toLowerCase())) byEmail.set(e.toLowerCase(), t);
   }
 
   const extraTags = opts.tags ?? [];

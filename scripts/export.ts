@@ -11,7 +11,7 @@ import { listPage, NO_FILTER } from "../src/crm/customers";
 import { listStages, resolveStage } from "../src/crm/stages";
 import { done, fail, flag, has, misused, parseArgs, plain, withDb } from "./lib";
 
-const HELP = `export.mjs [--out customers.csv] [--stage s] [--tag t] [--owner o] [--archived] [--search text]
+const HELP = `export.mjs [--out customers.csv] [--status s] [--tag t] [--owner o] [--archived] [--search text]
 
 Writes customers as CSV (UTF-8 with a BOM, so Excel reads it), active ones
 unless --archived, filtered like the list. Without --out it prints the CSV
@@ -19,16 +19,16 @@ to stdout; with it, "export: wrote N customers to <path>". Errors go to
 stderr with a Try: line; exit 1 when refused, 2 when misused.`;
 
 const a = parseArgs(process.argv.slice(2), { bare: ["archived"] });
-plain(a, HELP, "export", { flags: ["out", "stage", "tag", "owner", "archived", "search"] });
+plain(a, HELP, "export", { flags: ["out", "status", "tag", "owner", "archived", "search"] });
 
 // `export.mjs | head` closes the pipe early: that is the reader's choice, not a failure.
 process.stdout.on("error", (e: NodeJS.ErrnoException) => process.exit(e.code === "EPIPE" ? 0 : 1));
 
 await withDb(async (db) => {
-  const stages = await listStages(db, { archived: true });
-  const stageArg = flag(a, "stage");
+  const stages = await listStages(db, "customers", { archived: true });
+  const stageArg = flag(a, "status");
   const st = stageArg ? resolveStage(stages, stageArg) : undefined;
-  if (stageArg && !st) misused(`export: no stage ${stageArg}; stages: ${stages.map((s) => s.key).join(", ")}`, "node scripts/stages.mjs list");
+  if (stageArg && !st) misused(`export: no status ${stageArg}; statuses: ${stages.map((s) => s.key).join(", ")}`, "node scripts/stages.mjs list --statuses");
   const f = { ...NO_FILTER, q: flag(a, "search") ?? null, stage: st?.key ?? null, tag: flag(a, "tag") ?? null, owner: flag(a, "owner") ?? null, archived: has(a, "archived") };
   const columns = csvColumns(new Map(stages.map((s) => [s.key, s.label])), cfg.fields);
   const target = flag(a, "out");

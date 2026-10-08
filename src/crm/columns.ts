@@ -15,7 +15,7 @@ export function csvColumns(stageLabels: Map<string, string>, fields: CustomField
     { label: "Phone", value: (r) => r.phone },
     { label: "Company", value: (r) => r.company },
     { label: "Address", value: (r) => r.address },
-    { label: "Stage", value: (r) => stageLabels.get(r.stage) ?? r.stage },
+    { label: "Status", value: (r) => stageLabels.get(r.stage) ?? r.stage },
     { label: "Source", value: (r) => r.source },
     { label: "Tags", value: (r) => r.tags.join(", ") },
     { label: "Owner", value: (r) => r.owner },

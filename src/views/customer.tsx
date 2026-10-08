@@ -1,12 +1,16 @@
-// One customer: their details (custom fields included), stage, notes
-// timeline, their jobs or visits when the config has them, and everything
-// they did across the project's tables. Plain forms throughout: every change
+// One customer: their follow-ups, their deals, their status, details
+// (custom fields included), notes timeline, their jobs or visits when the
+// config has them, and everything they did across the project's tables. Plain forms throughout: every change
 // is a POST answered with a 303 back here.
 import { FieldList, JsonData, Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
 import { StatusForm } from "../admin/status";
-import { cfg, invoicesCfg, ownerLabel, showBooking, visitsCfg, vocab } from "../config";
+import { cfg, dealsCfg, invoicesCfg, ownerLabel, showBooking, visitsCfg, vocab } from "../config";
+import type { Deal } from "../crm/deals";
+import type { FollowUp } from "../crm/follow-ups";
+import { CustomerDeals } from "./deals";
+import { FollowUpsSection } from "./follow-ups";
 import { listUrl } from "../admin/query";
 import type { Customer } from "../crm/customers";
 import type { HistoryItem } from "../crm/history";
@@ -33,8 +37,14 @@ export function CustomerPage(p: {
   history: HistoryItem[];
   present: Present;
   owners: string[];
+  deals: Deal[];
+  dealStages: Stage[];
+  followUps: { open: FollowUp[]; done: FollowUp[] };
+  today: string;
   /** Quotes and invoices, when they are on; null when off. */
   money: { quotes: Quote[]; invoices: Invoice[]; owed: Owed[] } | null;
+  /** Other records that may be the same person: same name, or same phone. */
+  duplicates: Customer[];
   flash: { code?: string | null; n?: string | null };
 }) {
   const c = p.customer;
@@ -51,8 +61,8 @@ export function CustomerPage(p: {
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
         <span class="flex items-center gap-2">
-          <span class="text-label text-ink-2" aria-hidden="true">Stage</span>
-          <StatusForm action={`${self}/stage`} current={c.stage} options={options} returnTo={self} label="Stage" />
+          <span class="text-label text-ink-2" aria-hidden="true">Status</span>
+          <StatusForm action={`${self}/stage`} current={c.stage} options={options} returnTo={self} label="Status" />
         </span>
         {c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`} class={linkButtonClass}>Call {c.phone}</a> : null}
         {showBooking ? (
@@ -63,14 +73,23 @@ export function CustomerPage(p: {
       </div>
       {c.archived_at ? (
         <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">
-          Archived <When at={c.archived_at} timeZone={timeZone} />. Still here, left out of lists and the pipeline.
+          Archived <When at={c.archived_at} timeZone={timeZone} />. Still here, left out of the lists.
         </p>
       ) : null}
       <div class="grid gap-4 md:grid-cols-3">
-        {/* Jobs or visits lead: they are what the team works from. On a phone
-            the notes come first: adding one is what a call needs, and the
-            details form is long. Only the visual order moves. */}
+        {/* What happens next leads, then the deals and the jobs the team
+            works from. On a phone the notes come right after the follow-ups:
+            adding one is what a call needs, and the details form is long.
+            Only the visual order moves. */}
         <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
+          <Section title="Follow-ups" class="order-first">
+            <FollowUpsSection customerId={c.id} open={p.followUps.open} done={p.followUps.done}
+              deals={p.deals.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title }))}
+              owners={p.owners} user={p.user} today={p.today} returnTo={self} />
+          </Section>
+          <Section title={dealsCfg.many}>
+            <CustomerDeals c={c} deals={p.deals} stages={p.dealStages} />
+          </Section>
           {visitsCfg ? (
             <Section title={visitsCfg.many}>
               <CustomerVisits c={c} visits={p.visits} owners={p.owners} />
@@ -93,16 +112,34 @@ export function CustomerPage(p: {
             <FieldList
               fields={[
                 { label: "Last contact", value: <When at={c.last_contact_at} timeZone={timeZone} /> },
+                ...(c.other_emails?.length ? [{ label: "Also goes by", value: c.other_emails.join(", ") }] : []),
                 { label: "Added", value: <Who at={c.created_at} by={c.created_by} /> },
                 { label: "Changed", value: <Who at={c.updated_at} by={c.updated_by} /> },
               ]}
             />
           </Section>
+          <Section title="Merge">
+            {p.duplicates.length ? (
+              <div class="mb-3">
+                <p class="mb-2 text-label font-semibold text-ink-2">Maybe the same person</p>
+                <ul class="flex flex-col gap-1">
+                  {p.duplicates.map((d) => (
+                    <li>
+                      <a href={`${self}/merge?other=${d.id}`}>{d.name}</a>
+                      <span class="text-label text-ink-3"> {[d.email, d.phone].filter(Boolean).join(" · ")}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <p class="mb-2 text-label text-ink-3">Two records of one person become this one: their notes, {dealsCfg.many.toLowerCase()}, follow-ups and history move here.</p>
+            <a href={`${self}/merge`} class={linkButtonClass}>Merge another record into this one</a>
+          </Section>
           <Section title="Archive">
             <form method="post" action={`${self}/archive`} class="flex flex-col gap-2">
               <input type="hidden" name="archived" value={c.archived_at ? "0" : "1"} />
               <p class="text-label text-ink-3">
-                {c.archived_at ? "Bring them back into the lists and the pipeline." : "Takes them out of the lists and the pipeline. Nothing is deleted."}
+                {c.archived_at ? "Bring them back into the lists." : "Takes them out of the lists. Nothing is deleted."}
               </p>
               <button class={buttonClass + " self-start"}>{c.archived_at ? "Unarchive" : "Archive"}</button>
             </form>
@@ -233,13 +270,15 @@ function BookingItem({ i, customerId }: { i: Extract<HistoryItem, { kind: "booki
 
 function History({ items, hasKey, customerId }: { items: HistoryItem[]; hasKey: boolean; customerId: string }) {
   if (!hasKey) return <p class="text-ink-3">Add an email or a phone number to see what this person sent, booked and paid.</p>;
-  if (!items.length) return <p class="text-ink-3">Nothing from this person in the project's forms, bookings or payments.</p>;
+  if (!items.length) return <p class="text-ink-3">Nothing from this person in the project's forms, bookings or payments, and no quote or invoice sent.</p>;
+  const kindName = (i: HistoryItem) =>
+    i.kind === "submission" ? i.form_title || i.form_key : i.kind === "booking" ? "Booking" : i.kind === "payment" ? "Payment" : i.kind === "quote" ? `Quote ${i.number}` : i.number ? `Invoice ${i.number}` : "Invoice";
   return (
     <ol class="flex flex-col gap-3">
       {items.map((i) => (
         <li class="border-l-2 border-line pl-3">
           <p class="text-label text-ink-3">
-            <span class="font-semibold text-ink-2">{i.kind === "submission" ? i.form_title || i.form_key : i.kind === "booking" ? "Booking" : "Payment"}</span> ·{" "}
+            <span class="font-semibold text-ink-2">{kindName(i)}</span> ·{" "}
             <When at={i.at} timeZone={timeZone} /> · {i.status.replace(/_/g, " ")}
           </p>
           {i.kind === "submission" ? (
@@ -254,6 +293,10 @@ function History({ items, hasKey, customerId }: { items: HistoryItem[]; hasKey: 
             </>
           ) : i.kind === "booking" ? (
             <BookingItem i={i} customerId={customerId} />
+          ) : i.kind === "quote" || i.kind === "invoice" ? (
+            <p>
+              <a href={i.kind === "quote" ? `/invoices/quotes/${i.id}` : `/invoices/${i.id}`}>{money(i.total_cents, i.currency)}</a>
+            </p>
           ) : (
             <p>
               {money(i.amount_cents, i.currency)}

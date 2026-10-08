@@ -237,10 +237,12 @@ test("webhook: invoice.paid first leaves the intent to the invoice_payment that 
 test("the pages: a GET asks, the POST sends; Mark paid waits for Stripe; from a quote once", (t) =>
   withDb(t, async (s) => {
     const f = fakeStripe();
+    const went: string[] = [];
     const app = new Hono();
     app.route("/invoices", invoicesAdmin(() => s.db, {
       base: "/invoices", css: "/site.css", source: "crm", timeZone: "UTC", business: "Acme", stripe: () => f.stripe,
       send: async () => ({ status: "none", why: "test" }),
+      afterSend: async (_c, doc) => void went.push(`${doc.kind} ${doc.email}`),
     }));
     const HOST = "https://crm.example";
     const headers = { "x-tasktool-user": BY, origin: HOST, host: "crm.example" };
@@ -263,6 +265,7 @@ test("the pages: a GET asks, the POST sends; Mark paid waits for Stripe; from a 
     assert.equal(f.calls.length, 0, "the page sends nothing");
     res = await post(`/invoices/${id}/send`);
     assert.match(res.headers.get("location")!, /saved=invoice-sent$/);
+    assert.deepEqual(went, ["invoice ann@example.com"], "afterSend runs once Stripe has sent it");
     html = await (await get(`/invoices/${id}`)).text();
     assert.match(html, /Invoice ACME-0001/);
     assert.match(html, /href="https:\/\/invoice\.stripe\.com\/i\/1"/);

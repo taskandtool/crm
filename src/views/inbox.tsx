@@ -1,10 +1,13 @@
-// What came in: one row per submission, booking or payment, newest first,
-// each with the person and either their customer or "Add as customer".
-// Rows are a list rather than a table so they wrap on a phone.
+// What came in: four figures (leads this week, follow-ups due, the open
+// pipeline, won this month), then one row per submission, booking or
+// payment, newest first, each with the person, their customer or "Add as
+// customer", and "Add as deal" (a repeat customer's new enquiry too). Rows
+// are a list rather than a table so they wrap on a phone.
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
 import { StatusBadge, type StatusOption } from "../admin/status";
-import { vocab } from "../config";
+import { dealsCfg, vocab } from "../config";
+import type { Overview } from "../crm/overview";
 import { sourceOf, type InboxRow } from "../crm/inbox";
 import { money } from "../crm/text";
 import { Layout } from "./layout";
@@ -39,13 +42,36 @@ export type InboxProps = {
   forms: { key: string; title: string }[];
   paged: boolean;
   missing: string | null;
+  numbers: Overview;
   flash: { code?: string | null; n?: string | null };
 };
+
+/** The four figures, each a link to the list behind it. */
+function Numbers({ n }: { n: Overview }) {
+  const due = n.due.overdue + n.due.today;
+  const figure = (href: string, value: string, label: string, sub: string | null) => (
+    <a href={href} class="flex min-w-0 flex-col rounded-card border border-line bg-surface px-4 py-3 no-underline hover:border-line-strong">
+      <span class="text-title font-semibold text-ink">{value}</span>
+      <span class="text-label text-ink-2">{label}</span>
+      {sub ? <span class="text-label text-ink-3">{sub}</span> : null}
+    </a>
+  );
+  const cash = (cents: string) => money(cents, dealsCfg.currency).replace(/\.00$/, "");
+  return (
+    <div class="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {figure("#results", n.leads ? String(n.leads.current) : "None yet", "Leads, last 7 days", n.leads ? `${n.leads.previous} the 7 before` : "No forms on the project yet")}
+      {figure("/follow-ups", String(due), "Your follow-ups due", n.due.overdue ? `${n.due.overdue} overdue` : due ? "All today" : "Nothing overdue")}
+      {figure("/deals", cash(n.open.cents), `Open ${dealsCfg.many.toLowerCase()}`, `${n.open.count} in the pipeline`)}
+      {figure("/deals", cash(n.won.cents), "Won this month", n.won.count === 1 ? `1 ${dealsCfg.one.toLowerCase()}` : `${n.won.count} ${dealsCfg.many.toLowerCase()}`)}
+    </div>
+  );
+}
 
 export function InboxPage(p: InboxProps) {
   return (
     <Layout title="What came in" user={p.user} section="inbox">
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
+      <Numbers n={p.numbers} />
       {/* The box applies on change (htmx swaps #results and pushes the URL,
           so back and refresh keep it); Apply is the same form without JS. */}
       <form method="get" action="/" hx-get="/" hx-target="#results" hx-swap="outerHTML" hx-push-url="true" class="mb-4 flex flex-wrap items-center gap-3 text-label text-ink-2">
@@ -154,6 +180,13 @@ function Row({ row, self }: { row: InboxRow; self: string }) {
             </button>
           </form>
         )}
+        <form method="post" action="/inbox/deal">
+          <input type="hidden" name="kind" value={row.kind} />
+          <input type="hidden" name="id" value={row.id} />
+          <button class={buttonClass} aria-label={`Add a ${dealsCfg.one.toLowerCase()} for ${person}`}>
+            Add as {dealsCfg.one.toLowerCase()}
+          </button>
+        </form>
         {row.kind === "submission" && (row.status === "new" || row.status === "read") ? (
           <form method="post" action="/inbox/done">
             <input type="hidden" name="id" value={row.id} />

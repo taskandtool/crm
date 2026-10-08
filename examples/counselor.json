@@ -1,11 +1,25 @@
 {
   "business": "A counselor in private practice who wants a record of who got in touch and whether they heard back. Sessions are booked and noted elsewhere.",
   "vocabulary": { "one": "Client", "many": "Clients" },
-  "stages": [
+  "statuses": [
     { "key": "new", "label": "New", "kind": "open" },
     { "key": "contacted", "label": "Contacted", "kind": "open" },
-    { "key": "closed", "label": "Closed", "kind": "won" }
+    { "key": "client", "label": "Current client", "kind": "won" },
+    { "key": "closed", "label": "Closed", "kind": "lost" }
   ],
+  "deals": {
+    "one": "Enquiry",
+    "many": "Enquiries",
+    "currency": "USD",
+    "stages": [
+      { "key": "new", "label": "New", "kind": "open" },
+      { "key": "consult", "label": "Consultation booked", "kind": "open" },
+      { "key": "started", "label": "Started sessions", "kind": "won" },
+      { "key": "not-proceeding", "label": "Not proceeding", "kind": "lost" }
+    ],
+    "lost_reasons": ["Not the right fit", "Cost", "Chose someone else", "No reply"]
+  },
+  "follow_ups": { "new_lead": true },
   "sources": ["Website", "Directory listing", "Referral", "Phone"],
   "fields": [
     { "key": "preferred_contact", "label": "Preferred contact", "type": "select", "options": ["Phone", "Email", "Text"] },
@@ -13,8 +27,6 @@
   ],
   "owner_label": "Counselor",
   "time_zone": "America/Los_Angeles",
-  "default_view": "list",
-  "pipeline": false,
   "inbox": { "forms": "all", "exclude_forms": [], "bookings": false, "payments": false },
   "visits": false,
   "booking": false,

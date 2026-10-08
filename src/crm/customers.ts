@@ -23,6 +23,10 @@ export type Customer = Keyed & {
   notes: string | null;
   last_contact_at: Date | null;
   archived_at: Date | null;
+  /** Addresses they also go by, from a merge. */
+  other_emails: string[];
+  /** On a record merged into another: that one's id. */
+  merged_into: string | null;
   created_by: string | null;
   updated_by: string | null;
   created_at: Date;
@@ -93,7 +97,8 @@ export async function getCustomer(db: Db, id: string): Promise<Customer | null> 
 }
 
 /**
- * The customer this email or phone belongs to: by email first; then by
+ * The customer this email or phone belongs to: by email (theirs, or one
+ * they also go by after a merge) first; then by
  * phone, but only where one side has no email (two different emails are two
  * people, even on one household phone). Active customers before archived.
  */
@@ -104,7 +109,7 @@ export async function findMatch(db: Db, emailIn: unknown, phoneIn: unknown): Pro
   const [c] = await db.sql<Customer>`
     select * from (
       select c.*, c.updated_at::text as k, 0 as rank from customers c
-      where ${email}::citext is not null and c.email = ${email}::citext
+      where ${email}::citext is not null and (c.email = ${email}::citext or c.other_emails @> array[${email}::text])
       union all
       select c.*, c.updated_at::text as k, 1 as rank from customers c
       where ${key}::text is not null and right(regexp_replace(regexp_replace(c.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10) = ${key}
@@ -159,7 +164,7 @@ export async function createCustomer(
     with m as (
       select id from (
         select c.id, c.archived_at, 0 as rank from customers c
-        where ${email}::citext is not null and c.email = ${email}::citext
+        where ${email}::citext is not null and (c.email = ${email}::citext or c.other_emails @> array[${email}::text])
         union all
         select c.id, c.archived_at, 1 as rank from customers c
         where ${key}::text is not null
@@ -268,7 +273,7 @@ export async function saveDetails(db: Db, id: string, d: Details, user: string):
   }
 }
 
-/** Move a customer to an active stage. Null when either is missing. */
+/** Move a customer to an active status. Null when either is missing. */
 export async function setStage(db: Db, id: string, stage: string, user: string): Promise<Customer | null> {
   const [c] = await db.sql<Customer>`
     update customers set stage = ${stage}, updated_at = now(), updated_by = ${user}
@@ -325,21 +330,6 @@ export async function patchCustomer(db: Db, id: string, patch: Partial<Details>,
   );
 }
 
-/** Active customers per stage, for the pipeline: up to `per` each, most recently changed first. */
-export async function byStage(db: Db, per: number): Promise<{ cards: Customer[]; counts: Record<string, number> }> {
-  const [cards, counts] = await Promise.all([
-    db.sql<Customer>`
-      select * from (
-        select c.*, c.updated_at::text as k,
-               row_number() over (partition by c.stage order by c.updated_at desc, c.id desc) as n
-        from customers c where c.archived_at is null) r
-      where r.n <= ${per}
-      order by r.updated_at desc, r.id desc`,
-    db.sql<{ stage: string; n: number }>`select stage, count(*)::int as n from customers where archived_at is null group by stage`,
-  ]);
-  return { cards, counts: Object.fromEntries(counts.map((r) => [r.stage, r.n])) };
-}
-
 /** The tags and owners in use, for filters and suggestions. */
 export async function facets(db: Db): Promise<{ tags: string[]; owners: string[] }> {
   const [tags, owners] = await Promise.all([
@@ -350,18 +340,14 @@ export async function facets(db: Db): Promise<{ tags: string[]; owners: string[]
 }
 
 /**
- * Open customers nobody has been in touch with for `days`: the follow-up
- * list. Judged on the last contact noted, or when they were added; someone
- * with a visit planned from now on is not waiting on anyone.
+ * A quote or an invoice that went to this address counts as contact: the
+ * customer it belongs to (theirs, or one they also go by) has their last
+ * contact moved to now, never back. Nobody by that address: nothing.
  */
-export function followUps(db: Db, days: number, limit = 50): Promise<(Customer & { quiet_days: number })[]> {
-  return db.sql<Customer & { quiet_days: number }>`
-    select c.*, c.updated_at::text as k,
-           extract(day from now() - coalesce(c.last_contact_at, c.created_at))::int as quiet_days
-    from customers c join pipeline_stages s on s.key = c.stage
-    where c.archived_at is null and s.kind = 'open'
-      and coalesce(c.last_contact_at, c.created_at) < now() - make_interval(days => ${days}::int)
-      and not exists (select 1 from customer_visits v where v.customer_id = c.id and v.status = 'planned' and v.starts_at >= now())
-    order by coalesce(c.last_contact_at, c.created_at)
-    limit ${limit}`;
+export async function sentTo(db: Db, emailIn: string, user: string): Promise<void> {
+  const email = normalizeEmail(emailIn);
+  if (!email) return;
+  await db.sql`
+    update customers set last_contact_at = greatest(last_contact_at, now()), updated_at = now(), updated_by = ${user}
+    where email = ${email}::citext or other_emails @> array[${email}::text]`;
 }

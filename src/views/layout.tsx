@@ -2,15 +2,17 @@
 // and who is signed in, then the page. Scripts are the vendored htmx and
 // crm.js on every page, and SortableJS only where something drags.
 import type { Child } from "hono/jsx";
-import { cfg, invoicesCfg, showBooking, showPipeline, visitsCfg, vocab } from "../config";
+import { dealsCfg, invoicesCfg, showBooking, visitsCfg, vocab } from "../config";
 
-export type Section = "inbox" | "customers" | "visits" | "bookings" | "forms" | "invoices" | "stages";
+export type Section = "inbox" | "follow-ups" | "deals" | "customers" | "visits" | "bookings" | "forms" | "invoices" | "stages";
 
 export function Layout(props: { title: string; user: string; section: Section; drag?: boolean; wide?: boolean; children?: Child }) {
   const { title, user, section, drag, wide, children } = props;
   const nav: { href: string; label: string; section: Section }[] = [
     { href: "/", label: "What came in", section: "inbox" },
-    { href: cfg.default_view === "pipeline" && showPipeline ? "/pipeline" : "/customers", label: vocab.many, section: "customers" },
+    { href: "/follow-ups", label: "Follow-ups", section: "follow-ups" },
+    { href: "/deals", label: dealsCfg.many, section: "deals" },
+    { href: "/customers", label: vocab.many, section: "customers" },
     ...(visitsCfg ? [{ href: "/visits", label: visitsCfg.many, section: "visits" as const }] : []),
     ...(showBooking ? [{ href: "/bookings", label: "Bookings", section: "bookings" as const }] : []),
     { href: "/forms/submissions", label: "Forms", section: "forms" },
@@ -44,6 +46,8 @@ export function Layout(props: { title: string; user: string; section: Section; d
                   class={"rounded-control px-2 py-1 no-underline " + (section === n.section ? "bg-panel font-semibold" : "text-ink-2 hover:bg-panel")}
                 >
                   {n.label}
+                  {/* How many of mine are due, filled in after the page loads so no page waits on it. */}
+                  {n.section === "follow-ups" ? <span hx-get="/follow-ups/count" hx-trigger="load" hx-swap="outerHTML"></span> : null}
                 </a>
               ))}
             </nav>

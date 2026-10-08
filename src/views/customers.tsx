@@ -9,13 +9,16 @@ import { cfg, ownerLabel, vocab } from "../config";
 import type { Customer, ListFilter } from "../crm/customers";
 import type { Stage } from "../crm/stages";
 import { Layout } from "./layout";
-import { controlClass, Field, MESSAGES, primaryClass, stageOptions, timeZone, ViewSwitch } from "./ui";
+import { controlClass, DueMark, Field, MESSAGES, primaryClass, stageOptions, timeZone } from "./ui";
+
+/** Each row's next follow-up (by customer id), and today in the business's zone: what the Next column says. */
+export type NextOf = { next: Map<string, { due_on: string; due_time: string | null }>; today: string };
 
 export function filterParams(f: ListFilter) {
   return { q: f.q, stage: f.stage, tag: f.tag, owner: f.owner, show: f.archived ? "archived" : null };
 }
 
-export function customerSpec(stages: Stage[]): TableSpec<Customer> {
+export function customerSpec(stages: Stage[], n: NextOf): TableSpec<Customer> {
   const options = stageOptions(stages);
   return {
     id: "customers",
@@ -30,7 +33,8 @@ export function customerSpec(stages: Stage[]): TableSpec<Customer> {
           </>
         ),
       },
-      { label: "Stage", cell: (r) => <StatusBadge value={r.stage} options={options} /> },
+      { label: "Status", cell: (r) => <StatusBadge value={r.stage} options={options} /> },
+      { label: "Next follow-up", class: "hidden sm:table-cell", cell: (r) => <DueMark next={n.next.get(r.id)} today={n.today} /> },
       {
         label: "Contact",
         class: "hidden sm:table-cell",
@@ -48,7 +52,7 @@ export function customerSpec(stages: Stage[]): TableSpec<Customer> {
   };
 }
 
-export function Results(p: { stages: Stage[]; filter: ListFilter; rows: Customer[]; next: string | null; paged: boolean }) {
+export function Results(p: { stages: Stage[]; filter: ListFilter; rows: Customer[]; next: string | null; paged: boolean; nextOf: NextOf }) {
   const params = filterParams(p.filter);
   const self = listUrl("/customers", params);
   const filtered = !!(p.filter.q || p.filter.stage || p.filter.tag || p.filter.owner);
@@ -60,7 +64,7 @@ export function Results(p: { stages: Stage[]; filter: ListFilter; rows: Customer
         </p>
       ) : null}
       <DataTable
-        spec={customerSpec(p.stages)}
+        spec={customerSpec(p.stages, p.nextOf)}
         caption={`${vocab.many}, most recently changed first`}
         rows={p.rows}
         next={p.next}
@@ -92,12 +96,12 @@ export function CustomersPage(p: {
   rows: Customer[];
   next: string | null;
   paged: boolean;
+  nextOf: NextOf;
   flash: { code?: string | null; n?: string | null };
 }) {
   const owners = [...new Set([p.user, ...p.facets.owners])];
   return (
     <Layout title={vocab.many} user={p.user} section="customers">
-      <ViewSwitch current="list" />
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <SearchBar
         action="/customers"
@@ -105,7 +109,7 @@ export function CustomersPage(p: {
         q={p.filter.q}
         placeholder="Name, email, phone or company"
         filters={[
-          { name: "stage", label: "Stage", options: p.stages.map((s) => ({ value: s.key, label: s.label })), value: p.filter.stage, any: "Any stage" },
+          { name: "stage", label: "Status", options: p.stages.map((s) => ({ value: s.key, label: s.label })), value: p.filter.stage, any: "Any status" },
           ...(p.facets.tags.length ? [{ name: "tag", label: "Tag", options: p.facets.tags.map((t) => ({ value: t, label: t })), value: p.filter.tag, any: "Any tag" }] : []),
           {
             name: "owner",
@@ -117,7 +121,7 @@ export function CustomersPage(p: {
           { name: "show", label: "Show", options: [{ value: "archived", label: "Archived" }], value: p.filter.archived ? "archived" : null, any: "Active" },
         ]}
       />
-      <Results stages={p.stages} filter={p.filter} rows={p.rows} next={p.next} paged={p.paged} />
+      <Results stages={p.stages} filter={p.filter} rows={p.rows} next={p.next} paged={p.paged} nextOf={p.nextOf} />
       <NewCustomer stages={p.stages} />
     </Layout>
   );
@@ -143,7 +147,7 @@ function NewCustomer({ stages }: { stages: Stage[] }) {
         <Field label="Company">
           <input name="company" maxlength={200} autocomplete="off" class={controlClass} />
         </Field>
-        <Field label="Stage">
+        <Field label="Status">
           <select name="stage" class={controlClass}>
             {(open.length ? open : stages).map((s) => (
               <option value={s.key}>{s.label}</option>

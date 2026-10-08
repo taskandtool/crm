@@ -1,8 +1,8 @@
 # This app: a CRM on Hono
 
 The business's customer record: what came in across the project (form
-submissions, bookings, payments), customers keyed by email, a pipeline of
-stages, notes of every call, and each job or visit. It runs in **dev** on this machine
+submissions, bookings, payments), customers keyed by email, deals on a
+board of stages, follow-ups, notes of every call, and each job or visit. It runs in **dev** on this machine
 and in **production** on Cloudflare once deployed. This
 repository *is* the app: the code at the root, the skill that knows how to
 work on it in `.claude/skills/crm/`, and `.taskandtool/setup.sh` for what
@@ -13,8 +13,9 @@ owner's to change.
 
 Read the skill for what the owner asks before working from memory:
 
-- "Add a customer", "log a job", "who got in touch this week", "import my
-  list", stages, custom fields, shaping the CRM: `crm`.
+- "Add a customer", "who should I follow up with", "add a deal", "log a
+  job", "who got in touch this week", "import my list", "merge these two",
+  statuses and stages, custom fields, shaping the CRM: `crm`.
 - "Send Ann the invoice" for a finished job: run
   `node scripts/invoices.mjs bill <who> --confirm` straight away (it finds
   the job, drafts and sends; with two jobs it lists them to ask which).
@@ -34,9 +35,12 @@ Use these rather than doing the same work by hand. Each answers `--help`;
 node scripts/inbox.mjs --since 7d               # what came in, and who it matched
 node scripts/customers.mjs add "Ann Lee" --email ann@example.com   # "customers add: added #12 Ann Lee [New]", or "already here, not added"
 node scripts/visits.mjs add ann@example.com "Boiler service" --at "next friday 9:30"   # a job; --at also "tomorrow 2pm", in the business's zone; say back the date it prints
-node scripts/customers.mjs find "lee"           # customers; also note, stage, update, follow-up
+node scripts/customers.mjs find "lee"           # customers; also note, status, update, merge
+node scripts/follow-ups.mjs list                # due today and overdue; --none: nothing planned; add, done, move
+node scripts/follow-ups.mjs add ann@example.com "Call about the quote" --on friday   # say back the day it prints
+node scripts/deals.mjs add ann@example.com "New furnace" --value 6500   # a deal; list, stage, won, lost --reason, job
 node scripts/visits.mjs list                    # jobs coming up; done, cancel, update --amount
-node scripts/stages.mjs list                    # stages; rename, add, archive --move-to
+node scripts/stages.mjs list                    # deal stages (--statuses: a customer's); rename, add, archive --move-to
 node scripts/forms.mjs submissions --form order # a form's submissions with their booking and payment; list, show, save
 node scripts/quotes.mjs send 7                  # prints the email; --confirm sends it
 node scripts/invoices.mjs bill ann@example.com --confirm   # "send Ann the invoice": their finished job, drafted and sent in one step
@@ -48,19 +52,22 @@ node scripts/export.mjs --out customers.csv     # the list out
 ## Where things are
 
 - `crm.config.json` is the first lever: the words (`Patients`, `Guests`),
-  the stages seeded on the first run, sources, custom fields, the owner's
-  label, the time zone, the default view, which forms count as leads,
+  the statuses and deals (their name, stages, lost reasons) seeded on the
+  first run, sources, custom fields, the owner's label, the time zone,
+  `follow_ups`, which forms count as leads,
   `visits` (what a job or visit is called, its own fields, or off),
   `booking` (the team's side of booking, or off) and `invoices` (the name
   on quotes, the currency, or off).
   `examples/` holds five worked configs to read, not a switch.
-- `schema.sql` is the CRM's tables (`customers`, `pipeline_stages`,
-  `customer_notes`, `customer_visits`, and `crm_setup`, which records the
-  schema last applied so a script skips setup while it is current),
-  applied at every start and every deploy.
-- `src/crm/` is every query and rule, named: customers, stages, notes,
-  visits (jobs), quotes (a job from an accepted one), what came in,
-  everything from one person, the import. Routes, scripts and
+- `schema.sql` is the CRM's tables (`customers`, `pipeline_stages` (their
+  statuses), `deals`, `deal_stages`, `follow_ups`, `customer_notes`,
+  `customer_visits`, and `crm_setup`, which records the schema last applied
+  so a script skips setup while it is current), applied at every start and
+  every deploy.
+- `src/crm/` is every query and rule, named: customers, stages, deals,
+  follow-ups (and `digest-job.ts`, the morning email), notes, visits
+  (jobs), quotes (a job from an accepted one), what came in, everything
+  from one person, merging, the import. Routes, scripts and
   tests all go through it.
 - `src/app.tsx` is the Hono app: the team-only gate, the routes.
   `src/views/` are the pages. `src/server.ts` is dev's entry (Node, with
@@ -68,7 +75,7 @@ node scripts/export.mjs --out customers.csv     # the list out
   `src/runtime.ts` is all that differs between them.
 - `src/<skill>/` (`booking`, `forms`, `invoices`, `payments`, `reports`,
   `data`, `admin`) are copies of the business skills' code.
-- `scripts/customers.mjs`, `visits.mjs`, `forms.mjs`, `quotes.mjs`, `invoices.mjs`,
+- `scripts/customers.mjs`, `deals.mjs`, `follow-ups.mjs`, `visits.mjs`, `forms.mjs`, `quotes.mjs`, `invoices.mjs`,
   `inbox.mjs` and `stages.mjs` are your hands on the data from chat; `import.mjs` and `export.mjs` move CSV
   in and out. Every one answers `--help`.
 - `styles/theme.css` is the design as tokens; `DESIGN.md` explains them.
@@ -97,7 +104,8 @@ node scripts/export.mjs --out customers.csv     # the list out
 
 - The project's tables follow the `data` skill. The customer's words live
   in `crm.config.json`, never in a table name.
-- A customer is archived, never deleted; a visit is cancelled.
+- A customer or a deal is archived, never deleted; a visit is cancelled;
+  a follow-up is done. A merge waits for the owner's yes.
 - What other apps write (submissions, bookings, payments) is read only,
   except a submission's status and a refund a team member confirms. The
   skills' tables the CRM sets up (forms, booking, payments, invoices) it

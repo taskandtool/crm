@@ -43,6 +43,7 @@ export type Quote = {
   decided_at: Date | null;
   decided_by: string | null;
   visit_id: string | null;
+  deal_id: string | null;
   source: string | null;
   created_by: string | null;
   updated_by: string | null;
@@ -60,12 +61,13 @@ export type QuoteFields = {
   notes?: unknown;
   terms?: unknown;
   visit_id?: unknown;
+  deal_id?: unknown;
   lines?: unknown;
 };
 
 type Head = {
   email: string; name: string | null; phone: string | null; address: string | null; currency: string;
-  valid_until: string | null; notes: string | null; terms: string | null; visit_id: string | null;
+  valid_until: string | null; notes: string | null; terms: string | null; visit_id: string | null; deal_id: string | null;
 };
 
 const opt = (v: unknown, max: number): string | null | false => {
@@ -90,9 +92,12 @@ export function readHead(f: QuoteFields & { currency?: unknown }, errors: Errors
   if (terms === false) errors.terms = "Up to 5000 characters.";
   const visit = opt(f.visit_id, 18);
   if (visit !== null && (visit === false || !/^\d+$/.test(visit))) errors.visit_id = "Not a job.";
+  const deal = opt(f.deal_id, 18);
+  if (deal !== null && (deal === false || !/^\d+$/.test(deal))) errors.deal_id = "Not a deal.";
   return {
     email: email ?? "", name: name || null, phone: phone || null, address: address || null, currency: currency ?? "usd",
     valid_until: (valid as string) || null, notes: notes || null, terms: terms || null, visit_id: (visit as string) || null,
+    deal_id: (deal as string) || null,
   };
 }
 
@@ -112,9 +117,9 @@ export async function createQuote(db: Db, f: QuoteFields, by: string, source: st
   if (!r.ok) return r;
   const h = r.value.head;
   const out = await db.transaction([
-    q`insert into quotes (id, number, email, name, phone, address, currency, valid_until, notes, terms, visit_id, source, created_by, updated_by)
+    q`insert into quotes (id, number, email, name, phone, address, currency, valid_until, notes, terms, visit_id, deal_id, source, created_by, updated_by)
       select n, 'Q-' || lpad(n::text, 4, '0'), ${h.email}, ${h.name}, ${h.phone}, ${h.address}, ${h.currency}, ${h.valid_until}::date,
-             ${h.notes}, ${h.terms}, ${h.visit_id}::bigint, ${source}, ${by}, ${by}
+             ${h.notes}, ${h.terms}, ${h.visit_id}::bigint, ${h.deal_id}::bigint, ${source}, ${by}, ${by}
       from (select nextval(pg_get_serial_sequence('quotes', 'id')) as n) s`,
     insertLines("quote", null, r.value.lines),
     sumLines("quote", null),
@@ -137,7 +142,7 @@ export async function saveQuote(db: Db, id: string, f: QuoteFields, by: string):
     q`select status, exists (select 1 from invoices i where i.quote_id = quotes.id and i.status <> 'void') as invoiced
       from quotes where id = ${id}::bigint for update`,
     q`update quotes set email = ${h.email}, name = ${h.name}, phone = ${h.phone}, address = ${h.address}, currency = ${h.currency},
-        valid_until = ${h.valid_until}::date, notes = ${h.notes}, terms = ${h.terms}, visit_id = ${h.visit_id}::bigint,
+        valid_until = ${h.valid_until}::date, notes = ${h.notes}, terms = ${h.terms}, visit_id = ${h.visit_id}::bigint, deal_id = ${h.deal_id}::bigint,
         updated_by = ${by}, updated_at = now()
       where id = ${id}::bigint and status = 'draft' and not exists (select 1 from invoices i where i.quote_id = quotes.id and i.status <> 'void')`,
     clearLines("quote", id),
@@ -235,9 +240,9 @@ export async function copyQuote(db: Db, id: string, by: string, source: string):
     with n as (select nextval(pg_get_serial_sequence('quotes', 'id')) as n),
     made as (
       insert into quotes (id, number, email, name, phone, address, currency, subtotal_cents, tax_cents, total_cents,
-                          notes, terms, visit_id, source, created_by, updated_by)
+                          notes, terms, visit_id, deal_id, source, created_by, updated_by)
       select n.n, 'Q-' || lpad(n.n::text, 4, '0'), o.email, o.name, o.phone, o.address, o.currency, o.subtotal_cents, o.tax_cents,
-             o.total_cents, o.notes, o.terms, o.visit_id, ${source}, ${by}, ${by}
+             o.total_cents, o.notes, o.terms, o.visit_id, o.deal_id, ${source}, ${by}, ${by}
       from quotes o, n where o.id = ${id}::bigint
       returning *),
     lines as (
@@ -273,6 +278,7 @@ export const toQuote = (r: Record<string, any>): Quote => ({
   decided_at: r.decided_at ? new Date(r.decided_at) : null,
   decided_by: r.decided_by ?? null,
   visit_id: r.visit_id ?? null,
+  deal_id: r.deal_id ?? null,
   source: r.source ?? null,
   created_by: r.created_by ?? null,
   updated_by: r.updated_by ?? null,

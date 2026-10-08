@@ -1,6 +1,7 @@
 // Everything one customer did across the project's tables: their form
-// submissions, bookings and payments, by email (and, where one side has no
-// email, by phone), newest first. Tables the project does not have are
+// submissions, bookings and payments, and the quotes and invoices sent to
+// them, by email (theirs, and any they also go by after a merge; where one
+// side has no email, by phone), newest first. Tables the project does not have are
 // skipped. Read only: the CRM never changes another app's rows here.
 import type { Db } from "../data/db";
 import type { Customer } from "./customers";
@@ -15,20 +16,23 @@ export type HistoryItem =
       /** The job made from it, if one was. */
       visit_id: string | null;
     }
-  | { kind: "payment"; id: string; at: Date; amount_cents: string; currency: string; status: string; pay_kind: string; description: string | null; livemode: boolean | null };
+  | { kind: "payment"; id: string; at: Date; amount_cents: string; currency: string; status: string; pay_kind: string; description: string | null; livemode: boolean | null }
+  | { kind: "quote"; id: string; at: Date; number: string | null; status: string; total_cents: string; currency: string }
+  | { kind: "invoice"; id: string; at: Date; number: string | null; status: string; total_cents: string; currency: string };
 
-export async function everythingFrom(db: Db, c: Pick<Customer, "email" | "phone">, limit = 50): Promise<{ items: HistoryItem[]; present: Present }> {
+export async function everythingFrom(db: Db, c: Pick<Customer, "email" | "phone"> & { other_emails?: string[] }, limit = 50): Promise<{ items: HistoryItem[]; present: Present }> {
   const p = await presentTables(db);
   const email = c.email;
+  const emails = [c.email, ...(c.other_emails ?? [])].filter((e): e is string => !!e);
   const key = phoneKey(c.phone);
-  if (!email && !key) return { items: [], present: p };
+  if (!emails.length && !key) return { items: [], present: p };
   const jobs: Promise<HistoryItem[]>[] = [];
   if (p.submissions) {
     jobs.push(db.sql<HistoryItem>`
       select 'submission' as kind, s.id::text as id, s.created_at as at, s.form_key, null::text as form_title, s.status, s.data, s.page
       from submissions s
       where s.status <> 'spam'
-        and ((${email}::citext is not null and s.email = ${email}::citext)
+        and (s.email = any(${emails}::citext[])
              or ((${email}::citext is null or s.email is null) and ${key}::text is not null
                  and right(regexp_replace(regexp_replace(s.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10) = ${key}))
       order by s.created_at desc, s.id desc limit ${limit}`);
@@ -39,16 +43,29 @@ export async function everythingFrom(db: Db, c: Pick<Customer, "email" | "phone"
              t.name as type_name, b.location_kind, b.location,
              (select v.id::text from customer_visits v where v.booking_id = b.id) as visit_id
       from bookings b left join resources r on r.id = b.resource_id left join booking_types t on t.id = b.type_id
-      where (${email}::citext is not null and b.email = ${email}::citext)
+      where b.email = any(${emails}::citext[])
          or ((${email}::citext is null or b.email is null) and ${key}::text is not null
              and right(regexp_replace(regexp_replace(b.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10) = ${key})
       order by b.created_at desc, b.id desc limit ${limit}`);
   }
-  if (p.payments && email) {
+  if (p.payments && emails.length) {
     jobs.push(db.sql<HistoryItem>`
       select 'payment' as kind, id::text as id, created_at as at, amount_cents::text as amount_cents, currency, status, kind as pay_kind, description, livemode
-      from payments where email = ${email}::citext and status <> 'pending'
+      from payments where email = any(${emails}::citext[]) and status <> 'pending'
       order by created_at desc, id desc limit ${limit}`);
+  }
+  // What the team sent them: a quote once it went out (or was answered), an invoice once Stripe has it.
+  if (p.quotes && emails.length) {
+    jobs.push(db.sql<HistoryItem>`
+      select 'quote' as kind, id::text as id, coalesce(sent_at, decided_at) as at, number, status, total_cents::text as total_cents, currency
+      from quotes where email = any(${emails}::citext[]) and coalesce(sent_at, decided_at) is not null
+      order by coalesce(sent_at, decided_at) desc, id desc limit ${limit}`);
+  }
+  if (p.invoices && emails.length) {
+    jobs.push(db.sql<HistoryItem>`
+      select 'invoice' as kind, id::text as id, coalesce(paid_at, sent_at, updated_at) as at, number, status, total_cents::text as total_cents, currency
+      from invoices where email = any(${emails}::citext[]) and status <> 'draft'
+      order by coalesce(paid_at, sent_at, updated_at) desc, id desc limit ${limit}`);
   }
   const items = (await Promise.all(jobs)).flat().sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, limit);
   if (p.forms && items.some((i) => i.kind === "submission")) {

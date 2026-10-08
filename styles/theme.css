@@ -25,6 +25,9 @@
   --color-accent: #2f5bea;                    /* 5.1:1 on canvas, 4.6:1 on panel */
   --color-accent-ink: #ffffff;
 
+  /* Overdue: a follow-up past its day, and nothing else */
+  --color-late: #b42318;                      /* 6.1:1 on canvas, 5.5:1 on panel */
+
   /* Lines */
   --color-line: rgb(21 23 28 / 0.12);
   --color-line-strong: rgb(21 23 28 / 0.5);   /* input and button edges: 3.2:1 on panel, the 3:1 a control boundary needs */

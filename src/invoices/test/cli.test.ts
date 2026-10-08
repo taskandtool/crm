@@ -63,7 +63,7 @@ test("quotes and invoices, end to end short of sending", { skip: !process.env.TE
     assert.equal(r.status, 0, "a second run is already done, not an error");
     assert.match(r.stdout, /^quotes tax-rate: Sales tax is already #\d+ at 8\.25%; left alone/);
 
-    r = q("add", "ann@example.com", "--line", "Fence repair|450", "--name", "Ann Lee");
+    r = q("add", "ann@example.com", "--line", "Fence repair|450", "--name", "Ann Lee", "--deal", "4");
     assert.equal(r.status, 0, r.stderr);
     const id = /#(\d+)/.exec(r.stdout)![1];
     assert.match(r.stdout, new RegExp(`^quotes add: added #${id} .*Ann Lee <ann@example\\.com>.*\\$450\\.00.*\\n\\nNext: node scripts/quotes\\.mjs send ${id}\\n$`));
@@ -86,8 +86,10 @@ test("quotes and invoices, end to end short of sending", { skip: !process.env.TE
     r = i("from-quote", id);
     assert.equal(r.status, 1, "a quote not accepted is refused");
     assert.match(r.stderr, /^invoices from-quote: quote #\d+ is not accepted.*\n {2}Try: node scripts\/quotes\.mjs accept/);
+    r = q("mark-sent", id);
+    assert.match(r.stderr, /after send: quote ann@example\.com/, "mark-sent runs afterSend");
     r = q("accept", id);
-    assert.match(r.stdout, /^quotes accept: accepted #/);
+    assert.match(r.stdout, /^quotes accept: accepted #\d+ .*deal #4\n {2}after: accepted deal 4\n/);
     r = q("accept", id);
     assert.equal(r.status, 0, "accepting it again is already done");
     assert.match(r.stdout, /^quotes accept: quote \d+ is already accepted; left alone\n/);

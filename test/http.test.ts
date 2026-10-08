@@ -5,7 +5,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import app from "../src/app";
-import { cfg } from "../src/config";
+import { cfg, seeds } from "../src/config";
 import { q, type Db } from "../src/data/db";
 import { applySchema } from "../src/data/migrate";
 import { setup } from "../src/db/setup";
@@ -30,7 +30,7 @@ before(async () => {
   }
   s = r;
   db = r.db;
-  await setup(db, cfg.stages);
+  await setup(db, seeds);
   await applySchema(db, readFileSync("test/fixtures/other-apps.sql", "utf8"));
   await db.transaction([
     q`insert into forms (key, title) values ('contact', 'Contact us')`,
@@ -63,7 +63,7 @@ test("Stripe's webhook is the one other path without a sign-in, and it wants a s
 
 test("no identity: 404 everywhere but /healthz", async (t) => {
   if (skip) return t.skip(skip);
-  for (const p of ["/", "/customers", "/customers/1", "/customers/export.csv", "/pipeline", "/stages", "/nope"]) {
+  for (const p of ["/", "/customers", "/customers/1", "/customers/export.csv", "/deals", "/deals/1", "/follow-ups", "/follow-ups/count", "/stages", "/nope"]) {
     assert.equal((await get(p, { host: "crm.example" })).status, 404, p);
   }
   assert.equal((await post("/customers", { name: "x" }, { host: "crm.example", origin: HOST })).status, 404);
@@ -124,7 +124,10 @@ test("what came in, then Add as customer and Mark done", async (t) => {
   assert.match(loc, /^\/customers\/\d+\?saved=added$/);
   const id = loc.match(/\/customers\/(\d+)/)![1];
   const c = (await getCustomer(db, id))!;
-  assert.deepEqual([c.name, c.email, c.source, c.stage, c.created_by], ["Pat Doe", "pat@example.com", "Contact us", "new", "ann@team.example"]);
+  assert.deepEqual([c.name, c.email, c.source, c.stage, c.created_by], ["Pat Doe", "pat@example.com", "Contact us", "lead", "ann@team.example"]);
+  // A new lead gets a call back today, for whoever added them.
+  const [call] = await db.sql<{ title: string; owner: string; today: boolean }>`select title, owner::text as owner, due_on = (now() at time zone 'UTC')::date as today from follow_ups where customer_id = ${id}::bigint`;
+  assert.deepEqual(call, { title: "Call back Pat Doe", owner: "ann@team.example", today: true });
   assert.match(await (await get("/")).text(), /Open Pat Doe/);
 
   const done = await post("/inbox/done", { id: sub.id, return: "//evil.example/x" });
@@ -179,40 +182,193 @@ test("customers: create, open, edit, note, archive", async (t) => {
   assert.equal((await getCustomer(db, id))!.archived_at, null);
 });
 
-test("pipeline: columns per stage; a stage change answers htmx with the pipeline and a plain post with a 303", async (t) => {
+test("deals: the board's columns and totals; a move answers htmx with the board and a plain post with a 303; winning makes them a customer", async (t) => {
   if (skip) return t.skip(skip);
-  const page = await (await get("/pipeline")).text();
-  for (const label of ["New", "Contacted", "Won", "Lost"]) assert.match(page, new RegExp(`<section data-stage="[a-z]+" aria-label="${label}, \\d+"`));
-  assert.match(page, /Sortable\.min\.js/);
   const [pat] = await db.sql<{ id: string }>`select id::text as id from customers where email = 'pat@example.com'`;
-  const hx = await post(`/customers/${pat.id}/stage`, { stage: "won", return: "/pipeline" }, { ...ME, origin: HOST, "hx-request": "true" });
+  await db.sql`update customers set stage = 'lead' where id = ${pat.id}::bigint`;
+  const made = await post(`/customers/${pat.id}/deals`, { title: "New boiler", value: "4,500", stage: "contacted" });
+  assert.match(made.headers.get("location")!, /^\/deals\/\d+\?saved=deal-added$/);
+  const dealId = made.headers.get("location")!.match(/\/deals\/(\d+)/)![1];
+  assert.match((await post(`/customers/${pat.id}/deals`, { title: "", value: "1" })).headers.get("location")!, /saved=deal-title-needed/);
+
+  const page = await (await get("/deals")).text();
+  for (const label of ["New", "Contacted", "Quote sent", "Won", "Lost"]) assert.match(page, new RegExp(`<section data-stage="[a-z]+" aria-label="${label}, \\d+"`));
+  assert.match(page, /Sortable\.min\.js/);
+  const contacted = page.split('<section data-stage="contacted"')[1].split("</section>")[0];
+  assert.match(contacted, /New boiler/);
+  assert.match(contacted, /\$4,500\.00/, "the column's total");
+  assert.match(contacted, /data-deal-id=/);
+
+  const hx = await post(`/deals/${dealId}/stage`, { stage: "won", return: "/deals" }, { ...ME, origin: HOST, "hx-request": "true" });
   assert.equal(hx.status, 200);
   const body = await hx.text();
   assert.ok(body.startsWith('<div id="pipeline"'));
-  const won = body.split('<section data-stage="won"')[1].split("</section>")[0];
-  assert.match(won, /Pat Doe/);
-  assert.equal((await getCustomer(db, pat.id))!.stage, "won");
+  assert.match(body.split('<section data-stage="won"')[1].split("</section>")[0], /New boiler/);
+  assert.equal((await getCustomer(db, pat.id))!.stage, "customer", "a won deal makes a lead a customer");
 
-  const plain = await post(`/customers/${pat.id}/stage`, { stage: "contacted", return: "/pipeline" });
-  assert.equal(plain.status, 303);
-  assert.equal(plain.headers.get("location"), "/pipeline?saved=stage");
-  // The card's select posts `status` (admin's StatusForm).
-  await post(`/customers/${pat.id}/stage`, { status: "lost", return: "/pipeline" });
-  assert.equal((await getCustomer(db, pat.id))!.stage, "lost");
-  const bad = await post(`/customers/${pat.id}/stage`, { stage: "nope", return: "/pipeline" });
-  assert.equal(bad.headers.get("location"), "/pipeline?saved=pick-stage");
+  const plain = await post(`/deals/${dealId}/stage`, { stage: "lost", return: "/deals" });
+  assert.equal(plain.headers.get("location"), "/deals?saved=deal-stage");
+  // Why it was lost, said on its page after the move.
+  assert.equal((await post(`/deals/${dealId}/stage`, { status: "lost", lost_reason: "Price", return: `/deals/${dealId}` })).headers.get("location"), `/deals/${dealId}?saved=deal-saved`);
+  const [d] = await db.sql<{ lost_reason: string; closed: boolean }>`select lost_reason, closed_at is not null as closed from deals where id = ${dealId}::bigint`;
+  assert.deepEqual(d, { lost_reason: "Price", closed: true });
+  assert.equal((await getCustomer(db, pat.id))!.stage, "customer", "losing a later deal does not undo who they are");
+  const bad = await post(`/deals/${dealId}/stage`, { stage: "nope", return: "/deals" });
+  assert.equal(bad.headers.get("location"), "/deals?saved=pick-stage");
+
+  // Its page: details saved, the value as typed; a won deal becomes a job once.
+  const detail = await (await get(`/deals/${dealId}`)).text();
+  assert.match(detail, /Why it was lost/);
+  assert.match(detail, /Pat Doe/);
+  assert.equal((await post(`/deals/${dealId}`, { title: "New boiler and flue", value: "5200", owner: "sam@team.example", expected_close: "2026-11-30", notes: "" })).headers.get("location"), `/deals/${dealId}?saved=deal-saved`);
+  await post(`/deals/${dealId}/stage`, { stage: "won" });
+  const job = await post(`/deals/${dealId}/job`, {});
+  assert.match(job.headers.get("location")!, /^\/visits\/\d+\?saved=visit-added$/);
+  const again = await post(`/deals/${dealId}/job`, {});
+  assert.equal(again.headers.get("location"), job.headers.get("location"), "once per deal");
+  const [v] = await db.sql<{ title: string; amount_cents: string }>`select title, amount_cents::text from customer_visits where deal_id = ${dealId}::bigint`;
+  assert.deepEqual(v, { title: "New boiler and flue", amount_cents: "520000" });
+
+  // New deal from the board for someone new: they are added as a lead.
+  const fresh = await post("/deals", { name: "Rae Kim", email: "rae@example.com", title: "Heat pump", value: "" });
+  assert.match(fresh.headers.get("location")!, /^\/deals\/\d+\?saved=deal-added$/);
+  const [rae] = await db.sql<{ stage: string }>`select stage from customers where email = 'rae@example.com'`;
+  assert.equal(rae.stage, "lead");
 });
 
-test("stages page: add, refuse archiving one in use, archive with a move", async (t) => {
+test("follow-ups: added, listed as due, the nav's count, done onto the timeline, moved; nothing planned", async (t) => {
   if (skip) return t.skip(skip);
-  assert.match(await (await get("/stages")).text(), /Add a stage/);
-  assert.equal((await post("/stages", { label: "Quoted", kind: "open" })).headers.get("location"), "/stages?saved=stage-added");
-  const [pat] = await db.sql<{ id: string }>`select id::text as id from customers where email = 'pat@example.com'`;
-  await post(`/customers/${pat.id}/stage`, { stage: "quoted" });
-  assert.equal((await post("/stages/quoted/archive", {})).headers.get("location"), "/stages?saved=stage-in-use");
-  assert.equal((await post("/stages/quoted/archive", { move_to: "won" })).headers.get("location"), "/stages?saved=stage-archived");
-  assert.equal((await getCustomer(db, pat.id))!.stage, "won");
-  assert.equal((await post("/stages/Bad Key/archive", {})).status, 404);
+  const made = await post("/customers", { name: "Fay Lo", email: "fay@example.com", phone: "555 404 1212" });
+  const id = made.headers.get("location")!.match(/\/customers\/(\d+)/)![1];
+  // Nothing planned for a lead nobody has called.
+  assert.match(await (await get("/follow-ups?view=none&who=all")).text(), /Fay Lo/);
+
+  const today = new Date().toISOString().slice(0, 10);
+  assert.equal((await post(`/customers/${id}/follow-ups`, { kind: "call", title: "", on: today })).headers.get("location"), `/customers/${id}?saved=fu-needs`);
+  assert.equal((await post(`/customers/${id}/follow-ups`, { kind: "call", title: "Call about the estimate", on: today, at: "09:30", owner: "ann@team.example" })).headers.get("location"), `/customers/${id}?saved=fu-added`);
+  assert.doesNotMatch(await (await get("/follow-ups?view=none&who=all")).text(), /Fay Lo/, "planned now");
+
+  const due = await (await get("/follow-ups")).text();
+  assert.match(due, /Call about the estimate/);
+  assert.match(due, /Today 9:30 AM/);
+  assert.match(due, /href="tel:5554041212"/, "a call shows the number");
+  assert.match(await (await get("/follow-ups/count")).text(), /\d+<span class="sr-only"> due/);
+  const customerPage = await (await get(`/customers/${id}`)).text();
+  assert.ok(customerPage.indexOf(">Follow-ups</h2>") < customerPage.indexOf(">Details</h2>"), "what happens next leads the page");
+  assert.match(customerPage, /Call about the estimate/);
+
+  const [f] = await db.sql<{ id: string }>`select id::text as id from follow_ups where customer_id = ${id}::bigint`;
+  assert.equal((await post(`/follow-ups/${f.id}/move`, { on: "2099-01-02", return: "/follow-ups" })).headers.get("location"), "/follow-ups?saved=fu-moved");
+  const [moved] = await db.sql<{ due_on: string; due_time: string }>`select to_char(due_on, 'YYYY-MM-DD') as due_on, to_char(due_time, 'HH24:MI') as due_time from follow_ups where id = ${f.id}::bigint`;
+  assert.deepEqual(moved, { due_on: "2099-01-02", due_time: "09:30" }, "a day button keeps the time");
+  assert.match(await (await get("/follow-ups?view=upcoming")).text(), /Nothing in the next 14 days/);
+
+  const done = await post(`/follow-ups/${f.id}/done`, { outcome: "Booked the visit", return: "//evil.example" });
+  assert.equal(done.headers.get("location"), `/customers/${id}?saved=fu-done`);
+  assert.equal((await post(`/follow-ups/${f.id}/done`, {})).headers.get("location"), `/customers/${id}?saved=fu-already`);
+  const [note] = await db.sql<{ kind: string; body: string }>`select kind, body from customer_notes where customer_id = ${id}::bigint`;
+  assert.deepEqual(note, { kind: "call", body: "Call about the estimate\nBooked the visit" });
+  assert.ok((await getCustomer(db, id))!.last_contact_at, "a call done is contact");
+  assert.match(await (await get(`/customers/${id}`)).text(), /Nothing planned\. What happens next\?/);
+});
+
+test("Add as deal: a new person, and a customer already here getting another", async (t) => {
+  if (skip) return t.skip(skip);
+  const [sub] = await db.sql<{ id: string }>`
+    insert into submissions (form_key, name, email, phone, data, source)
+    values ('contact', 'Gil Ross', 'gil@example.com', null, '{"message": "Need a quote"}', 'website') returning id::text as id`;
+  const first = await post("/inbox/deal", { kind: "submission", id: sub.id });
+  assert.match(first.headers.get("location")!, /^\/deals\/\d+\?saved=deal-added$/);
+  const [sub2] = await db.sql<{ id: string }>`
+    insert into submissions (form_key, name, email, data, source)
+    values ('contact', 'Gil Ross', 'GIL@example.com', '{"message": "And the garage"}', 'website') returning id::text as id`;
+  await post("/inbox/deal", { kind: "submission", id: sub2.id });
+  const deals = await db.sql<{ title: string }>`select d.title from deals d join customers c on c.id = d.customer_id where c.email = 'gil@example.com' order by d.id`;
+  assert.deepEqual(deals.map((d) => d.title), ["Gil Ross, Contact us", "Gil Ross, Contact us"], "one person, two deals");
+  const calls = await db.sql<{ n: number }>`select count(*)::int as n from follow_ups f join customers c on c.id = f.customer_id where c.email = 'gil@example.com'`;
+  assert.equal(calls[0].n, 1, "one open call back is enough");
+  assert.match(await (await get("/")).text(), /Add as deal/);
+});
+
+test("merge: preview, merge, history under either address, the merged record opens the kept one", async (t) => {
+  if (skip) return t.skip(skip);
+  const a = (await post("/customers", { name: "Hal Moe", email: "hal@example.com" })).headers.get("location")!.match(/\/customers\/(\d+)/)![1];
+  const b = (await post("/customers", { name: "Hal Moe", email: "hal.moe@work.example", phone: "555 777 0000" })).headers.get("location")!.match(/\/customers\/(\d+)/)![1];
+  await post(`/customers/${b}/notes`, { kind: "call", body: "Called from work" });
+  await db.sql`insert into submissions (form_key, name, email, data, source) values ('contact', 'Hal', 'hal.moe@work.example', '{"message": "From the office"}', 'website')`;
+  const page = await (await get(`/customers/${a}`)).text();
+  assert.match(page, /Maybe the same person/);
+  const preview = await (await get(`/customers/${a}/merge?other=${b}`)).text();
+  assert.match(preview, /1 notes/);
+  assert.match(preview, /phone/);
+  assert.match(preview, /also goes by hal\.moe@work\.example/);
+  assert.equal((await post(`/customers/${a}/merge`, { other: a })).headers.get("location"), `/customers/${a}/merge?saved=merge-same`);
+  assert.equal((await post(`/customers/${a}/merge`, { other: b })).headers.get("location"), `/customers/${a}?saved=merged`);
+  const kept = (await getCustomer(db, a))!;
+  assert.deepEqual([kept.phone, kept.other_emails], ["555 777 0000", ["hal.moe@work.example"]]);
+  const gone = (await getCustomer(db, b))!;
+  assert.deepEqual([gone.email, gone.merged_into, !!gone.archived_at], [null, a, true]);
+  assert.equal((await get(`/customers/${b}`)).headers.get("location"), `/customers/${a}`);
+  const after = await (await get(`/customers/${a}`)).text();
+  assert.match(after, /Called from work/);
+  assert.match(after, /From the office/, "what came in under the other address");
+  assert.match(after, /Also goes by/);
+  // What comes in under the other address now matches the kept record.
+  const inbox = await (await get("/")).text();
+  assert.match(inbox, new RegExp(`/customers/${a}"[^>]*>\\s*Open Hal Moe`));
+  assert.equal((await post(`/customers/${a}/merge`, { other: b })).headers.get("location"), `/customers/${a}/merge?saved=merge-gone`, "not twice");
+});
+
+test("a quote made for a deal: its value stands in, its page names the deal, and a yes wins it", async (t) => {
+  if (skip) return t.skip(skip);
+  const made = await post("/customers", { name: "Ida Quote", email: "ida@example.com" });
+  const cid = made.headers.get("location")!.match(/\/customers\/(\d+)/)![1];
+  const deal = await post(`/customers/${cid}/deals`, { title: "Kitchen remodel", value: "" });
+  const did = deal.headers.get("location")!.match(/\/deals\/(\d+)/)![1];
+  const dealPage = await (await get(`/deals/${did}`)).text();
+  const link = /href="(\/invoices\/quotes\/new\?[^"]+)"[^>]*>New quote</.exec(dealPage)![1].replace(/&amp;/g, "&");
+  assert.match(link, new RegExp(`deal=${did}`));
+  assert.match(await (await get(link)).text(), new RegExp(`name="deal_id" value="${did}"`));
+
+  const body = new URLSearchParams({ email: "ida@example.com", name: "Ida Quote", currency: "usd", valid_until: "2099-01-31", visit_id: "", deal_id: did, notes: "", terms: "" });
+  body.append("description", "Cabinets"); body.append("quantity", "1"); body.append("unit", "8000"); body.append("tax_rate_id", "");
+  const res = await app.request(HOST + "/invoices/quotes", { method: "POST", body, headers: { ...ME, origin: HOST, "content-type": "application/x-www-form-urlencoded" } }, { runtime });
+  const qid = res.headers.get("location")!.match(/\/invoices\/quotes\/(\d+)/)![1];
+  assert.match(await (await get(`/invoices/quotes/${qid}`)).text(), new RegExp(`For <a href="/deals/${did}">Kitchen remodel</a>; a yes wins the deal`));
+  const board = await (await get("/deals")).text();
+  assert.match(board.split('<section data-stage="new"')[1].split("</section>")[0], /Kitchen remodel[\s\S]*\$8,000\.00/, "the quote's total stands in for a blank value");
+
+  await post(`/invoices/quotes/${qid}/decide`, { answer: "accepted" });
+  const [d] = await db.sql<{ stage: string; closed: boolean }>`select stage, closed_at is not null as closed from deals where id = ${did}::bigint`;
+  assert.deepEqual(d, { stage: "won", closed: true });
+  assert.equal((await getCustomer(db, cid))!.stage, "customer");
+  // A deal moved back by hand after the yes stays where it was put.
+  await post(`/deals/${did}/stage`, { stage: "quoted" });
+  const decline = new URLSearchParams(body);
+  const r2 = await app.request(HOST + "/invoices/quotes", { method: "POST", body: decline, headers: { ...ME, origin: HOST, "content-type": "application/x-www-form-urlencoded" } }, { runtime });
+  const q2 = r2.headers.get("location")!.match(/\/invoices\/quotes\/(\d+)/)![1];
+  await post(`/invoices/quotes/${q2}/decide`, { answer: "declined" });
+  const [still] = await db.sql<{ stage: string }>`select stage from deals where id = ${did}::bigint`;
+  assert.equal(still.stage, "quoted");
+  // The quote shows on the customer's timeline once it went out or was answered.
+  assert.match(await (await get(`/customers/${cid}`)).text(), /Quote Q-\d{4}/);
+});
+
+test("stages page: both lists; add, refuse archiving one in use, archive with a move", async (t) => {
+  if (skip) return t.skip(skip);
+  const page = await (await get("/stages")).text();
+  assert.match(page, /Deal stages/);
+  assert.match(page, /Customer statuses/);
+  assert.equal((await post("/stages/deals", { label: "Site visit", kind: "open" })).headers.get("location"), "/stages?saved=stage-added");
+  assert.equal((await post("/stages/customers", { label: "Partner", kind: "won" })).headers.get("location"), "/stages?saved=stage-added");
+  const [deal] = await db.sql<{ id: string }>`select id::text as id from deals order by id limit 1`;
+  await post(`/deals/${deal.id}/stage`, { stage: "site-visit" });
+  assert.equal((await post("/stages/deals/site-visit/archive", {})).headers.get("location"), "/stages?saved=stage-in-use");
+  assert.equal((await post("/stages/deals/site-visit/archive", { move_to: "won" })).headers.get("location"), "/stages?saved=stage-archived");
+  const [d] = await db.sql<{ stage: string }>`select stage from deals where id = ${deal.id}::bigint`;
+  assert.equal(d.stage, "won");
+  assert.equal((await post("/stages/deals/Bad Key/archive", {})).status, 404);
+  assert.equal((await post("/stages/people/partner/archive", {})).status, 404);
 });
 
 test("CSV export of the filter, with formulas defused", async (t) => {
@@ -374,7 +530,9 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Make it a job o
   // No sender connected here: nothing goes, and the page says to send it yourself.
   const send = await post(`/invoices/quotes/${qid}/send`, {});
   assert.match(decodeURIComponent(send.headers.get("location")!.replace(/\+/g, " ")), /Nothing was sent: no email sender is connected/);
+  assert.equal((await getCustomer(db, cid))!.last_contact_at, null, "a quote nobody sent is not contact");
   assert.equal((await post(`/invoices/quotes/${qid}/sent`, {})).headers.get("location"), `/invoices/quotes/${qid}?saved=marked-sent`);
+  assert.ok((await getCustomer(db, cid))!.last_contact_at, "a quote that went out is contact");
   assert.equal((await post(`/invoices/quotes/${qid}/decide`, { answer: "accepted" })).headers.get("location"), `/invoices/quotes/${qid}?saved=accepted`);
 
   // A quote for someone new, accepted with no job: Make it a job adds them, once.

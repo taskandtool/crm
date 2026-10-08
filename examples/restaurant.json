@@ -1,13 +1,25 @@
 {
   "business": "A neighbourhood restaurant: regulars worth knowing by name, and private dining and event enquiries that need a quick answer.",
   "vocabulary": { "one": "Guest", "many": "Guests" },
-  "stages": [
-    { "key": "enquiry", "label": "Event enquiry", "kind": "open" },
-    { "key": "proposal", "label": "Menu and quote sent", "kind": "open" },
-    { "key": "booked", "label": "Event booked", "kind": "won" },
+  "statuses": [
+    { "key": "new", "label": "New", "kind": "open" },
+    { "key": "booked", "label": "Booked with us", "kind": "won" },
     { "key": "regular", "label": "Regular", "kind": "won" },
-    { "key": "declined", "label": "Declined", "kind": "lost" }
+    { "key": "not-a-fit", "label": "Not a fit", "kind": "lost" }
   ],
+  "deals": {
+    "one": "Event enquiry",
+    "many": "Event enquiries",
+    "currency": "USD",
+    "stages": [
+      { "key": "enquiry", "label": "Enquiry", "kind": "open" },
+      { "key": "proposal", "label": "Menu and quote sent", "kind": "open" },
+      { "key": "booked", "label": "Event booked", "kind": "won" },
+      { "key": "declined", "label": "Declined", "kind": "lost" }
+    ],
+    "lost_reasons": ["Date taken", "Budget", "Went elsewhere", "No reply"]
+  },
+  "follow_ups": { "new_lead": true },
   "sources": ["Website", "Walk-in", "Instagram", "Phone", "Reservation app", "Referral"],
   "fields": [
     { "key": "dietary", "label": "Allergies and diet", "type": "text" },
@@ -16,8 +28,6 @@
   ],
   "owner_label": "Host",
   "time_zone": "Europe/London",
-  "default_view": "list",
-  "pipeline": true,
   "inbox": { "forms": ["private-dining", "contact"], "exclude_forms": [], "bookings": true, "payments": true },
   "visits": {
     "one": "Event",
