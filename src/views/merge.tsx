@@ -57,7 +57,7 @@ export function MergePage(p: {
       ) : null}
       {p.duplicates.length ? (
         <section class="mb-6" aria-labelledby="maybe">
-          <h2 id="maybe" class="mb-2 text-label font-semibold text-ink-2">Maybe the same person</h2>
+          <h2 id="maybe" class="mb-2 text-label font-semibold text-ink-2">Possible duplicates</h2>
           <ul class="overflow-hidden rounded-card border border-line bg-surface">{p.duplicates.map(pick)}</ul>
         </section>
       ) : null}

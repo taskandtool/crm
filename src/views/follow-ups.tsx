@@ -7,7 +7,7 @@ import type { Child } from "hono/jsx";
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
 import { listUrl } from "../admin/query";
-import { dealsCfg, ownerLabel, vocab } from "../config";
+import { dealsCfg, ownerLabel } from "../config";
 import { addDays, FOLLOW_UP_KINDS, FOLLOW_UP_LABELS, UPCOMING_DAYS, type FollowUp, type FollowUpView, type Unplanned } from "../crm/follow-ups";
 import { Layout } from "./layout";
 import { buttonClass, controlClass, DueMark, Field, MESSAGES, primaryClass, timeText, timeZone } from "./ui";
@@ -41,8 +41,8 @@ export function FollowUpsPage(p: FollowUpsProps) {
       <div class="mb-4 flex flex-wrap items-center justify-between gap-3 text-label">
         <nav aria-label="Which follow-ups" class="flex flex-wrap gap-1">
           {tab("due", due ? `Due (${due})` : "Due")}
-          {tab("upcoming", `Next ${UPCOMING_DAYS} days`)}
-          {tab("none", "Nothing planned")}
+          {tab("upcoming", "Upcoming")}
+          {tab("none", "Nothing scheduled")}
         </nav>
         <nav aria-label="Whose" class="flex gap-1">
           <a href={href(p.view, false)} aria-current={p.mine ? "page" : undefined}
@@ -54,14 +54,14 @@ export function FollowUpsPage(p: FollowUpsProps) {
       {p.view === "none" ? (
         <>
           <p class="mb-3 max-w-2xl text-ink-2">
-            {vocab.many} still in play (an open status or an open {dealsCfg.one.toLowerCase()}) with no follow-up and nothing booked. Quietest first.
+            Open leads and {dealsCfg.many.toLowerCase()} with nothing scheduled, longest without contact first.
           </p>
           {p.unplanned.length ? (
             <ol class="flex flex-col overflow-hidden rounded-card border border-line bg-surface">
               {p.unplanned.map((u) => <UnplannedRow u={u} today={p.today} returnTo={self} user={p.user} />)}
             </ol>
           ) : (
-            <Empty>Everyone in play has something planned.</Empty>
+            <Empty>Every open lead and {dealsCfg.one.toLowerCase()} has something scheduled.</Empty>
           )}
         </>
       ) : p.rows.length ? (
@@ -75,11 +75,10 @@ export function FollowUpsPage(p: FollowUpsProps) {
       ) : (
         <Empty>
           {p.view === "due" ? "Nothing due. " : `Nothing in the next ${UPCOMING_DAYS} days. `}
-          <a href={href("none")}>See who has nothing planned</a>
+          <a href={href("none")}>See who has nothing scheduled</a>
         </Empty>
       )}
       {p.more ? <p class="mt-3 text-label text-ink-3">The first {p.view === "none" ? p.unplanned.length : p.rows.length}; tick some off to see the rest.</p> : null}
-      {p.mine ? <p class="mt-4 text-label text-ink-3">Mine is what is set for you, {p.user}. Everyone shows the whole team's.</p> : null}
     </Layout>
   );
 }
@@ -113,20 +112,20 @@ export function FollowUpItem(p: { f: FollowUp; today: string; returnTo: string; 
       <div class="flex flex-wrap items-start gap-2">
         <form method="post" action={`/follow-ups/${f.id}/done`}>
           <input type="hidden" name="return" value={p.returnTo} />
-          <button class={primaryClass} aria-label={`Done: ${label}`}>Done</button>
+          <button class={primaryClass} aria-label={`Mark done: ${label}`}>Mark done</button>
         </form>
         <details class="relative">
           <summary class={buttonClass + " cursor-pointer list-none"} aria-label={`More for ${label}`}>More</summary>
           <div class="mt-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-card border border-line bg-surface p-3 shadow-lift sm:absolute sm:right-0 sm:z-10">
             <form method="post" action={`/follow-ups/${f.id}/done`} class="flex flex-col gap-2">
               <input type="hidden" name="return" value={p.returnTo} />
-              <Field label="What came of it">
+              <Field label="Outcome">
                 <textarea name="outcome" rows={2} maxlength={10000} class={controlClass}></textarea>
               </Field>
-              <button class={buttonClass + " self-start"}>Done, with this note</button>
+              <button class={buttonClass + " self-start"}>Mark done with this note</button>
             </form>
             <div class="flex flex-col gap-2">
-              <span class="text-label text-ink-2">Move to</span>
+              <span class="text-label text-ink-2">Reschedule</span>
               <div class="flex flex-wrap gap-2">
                 {[["Tomorrow", addDays(today, 1)], ["Next week", addDays(today, 7)]].map(([text, day]) => (
                   <form method="post" action={`/follow-ups/${f.id}/move`}>
@@ -140,7 +139,7 @@ export function FollowUpItem(p: { f: FollowUp; today: string; returnTo: string; 
                 <input type="hidden" name="return" value={p.returnTo} />
                 <input name="on" type="date" required value={f.due_on} aria-label="Day" class={controlClass} />
                 <input name="at" type="time" value={f.due_time ?? ""} aria-label="Time, or blank for any time" class={controlClass} />
-                <button class={buttonClass}>Move</button>
+                <button class={buttonClass}>Reschedule</button>
               </form>
             </div>
           </div>
@@ -161,8 +160,8 @@ function UnplannedRow({ u, today, returnTo, user }: { u: Unplanned; today: strin
         </p>
         <p class="text-label text-ink-3">
           {u.contacted
-            ? u.quiet_days <= 0 ? "In touch today" : u.quiet_days === 1 ? "Quiet for a day" : `Quiet for ${u.quiet_days} days`
-            : u.quiet_days <= 0 ? "Added today, no contact yet" : `Added ${u.quiet_days === 1 ? "a day" : `${u.quiet_days} days`} ago, no contact yet`}
+            ? u.quiet_days <= 0 ? "Last contacted today" : u.quiet_days === 1 ? "Last contacted yesterday" : `Last contacted ${u.quiet_days} days ago`
+            : u.quiet_days <= 0 ? "Never contacted, added today" : `Never contacted, added ${u.quiet_days === 1 ? "yesterday" : `${u.quiet_days} days ago`}`}
           {u.deals.length ? ` · ${u.deals.join(", ")}` : ""}
           {u.owner ? ` · ${ownerLabel}: ${u.owner}` : ""}
         </p>
@@ -173,7 +172,7 @@ function UnplannedRow({ u, today, returnTo, user }: { u: Unplanned; today: strin
         <input type="hidden" name="title" value={`Call ${u.name}`} />
         <input type="hidden" name="on" value={addDays(today, 1)} />
         <input type="hidden" name="owner" value={u.owner ?? user} />
-        <button class={buttonClass}>Call them tomorrow</button>
+        <button class={buttonClass}>Call tomorrow</button>
       </form>
     </li>
   );
@@ -196,28 +195,28 @@ export function FollowUpForm(p: {
   return (
     <form method="post" action={`/customers/${p.customerId}/follow-ups`} aria-label="Add a follow-up" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <input type="hidden" name="return" value={p.returnTo} />
-      <Field label="Kind">
+      <Field label="Type">
         <select name="kind" class={controlClass}>
           {FOLLOW_UP_KINDS.map((k) => <option value={k}>{FOLLOW_UP_LABELS[k]}</option>)}
         </select>
       </Field>
-      <Field label="What to do" class="sm:col-span-1 lg:col-span-3">
+      <Field label="Title" class="sm:col-span-1 lg:col-span-3">
         <input name="title" required maxlength={200} value={p.title ?? ""} placeholder="Call back about the quote" class={controlClass} />
       </Field>
-      <Field label="Day">
+      <Field label="Due date">
         <input name="on" type="date" required value={addDays(p.today, 1)} class={controlClass} />
       </Field>
-      <Field label="Time" hint="Blank for any time that day.">
+      <Field label="Time" hint="Optional.">
         <input name="at" type="time" class={controlClass} />
       </Field>
-      <Field label="Whose">
+      <Field label="Assigned to">
         <input name="owner" list="fu-owners" value={p.user} maxlength={200} class={controlClass} />
         <datalist id="fu-owners">
           {p.owners.map((o) => <option value={o} />)}
         </datalist>
       </Field>
       {p.deals.length ? (
-        <Field label={`For which ${dealsCfg.one.toLowerCase()}`}>
+        <Field label={dealsCfg.one}>
           <select name="deal" class={controlClass}>
             <option value="">None</option>
             {p.deals.map((d) => <option value={d.id} selected={d.id === p.dealId}>{d.title}</option>)}
@@ -242,7 +241,10 @@ export function FollowUpsSection(p: {
   user: string;
   today: string;
   returnTo: string;
+  /** False on a won or lost deal: no "No follow-up scheduled", and the form starts closed. */
+  prompt?: boolean;
 }) {
+  const prompt = p.prompt !== false;
   return (
     <div class="flex flex-col gap-4">
       {p.open.length ? (
@@ -253,23 +255,23 @@ export function FollowUpsSection(p: {
             </li>
           ))}
         </ol>
-      ) : (
-        <p class="font-semibold">Nothing planned. What happens next?</p>
-      )}
-      <details open={!p.open.length}>
-        <summary class="cursor-pointer text-label font-semibold text-ink-2">{p.open.length ? "Add another" : "Plan the next step"}</summary>
+      ) : prompt ? (
+        <p class="font-semibold">No follow-up scheduled.</p>
+      ) : null}
+      <details open={prompt && !p.open.length}>
+        <summary class="cursor-pointer text-label font-semibold text-ink-2">Add follow-up</summary>
         <div class="mt-3">
           <FollowUpForm customerId={p.customerId} deals={p.deals} dealId={p.dealId} owners={p.owners} user={p.user} today={p.today} returnTo={p.returnTo} />
         </div>
       </details>
       {p.done.length ? (
         <details>
-          <summary class="cursor-pointer text-label text-ink-2">Done lately</summary>
+          <summary class="cursor-pointer text-label text-ink-2">Completed</summary>
           <ul class="mt-2 flex flex-col gap-1 text-label text-ink-2">
             {p.done.map((f) => (
               <li>
                 {FOLLOW_UP_LABELS[f.kind]}: {f.title}
-                <span class="text-ink-3"> · done <When at={f.done_at} timeZone={timeZone} />{f.done_by ? ` by ${f.done_by}` : ""}</span>
+                <span class="text-ink-3"> · <When at={f.done_at} timeZone={timeZone} />{f.done_by ? ` by ${f.done_by}` : ""}</span>
               </li>
             ))}
           </ul>

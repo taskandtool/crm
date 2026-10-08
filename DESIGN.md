@@ -32,7 +32,7 @@ pipeline card, `shadow-lift` on something that floats.
 
 ## Composition
 
-- What came in is a list, not a table, so a row wraps on a phone: what it
+- The Inbox is a list, not a table, so a row wraps on a phone: what it
   was and when, the person, then the one action that matters.
 - The customers list hides columns as the screen narrows; the name and
   stage always stay.
@@ -42,6 +42,10 @@ pipeline card, `shadow-lift` on something that floats.
   is a plain button with a clear label, and nothing is deleted.
 - Motion: SortableJS's drag animation and nothing else. Reduced motion
   turns it off.
+
+## Words
+
+The standard CRM words, one name per action: the `admin` skill's Words.
 
 ## Refuse
 

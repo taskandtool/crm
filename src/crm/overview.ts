@@ -1,4 +1,4 @@
-// The four figures at the top of What came in: leads in the last seven days
+// The four figures at the top of the Inbox: leads in the last seven days
 // against the seven before, the viewer's follow-ups due, the open pipeline,
 // and what was won this month. Days and months are the business's.
 import type { Db } from "../data/db";

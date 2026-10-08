@@ -134,6 +134,7 @@ test("the private views need the team header, record who changed a status, and e
 
     const list = await (await app.request("https://site.example/admin/forms/submissions?q=ann", { headers: team })).text();
     assert.match(list, /ann@example.com/);
+    assert.match(list, new RegExp(`<td[^>]*>${CONTACT_FORM.title}</td>`), "the form by its title, not its key");
 
     const res = await post(app, `/admin/forms/submissions/${id}/status`, { status: "done", return: "/admin/forms/submissions" }, team);
     assert.equal(res.status, 303);

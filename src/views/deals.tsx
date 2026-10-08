@@ -19,7 +19,7 @@ import { shownStatus, type Quote } from "../invoices/quotes";
 import { formatMoney } from "../payments/money";
 import { FollowUpsSection } from "./follow-ups";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, DueMark, Field, linkButtonClass, MESSAGES, primaryClass, stageOptions, timeZone, Who } from "./ui";
+import { buttonClass, controlClass, DueMark, Field, linkButtonClass, MESSAGES, primaryClass, SaveOnChange, stageOptions, timeZone, Who } from "./ui";
 
 /** How many cards a column shows; how many days won and lost ones stay on the board. */
 export const PER_COLUMN = 100;
@@ -43,9 +43,9 @@ export function DealsPage(p: { user: string; data: BoardData; flash: { code?: st
     <Layout title={dealsCfg.many} user={p.user} section="deals" drag wide>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <details class="mb-4 rounded-card border border-line bg-surface p-4">
-        <summary class="cursor-pointer text-label font-semibold text-ink-2">New {one}</summary>
+        <summary class="cursor-pointer text-label font-semibold text-ink-2">Add {one}</summary>
         <form method="post" action="/deals" class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label={`${vocab.one}'s name`}>
+          <Field label={`${vocab.one} name`}>
             <input name="name" maxlength={200} autocomplete="off" class={controlClass} />
           </Field>
           <Field label="Email">
@@ -57,13 +57,11 @@ export function DealsPage(p: { user: string; data: BoardData; flash: { code?: st
           <DealInputs stages={open} />
           <div class="sm:col-span-2 lg:col-span-3">
             <button class={primaryClass}>Add {one}</button>
-            <span class="ml-3 text-label text-ink-3">Someone already here by email or phone gets it; anyone else is added as a {vocab.one.toLowerCase()}.</span>
+            <span class="ml-3 text-label text-ink-3">Matches a {vocab.one.toLowerCase()} already here by email or phone, or adds a new one.</span>
           </div>
         </form>
       </details>
-      <p class="mb-3 text-label text-ink-3">
-        Drag a card to another stage (on a phone, press and hold first), or choose its stage on the card. Won and lost ones stay here for {CLOSED_DAYS} days.
-      </p>
+      <p class="mb-3 text-label text-ink-3">Won and lost {many} stay on the board for {CLOSED_DAYS} days.</p>
       <Board data={p.data} />
     </Layout>
   );
@@ -73,10 +71,10 @@ export function DealsPage(p: { user: string; data: BoardData; flash: { code?: st
 function DealInputs({ stages }: { stages: Stage[] }) {
   return (
     <>
-      <Field label={`What the ${one} is`}>
+      <Field label={`${dealsCfg.one} name`}>
         <input name="title" required maxlength={200} placeholder="New furnace" class={controlClass} />
       </Field>
-      <Field label={`Value (${dealsCfg.currency})`} hint="Blank until you know; a quote fills it.">
+      <Field label={`Value (${dealsCfg.currency})`} hint="Leave blank to use the latest quote's total.">
         <input name="value" inputmode="decimal" maxlength={20} class={controlClass} />
       </Field>
       <Field label="Stage">
@@ -123,7 +121,7 @@ export function Board({ data }: { data: BoardData }) {
     <div id="pipeline">
       {!cards.length ? (
         <p class="mb-3 text-ink-2">
-          No {many} yet. Add one above, from a {vocab.one.toLowerCase()}'s page, or with Add as {one} on What came in.
+          No {many} yet. Add one above, from a {vocab.one.toLowerCase()}'s page, or from the Inbox.
         </p>
       ) : null}
       <div class="flex gap-3 overflow-x-auto pb-3">
@@ -181,19 +179,20 @@ export function DealPage(p: {
   const stage = p.stages.find((s) => s.key === d.stage);
   const stages = stage ? p.stages : [...p.stages, { key: d.stage, label: d.stage, position: 999, kind: "open" as const, archived: true }];
   const value = worth(d);
+  // A won or lost deal shows what happened; nothing on it asks for a next step.
+  const closed = !!stage && stage.kind !== "open";
   const who = { email: d.customer_email, name: d.customer_name, phone: d.customer_phone, deal: d.id, line: d.title };
   return (
     <Layout title={d.title} user={p.user} section="deals">
       <p class="mb-3 text-label">
         <a href="/deals">All {many}</a>
       </p>
+      <p class="-mt-1 mb-4 text-ink-2">
+        For <a href={`/customers/${d.customer_id}`}>{d.customer_name}</a>
+      </p>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span class="flex items-center gap-2">
-          <span class="text-label text-ink-2" aria-hidden="true">Stage</span>
-          <StatusForm action={`${self}/stage`} current={d.stage} options={stageOptions(stages)} returnTo={self} label="Stage" />
-        </span>
-        <a href={`/customers/${d.customer_id}`} class={linkButtonClass}>{d.customer_name}</a>
+        <SaveOnChange action={`${self}/stage`} current={d.stage} options={stageOptions(stages)} label="Stage" returnTo={self} />
         {invoicesCfg && d.customer_email ? <a href={listUrl("/invoices/quotes/new", who)} class={linkButtonClass}>New quote</a> : null}
       </div>
       {d.archived_at ? (
@@ -204,36 +203,38 @@ export function DealPage(p: {
       <div class="grid gap-4 md:grid-cols-3">
         <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
           {stage?.kind === "lost" ? (
-            <Section title="Why it was lost">
+            <Section title="Lost reason">
               <form method="post" action={`${self}/stage`} class="flex flex-wrap items-end gap-3">
                 <input type="hidden" name="status" value={d.stage} />
                 <input type="hidden" name="return" value={self} />
-                <Field label="Reason" class="min-w-48 flex-1">
-                  <input name="lost_reason" list="lost-reasons" value={d.lost_reason ?? ""} maxlength={200} class={controlClass} />
+                <label class="flex min-w-48 flex-1 flex-col">
+                  <input name="lost_reason" aria-label="Lost reason" list="lost-reasons" value={d.lost_reason ?? ""} maxlength={200} class={controlClass} />
                   <datalist id="lost-reasons">
                     {dealsCfg.lost_reasons.map((r) => <option value={r} />)}
                   </datalist>
-                </Field>
+                </label>
                 <button class={buttonClass}>Save</button>
               </form>
             </Section>
           ) : null}
-          <Section title="Follow-ups">
-            <FollowUpsSection customerId={d.customer_id} open={p.followUps.open} done={p.followUps.done} deals={p.openDeals} dealId={d.id}
-              owners={p.owners} user={p.user} today={p.today} returnTo={self} />
-          </Section>
+          {!closed || p.followUps.open.length ? (
+            <Section title="Follow-ups">
+              <FollowUpsSection customerId={d.customer_id} open={p.followUps.open} done={p.followUps.done} deals={p.openDeals} dealId={d.id}
+                owners={p.owners} user={p.user} today={p.today} returnTo={self} prompt={!closed} />
+            </Section>
+          ) : null}
           <Section title="Details">
             <form method="post" action={self} class="grid gap-3 sm:grid-cols-2">
-              <Field label={`What the ${one} is`} class="sm:col-span-2">
+              <Field label={`${dealsCfg.one} name`} class="sm:col-span-2">
                 <input name="title" value={d.title} required maxlength={200} class={controlClass} />
               </Field>
-              <Field label={`Value (${(d.currency ?? dealsCfg.currency).toUpperCase()})`} hint={d.from_quote ? "Blank: the latest quote's total stands in." : undefined}>
+              <Field label={`Value (${(d.currency ?? dealsCfg.currency).toUpperCase()})`} hint="Leave blank to use the latest quote's total.">
                 <input name="value" inputmode="decimal" value={d.value_cents === null ? "" : amountText(d.value_cents, d.currency ?? dealsCfg.currency)} maxlength={20} class={controlClass} />
               </Field>
-              <Field label="Expected to close">
+              <Field label="Expected close date">
                 <input name="expected_close" type="date" value={d.expected_close ?? ""} class={controlClass} />
               </Field>
-              <Field label={ownerLabel} hint="Who is working on it.">
+              <Field label={ownerLabel}>
                 <input name="owner" list="owners" value={d.owner ?? ""} maxlength={200} class={controlClass} />
                 <datalist id="owners">
                   {p.owners.map((o) => <option value={o} />)}
@@ -247,7 +248,7 @@ export function DealPage(p: {
               </div>
             </form>
           </Section>
-          {p.quotes ? (
+          {p.quotes && (p.quotes.length || !closed) ? (
             <Section title="Quotes">
               {p.quotes.length ? (
                 <ul class="flex flex-col gap-2">
@@ -260,31 +261,29 @@ export function DealPage(p: {
                   ))}
                 </ul>
               ) : (
-                <p class="text-ink-3">No quote for this {one} yet. {d.customer_email ? "When one is accepted, the deal is won." : `Add an email to ${d.customer_name} to quote them.`}</p>
+                <p class="text-ink-3">No quotes yet. {d.customer_email ? `Accepting a quote marks the ${one} won.` : `Add an email to ${d.customer_name} to send a quote.`}</p>
               )}
             </Section>
           ) : null}
-          {visitsCfg ? (
+          {visitsCfg && (p.jobs.length || stage?.kind === "won") ? (
             <Section title={visitsCfg.many}>
               {p.jobs.length ? (
                 <ul class="flex flex-col gap-1">
                   {p.jobs.map((j) => <li><a href={`/visits/${j.id}`}>{j.title}</a></li>)}
                 </ul>
-              ) : stage?.kind === "won" ? (
-                <form method="post" action={`${self}/job`}>
-                  <button class={buttonClass}>Make it a {visitsCfg.one.toLowerCase()}</button>
-                </form>
               ) : (
-                <p class="text-ink-3">Once it is won, make it a {visitsCfg.one.toLowerCase()} here.</p>
+                <form method="post" action={`${self}/job`}>
+                  <button class={buttonClass}>Create {visitsCfg.one.toLowerCase()}</button>
+                </form>
               )}
             </Section>
           ) : null}
         </div>
         <div class="flex flex-col gap-4">
-          <Section title="Record">
+          <Section title="About">
             <FieldList
               fields={[
-                { label: "Worth", value: value ? `${value}${d.from_quote ? " (its quote)" : ""}` : "Not set" },
+                { label: "Value", value: value ? `${value}${d.from_quote ? " (from the quote)" : ""}` : "Not set" },
                 { label: "In this stage since", value: <When at={d.stage_changed_at} timeZone={timeZone} /> },
                 ...(d.closed_at ? [{ label: "Closed", value: <When at={d.closed_at} timeZone={timeZone} /> }] : []),
                 { label: "Added", value: <Who at={d.created_at} by={d.created_by} /> },
@@ -295,7 +294,7 @@ export function DealPage(p: {
           <Section title="Archive">
             <form method="post" action={`${self}/archive`} class="flex flex-col gap-2">
               <input type="hidden" name="archived" value={d.archived_at ? "0" : "1"} />
-              <p class="text-label text-ink-3">{d.archived_at ? "Put it back on the board." : "Takes it off the board, for one added by mistake. Nothing is deleted."}</p>
+              <p class="text-label text-ink-3">{d.archived_at ? "Puts it back on the board." : "Takes it off the board. Nothing is deleted."}</p>
               <button class={buttonClass + " self-start"}>{d.archived_at ? "Unarchive" : "Archive"}</button>
             </form>
           </Section>
@@ -328,7 +327,7 @@ export function CustomerDeals({ c, deals, stages }: { c: Customer; deals: Deal[]
         </details>
       ) : null}
       <details>
-        <summary class="cursor-pointer text-label font-semibold text-ink-2">New {one}</summary>
+        <summary class="cursor-pointer text-label font-semibold text-ink-2">Add {one}</summary>
         <form method="post" action={`/customers/${c.id}/deals`} class="mt-3 grid gap-3 sm:grid-cols-3">
           <DealInputs stages={stages.filter((s) => s.kind === "open")} />
           <div class="sm:col-span-3">

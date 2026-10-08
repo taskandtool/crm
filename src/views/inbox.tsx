@@ -1,8 +1,8 @@
-// What came in: four figures (leads this week, follow-ups due, the open
-// pipeline, won this month), then one row per submission, booking or
-// payment, newest first, each with the person, their customer or "Add as
-// customer", and "Add as deal" (a repeat customer's new enquiry too). Rows
-// are a list rather than a table so they wrap on a phone.
+// The Inbox: four figures (new leads this week, follow-ups due, open deals,
+// won this month), then one row per submission, booking or payment, newest
+// first, each with the person, their customer or "Add as customer", and
+// "Add as deal" (a repeat customer's new enquiry too). Rows are a list
+// rather than a table so they wrap on a phone.
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
 import { StatusBadge, type StatusOption } from "../admin/status";
@@ -59,9 +59,9 @@ function Numbers({ n }: { n: Overview }) {
   const cash = (cents: string) => money(cents, dealsCfg.currency).replace(/\.00$/, "");
   return (
     <div class="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-      {figure("#results", n.leads ? String(n.leads.current) : "None yet", "Leads, last 7 days", n.leads ? `${n.leads.previous} the 7 before` : "No forms on the project yet")}
-      {figure("/follow-ups", String(due), "Your follow-ups due", n.due.overdue ? `${n.due.overdue} overdue` : due ? "All today" : "Nothing overdue")}
-      {figure("/deals", cash(n.open.cents), `Open ${dealsCfg.many.toLowerCase()}`, `${n.open.count} in the pipeline`)}
+      {figure("#results", n.leads ? String(n.leads.current) : "None yet", "New leads, 7 days", n.leads ? `${n.leads.previous} the week before` : "No forms on the project yet")}
+      {figure("/follow-ups", String(due), "Follow-ups due", n.due.overdue ? `${n.due.overdue} overdue` : due ? "All today" : "Nothing overdue")}
+      {figure("/deals", cash(n.open.cents), `Open ${dealsCfg.many.toLowerCase()}`, n.open.count === 1 ? `1 ${dealsCfg.one.toLowerCase()}` : `${n.open.count} ${dealsCfg.many.toLowerCase()}`)}
       {figure("/deals", cash(n.won.cents), "Won this month", n.won.count === 1 ? `1 ${dealsCfg.one.toLowerCase()}` : `${n.won.count} ${dealsCfg.many.toLowerCase()}`)}
     </div>
   );
@@ -69,7 +69,7 @@ function Numbers({ n }: { n: Overview }) {
 
 export function InboxPage(p: InboxProps) {
   return (
-    <Layout title="What came in" user={p.user} section="inbox">
+    <Layout title="Inbox" user={p.user} section="inbox">
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <Numbers n={p.numbers} />
       {/* The box applies on change (htmx swaps #results and pushes the URL,
@@ -86,7 +86,7 @@ export function InboxPage(p: InboxProps) {
         ) : null}
         <label class="flex items-center gap-2">
           <input type="checkbox" name="unmatched" value="1" checked={p.unmatched} hx-get="/" hx-trigger="change" hx-include="closest form" />
-          Only people who are not {vocab.many.toLowerCase()} yet
+          Not {vocab.many.toLowerCase()} yet
         </label>
         <button class={buttonClass}>Apply</button>
       </form>
@@ -115,12 +115,12 @@ export function InboxResults(p: Pick<InboxProps, "rows" | "next" | "more" | "sel
             <p>Everyone who got in touch is already a {vocab.one.toLowerCase()}.</p>
           ) : (
             <>
-              <p class="font-semibold text-ink">Nothing has come in yet.</p>
+              <p class="font-semibold text-ink">No leads yet.</p>
               <p class="mx-auto mt-1 max-w-xl">
-                {p.missing ?? "Form submissions, bookings and payments from the project's other apps show here as they arrive."}
+                {p.missing ?? "Form submissions, bookings and payments from your other apps show up here."}
               </p>
-              <p class="mx-auto mt-3 max-w-xl">
-                Meanwhile, <a href="/customers#new-customer">add a {vocab.one.toLowerCase()} by hand</a>, or ask the AI in chat to import the list you keep today.
+              <p class="mt-4">
+                <a href="/customers#new-customer" class={linkButtonClass}>Add {vocab.one.toLowerCase()}</a>
               </p>
             </>
           )}
@@ -175,7 +175,7 @@ function Row({ row, self }: { row: InboxRow; self: string }) {
           <form method="post" action="/inbox/add">
             <input type="hidden" name="kind" value={row.kind} />
             <input type="hidden" name="id" value={row.id} />
-            <button class={primaryClass} aria-label={`Add ${person} as a ${vocab.one.toLowerCase()}`}>
+            <button class={buttonClass} aria-label={`Add ${person} as a ${vocab.one.toLowerCase()}`}>
               Add as {vocab.one.toLowerCase()}
             </button>
           </form>

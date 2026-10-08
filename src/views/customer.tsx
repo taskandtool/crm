@@ -1,13 +1,16 @@
-// One customer: their follow-ups, their deals, their status, details
-// (custom fields included), notes timeline, their jobs or visits when the
-// config has them, and everything they did across the project's tables. Plain forms throughout: every change
-// is a POST answered with a 303 back here.
-import { FieldList, JsonData, Section } from "../admin/detail";
+// One customer, laid out as every CRM lays out a record: what happens next
+// (follow-ups), one Activity timeline (notes and calls, and everything they
+// sent, booked, paid and were quoted, newest first) with a small box to log
+// a note on top, and their visits; beside it, About (their details as
+// values, Edit for the form), their deals, quotes and invoices, possible
+// duplicates, Merge and Archive. Empty sections are left out. Plain forms
+// throughout: every change is a POST answered with a 303 back here.
+import { FieldList, JsonData, Section, type Field as Shown } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
-import { StatusForm } from "../admin/status";
 import { cfg, dealsCfg, invoicesCfg, ownerLabel, showBooking, visitsCfg, vocab } from "../config";
 import type { Deal } from "../crm/deals";
+import { fieldText } from "../crm/fields";
 import type { FollowUp } from "../crm/follow-ups";
 import { CustomerDeals } from "./deals";
 import { FollowUpsSection } from "./follow-ups";
@@ -22,11 +25,14 @@ import { money, nowIn } from "../crm/text";
 import { whereText, type Booking } from "../booking/book";
 import { firstText } from "./inbox";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, CustomInput, Field, linkButtonClass, MESSAGES, primaryClass, stageOptions, timeZone, Who } from "./ui";
+import { buttonClass, controlClass, CustomInput, Field, linkButtonClass, MESSAGES, primaryClass, SaveOnChange, stageOptions, timeZone, Who } from "./ui";
 import { CustomerVisits } from "./visits";
 import { CustomerMoney, type Owed } from "./money";
 import type { Quote } from "../invoices/quotes";
 import type { Invoice } from "../invoices/invoices";
+
+/** How many Activity entries show before "Show older". */
+const RECENT = 10;
 
 export function CustomerPage(p: {
   user: string;
@@ -49,10 +55,10 @@ export function CustomerPage(p: {
 }) {
   const c = p.customer;
   const self = `/customers/${c.id}`;
-  // A stage another app wrote, or one archived since, still shows and stays selectable.
+  // A status another app wrote, or one archived since, still shows and stays selectable.
   const stages = p.stages.some((s) => s.key === c.stage) ? p.stages : [...p.stages, { key: c.stage, label: c.stage, position: 999, kind: "open" as const, archived: true }];
-  const options = stageOptions(stages);
   const missing = missingSentence(p.present, { submissions: true, bookings: true, payments: true });
+  const money = p.money && (p.money.quotes.length || p.money.invoices.length) ? p.money : null;
   return (
     <Layout title={c.name} user={p.user} section="customers">
       <p class="mb-3 text-label">
@@ -60,16 +66,13 @@ export function CustomerPage(p: {
       </p>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span class="flex items-center gap-2">
-          <span class="text-label text-ink-2" aria-hidden="true">Status</span>
-          <StatusForm action={`${self}/stage`} current={c.stage} options={options} returnTo={self} label="Status" />
-        </span>
-        {c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`} class={linkButtonClass}>Call {c.phone}</a> : null}
+        <SaveOnChange action={`${self}/stage`} current={c.stage} options={stageOptions(stages)} label="Status" returnTo={self} />
+        {c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`} class={linkButtonClass}>Call</a> : null}
+        {c.email ? <a href={`mailto:${c.email}`} class={linkButtonClass} title={c.email}>Email</a> : null}
         {showBooking ? (
           <a href={listUrl("/bookings/new", { name: c.name, email: c.email, phone: c.phone, address: c.address })} class={linkButtonClass}>Book a time</a>
         ) : null}
         {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", { email: c.email, name: c.name, phone: c.phone, address: c.address })} class={linkButtonClass}>New quote</a> : null}
-        {c.email ? <a href={`mailto:${c.email}`} class={linkButtonClass} title={c.email}>Email</a> : null}
       </div>
       {c.archived_at ? (
         <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">
@@ -77,87 +80,97 @@ export function CustomerPage(p: {
         </p>
       ) : null}
       <div class="grid gap-4 md:grid-cols-3">
-        {/* What happens next leads, then the deals and the jobs the team
-            works from. On a phone the notes come right after the follow-ups:
-            adding one is what a call needs, and the details form is long.
-            Only the visual order moves. */}
         <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
-          <Section title="Follow-ups" class="order-first">
+          <Section title="Follow-ups">
             <FollowUpsSection customerId={c.id} open={p.followUps.open} done={p.followUps.done}
               deals={p.deals.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title }))}
               owners={p.owners} user={p.user} today={p.today} returnTo={self} />
           </Section>
-          <Section title={dealsCfg.many}>
-            <CustomerDeals c={c} deals={p.deals} stages={p.dealStages} />
+          <Section title="Activity">
+            <Activity c={c} notes={p.notes} history={p.history} missing={missing} />
           </Section>
           {visitsCfg ? (
             <Section title={visitsCfg.many}>
               <CustomerVisits c={c} visits={p.visits} owners={p.owners} />
             </Section>
           ) : null}
-          {p.money ? <CustomerMoney c={c} {...p.money} /> : null}
-          <Section title="Details">
-            <Details c={c} owners={p.owners} />
-          </Section>
-          <Section title="Notes" class="order-first sm:order-none">
-            <Notes c={c} notes={p.notes} />
-          </Section>
-          <Section title="Everything from this person">
-            {missing ? <p class="mb-3 text-label text-ink-3">{missing}</p> : null}
-            <History items={p.history} hasKey={!!(c.email || c.phone)} customerId={c.id} />
-          </Section>
         </div>
-        <div class="flex flex-col gap-4">
-          <Section title="Record">
-            <FieldList
-              fields={[
-                { label: "Last contact", value: <When at={c.last_contact_at} timeZone={timeZone} /> },
-                ...(c.other_emails?.length ? [{ label: "Also goes by", value: c.other_emails.join(", ") }] : []),
-                { label: "Added", value: <Who at={c.created_at} by={c.created_by} /> },
-                { label: "Changed", value: <Who at={c.updated_at} by={c.updated_by} /> },
-              ]}
-            />
+        <div class="flex min-w-0 flex-col gap-4">
+          <Section title="About">
+            <About c={c} owners={p.owners} />
           </Section>
-          <Section title="Merge">
-            {p.duplicates.length ? (
-              <div class="mb-3">
-                <p class="mb-2 text-label font-semibold text-ink-2">Maybe the same person</p>
-                <ul class="flex flex-col gap-1">
-                  {p.duplicates.map((d) => (
-                    <li>
-                      <a href={`${self}/merge?other=${d.id}`}>{d.name}</a>
-                      <span class="text-label text-ink-3"> {[d.email, d.phone].filter(Boolean).join(" · ")}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            <p class="mb-2 text-label text-ink-3">Two records of one person become this one: their notes, {dealsCfg.many.toLowerCase()}, follow-ups and history move here.</p>
-            <a href={`${self}/merge`} class={linkButtonClass}>Merge another record into this one</a>
+          <Section title={dealsCfg.many}>
+            <CustomerDeals c={c} deals={p.deals} stages={p.dealStages} />
           </Section>
-          <Section title="Archive">
-            <form method="post" action={`${self}/archive`} class="flex flex-col gap-2">
+          {money ? <CustomerMoney c={c} {...money} /> : null}
+          {p.duplicates.length ? (
+            <Section title="Possible duplicates">
+              <ul class="flex flex-col gap-2">
+                {p.duplicates.map((d) => (
+                  <li class="flex flex-wrap items-baseline justify-between gap-x-3">
+                    <span class="min-w-0 break-words">
+                      {d.name}
+                      <span class="block text-label text-ink-3">{[d.email, d.phone].filter(Boolean).join(" · ")}</span>
+                    </span>
+                    <a href={`${self}/merge?other=${d.id}`} class="text-label">Merge</a>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          ) : null}
+          <div class="flex flex-wrap gap-2">
+            <a href={`${self}/merge`} class={linkButtonClass}>Merge with another record</a>
+            <form method="post" action={`${self}/archive`}>
               <input type="hidden" name="archived" value={c.archived_at ? "0" : "1"} />
-              <p class="text-label text-ink-3">
-                {c.archived_at ? "Bring them back into the lists." : "Takes them out of the lists. Nothing is deleted."}
-              </p>
-              <button class={buttonClass + " self-start"}>{c.archived_at ? "Unarchive" : "Archive"}</button>
+              <button class={buttonClass} title={c.archived_at ? "Brings them back into the lists." : "Takes them out of the lists. Nothing is deleted."}>
+                {c.archived_at ? "Unarchive" : "Archive"}
+              </button>
             </form>
-          </Section>
+          </div>
         </div>
       </div>
     </Layout>
   );
 }
 
+/** Their details as values, then Edit for the form. */
+function About({ c, owners }: { c: Customer; owners: string[] }) {
+  const custom = cfg.fields.map((f) => ({ label: f.label, value: fieldText(c.fields?.[f.key]) || null }));
+  // Only what is filled shows; Edit adds the rest.
+  const filled = (f: Shown) => f.value !== null && f.value !== undefined && f.value !== "";
+  return (
+    <div class="flex flex-col gap-3">
+      <FieldList
+        fields={([
+          { label: "Email", value: c.email ? <a href={`mailto:${c.email}`} class="break-all">{c.email}</a> : null },
+          ...(c.other_emails?.length ? [{ label: "Also goes by", value: c.other_emails.join(", ") }] : []),
+          { label: "Phone", value: c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`}>{c.phone}</a> : null },
+          { label: "Company", value: c.company },
+          { label: "Address", value: c.address },
+          { label: ownerLabel, value: c.owner },
+          { label: "Source", value: c.source },
+          { label: "Tags", value: c.tags.length ? c.tags.join(", ") : null },
+          ...custom,
+          { label: "Background", value: c.notes ? <span class="whitespace-pre-wrap">{c.notes}</span> : null },
+          { label: "Last contact", value: c.last_contact_at ? <When at={c.last_contact_at} timeZone={timeZone} /> : null },
+          { label: "Added", value: <Who at={c.created_at} by={c.created_by} /> },
+        ] as Shown[]).filter(filled)}
+      />
+      <details>
+        <summary class={buttonClass + " inline-block cursor-pointer list-none"}>Edit</summary>
+        <div class="mt-3">
+          <Details c={c} owners={owners} />
+        </div>
+      </details>
+    </div>
+  );
+}
+
 function Details({ c, owners }: { c: Customer; owners: string[] }) {
   return (
-    <form method="post" action={`/customers/${c.id}`} class="grid gap-3 sm:grid-cols-2">
+    <form method="post" action={`/customers/${c.id}`} class="grid gap-3">
       <Field label="Name">
         <input name="name" value={c.name} required maxlength={200} class={controlClass} />
-      </Field>
-      <Field label="Company">
-        <input name="company" value={c.company ?? ""} maxlength={200} class={controlClass} />
       </Field>
       <Field label="Email">
         <input name="email" type="email" value={c.email ?? ""} maxlength={254} class={controlClass} />
@@ -165,8 +178,19 @@ function Details({ c, owners }: { c: Customer; owners: string[] }) {
       <Field label="Phone">
         <input name="phone" type="tel" value={c.phone ?? ""} maxlength={40} class={controlClass} />
       </Field>
-      <Field label="Address" class="sm:col-span-2">
+      <Field label="Company">
+        <input name="company" value={c.company ?? ""} maxlength={200} class={controlClass} />
+      </Field>
+      <Field label="Address">
         <input name="address" value={c.address ?? ""} maxlength={500} autocomplete="off" class={controlClass} />
+      </Field>
+      <Field label={ownerLabel} hint="The team member responsible.">
+        <input name="owner" list="owners" value={c.owner ?? ""} maxlength={200} class={controlClass} />
+        <datalist id="owners">
+          {owners.map((o) => (
+            <option value={o} />
+          ))}
+        </datalist>
       </Field>
       <Field label="Source">
         <input name="source" list="sources" value={c.source ?? ""} maxlength={100} class={controlClass} />
@@ -176,69 +200,79 @@ function Details({ c, owners }: { c: Customer; owners: string[] }) {
           ))}
         </datalist>
       </Field>
-      <Field label={ownerLabel} hint="Who looks after them: a team member's email, or a name.">
-        <input name="owner" list="owners" value={c.owner ?? ""} maxlength={200} class={controlClass} />
-        <datalist id="owners">
-          {owners.map((o) => (
-            <option value={o} />
-          ))}
-        </datalist>
-      </Field>
-      <Field label="Tags" class="sm:col-span-2" hint="Separate tags with commas.">
+      <Field label="Tags" hint="Separate tags with commas.">
         <input name="tags" value={c.tags.join(", ")} maxlength={1000} class={controlClass} />
       </Field>
       {cfg.fields.map((f) => (
         <CustomInput f={f} value={c.fields?.[f.key]} />
       ))}
-      <Field label="About them" class="sm:col-span-2">
+      <Field label="Background">
         <textarea name="notes" rows={3} maxlength={10000} class={controlClass}>
           {c.notes ?? ""}
         </textarea>
       </Field>
-      <div class="sm:col-span-2">
+      <div>
         <button class={primaryClass}>Save</button>
       </div>
     </form>
   );
 }
 
-function Notes({ c, notes }: { c: Customer; notes: Note[] }) {
+type Entry = { at: Date; note?: Note; item?: HistoryItem };
+
+/**
+ * One timeline: what the team logged (notes, calls, emails, meetings,
+ * texts, follow-ups done) and what the person did across the project
+ * (submissions, bookings, payments, quotes and invoices sent), newest
+ * first; the latest RECENT, then the rest behind "Show older".
+ */
+function Activity({ c, notes, history, missing }: { c: Customer; notes: Note[]; history: HistoryItem[]; missing: string | null }) {
+  const entries: Entry[] = [
+    ...notes.map((n) => ({ at: new Date(n.happened_at), note: n })),
+    ...history.map((i) => ({ at: new Date(i.at), item: i })),
+  ].sort((a, b) => b.at.getTime() - a.at.getTime());
+  const row = (e: Entry) => (e.note ? <NoteEntry n={e.note} /> : <HistoryEntry i={e.item!} customerId={c.id} />);
   return (
     <div class="flex flex-col gap-4">
-      <form method="post" action={`/customers/${c.id}/notes`} aria-label="Add a note" class="grid gap-3 sm:grid-cols-3">
-        <Field label="Type">
-          <select name="kind" class={controlClass}>
+      <form method="post" action={`/customers/${c.id}/notes`} aria-label="Log activity" class="flex flex-col gap-2">
+        <textarea name="body" rows={2} required maxlength={10000} placeholder="Add a note, or log a call" aria-label="Note" class={controlClass}></textarea>
+        <div class="flex flex-wrap items-center gap-2">
+          <select name="kind" aria-label="Type" class={controlClass}>
             {NOTE_KINDS.map((k) => (
               <option value={k}>{NOTE_LABELS[k]}</option>
             ))}
           </select>
-        </Field>
-        <Field label="When" class="sm:col-span-2" hint={`In ${timeZone}.`}>
-          <input name="at" type="datetime-local" value={nowIn(timeZone)} class={controlClass} />
-        </Field>
-        <Field label="What happened" class="sm:col-span-3">
-          <textarea name="body" rows={3} required maxlength={10000} class={controlClass}></textarea>
-        </Field>
-        <div class="sm:col-span-3">
-          <button class={primaryClass}>Add note</button>
+          <input name="at" type="datetime-local" value={nowIn(timeZone)} aria-label={`When, in ${timeZone}`} class={controlClass} />
+          <button class={primaryClass}>Save</button>
         </div>
       </form>
-      {notes.length ? (
-        <ol class="flex flex-col gap-3">
-          {notes.map((n) => (
-            <li class="border-l-2 border-line pl-3">
-              <p class="text-label text-ink-3">
-                <span class="font-semibold text-ink-2">{NOTE_LABELS[n.kind] ?? n.kind}</span> · <When at={n.happened_at} timeZone={timeZone} />
-                {n.author ? ` · ${n.author}` : ""}
-              </p>
-              <p class="whitespace-pre-wrap break-words">{n.body}</p>
-            </li>
-          ))}
-        </ol>
+      {missing && (c.email || c.phone) ? <p class="text-label text-ink-3">{missing}</p> : null}
+      {entries.length ? (
+        <>
+          <ol class="flex flex-col gap-3">{entries.slice(0, RECENT).map((e) => <li class="border-l-2 border-line pl-3">{row(e)}</li>)}</ol>
+          {entries.length > RECENT ? (
+            <details>
+              <summary class="cursor-pointer text-label text-ink-2">Show {entries.length - RECENT} older</summary>
+              <ol class="mt-3 flex flex-col gap-3">{entries.slice(RECENT).map((e) => <li class="border-l-2 border-line pl-3">{row(e)}</li>)}</ol>
+            </details>
+          ) : null}
+        </>
       ) : (
-        <p class="text-ink-3">No notes yet.</p>
+        <p class="text-ink-3">No activity yet.</p>
       )}
     </div>
+  );
+}
+
+function NoteEntry({ n }: { n: Note }) {
+  return (
+    <>
+      <p class="text-label text-ink-3">
+        <span class="font-semibold text-ink-2">{NOTE_LABELS[n.kind] ?? n.kind}</span> · <When at={n.happened_at} timeZone={timeZone} />
+        {n.author ? ` · ${n.author}` : ""}
+      </p>
+      <p class="whitespace-pre-wrap break-words">{n.body}</p>
+    </>
   );
 }
 
@@ -260,7 +294,7 @@ function BookingItem({ i, customerId }: { i: Extract<HistoryItem, { kind: "booki
         ) : (
           <form method="post" action={`/bookings/${i.id}/job`}>
             <input type="hidden" name="customer" value={customerId} />
-            <button class={buttonClass}>Make it a {visitsCfg.one.toLowerCase()}</button>
+            <button class={buttonClass}>Create {visitsCfg.one.toLowerCase()}</button>
           </form>
         )
       ) : null}
@@ -268,44 +302,37 @@ function BookingItem({ i, customerId }: { i: Extract<HistoryItem, { kind: "booki
   );
 }
 
-function History({ items, hasKey, customerId }: { items: HistoryItem[]; hasKey: boolean; customerId: string }) {
-  if (!hasKey) return <p class="text-ink-3">Add an email or a phone number to see what this person sent, booked and paid.</p>;
-  if (!items.length) return <p class="text-ink-3">Nothing from this person in the project's forms, bookings or payments, and no quote or invoice sent.</p>;
-  const kindName = (i: HistoryItem) =>
+function HistoryEntry({ i, customerId }: { i: HistoryItem; customerId: string }) {
+  const kindName =
     i.kind === "submission" ? i.form_title || i.form_key : i.kind === "booking" ? "Booking" : i.kind === "payment" ? "Payment" : i.kind === "quote" ? `Quote ${i.number}` : i.number ? `Invoice ${i.number}` : "Invoice";
   return (
-    <ol class="flex flex-col gap-3">
-      {items.map((i) => (
-        <li class="border-l-2 border-line pl-3">
-          <p class="text-label text-ink-3">
-            <span class="font-semibold text-ink-2">{kindName(i)}</span> ·{" "}
-            <When at={i.at} timeZone={timeZone} /> · {i.status.replace(/_/g, " ")}
-          </p>
-          {i.kind === "submission" ? (
-            <>
-            {firstText(i.data) ? <p class="line-clamp-3 break-words">{firstText(i.data)}</p> : null}
-            <details class="mt-1">
-              <summary class="cursor-pointer text-label text-ink-2">Everything they sent</summary>
-              <div class="mt-2">
-                <JsonData data={i.data} />
-              </div>
-            </details>
-            </>
-          ) : i.kind === "booking" ? (
-            <BookingItem i={i} customerId={customerId} />
-          ) : i.kind === "quote" || i.kind === "invoice" ? (
-            <p>
-              <a href={i.kind === "quote" ? `/invoices/quotes/${i.id}` : `/invoices/${i.id}`}>{money(i.total_cents, i.currency)}</a>
-            </p>
-          ) : (
-            <p>
-              {money(i.amount_cents, i.currency)}
-              {i.description ? `, ${i.description}` : ""}
-              {i.livemode === false ? " (test mode)" : ""}
-            </p>
-          )}
-        </li>
-      ))}
-    </ol>
+    <>
+      <p class="text-label text-ink-3">
+        <span class="font-semibold text-ink-2">{kindName}</span> · <When at={i.at} timeZone={timeZone} /> · {i.status.replace(/_/g, " ")}
+      </p>
+      {i.kind === "submission" ? (
+        <>
+          {firstText(i.data) ? <p class="line-clamp-3 break-words">{firstText(i.data)}</p> : null}
+          <details class="mt-1">
+            <summary class="cursor-pointer text-label text-ink-2">Everything they sent</summary>
+            <div class="mt-2">
+              <JsonData data={i.data} />
+            </div>
+          </details>
+        </>
+      ) : i.kind === "booking" ? (
+        <BookingItem i={i} customerId={customerId} />
+      ) : i.kind === "quote" || i.kind === "invoice" ? (
+        <p>
+          <a href={i.kind === "quote" ? `/invoices/quotes/${i.id}` : `/invoices/${i.id}`}>{money(i.total_cents, i.currency)}</a>
+        </p>
+      ) : (
+        <p>
+          {money(i.amount_cents, i.currency)}
+          {i.description ? `, ${i.description}` : ""}
+          {i.livemode === false ? " (test mode)" : ""}
+        </p>
+      )}
+    </>
   );
 }

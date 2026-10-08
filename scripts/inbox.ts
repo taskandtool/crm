@@ -1,4 +1,4 @@
-// What came in, from chat: submissions, bookings and payments across the
+// The Inbox, from chat: submissions, bookings and payments across the
 // project, who they matched, and the two actions the page has.
 // `node scripts/inbox.mjs --help`.
 import { cfg } from "../src/config";

@@ -11,8 +11,8 @@ import type { Stage } from "../crm/stages";
 import { Layout } from "./layout";
 import { controlClass, DueMark, Field, MESSAGES, primaryClass, stageOptions, timeZone } from "./ui";
 
-/** Each row's next follow-up (by customer id), and today in the business's zone: what the Next column says. */
-export type NextOf = { next: Map<string, { due_on: string; due_time: string | null }>; today: string };
+/** Each row's next follow-up (by customer id), who is still in play, and today in the business's zone: what the Next column says. */
+export type NextOf = { next: Map<string, { due_on: string; due_time: string | null }>; inPlay: Set<string>; today: string };
 
 export function filterParams(f: ListFilter) {
   return { q: f.q, stage: f.stage, tag: f.tag, owner: f.owner, show: f.archived ? "archived" : null };
@@ -34,7 +34,7 @@ export function customerSpec(stages: Stage[], n: NextOf): TableSpec<Customer> {
         ),
       },
       { label: "Status", cell: (r) => <StatusBadge value={r.stage} options={options} /> },
-      { label: "Next follow-up", class: "hidden sm:table-cell", cell: (r) => <DueMark next={n.next.get(r.id)} today={n.today} /> },
+      { label: "Next follow-up", class: "hidden sm:table-cell", cell: (r) => (n.next.has(r.id) || n.inPlay.has(r.id) ? <DueMark next={n.next.get(r.id)} today={n.today} /> : "") },
       {
         label: "Contact",
         class: "hidden sm:table-cell",
@@ -77,12 +77,12 @@ export function Results(p: { stages: Stage[]; filter: ListFilter; rows: Customer
           ) : p.filter.archived ? (
             "Nothing is archived."
           ) : (
-            `No ${vocab.many.toLowerCase()} yet. Add one below, add people from What came in, or import a spreadsheet.`
+            `No ${vocab.many.toLowerCase()} yet. Add one below or from the Inbox, or ask the AI to import your spreadsheet.`
           )
         }
       />
       <p class="mt-3 text-label">
-        <a href={listUrl("/customers/export.csv", params)}>Export these as CSV</a>
+        <a href={listUrl("/customers/export.csv", params)}>Export CSV</a>
       </p>
     </div>
   );
@@ -164,7 +164,7 @@ function NewCustomer({ stages }: { stages: Stage[] }) {
         </Field>
         <div class="sm:col-span-2 lg:col-span-3">
           <button class={primaryClass}>Add {vocab.one.toLowerCase()}</button>
-          <span class="ml-3 text-label text-ink-3">A name, an email or a phone is enough. Someone already here by email or phone opens instead.</span>
+          <span class="ml-3 text-label text-ink-3">Enter a name, email or phone. If they are already here, their record opens.</span>
         </div>
       </form>
     </section>

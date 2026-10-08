@@ -54,7 +54,7 @@ export type BookingAdminOptions = {
    * one adds a calendar that never syncs. Default true.
    */
   calendars?: boolean;
-  /** The zone the Schedule shows; the first person's when absent. */
+  /** The business's zone: the Schedule and the bookings list show times in it. Absent, the Schedule shows the first person's and the list each host's. */
   timeZone?: string;
   /**
    * The public booking pages' address, absolute ("https://acme.com/book"), so
@@ -187,7 +187,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     id: "bookings",
     href: (r) => `${base}/${r.id}`,
     columns: [
-      { label: "When", cell: (r) => <When at={r.starts_at} timeZone={r.time_zone} /> },
+      { label: "When", cell: (r) => <When at={r.starts_at} timeZone={opts.timeZone ?? r.time_zone} /> },
       { label: "Name", cell: (r) => r.name },
       { label: "What", cell: (r) => r.type_name, class: "hidden sm:table-cell" },
       { label: "Email", cell: (r) => r.email, class: "hidden md:table-cell" },

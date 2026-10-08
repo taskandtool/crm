@@ -150,7 +150,7 @@ export function adminRoutes(getDb: GetDb, opts: AdminOptions) {
           }
         />
         <p class="mt-3 text-label">
-          <a href={listUrl(`${base}/export.csv`, { q: f.q, status: f.status })}>Export these as CSV</a>
+          <a href={listUrl(`${base}/export.csv`, { q: f.q, status: f.status })}>Export CSV</a>
         </p>
       </div>
     );

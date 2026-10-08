@@ -111,6 +111,12 @@ test("a visitor books, sees the time in their zone, downloads the invite, and ca
     html = await res.text();
     assert.match(html, /ann@example\.com/);
     assert.match(html, /Intro call/);
+    // With the business's zone given, the list shows its times in it, not the host's (Pat is in New York).
+    const zoned = new Hono();
+    zoned.route("/admin/bookings", bookingAdmin(() => s.db, { base: "/admin/bookings", css: "/site.css", source: "website", timeZone: "Asia/Tokyo" }));
+    const whenOf = (page: string) => /<time[^>]*>([^<]+)<\/time>/.exec(page)?.[1];
+    const tokyo = await (await zoned.request("/admin/bookings", { headers: team })).text();
+    assert.ok(whenOf(html) && whenOf(tokyo) && whenOf(html) !== whenOf(tokyo), `${whenOf(html)} vs ${whenOf(tokyo)}`);
 
     res = await app.request(`/book/manage/${token}/cancel`, form({ tz: "Asia/Kolkata" }));
     assert.equal(res.status, 303);

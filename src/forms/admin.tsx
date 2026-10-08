@@ -100,6 +100,11 @@ export function listPage(db: Db, f: SubmissionFilter, after: Cursor | null, size
     limit ${size + 1}`;
 }
 
+/** Each form's title by its key: what a list shows instead of the key. */
+async function formTitles(db: Db): Promise<Map<string, string>> {
+  return new Map((await db.sql<{ key: string; title: string }>`select key, title from forms`).map((f) => [f.key, f.title]));
+}
+
 async function allForms(db: Db) {
   return db.sql<{ key: string; title: string; active: boolean; new_count: number; total: number }>`
     select f.key, f.title, f.active,
@@ -283,14 +288,14 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
 
   // ---- submissions -------------------------------------------------------
 
-  const spec = (returnTo: string, showForm: boolean): TableSpec<Item> => ({
+  const spec = (returnTo: string, showForm: boolean, titles: Map<string, string>): TableSpec<Item> => ({
     id: "subs",
     href: (r) => `${subs}/${r.id}`,
     select: { form: "bulk", label: who },
     columns: [
       { label: "From", cell: who },
       { label: "Email", cell: (r) => r.email ?? "", class: "hidden sm:table-cell" },
-      ...(showForm ? [{ label: "Form", cell: (r: Item) => r.form_key, class: "hidden md:table-cell" }] : []),
+      ...(showForm ? [{ label: "Form", cell: (r: Item) => titles.get(r.form_key) ?? r.form_key, class: "hidden md:table-cell" }] : []),
       {
         label: "Status",
         cell: (r) => <StatusForm action={`${subs}/${r.id}/status`} current={r.status} options={STATUSES} returnTo={returnTo} label={`Status of ${who(r)}`} swap="closest tr" />,
@@ -320,7 +325,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     const params = { q: f.q, status: f.status, form: f.form };
     const self = listUrl(subs, params);
     const more = (cur: string) => listUrl(subs, { ...params, after: cur });
-    const s = spec(self, !f.form);
+    const s = spec(self, !f.form, await formTitles(db));
     if (isPartial(c) && after) return c.html(<TableRows spec={s} rows={page} next={next} more={more} />);
 
     const results = (
@@ -349,7 +354,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
           empty={f.q || f.status || f.form ? <>Nothing matches these filters. <a href={subs}>Clear filters</a></> : "Nothing has come in yet."}
         />
         <p class="mt-3 flex flex-wrap gap-x-4 text-label">
-          <a href={listUrl(`${subs}.csv`, params)}>Export these as CSV</a>
+          <a href={listUrl(`${subs}.csv`, params)}>Export CSV</a>
           <a href={listUrl(`${subs}/unfinished`, { form: f.form })}>Not finished</a>
         </p>
       </div>
@@ -590,7 +595,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       returning id::text as id, form_key, name, email::text as email, phone, status, page, source, created_at, completed_at,
                 updated_by::text as updated_by, created_at::text as k, null::jsonb as data`;
     if (!row) return c.notFound();
-    if (isPartial(c)) return c.html(<TableRow spec={spec(ret, !ret.includes("form="))} row={(await withLinks(getDb(c), [row]))[0]} />);
+    if (isPartial(c)) return c.html(<TableRow spec={spec(ret, !ret.includes("form="), await formTitles(getDb(c)))} row={(await withLinks(getDb(c), [row]))[0]} />);
     return c.redirect(withFlash(ret, "status"), 303);
   });
 
@@ -734,7 +739,7 @@ function Editor(props: {
   return (
     <form method="post" action={`${base}/form/${form.key}`} class="flex flex-col gap-6">
       <p class="text-label">
-        <a href={listUrl(`${base}/submissions`, { form: form.key })}>See what came in</a>
+        <a href={listUrl(`${base}/submissions`, { form: form.key })}>See submissions</a>
       </p>
       {note ? (
         <p role="alert" class="rounded-card border border-line-strong bg-panel px-4 py-2">

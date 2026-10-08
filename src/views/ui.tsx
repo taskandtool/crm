@@ -64,11 +64,37 @@ const DUE_CLASS: Record<Due, string> = {
 /** The mark on a card or a row: when the next follow-up is, in words, or that nothing is planned. */
 export function DueMark({ next, today }: { next: { due_on: string; due_time: string | null } | undefined; today: string }) {
   const due = dueOf(next, today);
-  const text = !next ? "Nothing planned" : due === "overdue" ? `Overdue, ${dueDayText(next.due_on, today)}` : dueDayText(next.due_on, today, next.due_time);
+  const text = !next ? "Nothing scheduled" : due === "overdue" ? `Overdue, ${dueDayText(next.due_on, today)}` : dueDayText(next.due_on, today, next.due_time);
   return (
     <span class={"whitespace-nowrap text-label " + DUE_CLASS[due]} title={next ? "Next follow-up" : undefined}>
       {text}
     </span>
+  );
+}
+
+/**
+ * A select that saves as soon as it is chosen (a customer's status, a deal's
+ * stage): htmx posts it and swaps in the page the POST redirects to, flash
+ * included. Without JavaScript it is a form with a Save button.
+ */
+export function SaveOnChange(p: { action: string; current: string; options: StatusOption[]; label: string; returnTo: string }) {
+  return (
+    <form method="post" action={p.action} hx-post={p.action} hx-trigger="change" hx-target="main" hx-select="main" hx-swap="outerHTML" class="flex items-center gap-2">
+      <input type="hidden" name="return" value={p.returnTo} />
+      <label class="flex items-center gap-2 text-label text-ink-2">
+        {p.label}
+        <select name="status" class={controlClass + " text-copy text-ink"}>
+          {p.options.map((o) => (
+            <option value={o.value} selected={o.value === p.current}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <noscript>
+        <button class={buttonClass}>Save</button>
+      </noscript>
+    </form>
   );
 }
 
@@ -116,7 +142,7 @@ const visitWords = visitsCfg ?? { one: "Visit" };
 
 export const MESSAGES: FlashMessages = {
   added: `${vocab.one} added.`,
-  exists: `Already a ${one}: here they are.`,
+  exists: `That ${one} is already here, so their record opened.`,
   saved: "Saved.",
   invalid: "Saved, except values that were not a valid number, date, time, amount, option or email.",
   stage: "Status changed.",
@@ -127,10 +153,10 @@ export const MESSAGES: FlashMessages = {
   "deal-archived": `${dealsCfg.one} archived. Nothing was deleted.`,
   "deal-unarchived": `${dealsCfg.one} is back from the archive.`,
   "fu-added": "Follow-up added.",
-  "fu-done": "Done, and noted on their timeline.",
-  "fu-already": "That one was already done.",
-  "fu-moved": "Follow-up moved.",
-  "fu-needs": "A follow-up needs what to do and a day.",
+  "fu-done": "Follow-up completed.",
+  "fu-already": "That follow-up was already done.",
+  "fu-moved": "Follow-up rescheduled.",
+  "fu-needs": "Add a title and a due date.",
   merged: "Merged. Everything from the other record is here now.",
   "merge-same": "Choose another record to merge with this one.",
   "merge-gone": "That record is gone or was already merged.",

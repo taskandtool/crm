@@ -1,7 +1,7 @@
 # CRM
 
 The customer record for a small business: everyone who got in touch, in
-one place, and what happens next. Its first screen is **what came in**
+one place, and what happens next. Its first screen is the **Inbox**:
 across the project (form submissions from the Website, bookings, payments),
 newest first, each matched to a customer by email or offered as a new one
 or a new deal, under four figures: leads this week, follow-ups due, the
@@ -19,7 +19,7 @@ runs anywhere with Node 20 and a Postgres.
 
 ## What is in the box
 
-- **What came in**: form submissions (not spam), bookings and paid
+- **Inbox**: form submissions (not spam), bookings and paid
   payments from the project's other apps, with Add as customer, Add as
   deal (a returning customer's new enquiry too) and Mark done. A source
   the project does not have yet is simply left out.
@@ -36,9 +36,11 @@ runs anywhere with Node 20 and a Postgres.
   status (Lead, Customer, Not a fit): search by name, email, phone or
   company, filter by status, tag and owner, export the filter as CSV,
   archive (never delete), and merge two records of one person.
-- **A customer's page**: follow-ups, deals, details and custom fields,
-  status, tags, owner, a notes timeline, and everything they sent,
-  booked and paid, and every quote and invoice sent to them.
+- **A customer's page**, laid out as CRMs lay out a record: follow-ups,
+  one Activity timeline (notes and calls, and everything they sent,
+  booked, paid and were quoted) with a note box on top, and their visits;
+  beside it About (details and custom fields, Edit), their deals, quotes
+  and invoices, possible duplicates, Merge and Archive.
 - **Jobs, visits or events** (the config names them): one per occasion,
   planned, done or cancelled, with who did it, an amount and its own
   fields (which truck, which room). A list of what is coming up and what
@@ -61,7 +63,7 @@ runs anywhere with Node 20 and a Postgres.
 - **The AI's hands**: scripts to find, add, update, note, tag, merge,
   import and export customers from chat, add and move deals, plan and
   tick off follow-ups, add and close jobs or visits, quote and invoice,
-  and list what came in. Sending anything to a customer, and a merge,
+  and list the Inbox. Sending anything to a customer, and a merge,
   waits for your yes.
 
 ## Shaping it
@@ -98,8 +100,8 @@ is an additive line in `schema.sql`.
 crm.config.json          the levers: words, statuses, deals, sources, fields, zone, inbox
 schema.sql               the tables, additive only, applied at start and deploy
 src/app.tsx              the Hono app: the team-only gate, the routes
-src/crm/                 customers, stages, deals, follow-ups, notes, visits, what came in, history, merge, import
-src/views/               what came in, follow-ups, deals, customers, a customer, visits, stages
+src/crm/                 customers, stages, deals, follow-ups, notes, visits, the inbox, history, merge, import
+src/views/               inbox, follow-ups, deals, customers, a customer, visits, stages
 src/booking/             a copy of the booking skill: the Bookings section, the calendar sync job
 src/forms/               a copy of the forms skill: submissions by form, the form editor
 src/invoices/            a copy of the invoices skill: quotes, invoices, tax rates, Stripe

@@ -193,7 +193,7 @@ test("stages: add, rename, kind, move, archive (refused while in use or last ope
   assert.ok((await restoreStage(db, "customers", "contacted", ME)).ok);
 });
 
-test("what came in, with none of the other apps' tables", async (t) => {
+test("the inbox, with none of the other apps' tables", async (t) => {
   if (skip) return t.skip(skip);
   const p = await present(db);
   assert.deepEqual(p, { submissions: false, forms: false, bookings: false, resources: false, payments: false, quotes: false, invoices: false });
@@ -204,7 +204,7 @@ test("what came in, with none of the other apps' tables", async (t) => {
   assert.equal((await everythingFrom(db, { email: "ann.lee@example.com", phone: null })).items.length, 0);
 });
 
-test("what came in, across submissions, bookings and payments", async (t) => {
+test("the inbox, across submissions, bookings and payments", async (t) => {
   if (skip) return t.skip(skip);
   await applySchema(db, readFileSync("test/fixtures/other-apps.sql", "utf8"));
   await db.transaction([

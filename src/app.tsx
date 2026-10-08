@@ -24,7 +24,7 @@ import { everythingFrom } from "./crm/history";
 import { addFromInbox, formChoices, inboxPage, markDone, readInboxCursor, type InboxKind } from "./crm/inbox";
 import { board, createDeal, customerDeals, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
 import {
-  addFollowUp, customerFollowUps, doneFollowUp, followUpCounts, getFollowUp, listFollowUps, moveFollowUp, nextFollowUps, nothingPlanned,
+  addFollowUp, customerFollowUps, doneFollowUp, followUpCounts, getFollowUp, inPlay, listFollowUps, moveFollowUp, nextFollowUps, nothingPlanned,
   pickFollowUpKind, readDay, readTime, addDays, FOLLOW_UP_VIEWS, type FollowUpView,
 } from "./crm/follow-ups";
 import { overview } from "./crm/overview";
@@ -161,7 +161,7 @@ export function backTo(path: string, code: string): string {
 }
 const back = (c: C, path: string, code: string) => c.redirect(backTo(path, code), 303);
 
-// ---- what came in ---------------------------------------------------------
+// ---- the inbox -------------------------------------------------------------
 
 app.get("/", async (c) => {
   const unmatched = c.req.query("unmatched") === "1";
@@ -252,7 +252,9 @@ app.get("/customers", async (c) => {
   const after = readListCursor(c.req.query("after"));
   const [stages, rows] = await Promise.all([listStages(db, "customers"), listPage(db, f, after, PAGE)]);
   const { page, next } = cut(rows, PAGE);
-  const nextOf = { next: await nextFollowUps(db, page.map((r) => r.id)), today: today() };
+  const ids = page.map((r) => r.id);
+  const [dues, playing] = await Promise.all([nextFollowUps(db, ids), inPlay(db, ids)]);
+  const nextOf = { next: dues, inPlay: playing, today: today() };
   if (isPartial(c) && after) {
     const more = (cur: string) => listUrl("/customers", { ...filterParams(f), after: cur });
     return c.html(<TableRows spec={customerSpec(stages, nextOf)} rows={page} next={next} more={more} />);
@@ -568,7 +570,7 @@ app.post("/visits/:id/status", async (c) => {
 // booking, what can be booked and who takes it, each person's hours, time
 // off and calendars. The Website's /book pages read the same tables.
 
-/** Make it a job: the customer (matched, or added, as from What came in), then the job. */
+/** Make it a job: the customer (matched, or added, as from the Inbox), then the job. */
 app.post("/bookings/:id/job", async (c) => {
   if (!showBooking || !visitsCfg) return c.notFound();
   const db = c.var.db;
@@ -620,7 +622,7 @@ if (showBooking) {
               ) : (
                 <form method="post" action={`/bookings/${b.id}/job`}>
                   {customer ? <input type="hidden" name="customer" value={customer.id} /> : null}
-                  <button class={buttonClass}>Make it a {visitsCfg.one.toLowerCase()}</button>
+                  <button class={buttonClass}>Create {visitsCfg.one.toLowerCase()}</button>
                 </form>
               )
             ) : null}
@@ -757,7 +759,7 @@ if (invoicesCfg) {
                 <p><a href={`/visits/${qt.visit_id}`}>The {job}</a></p>
               ) : qt.status === "accepted" ? (
                 <form method="post" action={`/invoices/quotes/${qt.id}/job`}>
-                  <button class={buttonClass}>Make it a {job}</button>
+                  <button class={buttonClass}>Create {job}</button>
                 </form>
               ) : null
             ) : null}
@@ -926,7 +928,7 @@ app.post("/deals/:id/stage", async (c) => {
   if (current.stage === stage && "lost_reason" in body) code = (await setLostReason(db, id, reason, c.var.user)) ? "deal-saved" : "pick-stage";
   else if (!(await setDealStage(db, id, stage, c.var.user, reason))) code = "pick-stage";
   // From the board (htmx: a drag or a card's select) the answer is the board itself.
-  if (isPartial(c)) return c.html(<Board data={await boardData(c)} />);
+  if (isPartial(c) && ret === "/deals") return c.html(<Board data={await boardData(c)} />);
   return back(c, ret, code);
 });
 

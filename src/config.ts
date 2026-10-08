@@ -17,7 +17,7 @@ export const vocab = cfg.vocabulary;
 export const ownerLabel = cfg.owner_label ?? "Owner";
 /** Deals: their words, stages seeded on the first run, currency, reasons offered when one is lost. */
 export const dealsCfg = { ...cfg.deals, currency: cfg.deals.currency ?? "USD", lost_reasons: cfg.deals.lost_reasons ?? [] };
-/** A lead added from What came in gets a "Call back" follow-up due that day. */
+/** A lead added from the Inbox gets a "Call back" follow-up due that day. */
 export const newLeadFollowUp = cfg.follow_ups?.new_lead !== false;
 /** What the first run seeds. */
 export const seeds = { statuses: cfg.statuses, dealStages: cfg.deals.stages };

@@ -97,7 +97,7 @@ test("a cross-site POST is refused", async (t) => {
   assert.equal((await db.sql`select 1 from customers where name = 'Mallory'`).length, 0);
 });
 
-test("what came in, then Add as customer and Mark done", async (t) => {
+test("the Inbox, then Add as customer and Mark done", async (t) => {
   if (skip) return t.skip(skip);
   const page = await get("/");
   assert.equal(page.status, 200);
@@ -154,12 +154,14 @@ test("customers: create, open, edit, note, archive", async (t) => {
   const detail = await (await get(`/customers/${id}?saved=added`)).text();
   assert.match(detail, /Quinn Ray/);
   assert.match(detail, /Customer added\./);
-  assert.match(detail, /Everything from this person/);
-  // On a phone the notes come before the long details form, by CSS order only:
-  // the markup keeps Details first, and the add-note form is named.
-  assert.ok(detail.indexOf(">Details</h2>") < detail.indexOf(">Notes</h2>"));
-  assert.match(detail, /<section class="[^"]*\border-first sm:order-none\b[^"]*"><h2[^>]*>Notes<\/h2>/);
-  assert.match(detail, /<form method="post" action="\/customers\/\d+\/notes" aria-label="Add a note"/);
+  // A record page: follow-ups, then one Activity timeline with its note box, then About beside them;
+  // details are values with Edit, not an open form; nothing empty shows.
+  assert.ok(detail.indexOf(">Follow-ups</h2>") < detail.indexOf(">Activity</h2>"));
+  assert.ok(detail.indexOf(">Activity</h2>") < detail.indexOf(">About</h2>"));
+  assert.match(detail, /<form method="post" action="\/customers\/\d+\/notes" aria-label="Log activity"/);
+  assert.match(detail, /<summary[^>]*>Edit<\/summary>/);
+  assert.doesNotMatch(detail, /Quotes and invoices/, "no quotes or invoices yet, so no section");
+  assert.match(detail, /hx-trigger="change"[^>]*>[\s\S]*?name="status"/, "the status saves when chosen");
   assert.equal((await get("/customers/999999")).status, 404);
   assert.equal((await get("/customers/abc")).status, 404);
 
@@ -218,7 +220,9 @@ test("deals: the board's columns and totals; a move answers htmx with the board 
 
   // Its page: details saved, the value as typed; a won deal becomes a job once.
   const detail = await (await get(`/deals/${dealId}`)).text();
-  assert.match(detail, /Why it was lost/);
+  assert.match(detail, /Lost reason/);
+  assert.doesNotMatch(detail, /No follow-up scheduled|Create visit/, "a lost deal asks for nothing next");
+  assert.match(detail, new RegExp(`For <a href="/customers/${pat.id}">Pat Doe</a>`));
   assert.match(detail, /Pat Doe/);
   assert.equal((await post(`/deals/${dealId}`, { title: "New boiler and flue", value: "5200", owner: "sam@team.example", expected_close: "2026-11-30", notes: "" })).headers.get("location"), `/deals/${dealId}?saved=deal-saved`);
   await post(`/deals/${dealId}/stage`, { stage: "won" });
@@ -254,7 +258,7 @@ test("follow-ups: added, listed as due, the nav's count, done onto the timeline,
   assert.match(due, /href="tel:5554041212"/, "a call shows the number");
   assert.match(await (await get("/follow-ups/count")).text(), /\d+<span class="sr-only"> due/);
   const customerPage = await (await get(`/customers/${id}`)).text();
-  assert.ok(customerPage.indexOf(">Follow-ups</h2>") < customerPage.indexOf(">Details</h2>"), "what happens next leads the page");
+  assert.ok(customerPage.indexOf(">Follow-ups</h2>") < customerPage.indexOf(">Activity</h2>"), "what happens next leads the page");
   assert.match(customerPage, /Call about the estimate/);
 
   const [f] = await db.sql<{ id: string }>`select id::text as id from follow_ups where customer_id = ${id}::bigint`;
@@ -269,7 +273,7 @@ test("follow-ups: added, listed as due, the nav's count, done onto the timeline,
   const [note] = await db.sql<{ kind: string; body: string }>`select kind, body from customer_notes where customer_id = ${id}::bigint`;
   assert.deepEqual(note, { kind: "call", body: "Call about the estimate\nBooked the visit" });
   assert.ok((await getCustomer(db, id))!.last_contact_at, "a call done is contact");
-  assert.match(await (await get(`/customers/${id}`)).text(), /Nothing planned\. What happens next\?/);
+  assert.match(await (await get(`/customers/${id}`)).text(), /No follow-up scheduled\./);
 });
 
 test("Add as deal: a new person, and a customer already here getting another", async (t) => {
@@ -297,7 +301,7 @@ test("merge: preview, merge, history under either address, the merged record ope
   await post(`/customers/${b}/notes`, { kind: "call", body: "Called from work" });
   await db.sql`insert into submissions (form_key, name, email, data, source) values ('contact', 'Hal', 'hal.moe@work.example', '{"message": "From the office"}', 'website')`;
   const page = await (await get(`/customers/${a}`)).text();
-  assert.match(page, /Maybe the same person/);
+  assert.match(page, /Possible duplicates/);
   const preview = await (await get(`/customers/${a}/merge?other=${b}`)).text();
   assert.match(preview, /1 notes/);
   assert.match(preview, /phone/);
@@ -467,9 +471,9 @@ test("bookings in the CRM: its own frame, a type and a person, Make it a job fro
     values (${typeId}::bigint, ${personId}::bigint, now() + interval '2 days', now() + interval '2 days 1 hour', 'Lee Wong', 'lee@example.com', 'their_place', '7 Pine St')
     returning id::text as id`;
   html = await (await get("/visits")).text();
-  assert.match(html, /Booked, not a visit yet/);
+  assert.match(html, /Bookings to convert/);
   assert.match(html, /Estimate visit, Lee Wong, with Rae/);
-  assert.match(await (await get(`/bookings/${b.id}`)).text(), /Not a customer yet\.[\s\S]*Make it a visit/);
+  assert.match(await (await get(`/bookings/${b.id}`)).text(), /Not a customer yet\.[\s\S]*Create visit/);
   const made = await post(`/bookings/${b.id}/job`, {});
   assert.equal(made.status, 303);
   const visitUrl = made.headers.get("location")!;
@@ -542,7 +546,7 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Make it a job o
   const q2 = r2.headers.get("location")!.match(/\/invoices\/quotes\/(\d+)/)![1];
   assert.equal((await post(`/invoices/quotes/${q2}/job`, {})).headers.get("location"), `/invoices/quotes/${q2}?saved=not-now`, "only an accepted quote");
   await post(`/invoices/quotes/${q2}/decide`, { answer: "accepted" });
-  assert.match(await (await get(`/invoices/quotes/${q2}`)).text(), /Not a customer yet\.[\s\S]*Make it a visit/);
+  assert.match(await (await get(`/invoices/quotes/${q2}`)).text(), /Not a customer yet\.[\s\S]*Create visit/);
   const [one, two] = await Promise.all([post(`/invoices/quotes/${q2}/job`, {}), post(`/invoices/quotes/${q2}/job`, {})]);
   assert.equal(one.headers.get("location"), two.headers.get("location"));
   const jobUrl = one.headers.get("location")!;
@@ -589,7 +593,7 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Make it a job o
   assert.equal((await post(`/invoices/quotes/${qid}/decide`, { answer: "declined" }, { ...ME, origin: "https://evil.example" })).status, 403);
 });
 
-test("forms in the CRM: submissions by form, an order with its payment, What came in by form", async (t) => {
+test("forms in the CRM: submissions by form, an order with its payment, the Inbox by form", async (t) => {
   if (skip) return t.skip(skip);
   const fields = [
     { name: "name", label: "Name", type: "text", required: true },

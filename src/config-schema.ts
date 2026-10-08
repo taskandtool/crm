@@ -17,7 +17,7 @@ export type InboxConfig = {
 export type VisitsConfig = { one: string; many: string; fields: CustomField[]; currency?: string };
 /** Deals: what one piece of work being won is called, the stages seeded on the first run, the currency of their values, and the reasons offered when one is lost. */
 export type DealsConfig = { one: string; many: string; stages: StageConfig[]; currency?: string; lost_reasons?: string[] };
-/** Follow-ups: whether a lead added from What came in gets a "Call back" due that day. On unless false. */
+/** Follow-ups: whether a lead added from the Inbox gets a "Call back" due that day. On unless false. */
 export type FollowUpsConfig = { new_lead?: boolean };
 /** Quotes and invoices: the name printed on them, their currency, standing terms, days to pay. */
 export type InvoicesConfig = { name: string; currency?: string; terms?: string; days_until_due?: number };

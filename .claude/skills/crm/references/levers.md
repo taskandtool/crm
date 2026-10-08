@@ -19,7 +19,7 @@ Everything a business wants changed is one of these.
      running CRM the config's lists change nothing: use lever 2, then make
      the config match so a fresh install gets the same.
    - `follow_ups`: `{ "new_lead": false }` stops the "Call back" follow-up
-     a lead added from What came in gets for that day.
+     a lead added from the Inbox gets for that day.
    - `sources`: suggestions for the Source field.
    - `fields`: custom fields (lever 3).
    - `owner_label`: what the owner column is called (`Technician`,

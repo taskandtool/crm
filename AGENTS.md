@@ -1,6 +1,6 @@
 # This app: a CRM on Hono
 
-The business's customer record: what came in across the project (form
+The business's customer record: an Inbox of everything that came in across the project (form
 submissions, bookings, payments), customers keyed by email, deals on a
 board of stages, follow-ups, notes of every call, and each job or visit. It runs in **dev** on this machine
 and in **production** on Cloudflare once deployed. This
@@ -32,7 +32,7 @@ Use these rather than doing the same work by hand. Each answers `--help`;
 `--json` where another script reads the output.
 
 ```bash
-node scripts/inbox.mjs --since 7d               # what came in, and who it matched
+node scripts/inbox.mjs --since 7d               # the Inbox, and who each matched
 node scripts/customers.mjs add "Ann Lee" --email ann@example.com   # "customers add: added #12 Ann Lee [New]", or "already here, not added"
 node scripts/visits.mjs add ann@example.com "Boiler service" --at "next friday 9:30"   # a job; --at also "tomorrow 2pm", in the business's zone; say back the date it prints
 node scripts/customers.mjs find "lee"           # customers; also note, status, update, merge
@@ -66,7 +66,7 @@ node scripts/export.mjs --out customers.csv     # the list out
   every deploy.
 - `src/crm/` is every query and rule, named: customers, stages, deals,
   follow-ups (and `digest-job.ts`, the morning email), notes, visits
-  (jobs), quotes (a job from an accepted one), what came in, everything
+  (jobs), quotes (a job from an accepted one), the inbox, everything
   from one person, merging, the import. Routes, scripts and
   tests all go through it.
 - `src/app.tsx` is the Hono app: the team-only gate, the routes.

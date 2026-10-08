@@ -9,7 +9,7 @@ export type Section = "inbox" | "follow-ups" | "deals" | "customers" | "visits" 
 export function Layout(props: { title: string; user: string; section: Section; drag?: boolean; wide?: boolean; children?: Child }) {
   const { title, user, section, drag, wide, children } = props;
   const nav: { href: string; label: string; section: Section }[] = [
-    { href: "/", label: "What came in", section: "inbox" },
+    { href: "/", label: "Inbox", section: "inbox" },
     { href: "/follow-ups", label: "Follow-ups", section: "follow-ups" },
     { href: "/deals", label: dealsCfg.many, section: "deals" },
     { href: "/customers", label: vocab.many, section: "customers" },

@@ -1,4 +1,4 @@
-// What came in: form submissions (not spam), bookings and payments, newest
+// The Inbox: form submissions (not spam), bookings and payments, newest
 // first across all three, each matched to a customer (by email, then by
 // phone where one side has no email: customers.ts findMatch says why) or
 // offered as a new one. Tables the project does not have are skipped
@@ -306,7 +306,7 @@ const b64url = (s: string) =>
 const fromB64url = (s: string) =>
   new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (ch) => ch.charCodeAt(0)));
 
-/** The forms What came in counts (crm.config.json's inbox), for its filter; none before any app made the forms table. */
+/** The forms the Inbox counts (crm.config.json's inbox), for its filter; none before any app made the forms table. */
 export async function formChoices(db: Db, ib: InboxConfig): Promise<{ key: string; title: string }[]> {
   const [{ has }] = await db.sql<{ has: boolean }>`select to_regclass('forms') is not null as has`;
   if (!has) return [];

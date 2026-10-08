@@ -1,3 +1,4 @@
+// MACHINE ONLY: node:zlib, for scripts/import.ts. Never import this from a page.
 // The first sheet of an Excel workbook (.xlsx) as rows of strings, the same
 // shape parseCsv returns. No dependency: an .xlsx is a zip of XML parts.
 // Dates come out as YYYY-MM-DD (with the time when there is one).

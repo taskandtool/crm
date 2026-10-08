@@ -40,7 +40,7 @@ function WhenOf({ r }: { r: Visit }) {
   return (
     <>
       <When at={r.starts_at} timeZone={timeZone} />
-      {overdue(r) ? <span class="block text-label text-ink-3">Not marked done</span> : null}
+      {overdue(r) ? <span class="block text-label text-ink-3">Past due</span> : null}
     </>
   );
 }
@@ -126,8 +126,8 @@ export function CustomerVisits({ c, visits, owners }: { c: Customer; visits: Vis
           The {CUSTOMER_VISITS} most recent. The rest are in <a href={`/visits?view=all&q=${encodeURIComponent(c.name)}`}>All {many}</a>.
         </p>
       ) : null}
-      <details open={!visits.length}>
-        <summary class="cursor-pointer text-label font-semibold text-ink-2">Add a {one}</summary>
+      <details>
+        <summary class="cursor-pointer text-label font-semibold text-ink-2">Add {one}</summary>
         <form method="post" action={`/customers/${c.id}/visits`} aria-label={`Add a ${one}`} class="mt-3 grid gap-3 sm:grid-cols-2">
           <VisitFields owners={owners} defaultOwner={c.owner} />
           <div class="sm:col-span-2">
@@ -213,7 +213,7 @@ export function VisitResults(p: { filter: VisitFilter; rows: Visit[]; next: stri
         }
       />
       <p class="mt-3 text-label">
-        <a href={listUrl("/visits/export.csv", params)}>Export these as CSV</a>
+        <a href={listUrl("/visits/export.csv", params)}>Export CSV</a>
       </p>
     </div>
   );
@@ -223,7 +223,7 @@ export function VisitResults(p: { filter: VisitFilter; rows: Visit[]; next: stri
 function Booked({ rows }: { rows: OpenBooking[] }) {
   if (!rows.length) return null;
   return (
-    <Section title={`Booked, not a ${one} yet`} class="mb-4">
+    <Section title="Bookings to convert" class="mb-4">
       <ul class="flex flex-col gap-2">
         {rows.map((b) => (
           <li class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
@@ -238,7 +238,7 @@ function Booked({ rows }: { rows: OpenBooking[] }) {
             </span>
             <form method="post" action={`/bookings/${b.id}/job`}>
               {b.customer_id ? <input type="hidden" name="customer" value={b.customer_id} /> : null}
-              <button class={buttonClass}>Make it a {one}</button>
+              <button class={buttonClass}>Create {one}</button>
             </form>
           </li>
         ))}

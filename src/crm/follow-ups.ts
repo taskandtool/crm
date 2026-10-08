@@ -227,6 +227,21 @@ export async function nextFollowUps(db: Db, customerIds: string[]): Promise<Map<
   return new Map(rows.map((r) => [r.customer_id, { due_on: r.due_on, due_time: r.due_time }]));
 }
 
+/**
+ * Of these customers, the ones still in play: an open status, or an open
+ * deal. Only they are marked when nothing is scheduled.
+ */
+export async function inPlay(db: Db, customerIds: string[]): Promise<Set<string>> {
+  const ids = customerIds.filter((x) => ID.test(x));
+  if (!ids.length) return new Set();
+  const rows = await db.sql<{ id: string }>`
+    select c.id::text as id from customers c
+    where c.id = any(${ids}::bigint[])
+      and (exists (select 1 from pipeline_stages s where s.key = c.stage and s.kind = 'open')
+           or exists (select 1 from deals d join deal_stages s on s.key = d.stage where d.customer_id = c.id and d.archived_at is null and s.kind = 'open'))`;
+  return new Set(rows.map((r) => r.id));
+}
+
 /** When the next one is, against today: what the mark on a card says. */
 export type Due = "overdue" | "today" | "later" | "none";
 export function dueOf(next: { due_on: string } | undefined, today: string): Due {

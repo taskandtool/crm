@@ -21,7 +21,7 @@ infer. Then:
    `Enquiry`), which is fine, since nobody sees a key and every script
    takes the label too.
 3. `python3 ~/tools/taskandtool.py restart`, `npm run check`, then show the owner
-   What came in, a customer and the deals board.
+   the Inbox, a customer and the deals board.
 
 A status says who someone is (Lead, Customer); a deal stage says where one
 piece of work is (Estimate sent). A trade's per-job steps are deal stages,

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.5.0",
   "type": "module",
-  "description": "A small business's customer record: what came in across the project, customers keyed by email, a pipeline, notes, jobs, bookings, quotes and invoices. Server-rendered on Hono, on the project's Postgres, shaped by its AI; runs in dev on its machine and in production on Cloudflare, team only.",
+  "description": "A small business's customer record: an inbox of everything that came in across the project, customers keyed by email, a pipeline, notes, jobs, bookings, quotes and invoices. Server-rendered on Hono, on the project's Postgres, shaped by its AI; runs in dev on its machine and in production on Cloudflare, team only.",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "css": "tailwindcss -i styles/input.css -o static/crm.css --minify",

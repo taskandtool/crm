@@ -225,7 +225,7 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
           }
         />
         <p class="mt-3 text-label">
-          <a href={listUrl(`${base}/export.csv`, params(f))}>Export these as CSV</a>
+          <a href={listUrl(`${base}/export.csv`, params(f))}>Export CSV</a>
         </p>
       </div>
     );

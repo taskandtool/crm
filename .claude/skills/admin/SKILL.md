@@ -65,6 +65,16 @@ default, with two locks:
 - **Times show in the business's zone** (`<When timeZone>`). Dev and
   production run in UTC.
 
+## Words
+
+A private view uses the words every CRM and admin tool already uses, never
+new phrasing: Inbox, Add, Edit, Save, Archive, Mark done, Reschedule,
+Owner, Assigned to, Due date, Status, Stage, Value, Lost reason, Notes,
+Activity, Possible duplicates, Export CSV. Labels are nouns ("Due date",
+not "Day"; "Title", not "What to do"). One name per action, everywhere.
+An empty state is one line saying what goes there, and one action. Hints
+only for a format ("Separate tags with commas"), never to explain the page.
+
 ## Export
 
 `csvResponse(name, columns, everyPage((after, size) => listPage(db, f, after, size)))`:
