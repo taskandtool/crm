@@ -355,7 +355,7 @@ export async function pushBookings(db: Db, gw: Gateway, now = new Date(), limit 
         eventId = await placeEvent(gw, k, b, tag);
       }
       await db.sql`
-        update bookings set external_event_id = ${eventId}, external_provider = ${eventId ? k.provider : null},
+        update bookings set external_event_id = ${eventId},
           synced_sequence = ${b.sequence}, push_claimed_at = null, external_error = null
         where id = ${b.id}::bigint`;
       pushed++;

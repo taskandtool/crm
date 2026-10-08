@@ -224,15 +224,6 @@ export const decideQuote = (db: Db, id: string, answer: "accepted" | "declined",
 
 export const expireQuote = (db: Db, id: string, by: string) => move(db, id, "expired", ["draft", "sent"], by);
 
-/** Link a quote to the job it is for, once: a quote that already has one keeps it. */
-export async function setQuoteVisit(db: Db, id: string, visitId: string, by: string): Promise<boolean> {
-  if (!/^\d{1,18}$/.test(id) || !/^\d{1,18}$/.test(visitId)) return false;
-  const rows = await db.sql`
-    update quotes set visit_id = ${visitId}::bigint, updated_by = ${by}, updated_at = now()
-    where id = ${id}::bigint and visit_id is null returning id`;
-  return rows.length > 0;
-}
-
 /** A new draft with the same customer, terms and lines (valid-until left blank), for a quote that no longer changes. */
 export async function copyQuote(db: Db, id: string, by: string, source: string): Promise<Quote | null> {
   if (!/^\d{1,18}$/.test(id)) return null;

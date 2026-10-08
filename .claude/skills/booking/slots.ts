@@ -280,12 +280,6 @@ export function slots(input: SlotInput): Slot[] {
   return [...found.values()].sort((a, b) => a.start.getTime() - b.start.getTime());
 }
 
-/** Whether a slot starting exactly at `start` is offered. What a booking re-checks before it is taken. */
-export function isOffered(input: Omit<SlotInput, "from" | "to">, start: Date): Slot | null {
-  const t = start.getTime();
-  return slots({ ...input, from: new Date(t), to: new Date(t + 1) }).find((s) => s.start.getTime() === t) ?? null;
-}
-
 /** Slots grouped by their local date in `zone` (the viewer's), in order. */
 export function byLocalDate<T extends Slot>(list: T[], zone: string): Map<string, T[]> {
   const out = new Map<string, T[]>();

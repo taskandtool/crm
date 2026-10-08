@@ -114,7 +114,6 @@ test("an order: two kinds of cookies and delivery, taxed, paid through Checkout 
     res = await send(app, "/forms/order", { _draft: key });
     assert.equal(res.headers.get("location"), "https://checkout.stripe.example/1");
     const session = f.calls.filter((c) => c.path === "/v1/checkout/sessions").at(-1)!.params;
-    const firstSession = session;
     assert.deepEqual(session.line_items.map((l: any) => [l.quantity, l.price_data.unit_amount, l.price_data.product_data.name, l.tax_rates]), [
       [2, 4000, "Chocolate chip, a dozen", ["txr_1"]],
       [1, 3600, "Peanut butter, a dozen", ["txr_1"]],

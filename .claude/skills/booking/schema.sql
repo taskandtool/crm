@@ -128,7 +128,6 @@ create table if not exists bookings (
   answers jsonb not null default '{}'::jsonb,
   manage_token_hash text,
   external_event_id text,
-  external_provider text,
   external_calendar_id bigint,
   external_error text,
   synced_sequence integer,

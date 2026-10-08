@@ -91,9 +91,9 @@ test("revenue is per currency, net of refunds, and never summed across currencie
     ('i@example.com', 1000, 0, 'usd', 'failed', true, '2026-09-09T12:00:00Z')`;
   const rows = await run(db, revenueQuery(period, NY));
   assert.deepEqual(rows, [
-    { currency: "JPY", gross: 500000, refunds: 0, net: 500000, previous_net: 0 },
-    { currency: "USD", gross: 16000, refunds: 3500, net: 12500, previous_net: 0 },
-    { currency: "EUR", gross: 3000, refunds: 0, net: 3000, previous_net: 7000 },
+    { currency: "JPY", net: 500000, previous_net: 0 },
+    { currency: "USD", net: 12500, previous_net: 0 },
+    { currency: "EUR", net: 3000, previous_net: 7000 },
   ]);
   const out = String(await OpsReport({ data: await loadOps(db, { period, grain: "week", zone: NY }) }).toString());
   assert.match(out, /Revenue, USD \$125\.00/);
@@ -110,7 +110,7 @@ test("a payment whose refund arrived before its payment event still counts, plac
     ('x@example.com', 3000, 3000, 'usd', 'refunded', true, null, '2026-09-11T12:00:00Z'),
     ('y@example.com', 9000, 0, 'usd', 'pending', true, null, '2026-09-11T12:00:00Z')`;
   const rows = await run(db, revenueQuery(period, NY));
-  assert.deepEqual(rows, [{ currency: "USD", gross: 9000, refunds: 5000, net: 4000, previous_net: 0 }]);
+  assert.deepEqual(rows, [{ currency: "USD", net: 4000, previous_net: 0 }]);
   const data = await loadOps(db, { period, grain: "week", zone: NY });
   assert.deepEqual(data.funnel?.at(-1), { step: "paid", people: 1 });
 });

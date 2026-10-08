@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  addDays, byLocalDate, dayBounds, formatSlot, formatTime, instantsFor, isOffered, isValidZone, localDate, mergeIntervals,
+  addDays, byLocalDate, dayBounds, formatSlot, formatTime, instantsFor, isValidZone, localDate, mergeIntervals,
   parseWallTime, slots, wallToInstant, weekdayOf, type Settings, type SlotInput, type Window,
 } from "../slots";
 
@@ -203,15 +203,11 @@ test("the horizon is counted in local dates of the zone", () => {
   assert.deepEqual(week("America/New_York", "2026-03-09T03:00:00Z", 1), ["2026-03-09"]);
 });
 
-test("only slots that start inside [from, to) are returned; isOffered checks one start", () => {
+test("only slots that start inside [from, to) are returned", () => {
   const input = { zone: "UTC", windows: workday, timeOff: [], busy: [], bookings: [], settings: base, now: T("2026-01-01T00:00:00Z") };
   assert.deepEqual(iso(slots({ ...input, from: T("2026-03-09T10:00:00Z"), to: T("2026-03-09T12:00:00Z") })), [
     "2026-03-09T10:00:00.000Z", "2026-03-09T11:00:00.000Z",
   ]);
-  assert.equal(isOffered(input, T("2026-03-09T10:00:00Z"))!.end.toISOString(), "2026-03-09T11:00:00.000Z");
-  assert.equal(isOffered(input, T("2026-03-09T10:30:00Z")), null, "off the interval grid");
-  assert.equal(isOffered(input, T("2026-03-09T16:30:00Z")), null, "would end after the window");
-  assert.equal(isOffered(input, T("2026-03-10T10:00:00Z")), null, "no hours that day");
 });
 
 test("a window that crosses midnight gives nothing; 24:00 ends at midnight", () => {

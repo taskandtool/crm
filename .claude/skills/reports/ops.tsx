@@ -33,7 +33,7 @@ import {
   type ProjectTables,
 } from "./sql";
 
-export type Revenue = { currency: string; gross: number; refunds: number; net: number; previous_net: number };
+export type Revenue = { currency: string; net: number; previous_net: number };
 type Point = { bucket: string; value: number };
 type Compared = { current: number; previous: number; series: Point[]; previousSeries: Point[] };
 

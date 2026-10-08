@@ -279,15 +279,14 @@ export async function projectTables(db: Db): Promise<ProjectTables> {
 
 /**
  * Revenue per currency for a period and the one before, in minor units:
- * `{ currency, gross, refunds, net, previous_net }`. Amounts in different
+ * `{ currency, net, previous_net }`. Amounts in different
  * currencies are never added together; each currency is its own row and its
  * own figure.
  *
- * Gross is every payment taken in the period (placed by `paid_at`, or
- * `created_at` while a refund that arrived first leaves it empty), refunds
- * are what has been given back of those (`refunded_cents`, whole or part),
- * and net is what the business kept. Test-mode payments (`livemode` false)
- * are not revenue.
+ * Net is every payment taken in the period (placed by `paid_at`, or
+ * `created_at` while a refund that arrived first leaves it empty) less what
+ * has been given back of those (`refunded_cents`, whole or part): what the
+ * business kept. Test-mode payments (`livemode` false) are not revenue.
  */
 export function revenueQuery(p: Period, zone: string, prev: Period = previousPeriod(p), opts: { totals?: boolean } = {}): Query {
   check(p, null, zone);
@@ -301,15 +300,13 @@ export function revenueQuery(p: Period, zone: string, prev: Period = previousPer
   const cur = `${at} >= ${start("$3")}`;
   return {
     text: `select upper(currency) as currency,
-  coalesce(sum(${paid}) filter (where ${cur}), 0)::float8 as gross,
-  coalesce(sum(refunded_cents) filter (where ${cur}), 0)::float8 as refunds,
   coalesce(sum(${paid} - refunded_cents) filter (where ${cur}), 0)::float8 as net,
   coalesce(sum(${paid} - refunded_cents) filter (where not (${cur})), 0)::float8 as previous_net
 from payments
 where status in ('paid', 'partially_refunded', 'refunded') and livemode is not false
   and ${at} >= ($4::date::timestamp at time zone $3) and ${at} < ${end("$3")}
 group by 1
-order by gross desc, 1`,
+order by net desc, 1`,
     values: [p.from, p.to, zone, prev.from],
   };
 }

@@ -163,7 +163,7 @@ function microsoftCalendar() {
 }
 
 /** The process died after the provider made the event: the claim stays and no id was saved. */
-const dieAfterCreate = (s: Scratch) => s.db.sql`update bookings set external_event_id = null, external_provider = null, synced_sequence = null, push_claimed_at = now()`;
+const dieAfterCreate = (s: Scratch) => s.db.sql`update bookings set external_event_id = null, synced_sequence = null, push_claimed_at = now()`;
 const claimExpires = (s: Scratch) => s.db.sql`update bookings set push_claimed_at = now() - interval '11 minutes'`;
 
 test("event tags are base32hex and name the calendar row", () => {
@@ -293,11 +293,11 @@ test("bookings are written to the calendar under our id, moved, and removed; our
     assert.equal(insert.body.attendees, undefined, "no attendees: the provider would email the booker");
     assert.equal(insert.body.summary, "Site visit: Ann", "what it is and who");
     assert.equal(insert.body.location, "1 Main St");
-    let [row] = await s.db.sql`select event_key, external_event_id, external_provider, synced_sequence, push_claimed_at from bookings`;
+    let [row] = await s.db.sql`select event_key, external_event_id, synced_sequence, push_claimed_at from bookings`;
     const tag = eventTag(row.event_key, calendarId);
     assert.equal(insert.body.id, `${tag}v0`, "the id is ours, chosen before the call");
     assert.deepEqual(insert.body.extendedProperties, { private: { [GOOGLE_TAG]: tag } });
-    assert.deepEqual([row.external_event_id, row.external_provider, row.synced_sequence, row.push_claimed_at], [`${tag}v0`, "google", 0, null]);
+    assert.deepEqual([row.external_event_id, row.synced_sequence, row.push_claimed_at], [`${tag}v0`, 0, null]);
     assert.deepEqual(await busyRows(s), [["2026-03-09T11:00:00.000Z", "2026-03-09T12:00:00.000Z"]], "our booking is cut out; the meeting stays");
 
     // A second run with nothing new pushes nothing.

@@ -28,7 +28,7 @@ import {
 import { amountInput, type LineInput } from "./lines";
 import {
   createQuote, decideQuote, expireQuote, markSent, quoteById, quotesFor, quotesPage, saveQuote, shownStatus, QUOTE_STATUSES,
-  type Moved, type Quote, type QuoteFields, type QuoteStatus,
+  type Quote, type QuoteFields, type QuoteStatus,
 } from "./quotes";
 import { closePayLink, markPaidOutOfBand, markUncollectible, payLinkForQuote, sendInvoice, voidInvoice } from "./stripe";
 
