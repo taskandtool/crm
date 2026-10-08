@@ -12,7 +12,9 @@
 // The rules a script keeps: the first line says what happened; errors go to
 // stderr with what was wrong and the command that works (Try:); exit 0 done,
 // 1 refused or failed, 2 used wrongly.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 /** @typedef {{ _: string[], flags: Record<string, string | boolean> }} Args */
 
@@ -236,15 +238,17 @@ export const localTime = (d, zone) =>
 
 /**
  * The settings a script that sends or charges needs (NOTIFY_FROM, NOTIFY_VIA,
- * the gateway's PHOENIX_URL and MACHINE_TOKEN): this shell's, then
- * /home/sprite/.env's, which the web service sources and a chat shell may not.
+ * the gateway's PHOENIX_URL and MACHINE_TOKEN): this shell's, then, on a
+ * Task & Tool machine (~/.tasktool), ~/.env's, which the web service sources
+ * and a chat shell may not.
  * @returns {Record<string, string | undefined>}
  */
 export function machineEnv() {
   /** @type {Record<string, string | undefined>} */
   const out = {};
   try {
-    for (const line of readFileSync("/home/sprite/.env", "utf8").split("\n")) {
+    if (!existsSync(join(homedir(), ".tasktool"))) throw new Error("off Task & Tool");
+    for (const line of readFileSync(join(homedir(), ".env"), "utf8").split("\n")) {
       const m = /^(?:export\s+)?([A-Z_][A-Z0-9_]*)=(.*)$/.exec(line.trim());
       if (m) out[m[1]] = m[2].trim().replace(/^(['"])(.*)\1$/, "$2");
     }

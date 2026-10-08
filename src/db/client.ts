@@ -7,6 +7,8 @@
 // database up the moment it appears. Off-platform the file does not exist
 // and the env var is the whole story. Node only.
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { invoicesCfg, seeds, showBooking } from "../config";
 import type { Db } from "../data/db";
 import { fromPool } from "../data/pg";
@@ -15,7 +17,9 @@ import { printPdf } from "../pdf";
 import { openPool } from "./pool";
 import { setup } from "./setup";
 
-const ENV_FILE = "/home/sprite/.env";
+// A Task & Tool machine has ~/.tasktool; off it, ~/.env is not ours to read.
+const ENV_FILE = join(homedir(), ".env");
+const onPlatform = (): boolean => existsSync(join(homedir(), ".tasktool"));
 
 let db: Db | null = null;
 let state: DbState = "no-url";
@@ -23,7 +27,7 @@ let lastError = "";
 
 export function databaseUrl(): string | undefined {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-  if (!existsSync(ENV_FILE)) return undefined;
+  if (!onPlatform() || !existsSync(ENV_FILE)) return undefined;
   try {
     const line = readFileSync(ENV_FILE, "utf8").split("\n").find((l) => l.startsWith("DATABASE_URL="));
     const raw = line?.slice("DATABASE_URL=".length).trim();
