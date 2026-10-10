@@ -32,3 +32,10 @@ test("a honeypot sent as a file is a bot", async () => {
   assert.equal(await verdict("x", { stamp, honeypot: "" }, now + 10_000), "ok");
   assert.equal(await verdict("x", { stamp, honeypot: new Blob(["x"]) }, now + 10_000), "drop");
 });
+
+test("a stamp over two days old is spam, not a person; one just under is fine", async () => {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  assert.equal(await verdict("contact", { stamp: await makeStamp("contact", now - 2 * day - 1000) }, now), "fast");
+  assert.equal(await verdict("contact", { stamp: await makeStamp("contact", now - 2 * day + 60_000) }, now), "ok");
+});

@@ -7,6 +7,10 @@
 //   const v = await verdict("contact", { honeypot: body[HONEYPOT], stamp: body[STAMP] });
 //   // "drop": a bot; answer as if it worked. "fast": keep it marked as spam, tell nobody. "ok": a person.
 //
+// A stamp older than two days is treated like a fast one: a bot that saved a
+// page cannot post with its stamp forever, and a person who left a tab open
+// still has their answer kept (marked spam) or is asked to send it again.
+//
 // The stamp is signed with HMAC-SHA-256 (Web Crypto, so it runs at the edge),
 // which stops a generic bot from simply posting an old time, and it names
 // what it was made for (`scope`), so one form's stamp is no good on another.
@@ -21,6 +25,7 @@ import { fromB64url, toB64url } from "./token";
 export const HONEYPOT = "company_website";
 export const STAMP = "_started";
 export const MIN_FILL_MS = 3000;
+export const MAX_STAMP_AGE_MS = 2 * 24 * 60 * 60 * 1000;
 
 export type Verdict = "ok" | "drop" | "fast";
 
@@ -50,7 +55,8 @@ export async function makeStamp(scope: string, now = Date.now()): Promise<string
 
 /**
  * What to do with a post: "drop" a bot (honeypot filled, stamp missing,
- * forged or from the future), mark one sent too "fast" as spam, else "ok".
+ * forged or from the future), mark one sent too "fast" (or on a stamp over
+ * two days old) as spam, else "ok".
  */
 export async function verdict(
   scope: string,
@@ -71,7 +77,7 @@ export async function verdict(
   }
   if (!(await crypto.subtle.verify("HMAC", await hmacKey(), sig, enc(`${scope}.${m[1]}`)))) return "drop";
   if (t > now + 60_000) return "drop";
-  return now - t < minFillMs ? "fast" : "ok";
+  return now - t < minFillMs || now - t > MAX_STAMP_AGE_MS ? "fast" : "ok";
 }
 
 const enc = (s: string) => new TextEncoder().encode(s);
