@@ -91,7 +91,7 @@ function StepHeading({ step }: { step: StepPlace }) {
 }
 
 /** A booking or payment step's body under the same heading the questions have. */
-export function StepFrame({ step, children }: { form: Form; step: StepPlace; children?: Child }) {
+export function StepFrame({ step, children }: { step: StepPlace; children?: Child }) {
   return (
     <div class="grid max-w-xl gap-6">
       <StepHeading step={step} />
@@ -155,6 +155,23 @@ function FieldView({ form, field: f, value, error, values }: { form: Form; field
           );
         })}
       </fieldset>
+    );
+  }
+
+  if (f.type === "photo") {
+    return (
+      <div class="grid gap-2">
+        <label for={fid} class={labelCls}>
+          {f.label}
+          {optional}
+        </label>
+        {help}
+        <input id={fid} type="file" accept="image/*" aria-invalid={invalid} aria-describedby={describedBy} class={control} />
+        <input type="hidden" name={f.name} value={one} />
+        <p class={helpCls} aria-live="polite" data-photo-note>{one ? "Photo attached." : ""}</p>
+        {err}
+        <script dangerouslySetInnerHTML={{ __html: PHOTO_JS.replace("$ID", JSON.stringify(fid)) }} />
+      </div>
     );
   }
 
@@ -281,5 +298,41 @@ function autocomplete(f: Field): string | undefined {
   if (f.type === "email") return "email";
   return f.type === "tel" ? "tel" : undefined;
 }
+
+// A photo is drawn at most 2048 pixels on its long side (which leaves its
+// location data behind), sent to /_files, and its path goes in the hidden
+// input. One this browser cannot draw is sent as it is.
+const PHOTO_JS = `(() => {
+  const input = document.getElementById($ID), box = input.parentElement;
+  const answer = box.querySelector("input[type=hidden]"), note = box.querySelector("[data-photo-note]");
+  input.addEventListener("change", async () => {
+    const file = input.files[0];
+    if (!file) return;
+    answer.value = "";
+    note.textContent = "Adding the photo.";
+    let body = file, type = file.type;
+    try {
+      const img = await createImageBitmap(file);
+      const scale = Math.min(1, 2048 / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      body = await new Promise((done) => canvas.toBlob(done, "image/jpeg", 0.85));
+      type = "image/jpeg";
+    } catch (e) {}
+    try {
+      const res = await fetch("/_files", { method: "POST", body, headers: { "content-type": type || "application/octet-stream", "x-file-name": encodeURIComponent(file.name) } });
+      if (!res.ok) throw new Error(String(res.status));
+      answer.value = (await res.json()).path;
+      note.textContent = "Photo attached.";
+    } catch (e) {
+      note.textContent = "That photo could not be added. Try another.";
+    }
+  });
+})();`;
 
 const id = (form: Form, f: Field) => `f-${form.key}-${f.name}`;

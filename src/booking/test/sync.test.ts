@@ -234,7 +234,7 @@ test("Google: an error, or a refusal, is stored and the old busy rows stay", (t)
     assert.equal((await busyRows(s)).length, 1);
   }));
 
-test("Microsoft: calendarView pages through nextLink, in UTC, with our tag expanded, skipping free and cancelled", (t) =>
+test("Microsoft: calendarView pages through nextLink, in UTC, with our tag expanded, skipping free, cancelled and zero-length", (t) =>
   withDb(t, async (s) => {
     await setup(s, "microsoft", "America/New_York");
     const ev = (start: string, end: string, extra = {}) => ({ id: start, start: { dateTime: start, timeZone: "UTC" }, end: { dateTime: end, timeZone: "UTC" }, showAs: "busy", isCancelled: false, isAllDay: false, ...extra });
@@ -248,6 +248,7 @@ test("Microsoft: calendarView pages through nextLink, in UTC, with our tag expan
                 ev("2026-03-09T16:00:00.0000000", "2026-03-09T17:00:00.0000000", { showAs: "free" }),
                 ev("2026-03-10T16:00:00.0000000", "2026-03-10T17:00:00.0000000", { isCancelled: true }),
                 ev("2026-03-10T18:00:00.0000000", "2026-03-10T19:00:00.0000000", { showAs: "workingElsewhere" }),
+                ev("2026-03-10T20:00:00.0000000", "2026-03-10T20:00:00.0000000"), // Outlook allows a start equal to its end
               ],
               "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=x&$skip=100",
             }),

@@ -19,7 +19,7 @@ import { AdminLayout, type NavItem } from "../admin/layout";
 import { DataTable, SearchBar, TableRow, TableRows, When, type TableSpec } from "../admin/list";
 import { formIds, idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
 import { buttonClass, controlClass, pickStatus, StatusBadge, StatusForm, type StatusOption } from "../admin/status";
-import { checkFields, FIELD_TYPES, FORM_KEY, sitePath, type Errors, type Field, type Form } from "./fields";
+import { checkFields, FIELD_TYPES, FORM_KEY, PHOTO_PATH, sitePath, type Errors, type Field, type Form } from "./fields";
 import { cameFrom } from "./origin";
 import { linkedTo, type Linked } from "./linked";
 import { priceOf } from "./price";
@@ -485,12 +485,27 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     if (!r) return c.notFound();
     const form = (await formRow(db, r.form_key))?.form;
     const data = { ...(r.data ?? {}) };
+    let price: ReturnType<typeof priceOf> = null;
+    try {
+      price = form ? priceOf(form, r.data ?? {}) : null;
+    } catch {
+      price = null; // amounts in two currencies: shown as answers only
+    }
     const answers = (form?.fields ?? [])
       .filter((x) => Object.hasOwn(data, x.name))
-      .map((x) => {
+      .flatMap((x) => {
         const v = data[x.name];
         delete data[x.name];
-        return { label: x.label, value: Array.isArray(v) ? v.join(", ") : v === true ? "Yes" : v === false ? "No" : (v as Child) };
+        if (x.type === "items") {
+          // An order ({ slug: quantity }) is the Order section when it prices.
+          if (price) return [];
+          const counts = v && typeof v === "object" ? Object.entries(v as Record<string, unknown>).map(([k, n]) => `${n} x ${k}`) : [];
+          return [{ label: x.label, value: counts.join(", ") }];
+        }
+        if (x.type === "photo" && typeof v === "string" && PHOTO_PATH.test(v)) {
+          return [{ label: x.label, value: <a href={v}><img src={v} alt={x.label} class="max-h-64 w-auto rounded-control" /></a> }];
+        }
+        return [{ label: x.label, value: Array.isArray(v) ? v.join(", ") : v === true ? "Yes" : v === false ? "No" : (v as Child) }];
       });
     const consent = data._consent as Record<string, string> | undefined;
     const from = cameFrom(data);
@@ -501,12 +516,6 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     delete data._lines;
     const self = `${subs}/${r.id}`;
     const linked = (await linkedTo(db, [r.id])).get(r.id)!;
-    let price: ReturnType<typeof priceOf> = null;
-    try {
-      price = form ? priceOf(form, r.data ?? {}) : null;
-    } catch {
-      price = null; // amounts in two currencies: shown as answers only
-    }
     return c.html(
       layout(
         c,
@@ -710,6 +719,7 @@ const TYPE_LABELS: Record<Field["type"], string> = {
   number: "Number",
   consent: "Consent box",
   items: "Things to buy",
+  photo: "Photo",
   page: "New page",
   booking: "Book a time",
   payment: "Payment",

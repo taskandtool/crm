@@ -1,6 +1,6 @@
 // What a booking step or a payment step must do inside a form. The forms
 // skill walks a form's steps; the booking and payments skills each ship one
-// adapter that implements this (booking/form-step.tsx, payments/form-step.ts),
+// adapter that implements this (booking/form-step.tsx, payments/form-step.tsx),
 // and the app hands them to formRoutes once:
 //
 //   formRoutes(getDb, { source, page, steps: { booking: bookingStep(…), payment: paymentStep(…) } })

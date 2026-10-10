@@ -16,6 +16,7 @@
 // The stamp is made when the page is served. A page pre-rendered at publish
 // carries its build time, so the fill-time check passes for everyone there;
 // that is why a page with a form is rendered per request.
+import { fromB64url, toB64url } from "./token";
 
 export const HONEYPOT = "company_website";
 export const STAMP = "_started";
@@ -44,7 +45,7 @@ export function SpamFields({ stamp }: { stamp: string }) {
 /** The value of the hidden STAMP field for a form served now. */
 export async function makeStamp(scope: string, now = Date.now()): Promise<string> {
   const t = String(Math.floor(now));
-  return `${t}.${b64url(await crypto.subtle.sign("HMAC", await hmacKey(), enc(`${scope}.${t}`)))}`;
+  return `${t}.${toB64url(new Uint8Array(await crypto.subtle.sign("HMAC", await hmacKey(), enc(`${scope}.${t}`))))}`;
 }
 
 /**
@@ -81,10 +82,3 @@ function hmacKey(): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", enc(KEY), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }
 
-function b64url(buf: ArrayBuffer): string {
-  return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function fromB64url(s: string): Uint8Array<ArrayBuffer> {
-  return Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (ch) => ch.charCodeAt(0));
-}

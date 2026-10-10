@@ -92,6 +92,21 @@ test("the nearest due reminder only; none for a booking made after its time, a c
   }
 });
 
+test("past the limit, the next run takes the bookings the last one left", async (t) => {
+  const s = await scratch();
+  if (!s) return t.skip(why);
+  try {
+    const { add } = await setup(s);
+    for (const who of ["a", "b", "c"]) await add("2026-03-10T15:00:00Z", "2026-03-01T00:00:00Z", `${who}@example.com`);
+    const { sent, send } = capture();
+    await sendReminders(s.db, send, { now: T("2026-03-10T14:30:00Z"), limit: 2 });
+    await sendReminders(s.db, send, { now: T("2026-03-10T14:31:00Z"), limit: 2 });
+    assert.deepEqual(sent.map((m) => m.to).sort(), ["a@example.com", "b@example.com", "c@example.com"]);
+  } finally {
+    await s.drop();
+  }
+});
+
 test("no sender is recorded and not retried; a failure is reported and not retried; two runs at once send once", async (t) => {
   const s = await scratch();
   if (!s) return t.skip(why);

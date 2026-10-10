@@ -59,14 +59,13 @@ const enc = new TextEncoder();
 /** Fold one content line at 75 octets; continuation lines start with a space (which counts). */
 export function fold(line: string): string {
   const out: string[] = [];
-  let cur = "", bytes = 0, limit = 75;
+  let cur = "", bytes = 0;
   for (const ch of line) {
     const n = enc.encode(ch).length;
-    if (bytes + n > limit) {
+    if (bytes + n > 75) {
       out.push(cur);
       cur = " ";
       bytes = 1;
-      limit = 75;
     }
     cur += ch;
     bytes += n;

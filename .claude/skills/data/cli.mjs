@@ -114,8 +114,8 @@ export function usage(a, cmd, commands, help, script, allowed) {
 
 /**
  * Before anything else, for a script with no subcommand: --help prints `help`
- * and exits 0; a flag it does not take, or an argument when `args` is false,
- * exits 2. Try defaults to its --help.
+ * and exits 0; a flag it does not take (--json too, unless `flags` lists it),
+ * or an argument when `args` is false, exits 2. Try defaults to its --help.
  * @param {Args} a
  * @param {string} help
  * @param {string} script
@@ -126,6 +126,10 @@ export function plain(a, help, script, { flags = [], args = false, tryCmd = `nod
   if (has(a, "help")) {
     console.log(help);
     process.exit(0);
+  }
+  if (has(a, "json") && !flags.includes("json")) {
+    jsonErrors = false; // it has no JSON, so its errors are text too
+    misused(`${script}: unknown flag --json (it prints text); valid: ${flags.map((f) => `--${f}`).join(", ") || "none"}`, tryCmd);
   }
   checkFlags(a, flags, script, tryCmd);
   if (!args && a._.length) misused(`${script}: it takes no arguments (given ${a._.join(" ")})`, tryCmd);

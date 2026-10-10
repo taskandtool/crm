@@ -1,7 +1,5 @@
 -- forms: every form in the project is a row, and every submission from any
 -- app lands in one table the CRM reads. Additive only (data/SKILL.md).
--- No semicolons inside a statement and no double hyphens inside a string:
--- applySchema splits on the one and strips the other.
 
 create table if not exists forms (
   id              bigserial primary key,

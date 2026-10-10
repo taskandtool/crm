@@ -30,7 +30,7 @@ free (transparent), cancelled and declined events are not busy. Microsoft is
 paged by `@odata.nextLink`, because `getSchedule` refuses personal accounts.
 An all-day event covers its dates in the person's zone.
 
-Schedule it once (`/schedule-job` skill; check `python3 ~/tools/taskandtool.py list-jobs` first), as a
+Schedule it once (the `schedule-job` skill; check `python3 ~/tools/taskandtool.py list-jobs` first), as a
 command, every 15 minutes (the platform's floor), not visible to clients:
 
 ```bash

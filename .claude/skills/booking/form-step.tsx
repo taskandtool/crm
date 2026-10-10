@@ -18,7 +18,7 @@ import type { FormStep } from "../forms/steps";
 import { formatMoney } from "../payments/money";
 import { book, bookingForSubmission, hostsOf, typeBySlug, type Booking, type BookingType } from "./book";
 import { chip, DayPicker, upcoming } from "./public";
-import { formatDate, formatTime } from "./slots";
+import { formatDate, formatTime, localDate } from "./slots";
 
 export type BookingStepOptions = {
   /** This app's slug, stored on the booking. */
@@ -39,7 +39,7 @@ export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
   const formCurrency = (fields: { type: string; currency?: string }[]) =>
     fields.find((f) => f.type === "items")?.currency ?? fields.find((f) => f.type === "payment")?.currency ?? "usd";
   const chargeFor = (t: BookingType, b: Booking, paid: boolean) =>
-    paid ? { label: `${t.name}, ${formatDate(b.starts_at.toISOString().slice(0, 10))}`, unit_cents: t.price_cents!, currency: t.currency ?? "usd" } : undefined;
+    paid ? { label: `${t.name}, ${formatDate(localDate(b.starts_at, b.booker_time_zone ?? "UTC"))}`, unit_cents: t.price_cents!, currency: t.currency ?? "usd" } : undefined;
 
   return {
     async render(c, ctx, shown) {

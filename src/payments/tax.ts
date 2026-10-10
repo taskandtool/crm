@@ -34,7 +34,10 @@ export function percentToBp(input: unknown): number | null {
   return bp <= 10000 ? bp : null;
 }
 
-export const percentText = (bp: number): string => `${(bp / 100).toFixed(2).replace(/\.?0+$/, "")}%`;
+/** Stripe's percentage for basis points: 825 is "8.25". */
+const percentage = (bp: number) => (bp / 100).toFixed(2).replace(/\.?0+$/, "");
+
+export const percentText = (bp: number): string => `${percentage(bp)}%`;
 
 /** A new rate. Rates never change; deactivate one and make another. */
 export async function createTaxRate(
@@ -59,17 +62,15 @@ export async function setTaxRateActive(db: Db, id: string, active: boolean, by: 
   await db.sql`update tax_rates set active = ${active}, updated_by = ${by} where id = ${id}::bigint`;
 }
 
-/** Stripe's percentage for basis points: 825 is "8.25". */
-const percentage = (bp: number) => (bp / 100).toFixed(2).replace(/\.?0+$/, "");
-
 /** The rate's id in Stripe for this mode, made there the first time it is used. */
 export async function stripeTaxRate(db: Db, stripe: Stripe, rate: TaxRate, livemode: boolean): Promise<string> {
-  const [row] = await db.sql<{ stripe_tax_rate_id: string | null; livemode: boolean | null }>`
-    select stripe_tax_rate_id, livemode from tax_rates where id = ${rate.id}::bigint`;
-  if (row?.stripe_tax_rate_id && row.livemode === livemode) return row.stripe_tax_rate_id;
+  const [row] = await db.sql<{ stripe_tax_rate_id: string | null; livemode: boolean | null; stripe_key: string }>`
+    select stripe_tax_rate_id, livemode, stripe_key from tax_rates where id = ${rate.id}::bigint`;
+  if (!row) throw new Error(`tax rate ${rate.id} is not in tax_rates`);
+  if (row.stripe_tax_rate_id && row.livemode === livemode) return row.stripe_tax_rate_id;
   const made = await stripe<{ id: string }>("POST", "/v1/tax_rates", {
     display_name: rate.name.slice(0, 50), percentage: percentage(rate.percent_bp), inclusive: rate.inclusive, metadata: { tax_rate_id: rate.id },
-  }, { idempotencyKey: `taxrate-${rate.id}-${livemode ? "live" : "test"}` });
+  }, { idempotencyKey: `taxrate-${row.stripe_key}-${livemode ? "live" : "test"}` });
   await db.sql`update tax_rates set stripe_tax_rate_id = ${made.id}, livemode = ${livemode} where id = ${rate.id}::bigint`;
   return made.id;
 }

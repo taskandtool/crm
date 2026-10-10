@@ -109,7 +109,7 @@ export const settingsOf = (r: BookingType): Settings => ({
   horizonDays: r.horizon_days,
 });
 
-const asDate = (v: unknown) => (v instanceof Date ? v : new Date(String(v)));
+export const asDate = (v: unknown) => (v instanceof Date ? v : new Date(String(v)));
 
 /** A resources row as read by `select *` (bigint ids arrive as text from both drivers). */
 export function toResource(r: Record<string, any>): Resource {
@@ -258,10 +258,6 @@ function locks(ids: string[]): Query[] {
     .map((id) => q`select pg_advisory_xact_lock(hashtext('booking:' || ${id}::text))`);
 }
 
-// The overlap rules, in SQL, exactly as slots.ts applies them: a confirmed
-// booking within before + after of the slot, or busy time / time off within
-// the slot padded by its buffers. `r` is the candidate host.
-
 export type BookInput = {
   typeId: string;
   /** The host the booker picked; any free one when absent. */
@@ -348,6 +344,9 @@ export async function takeSlot(db: Db, type: BookingType, slot: OpenSlot, input:
 
   // Among the hosts still free once the locks are held, the one whose latest
   // booking was made longest ago (never booked first), then by id.
+  // The overlap rules, in SQL, exactly as slots.ts applies them: a confirmed
+  // booking within before + after of the slot, or busy time / time off within
+  // the slot padded by its buffers. `r` is the candidate host.
   const insert = q`
     insert into bookings
       (type_id, resource_id, starts_at, ends_at, name, email, phone, location_kind, location, booker_time_zone, status, answers, manage_token_hash, source,

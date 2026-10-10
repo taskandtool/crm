@@ -13,7 +13,7 @@
 import { normalizeEmail } from "../data/email";
 
 export const FIELD_TYPES = [
-  "text", "email", "tel", "textarea", "select", "checkbox", "radio", "date", "number", "consent", "items",
+  "text", "email", "tel", "textarea", "select", "checkbox", "radio", "date", "number", "consent", "items", "photo",
   // Not answers: `page` starts a new step; `booking` and `payment` are steps
   // run by the booking and payments skills (steps.ts).
   "page", "booking", "payment",
@@ -100,12 +100,15 @@ export const DEFAULT_MAX: Record<FieldType, number> = {
   number: 30,
   consent: 10,
   items: 0,
+  photo: 30,
   page: 0,
   booking: 0,
   payment: 0,
 };
 
 const NAME = /^[a-z][a-z0-9_]{0,39}$/;
+/** A photo's answer: where the page uploaded it, an upload of this project's apps (/_files). */
+export const PHOTO_PATH = /^\/_files\/[\w-]{22}$/;
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function validate(fields: Field[], input: Input): Validated {
@@ -195,6 +198,11 @@ export function validate(fields: Field[], input: Input): Validated {
     } else if (f.type === "date") {
       if (!isDate(one)) {
         errors[f.name] = "Enter a date as year, month and day.";
+        continue;
+      }
+    } else if (f.type === "photo") {
+      if (!PHOTO_PATH.test(one)) {
+        errors[f.name] = "Attach the photo again.";
         continue;
       }
     } else if (f.type === "tel") {

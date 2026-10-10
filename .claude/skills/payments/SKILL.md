@@ -1,6 +1,6 @@
 ---
 name: payments
-description: "Takes money through the owner's own Stripe: Checkout for an order, a deposit or a paid booking, status from the verified webhook, refunds and tax rates. Use when a form or booking takes payment, for the Stripe key or webhook, or a refund. Not for quotes and invoices (invoices) or Task & Tool billing."
+description: "Takes money through the owner's own Stripe: Checkout for an order, a deposit or a paid booking, status from the verified webhook, refunds and tax rates. Use when a form or booking takes payment, for the Stripe key or webhook, or a refund. Not for quotes and invoices (the CRM's invoices skill) or Task & Tool billing."
 ---
 
 # Payments
@@ -52,7 +52,7 @@ payment (money)                   payments  payments
     `payment` step (`form-step.tsx`), which opens Checkout with the form's
     lines and tax rate.
   - **Pay later** from an email (an invoice, a proposal's Pay button): a
-    Stripe invoice, the invoices skill.
+    Stripe invoice, the CRM's invoices skill.
   - **A standing link** (a bio, a flyer): a one-page form with a `payment`
     step, at `/forms/<key>/start`; each click opens a fresh Checkout.
   Never make Stripe Payment Links: their payments name nothing here. A link

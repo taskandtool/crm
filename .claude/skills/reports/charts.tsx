@@ -15,6 +15,7 @@
 // Styled with the theme tokens only, so a report takes on the app's brand
 // (and so the client's, when brand/ is filled) with no change here.
 import type { Child } from "hono/jsx";
+import { decimals } from "../payments/money";
 import type { Grain } from "./sql";
 
 export const CHARTJS_SRC = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js";
@@ -55,16 +56,13 @@ export function formatNumber(v: number | null | undefined, f: NumberFormat = {},
   return new Intl.NumberFormat(locale, o).format(v);
 }
 
-// Stripe's own minor units (docs.stripe.com/currencies), as payments/money.ts
-// stores them. Not Intl's digits: Intl gives ISK and UGX none, but Stripe
-// takes ISK in hundredths, so Intl would show 100 kr as 10,000 kr.
-const ZERO_DECIMAL = new Set(["bif", "clp", "djf", "gnf", "jpy", "kmf", "krw", "mga", "pyg", "rwf", "ugx", "vnd", "vuv", "xaf", "xof", "xpf"]);
-const THREE_DECIMAL = new Set(["bhd", "jod", "kwd", "omr", "tnd"]);
-
-/** Minor units (as Stripe counts them) to major for display: 1999 USD is 19.99, 1999 JPY is 1999, 1999 KWD is 1.999. */
+/**
+ * Minor units (as Stripe counts them) to major for display: 1999 USD is 19.99,
+ * 1999 JPY is 1999, 1999 KWD is 1.999. Stripe's digits, not Intl's: Intl gives
+ * ISK none, but Stripe takes ISK in hundredths.
+ */
 export function fromMinor(amount: number, currency: string): number {
-  const c = currency.toLowerCase();
-  return amount / 10 ** (ZERO_DECIMAL.has(c) ? 0 : THREE_DECIMAL.has(c) ? 3 : 2);
+  return amount / 10 ** decimals(currency);
 }
 
 /**
@@ -349,8 +347,7 @@ export function ReportSection(props: { title: string; note?: string; children?: 
 /**
  * A report as a standalone document, for printing to PDF (print.ts): no
  * private navigation, the stylesheet and scripts by absolute or file:// URL,
- * and `data-print` so client.js draws without animation and marks the page
- * `data-charts-ready` when every chart is drawn.
+ * and `data-print` so client.js draws without animation.
  */
 export function ReportDocument(props: { title: string; css: string; script: string; subtitle?: string; children?: Child }) {
   return (

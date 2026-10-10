@@ -7,7 +7,7 @@ import { q, type Db } from "../data/db";
 import { normalizeEmail } from "../data/email";
 import { currencyCode, toMinor } from "../payments/money";
 import { checkSettings, isValidZone, parseWallTime, wallToInstant, type Settings } from "./slots";
-import { LOCATION_KINDS, toResource, toType, type BookingType, type LocationKind, type Resource } from "./book";
+import { asDate, LOCATION_KINDS, toResource, toType, type BookingType, type LocationKind, type Resource } from "./book";
 
 export type Errors = Record<string, string>;
 export type Saved<T = null> = { ok: true; value: T } | { ok: false; errors: Errors };
@@ -19,7 +19,6 @@ export type Calendar = { id: string; resource_id: string; provider: "google" | "
 export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-const asDate = (v: unknown) => (v instanceof Date ? v : new Date(String(v)));
 
 export async function weeklyHours(db: Db, resourceId: string): Promise<HoursWindow[]> {
   const rows = await db.sql`

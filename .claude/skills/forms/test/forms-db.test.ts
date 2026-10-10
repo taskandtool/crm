@@ -393,3 +393,27 @@ test("a form made in the editor is stamped with this app's slug", async (t) => {
     await s.drop();
   }
 });
+
+test("an accepted answer's photo is kept by the response; a spam one is not", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  try {
+    const fields = [...CONTACT_FORM.fields, { name: "photo", label: "Photo", type: "photo" as const }];
+    await seedForm(s.db, { ...CONTACT_FORM, key: "quote", fields }, "website");
+    const app = site(s);
+    const photo = "/_files/" + "b".repeat(22);
+    const answer = { name: "Ann", email: "ann@example.com", message: "Hi", photo };
+
+    const ok = await post(app, "/forms/quote", { ...answer, _started: await makeStamp("quote", Date.now() - 10_000) });
+    assert.equal(ok.status, 303);
+    assert.equal(ok.headers.get("x-tasktool-keep-files"), "b".repeat(22));
+
+    const fast = await post(app, "/forms/quote", { ...answer, _started: await makeStamp("quote") });
+    assert.equal(fast.status, 303);
+    assert.equal(fast.headers.get("x-tasktool-keep-files"), null);
+    const rows = await s.db.sql`select status, data->>'photo' as photo from submissions order by id`;
+    assert.deepEqual(rows, [{ status: "new", photo }, { status: "spam", photo }]);
+  } finally {
+    await s.drop();
+  }
+});

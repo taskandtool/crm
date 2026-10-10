@@ -63,3 +63,12 @@ test("after an error each answer comes back and each message is wired to its fie
   assert.doesNotMatch(h, /value="Kitchen" id="f-contact-rooms-0" checked/);
   assert.match(h, /name="news" value="yes" class="mt-1" checked=""/);
 });
+
+test("a photo field picks a file and posts only the path its upload got", () => {
+  const h = String(FormView({ form: { ...form, fields: [{ name: "photo", label: "Photo", type: "photo" }] }, stamp: "1", values: { photo: "/_files/x" } }));
+  assert.match(h, /<input id="f-contact-photo" type="file" accept="image\/\*"/);
+  assert.doesNotMatch(h, /type="file"[^>]*name=/);
+  assert.match(h, /<input type="hidden" name="photo" value="\/_files\/x"/);
+  assert.match(h, /Photo attached\./);
+  assert.match(h, /fetch\("\/_files"/);
+});

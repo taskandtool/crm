@@ -9,8 +9,17 @@
 // Edge-safe: Web Crypto only.
 
 export function newToken(): string {
-  const b = crypto.getRandomValues(new Uint8Array(32));
-  return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return toB64url(crypto.getRandomValues(new Uint8Array(32)));
+}
+
+/** Bytes as unpadded base64url. */
+export function toB64url(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** Unpadded base64url back to bytes; atob throws on anything else. */
+export function fromB64url(s: string): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (ch) => ch.charCodeAt(0));
 }
 
 /** Hex SHA-256 of a key. */

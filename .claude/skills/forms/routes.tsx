@@ -24,7 +24,7 @@ import { envOf } from "../data/env";
 import { afterResponse, sendEmail } from "../data/send";
 import { HONEYPOT, MIN_FILL_MS, STAMP, makeStamp, verdict } from "../data/spam";
 import { newToken, tokenHash, TOKEN_SHAPE } from "../data/token";
-import { DRAFT_FIELD, FORM_KEY, STEP_FIELD, sitePath, stepsOf, validate, type Answer, type Errors, type Form, type Input, type Step, type Submission } from "./fields";
+import { DRAFT_FIELD, FORM_KEY, STEP_FIELD, sitePath, stepsOf, validate, type Answer, type Errors, type Field, type Form, type Input, type Step, type Submission } from "./fields";
 import type { FormSteps, StepContext } from "./steps";
 import { cameFrom, originFields, readOrigin, REFERRER_FIELD, UTM_FIELD, type Origin } from "./origin";
 import { FormView, StepFrame } from "./render";
@@ -107,13 +107,13 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     const data = { ...withLines(form.fields, r.submission.data), ...origin };
     const id = await insertSubmission(db, { ...r.submission, data, form_key: form.key, source: opts.source, page, status: v === "fast" ? "spam" : "new" });
     if (v === "ok") {
+      keepPhotos(c, form.fields, r.submission.data);
       notifyOwner(c, form, id, r.submission, page, origin);
       await completed(c, String(id));
     }
     return thanks();
   });
 
-  /** Tell the form's notify_emails, through the owner's sender, after the response. */
   /** The submission is complete: what the app does then (opts.onComplete), never in the visitor's way. */
   async function completed(c: Context, submissionId: string) {
     try {
@@ -123,6 +123,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     }
   }
 
+  /** Tell the form's notify_emails, through the owner's sender, after the response. */
   function notifyOwner(c: Context, form: Form, id: number | string, sub: Submission, page: string | null, origin: Origin) {
     if (opts.notify === false || !form.notify_emails.length) return;
     const link = `${new URL(c.req.url).origin}${opts.adminPath ?? "/admin/forms"}/submissions/${id}`;
@@ -191,8 +192,9 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
   async function rewound(c: Context, db: Db, form: Form, steps: Step[], draft: Draft, key: string): Promise<Draft | null> {
     for (let i = 0; i < draft.step; i++) {
       const st = steps[i];
-      const run = st.kind === "fields" ? null : opts.steps?.[st.kind];
-      if (!run?.stillValid || st.kind === "fields") continue;
+      if (st.kind === "fields") continue;
+      const run = opts.steps?.[st.kind];
+      if (!run?.stillValid) continue;
       const ctx = await stepContext(c, db, form, steps, draft, key, i);
       if (ctx && !(await run.stillValid(c, ctx))) {
         await rewindDraft(db, draft.id, ctx.submission.id, i, st.field.name);
@@ -216,7 +218,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     const run = opts.steps?.[st.kind];
     const ctx = run && (await stepContext(c, db, form, steps, draft, key, draft.step));
     if (!run || !ctx) return notWired(c, form, st.kind);
-    const body = <StepFrame form={form} step={where}>{notice}{await run.render(c, ctx, shown)}</StepFrame>;
+    const body = <StepFrame step={where}>{notice}{await run.render(c, ctx, shown)}</StepFrame>;
     return c.html(await opts.page(c, form.title, body), status as 200);
   }
 
@@ -253,6 +255,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
       key = newToken();
       const data = { ...withLines(st.fields, r.submission.data), ...origin };
       draft = await startDraft(db, { ...r.submission, data, form_key: form.key, key_hash: await tokenHash(key), source: opts.source, page, spam: v === "fast" });
+      if (v === "ok") keepPhotos(c, st.fields, r.submission.data);
     } else {
       const found = TOKEN_SHAPE.test(posted) ? await draftByKey(db, form.key, await tokenHash(posted)) : null;
       if (!found) return gone(c, form);
@@ -271,6 +274,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
         if (!r.ok) return showStep(c, db, form, steps, draft, key, { errors: r.errors, values: r.values }, 422);
         const data = withLines(st.fields, r.submission.data);
         if (!(await saveStep(db, draft.id, draft.step, { ...r.submission, data }))) return c.redirect(nextPath(form, key), 303);
+        if (!draft.spam) keepPhotos(c, st.fields, r.submission.data);
         draft = { ...draft, step: draft.step + 1 };
       } else {
         // A form sent too fast to be a person books and charges nothing; it is thanked.
@@ -396,6 +400,12 @@ function readInput(text: string): Input {
     input[k] = all.length > 1 ? all : all[0];
   }
   return input;
+}
+
+/** An accepted answer's photos are kept: the routing worker reads this header off the response, and a photo nobody keeps expires. */
+function keepPhotos(c: Context, fields: Field[], data: Submission["data"]) {
+  const ids = fields.flatMap((f) => (f.type === "photo" && typeof data[f.name] === "string" ? [(data[f.name] as string).slice("/_files/".length)] : []));
+  if (ids.length) c.header("X-TaskTool-Keep-Files", ids.join(", "));
 }
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";

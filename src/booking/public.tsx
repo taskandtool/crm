@@ -21,6 +21,7 @@ import type { Context } from "hono";
 import type { Child } from "hono/jsx";
 import type { Db, GetDb } from "../data/db";
 import { HONEYPOT, makeStamp, SpamFields, STAMP, verdict } from "../data/spam";
+import { listUrl } from "../admin/query";
 import {
   book, bookableTypes, bookingByToken, releaseLapsedHolds, cancelByToken, hostsOf, openSlotsFor, reschedule, resourceById, typeById, typeBySlug, whereText,
   type Booking, type BookingType, type OpenSlot, type Resource,
@@ -46,8 +47,8 @@ export type PublicOptions = {
   css: string;
   /** This app's slug, stored on each booking. */
   source: string;
-  /** The site's own page frame; a plain one is used otherwise. */
-  Page?: (p: { title: string; children: Child }) => Child;
+  /** The site's own page frame; a plain one is used otherwise. `path` is a public page's own, for its canonical; null on a private or one-off page. */
+  Page?: (p: { title: string; path: string | null; children: Child }) => Child;
   /** After a booking or a change: send the owner's confirmation here (notify.ts). Never throws into the response. */
   onBooked?: (c: Context, e: BookingEvent) => void | Promise<void>;
   /**
@@ -88,13 +89,6 @@ function ZoneScript({ business }: { business: string }) {
   const js = `(function(){try{var z=Intl.DateTimeFormat().resolvedOptions().timeZone,u=new URL(location.href);if(z&&z!==${JSON.stringify(business).replace(/</g, "\\u003c")}&&!u.searchParams.has("tz")){u.searchParams.set("tz",z);location.replace(u.href)}}catch(e){}})()`;
   return <script dangerouslySetInnerHTML={{ __html: js }} />;
 }
-
-const q = (params: Record<string, string | null | undefined>) => {
-  const p = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) if (v) p.set(k, v);
-  const s = p.toString();
-  return s ? "?" + s : "";
-};
 
 /** The open slots for the next days, grouped by the viewer's local date. */
 export async function upcoming(db: Db, type: BookingType, viewerZone: string, maxDays: number, opts: { hosts?: string[]; exceptBooking?: string } = {}) {
@@ -172,8 +166,8 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
   const base = opts.base.replace(/\/+$/, "");
   const maxDays = opts.days ?? 60;
   const app = new Hono();
-  const page = (c: Context, title: string, body: Child, status = 200) =>
-    c.html(opts.Page ? <>{opts.Page({ title, children: body })}</> : <PlainPage title={title} css={opts.css}>{body}</PlainPage>, status as 200);
+  const page = (c: Context, title: string, body: Child, status = 200, path: string | null = null) =>
+    c.html(opts.Page ? <>{opts.Page({ title, path, children: body })}</> : <PlainPage title={title} css={opts.css}>{body}</PlainPage>, status as 200);
   const viewerZone = (c: Context, fallback: string) => {
     const tz = c.req.query("tz");
     return isValidZone(tz) ? tz : fallback;
@@ -230,10 +224,10 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
         {open ? (
           <>
             <h2 class="mb-2 mt-6 text-label font-semibold">Move to another time</h2>
-            <ZoneNote zone={zone} business={host.time_zone} switchHref={zone !== host.time_zone ? self + q({ tz: host.time_zone }) : null} />
+            <ZoneNote zone={zone} business={host.time_zone} switchHref={zone !== host.time_zone ? listUrl(self, { tz: host.time_zone }) : null} />
             {keys.length ? (
               <>
-                <DayPicker days={keys} chosen={chosen} href={(d) => self + q({ date: d, tz: c.req.query("tz") })} />
+                <DayPicker days={keys} chosen={chosen} href={(d) => listUrl(self, { date: d, tz: c.req.query("tz") })} />
                 <ul class="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {(days.get(chosen) ?? []).map((s) => (
                     <li>
@@ -290,7 +284,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
       const type = await typeById(getDb(c), r.booking.type_id);
       if (type) await after(c, token, r.booking, "cancelled", type);
     }
-    return c.redirect(`${base}/manage/${token}${q({ tz: isValidZone(tz) ? tz : null })}`, 303);
+    return c.redirect(listUrl(`${base}/manage/${token}`, { tz: isValidZone(tz) ? tz : null }), 303);
   });
 
   app.post("/manage/:token/reschedule", async (c) => {
@@ -303,7 +297,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     if (!r.ok) return managePage(c, token, r.reason === "taken" ? "That time was just taken. Pick another." : "This booking can no longer be changed.", 409);
     const type = await typeById(getDb(c), r.booking.type_id);
     if (type) await after(c, token, r.booking, "rescheduled", type);
-    return c.redirect(`${base}/manage/${token}${q({ tz })}`, 303);
+    return c.redirect(listUrl(`${base}/manage/${token}`, { tz }), 303);
   });
 
   // ---- booking ----------------------------------------------------------------------
@@ -329,7 +323,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
           <p class="text-ink-2">Nothing can be booked online right now. Please get in touch instead.</p>
         )}
       </>
-    ));
+    ), 200, base || "/");
   });
 
   /** The host a booker picked, when they picked one of this type's. */
@@ -357,23 +351,23 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
         {hosts.length > 1 ? (
           <nav aria-label="With" class="mb-4 flex flex-wrap items-center gap-2 text-label">
             <span class="text-ink-2">With</span>
-            <a href={self + q({ tz: tzq })} aria-current={host ? undefined : "true"} class={chip + (host ? "" : " border-accent font-semibold")}>Anyone free</a>
+            <a href={listUrl(self, { tz: tzq })} aria-current={host ? undefined : "true"} class={chip + (host ? "" : " border-accent font-semibold")}>Anyone free</a>
             {hosts.map((h) => (
-              <a href={self + q({ host: h.id, tz: tzq })} aria-current={host?.id === h.id ? "true" : undefined} class={chip + (host?.id === h.id ? " border-accent font-semibold" : "")}>
+              <a href={listUrl(self, { host: h.id, tz: tzq })} aria-current={host?.id === h.id ? "true" : undefined} class={chip + (host?.id === h.id ? " border-accent font-semibold" : "")}>
                 {h.name}
               </a>
             ))}
           </nav>
         ) : null}
-        <ZoneNote zone={zone} business={business} switchHref={zone !== business ? self + q({ tz: business, date: chosen, host: host?.id }) : null} />
+        <ZoneNote zone={zone} business={business} switchHref={zone !== business ? listUrl(self, { tz: business, date: chosen, host: host?.id }) : null} />
         {keys.length ? (
           <>
-            <DayPicker days={keys} chosen={chosen} href={(d) => self + q({ date: d, tz: tzq, host: host?.id })} />
+            <DayPicker days={keys} chosen={chosen} href={(d) => listUrl(self, { date: d, tz: tzq, host: host?.id })} />
             <h2 class="mb-2 text-label font-semibold">{formatDate(chosen)}</h2>
             <ul class="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {(days.get(chosen) ?? []).map((s) => (
                 <li>
-                  <a class={chip + " w-full"} href={`${self}/confirm` + q({ start: s.start.toISOString(), tz: zone, host: host?.id })}>
+                  <a class={chip + " w-full"} href={listUrl(`${self}/confirm`, { start: s.start.toISOString(), tz: zone, host: host?.id })}>
                     {formatTime(s.start, zone)}
                   </a>
                 </li>
@@ -385,7 +379,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
         )}
         {tzq ? null : <ZoneScript business={business} />}
       </>
-    ));
+    ), 200, self);
   });
 
   const spamScope = (t: BookingType) => `booking:${t.slug}`;
@@ -417,7 +411,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
           <SpamFields stamp={stamp} />
           <div class="flex items-center gap-4">
             <button class={button}>Book it</button>
-            <a href={`${base}/${t.slug}` + q({ date: localDate(start, zone), tz: zone, host: host?.id })}>Pick another time</a>
+            <a href={listUrl(`${base}/${t.slug}`, { date: localDate(start, zone), tz: zone, host: host?.id })}>Pick another time</a>
           </div>
         </form>
       </>
@@ -459,7 +453,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
       address: values.address || null, bookerTimeZone: zone, answers: notes ? { notes } : {}, source: opts.source,
     });
     if (!result.ok && result.reason === "invalid") return confirmForm(c, t, host, start, zone, s(STAMP), values, result.errors);
-    if (!result.ok) return c.redirect(back + q({ date: localDate(start, zone), tz: zone, host: host?.id, taken: "1" }), 303);
+    if (!result.ok) return c.redirect(listUrl(back, { date: localDate(start, zone), tz: zone, host: host?.id, taken: "1" }), 303);
     const e = await after(c, result.token, result.booking, "booked", t);
     let next: string | null | undefined | void = null;
     try {
@@ -467,7 +461,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     } catch (err) {
       console.error(`booking: afterBook failed for booking ${result.booking.id}:`, err);
     }
-    return c.redirect(next || `${base}/manage/${result.token}` + q({ new: "1", tz: zone }), 303);
+    return c.redirect(next || listUrl(`${base}/manage/${result.token}`, { new: "1", tz: zone }), 303);
   });
 
   return app;

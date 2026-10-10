@@ -20,7 +20,7 @@ default, with two locks:
    team, and only a person makes it public, with the switch in Task & Tool.
    So declare the prefix when you build it, before anyone makes the site
    public: `python3 ~/tools/taskandtool.py add-private-path /admin`, once per
-   prefix (the `serving` skill: keeping a path for the team). Once the site
+   prefix (`add-private-path`, in the `serving` skill). Once the site
    is public, that path still asks for a Task & Tool sign-in and the rest is
    open. Only a person can make a declared path public. Do not link to it
    from public pages.

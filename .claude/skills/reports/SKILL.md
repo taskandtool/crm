@@ -27,7 +27,7 @@ Version: 0.2.1 (taskandtool/skills)
   per-row ratios (`ratioOfSums`, `weightedMean`). Show a change in a rate in
   percentage points (`change="points"`).
 - **Money**: one figure per currency, never a sum across currencies.
-  Revenue is `amount_cents - refunded_cents` for `paid`,
+  Revenue is `coalesce(total_cents, amount_cents) - refunded_cents` (`revenueQuery`) for `paid`,
   `partially_refunded` and `refunded` payments, dated by `paid_at` (or by
   `created_at` when a refund handled first left `paid_at` empty), leaving
   out `livemode = false`. Minor units are Stripe's, not Intl's (`fromMinor`: yen
@@ -90,7 +90,7 @@ hand-over is a deliverable (`work` skill), and a deliverable is a file:
    stylesheet and script by `fileUrl`) and `printToPdf` it (`print.ts`).
    That uses the browser the crawler installs (`tt-crawl setup`). The job
    renders the page itself, so the browser needs no sign-in.
-2. `create_deliverables([{"path": pdf, "title": …, "status": "info"}], …)`.
+2. `python3 ~/tools/taskandtool.py create-deliverables --file -` with `[{"path": pdf, "title": …, "status": "info"}]` on stdin (the `work` skill).
 3. With no browser, the deliverable is a link to the private report page
    instead: say which in the chat.
 

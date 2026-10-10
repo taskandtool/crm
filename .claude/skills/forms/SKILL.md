@@ -33,6 +33,8 @@ Version: 0.2.0 (taskandtool/skills)
   where they came from (`data._utm`, the referrer's host in `data._referrer`).
 - **Marketing needs a `consent` field**, unticked; `data._consent` keeps
   the exact words agreed to. A contact form is not permission to market.
+- **A photo field stores `/_files/<id>`**; open one at
+  `localhost:<port>/_files/<id>`.
 - **The owner is emailed only through their own sender** (`data/send.ts`);
   Task & Tool sends nothing. No sender: say so.
 
@@ -74,6 +76,7 @@ field type with its settings.
 | `steps.ts` | the contract a booking or payment step implements |
 | `price.ts`, `linked.ts` | what a submission costs; its booking and payment, for showing |
 | `admin.tsx` | `formsAdmin(getDb, { base, css, timeZone, source, Frame?, links? })`: submissions by form with their booking and payment, not finished, the editor |
+| `files.ts` | `devFiles()`: `/_files` on the dev server (`src/server.ts`) |
 | `origin.ts`, `cart.js`, `cli.ts` | where the visitor came from; the cart; `formsCli` for `scripts/forms.mjs` |
 | `test/` | validation, rendering, steps, items, routes and admin on a scratch database |
 | `references/setup.md` | when an app takes its first form, wires steps, or sets up the owner's email |

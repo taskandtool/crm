@@ -20,18 +20,19 @@
 // holds the whole table in memory:
 //
 //   csvResponse("rows.csv", columns, everyPage((after, size) => listPage(db, filter, after, size)));
+import { fromB64url, toB64url } from "../data/token";
 
 export type Keyed = { k: string; id: number | string | bigint };
 export type Cursor = { k: string; id: string };
 
 export function makeCursor(row: Keyed): string {
-  return b64url(JSON.stringify([row.k, String(row.id)]));
+  return toB64url(new TextEncoder().encode(JSON.stringify([row.k, String(row.id)])));
 }
 
 export function readCursor(s: string | undefined | null): Cursor | null {
   if (!s) return null;
   try {
-    const [k, id] = JSON.parse(fromB64url(s));
+    const [k, id] = JSON.parse(new TextDecoder().decode(fromB64url(s)));
     if (typeof k !== "string" || k.length > 64 || typeof id !== "string" || !/^\d{1,18}$/.test(id)) return null;
     return { k, id };
   } catch {
@@ -58,8 +59,3 @@ export async function* everyPage<T extends Keyed>(fetchPage: (after: Cursor | nu
     after = readCursor(next);
   }
 }
-
-const b64url = (s: string) =>
-  btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const fromB64url = (s: string) =>
-  new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (ch) => ch.charCodeAt(0)));

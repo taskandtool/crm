@@ -150,3 +150,16 @@ test("control, bidi and invisible characters are cleaned before checking and sto
   const empty = validate(f, { name: "​‍﻿‮" });
   assert.equal(empty.ok, false);
 });
+
+test("a photo's answer is only a path to an upload", () => {
+  const photo: Field[] = [{ name: "photo", label: "Photo", type: "photo" }];
+  const path = "/_files/" + "a".repeat(21) + "-";
+  const r = validate(photo, { photo: path });
+  assert.ok(r.ok);
+  assert.deepEqual(r.submission.data, { photo: path });
+  for (const bad of ["https://evil.example/x.png", "/_files/short", `/_files/${"a".repeat(22)}/x`, "javascript:alert(1)"]) {
+    const no = validate(photo, { photo: bad });
+    assert.ok(!no.ok, bad);
+  }
+  assert.ok(validate(photo, {}).ok);
+});

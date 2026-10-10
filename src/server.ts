@@ -9,11 +9,14 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import app from "./app";
 import { machineRuntime, start } from "./db/client";
+import { devFiles } from "./forms/files";
 
 const port = Number(process.env.PORT ?? 3000);
 const runtime = machineRuntime();
 const server = new Hono();
 server.use("/*", serveStatic({ root: "./static" }));
+// A photo field's uploads on localhost (the routing worker answers them at the app's addresses).
+server.route("/", devFiles());
 server.route("/", app);
 
 serve({ fetch: (req, env) => server.fetch(req, { ...(env as object), runtime }), port, hostname: "0.0.0.0" }, (info) => {

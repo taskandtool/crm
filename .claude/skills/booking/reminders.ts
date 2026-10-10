@@ -37,6 +37,8 @@ export async function sendReminders(db: Db, send: Send, opts: { now?: Date; befo
           and b.starts_at - ${shorter}::int * interval '1 minute' > ${now}::timestamptz
           and b.created_at < b.starts_at - ${min}::int * interval '1 minute'
           and b.hold_until is null -- a booking made in a form, only once the form is complete
+          and not exists (select 1 from booking_reminders r -- claimed rows out before the limit, or they fill it every run
+            where r.booking_id = b.id and r.before_min = ${min}::int and r.starts_at = b.starts_at)
         order by b.starts_at
         limit ${limit}
         on conflict do nothing

@@ -81,6 +81,10 @@ test("plain: help exits 0; a flag it does not take, or a stray argument, exits 2
   assert.equal(stray.stdout, "");
   assert.equal(stray.stderr, "lint: it takes no arguments (given pages)\n  Try: node scripts/lint.mjs --help\n");
   assert.equal(run(body, ["--bogus"]).status, 2);
+  const json = run(body, ["--json"]);
+  assert.equal(json.status, 2);
+  assert.equal(json.stderr, "lint: unknown flag --json (it prints text); valid: --fix\n  Try: node scripts/lint.mjs --help\n");
+  assert.equal(run(`c.plain(c.parseArgs(process.argv.slice(1)), "help", "audit", { flags: ["json"] }); console.log("ran");`, ["--json"]).stdout, "ran\n");
 });
 
 test("flag: a value flag given no value is misuse, not quietly absent", () => {

@@ -12,7 +12,7 @@
 //       <SeoReport data={data} />
 //     </ReportDocument>
 //   ).toString();
-//   await printToPdf(html, "out/seo-2026-09.pdf");      // then create_deliverables([{ path, title, status: "info" }], …)
+//   await printToPdf(html, "out/seo-2026-09.pdf");      // then taskandtool.py create-deliverables (the work skill)
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";

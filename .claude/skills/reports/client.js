@@ -23,8 +23,6 @@
 // htmx: a chart is destroyed when htmx cleans up its canvas, and charts in
 // new content are drawn on htmx:load. No animation under reduced motion or on
 // a page marked data-print; a print resizes every chart to the paper first.
-// When the charts on the page are drawn, <html> gets data-charts-ready, which
-// a headless printer waits for.
 (function () {
   "use strict";
 
@@ -197,7 +195,6 @@
       chart.$spec = spec;
       live.add(chart);
     });
-    root.setAttribute("data-charts-ready", "");
   }
 
   function destroyWithin(el) {

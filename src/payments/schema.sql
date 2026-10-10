@@ -64,3 +64,6 @@ create table if not exists tax_rates (
   updated_by citext,
   created_at timestamptz not null default now()
 );
+-- Stripe's idempotency key for making the rate there: random, since keys are
+-- per Stripe account and another project's rate 1 shares the id.
+alter table tax_rates add column if not exists stripe_key text not null default replace(gen_random_uuid()::text, '-', '');

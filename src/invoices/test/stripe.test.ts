@@ -118,6 +118,8 @@ test("send with Stripe: customer, tax rate, invoice, items, finalize, send; the 
     assert.deepEqual({ amount: item.amount, invoice: item.invoice, tax_rates: item.tax_rates, description: item.description },
       { amount: 10000, invoice: "in_1", tax_rates: ["txr_1"], description: "Fence (2 x $50.00)" });
     assert.equal(posts.find((c) => c.path === "/v1/tax_rates")!.params!.percentage, "10");
+    const [{ stripe_key }] = await s.db.sql`select stripe_key from tax_rates where id = ${rate.value.id}::bigint`;
+    assert.equal(posts.find((c) => c.path === "/v1/tax_rates")!.key, `taxrate-${stripe_key}-test`, "the row's random key: another project's rate has the same id");
 
     // Sent: it no longer sends, and the next invoice for the same email reuses the customer and the rate.
     assert.deepEqual((await sendInvoice(s.db, f.stripe, inv.id, BY)).ok, false);
