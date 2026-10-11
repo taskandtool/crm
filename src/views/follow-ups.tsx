@@ -10,7 +10,7 @@ import { listUrl } from "../admin/query";
 import { dealsCfg, ownerLabel } from "../config";
 import { addDays, FOLLOW_UP_KINDS, FOLLOW_UP_LABELS, UPCOMING_DAYS, type FollowUp, type FollowUpView, type Unplanned } from "../crm/follow-ups";
 import { Layout } from "./layout";
-import { AddToggle, buttonClass, controlClass, DueMark, Field, MESSAGES, primaryClass, timeText, timeZone } from "./ui";
+import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, primaryClass, timeText, timeZone } from "./ui";
 
 export type FollowUpsProps = {
   user: string;
@@ -65,13 +65,21 @@ export function FollowUpsPage(p: FollowUpsProps) {
           )}
         </>
       ) : p.rows.length ? (
-        <ol class="flex flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
-          {p.rows.map((f) => (
-            <li class="border-b border-line px-4 py-3 last:border-b-0">
-              <FollowUpItem f={f} today={p.today} returnTo={self} showCustomer showOwner={!p.mine} />
-            </li>
+        // Headed by day, as task lists are: Overdue and Today under Due, each coming day under Upcoming.
+        <div class="flex flex-col gap-4">
+          {groups(p.rows, p.today).map(([heading, rows]) => (
+            <section aria-label={heading}>
+              <h2 class={"mb-2 text-label font-semibold " + (heading === "Overdue" ? "text-late" : "text-ink-2")}>{heading}</h2>
+              <ol class="flex flex-col rounded-card border border-line bg-surface shadow-card">
+                {rows.map((f) => (
+                  <li class="border-b border-line px-4 py-3 last:border-b-0">
+                    <FollowUpItem f={f} today={p.today} returnTo={self} showCustomer showOwner={!p.mine} grouped />
+                  </li>
+                ))}
+              </ol>
+            </section>
           ))}
-        </ol>
+        </div>
       ) : (
         <Empty>
           {p.view === "due" ? "Nothing due. " : `Nothing in the next ${UPCOMING_DAYS} days. `}
@@ -83,70 +91,89 @@ export function FollowUpsPage(p: FollowUpsProps) {
   );
 }
 
+/** The rows under their headings, in the order they came: Overdue, Today, then each day. */
+function groups(rows: FollowUp[], today: string): [string, FollowUp[]][] {
+  const out: [string, FollowUp[]][] = [];
+  for (const f of rows) {
+    const heading = f.due_on < today ? "Overdue" : dueDayText(f.due_on, today);
+    const last = out[out.length - 1];
+    if (last && last[0] === heading) last[1].push(f);
+    else out.push([heading, [f]]);
+  }
+  return out;
+}
+
 function Empty({ children }: { children: Child }) {
   return <div class="rounded-card border border-line bg-surface shadow-card px-4 py-8 text-center text-ink-2">{children}</div>;
 }
 
-/** One follow-up: when, what, for whom, and Done and Move. */
-export function FollowUpItem(p: { f: FollowUp; today: string; returnTo: string; showCustomer?: boolean; showOwner?: boolean; /** The deal whose page this is: no link back to it. */ onDeal?: string | null }) {
+/**
+ * One follow-up, as a task list shows one: a circle to tick it done, what and
+ * for whom, and Reschedule (with "done, with a note" in the same menu).
+ * `grouped` is in a list headed by its day, so only an overdue one says its date.
+ */
+export function FollowUpItem(p: {
+  f: FollowUp; today: string; returnTo: string; showCustomer?: boolean; showOwner?: boolean; grouped?: boolean;
+  /** The deal whose page this is: no link back to it. */ onDeal?: string | null;
+}) {
   const { f, today } = p;
   const label = `${FOLLOW_UP_LABELS[f.kind]}: ${f.title}`;
   const deal = f.deal_title && f.deal_id && f.deal_id !== p.onDeal;
+  const overdue = f.due_on < today;
   return (
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-4">
+    <div class="flex items-start gap-3">
+      <form method="post" action={`/follow-ups/${f.id}/done`} class="pt-0.5">
+        <input type="hidden" name="return" value={p.returnTo} />
+        <button aria-label={`Mark done: ${label}`} title="Mark done"
+          class="flex size-5 items-center justify-center rounded-full border-2 border-line-strong text-transparent hover:border-accent hover:bg-accent/10 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+          <svg aria-hidden="true" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-3"><path d="m2.5 6.5 2.5 2.5 4.5-5" /></svg>
+        </button>
+      </form>
       <div class="min-w-0 flex-1">
-        <p class="flex flex-wrap items-center gap-x-2 text-label text-ink-3">
-          <DueMark next={f} today={today} />
-          {f.due_on < today && f.due_time ? <span>{timeText(f.due_time)}</span> : null}
+        <p class="break-words font-semibold">{f.title}</p>
+        <p class="mt-0.5 flex flex-wrap items-center gap-x-2 text-label text-ink-3">
+          {/* Under a day's heading only the time is new; under Overdue, which day it was. */}
+          {!p.grouped ? <DueMark next={f} today={today} /> : overdue ? <span class="font-semibold text-late">{dueDayText(f.due_on, today)}</span> : f.due_time ? <span>{timeText(f.due_time)}</span> : null}
+          {overdue && f.due_time ? <span>{timeText(f.due_time)}</span> : null}
           <span>{FOLLOW_UP_LABELS[f.kind]}</span>
           {p.showOwner && f.owner ? <span>{f.owner}</span> : null}
         </p>
-        <p class="mt-1 break-words font-semibold">{f.title}</p>
         {p.showCustomer || deal ? (
-          <p class="text-label text-ink-2">
+          <p class="mt-0.5 text-label text-ink-2">
             {p.showCustomer ? <a href={`/customers/${f.customer_id}`}>{f.customer_name}</a> : null}
             {p.showCustomer && f.kind === "call" && f.customer_phone ? <> · <a href={`tel:${f.customer_phone.replace(/[^0-9+]/g, "")}`}>{f.customer_phone}</a></> : null}
             {deal ? <>{p.showCustomer ? " · " : ""}<a href={`/deals/${f.deal_id}`}>{f.deal_title}</a></> : null}
           </p>
         ) : null}
       </div>
-      <div class="flex flex-wrap items-start gap-2">
-        <form method="post" action={`/follow-ups/${f.id}/done`}>
-          <input type="hidden" name="return" value={p.returnTo} />
-          <button class={buttonClass} aria-label={`Mark done: ${label}`}>Mark done</button>
-        </form>
-        <details class="relative">
-          <summary class={buttonClass + " cursor-pointer list-none"} aria-label={`More for ${label}`}>More</summary>
-          <div class="mt-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-card border border-line bg-surface p-3 shadow-lift sm:absolute sm:right-0 sm:z-10">
-            <form method="post" action={`/follow-ups/${f.id}/done`} class="flex flex-col gap-2">
-              <input type="hidden" name="return" value={p.returnTo} />
-              <Field label="Outcome">
-                <textarea name="outcome" rows={2} maxlength={10000} class={controlClass}></textarea>
-              </Field>
-              <button class={buttonClass + " self-start"}>Mark done with this note</button>
-            </form>
-            <div class="flex flex-col gap-2">
-              <span class="text-label font-semibold text-ink">Reschedule</span>
-              <div class="flex flex-wrap gap-2">
-                {[["Tomorrow", addDays(today, 1)], ["Next week", addDays(today, 7)]].map(([text, day]) => (
-                  <form method="post" action={`/follow-ups/${f.id}/move`}>
-                    <input type="hidden" name="return" value={p.returnTo} />
-                    <input type="hidden" name="on" value={day} />
-                    <button class={buttonClass}>{text}</button>
-                  </form>
-                ))}
-              </div>
-              {/* A day and a time side by side, then the button: they fit the menu's width. */}
-              <form method="post" action={`/follow-ups/${f.id}/move`} class="grid grid-cols-2 gap-2">
+      <details class="relative shrink-0">
+        <summary class={buttonClass + " cursor-pointer list-none"} aria-label={`Reschedule ${label}`}>Reschedule</summary>
+        <div class="absolute right-0 z-10 mt-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-card border border-line bg-surface p-3 shadow-lift">
+          <div class="flex flex-wrap gap-2">
+            {[["Tomorrow", addDays(today, 1)], ["Next week", addDays(today, 7)]].map(([text, day]) => (
+              <form method="post" action={`/follow-ups/${f.id}/move`}>
                 <input type="hidden" name="return" value={p.returnTo} />
-                <input name="on" type="date" required value={f.due_on} aria-label="Day" class={controlClass + " min-w-0"} />
-                <input name="at" type="time" value={f.due_time ?? ""} aria-label="Time, or blank for any time" class={controlClass + " min-w-0"} />
-                <button class={buttonClass + " col-span-2"}>Reschedule</button>
+                <input type="hidden" name="on" value={day} />
+                <button class={buttonClass}>{text}</button>
               </form>
-            </div>
+            ))}
           </div>
-        </details>
-      </div>
+          {/* A day and a time side by side, then the button: they fit the menu's width. */}
+          <form method="post" action={`/follow-ups/${f.id}/move`} class="grid grid-cols-2 gap-2">
+            <input type="hidden" name="return" value={p.returnTo} />
+            <input name="on" type="date" required value={f.due_on} aria-label="Day" class={controlClass + " min-w-0"} />
+            <input name="at" type="time" value={f.due_time ?? ""} aria-label="Time, or blank for any time" class={controlClass + " min-w-0"} />
+            <button class={buttonClass + " col-span-2"}>Reschedule</button>
+          </form>
+          <form method="post" action={`/follow-ups/${f.id}/done`} class="flex flex-col gap-2 border-t border-line pt-3">
+            <input type="hidden" name="return" value={p.returnTo} />
+            <Field label="Or mark it done, with what came of it">
+              <textarea name="outcome" rows={2} maxlength={10000} class={controlClass}></textarea>
+            </Field>
+            <button class={buttonClass + " self-start"}>Mark done</button>
+          </form>
+        </div>
+      </details>
     </div>
   );
 }

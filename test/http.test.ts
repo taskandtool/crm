@@ -262,7 +262,7 @@ test("follow-ups: added, listed as due, the nav's count, done onto the timeline,
 
   const due = await (await get("/follow-ups")).text();
   assert.match(due, /Call about the estimate/);
-  assert.match(due, /Today 9:30 AM/);
+  assert.match(due, /<h2[^>]*>Today<\/h2>[\s\S]*9:30 AM[\s\S]*Call about the estimate|<h2[^>]*>Today<\/h2>[\s\S]*Call about the estimate[\s\S]*9:30 AM/, "under Today, with its time");
   assert.match(due, /href="tel:5554041212"/, "a call shows the number");
   assert.match(await (await get("/follow-ups/count")).text(), /\d+<span class="sr-only"> due/);
   const customerPage = await (await get(`/customers/${id}`)).text();
