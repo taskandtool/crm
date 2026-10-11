@@ -101,28 +101,35 @@ export function TableRows<T extends { id: string | number | bigint }>(props: {
 }
 
 /**
- * As Stripe's lists: with a detail URL the whole row opens it. The first
- * column's link is stretched over the row (rowLink), and anything else a row
- * holds that can be clicked (a checkbox, a customer link, a status menu)
- * sits above it (rowControls), so it still works.
+ * As Stripe's and Linear's lists: a click anywhere on a row opens it, and
+ * Cmd, Ctrl or the middle button opens it in a new tab. A click on something
+ * of its own (a link, a checkbox, a button, a menu) or one that selects text
+ * is left alone. The first cell's link stays the way there for the keyboard
+ * and screen readers. A handler, not a link stretched over the row: Safari
+ * measures that against the whole table, so every row opened the last one.
  */
-export const rowLink =
-  "font-semibold text-ink no-underline after:absolute after:inset-0 after:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent";
-export const rowControls =
-  "[&_a]:relative [&_a]:z-[1] [&_button]:relative [&_button]:z-[1] [&_input]:relative [&_input]:z-[1] [&_select]:relative [&_select]:z-[1] [&_summary]:relative [&_summary]:z-[1] [&_details]:relative [&_details]:z-[1]";
+export function rowClick(href: string) {
+  const go =
+    "if(event.target.closest('a,button,input,select,textarea,label,summary,details')||getSelection().toString())return;" +
+    "if(event.metaKey||event.ctrlKey||event.button===1)window.open(this.dataset.href);else location.assign(this.dataset.href)";
+  return { "data-href": href, onclick: go, onauxclick: `if(event.button===1){${go}}` };
+}
+
+/** The first cell's link: the row's name, no underline (the row shows it can be clicked). */
+export const rowLink = "font-semibold text-ink no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent";
 
 /** One row. Also the htmx answer to a change made in it (target "closest tr"). */
 export function TableRow<T extends { id: string | number | bigint }>({ spec, row }: { spec: TableSpec<T>; row: T }) {
   const href = spec.href?.(row);
   return (
-    <tr id={`${spec.id}-row-${row.id}`} class={"group hover:bg-canvas" + (href ? " relative cursor-pointer" : "")}>
+    <tr id={`${spec.id}-row-${row.id}`} class={"group hover:bg-canvas" + (href ? " cursor-pointer" : "")} {...(href ? rowClick(href) : {})}>
       {spec.select ? (
-        <td class={cell + " border-b border-line group-last:border-b-0 " + rowControls}>
+        <td class={cell + " border-b border-line group-last:border-b-0"}>
           <input type="checkbox" name="id" value={String(row.id)} form={spec.select.form} aria-label={`Select ${spec.select.label(row)}`} />
         </td>
       ) : null}
       {spec.columns.map((c, i) => (
-        <td class={cell + " border-b border-line group-last:border-b-0 " + (i === 0 && href ? "" : rowControls + " ") + (c.class ?? "")}>
+        <td class={cell + " border-b border-line group-last:border-b-0 " + (c.class ?? "")}>
           {i === 0 && href ? (
             <a href={href} class={rowLink}>
               {c.cell(row)}
