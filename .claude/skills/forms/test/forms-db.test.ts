@@ -185,6 +185,12 @@ test("the editor saves field changes as rows and refuses a stale version", async
     res = await post(app, "/admin/forms", { key: "quote", title: "Quote" }, team);
     assert.equal(res.status, 303);
     assert.equal((await post(app, "/admin/forms", { key: "quote", title: "Again" }, team)).status, 422);
+
+    // A title alone: its key is made from it, numbered when taken.
+    res = await post(app, "/admin/forms", { title: "Quote" }, team);
+    assert.equal(res.headers.get("location")?.split("?")[0], "/admin/forms/form/quote-2");
+    res = await post(app, "/admin/forms", { title: "Spring tune-up!" }, team);
+    assert.equal(res.headers.get("location")?.split("?")[0], "/admin/forms/form/spring-tune-up");
   } finally {
     await s.drop();
   }
