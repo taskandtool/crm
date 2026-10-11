@@ -12,7 +12,7 @@ import { normalizeEmail } from "../data/email";
 import { BulkForm } from "../admin/bulk";
 import { csvResponse, type CsvColumn } from "../admin/csv";
 import { FieldList, JsonData, Section } from "../admin/detail";
-import { Flash, withFlash, type FlashMessages } from "../admin/flash";
+import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash";
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, everyPage, readCursor, type Cursor, type Keyed } from "../admin/keyset";
 import { AdminLayout, type NavItem } from "../admin/layout";
@@ -752,7 +752,7 @@ function Editor(props: {
         <a href={listUrl(`${base}/submissions`, { form: form.key })}>See submissions</a>
       </p>
       {note ? (
-        <p role="alert" class="rounded-card border border-line-strong bg-panel px-4 py-2">
+        <p role="alert" class={alertClass.replace("mb-4 ", "")}>
           {note}
         </p>
       ) : null}

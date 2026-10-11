@@ -37,7 +37,7 @@ import { missingSentence } from "./crm/tables";
 import { clean, nowIn, parseTags, slugify, wallTime } from "./crm/text";
 import type { AppEnv } from "./runtime";
 import { CustomerPage } from "./views/customer";
-import { CustomersPage, customerSpec, filterParams, Results } from "./views/customers";
+import { CustomersPage, customerSpec, filterParams, NewCustomerPage, Results } from "./views/customers";
 import { InboxPage, InboxResults, InboxRows } from "./views/inbox";
 import { Layout, WaitingView } from "./views/layout";
 import { Board, CLOSED_DAYS, DealPage, DealsPage, PER_COLUMN, type BoardData } from "./views/deals";
@@ -273,13 +273,17 @@ app.get("/customers/export.csv", async (c) => {
   return csvResponse(`customers-${day}.csv`, csvColumns(labels, cfg.fields), everyPage((after, size) => listPage(db, f, after, size)));
 });
 
+app.get("/customers/new", async (c) => {
+  return c.html(<NewCustomerPage user={c.var.user} stages={await listStages(c.var.db, "customers")} flash={flashOf(c)} />);
+});
+
 app.post("/customers", async (c) => {
   const db = c.var.db;
   const body = await c.req.parseBody();
   const email = normalizeEmail(body.email);
   const phone = clean(body.phone, 40);
   const name = clean(body.name, 200) ?? email ?? (phoneKey(phone) ? phone : null);
-  if (!name) return back(c, "/customers", "name-needed");
+  if (!name) return back(c, "/customers/new", "name-needed");
   const stages = await listStages(db, "customers");
   const stage = stages.find((s) => s.key === str(body.stage)) ?? (await firstOpenStage(db, "customers"));
   if (!stage) return back(c, "/stages", "last-open");

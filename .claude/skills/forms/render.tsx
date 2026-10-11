@@ -301,14 +301,17 @@ function autocomplete(f: Field): string | undefined {
 
 // A photo is drawn at most 2048 pixels on its long side (which leaves its
 // location data behind), sent to /_files, and its path goes in the hidden
-// input. One this browser cannot draw is sent as it is.
+// input. One this browser cannot draw is sent as it is. Send waits for it, so
+// a quick tap never sends the form without the photo.
 const PHOTO_JS = `(() => {
   const input = document.getElementById($ID), box = input.parentElement;
   const answer = box.querySelector("input[type=hidden]"), note = box.querySelector("[data-photo-note]");
+  const send = input.form.querySelector("[type=submit]");
   input.addEventListener("change", async () => {
     const file = input.files[0];
     if (!file) return;
     answer.value = "";
+    send.disabled = true;
     note.textContent = "Adding the photo.";
     let body = file, type = file.type;
     try {
@@ -332,6 +335,7 @@ const PHOTO_JS = `(() => {
     } catch (e) {
       note.textContent = "That photo could not be added. Try another.";
     }
+    send.disabled = false;
   });
 })();`;
 

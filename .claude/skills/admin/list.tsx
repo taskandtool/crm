@@ -193,7 +193,10 @@ export function SearchBar(props: {
           </select>
         </label>
       ))}
-      <button class={buttonClass}>Apply</button>
+      {/* htmx applies every change; the button is for a browser without it. */}
+      <noscript>
+        <button class={buttonClass}>Apply</button>
+      </noscript>
       {active ? (
         <a href={action} class="py-1 text-label text-ink-2">
           Clear
@@ -204,14 +207,22 @@ export function SearchBar(props: {
 }
 
 /**
- * A time in the business's zone. The server's zone is UTC on the machine and
- * at the edge, so formatting without `timeZone` shows the wrong hour.
+ * A time in the business's zone, "Oct 9, 2:30 PM", with the year only when it
+ * is not this one; `day` leaves the time out. The server's zone is UTC on the
+ * machine and at the edge, so formatting without `timeZone` shows the wrong hour.
  */
-export function When({ at, timeZone, locale = "en-US" }: { at: Date | string | null | undefined; timeZone: string; locale?: string }) {
+export function When({ at, timeZone, locale = "en-US", day = false }: { at: Date | string | null | undefined; timeZone: string; locale?: string; day?: boolean }) {
   if (!at) return null;
   const d = at instanceof Date ? at : new Date(at);
   if (Number.isNaN(d.getTime())) return null;
-  const text = new Intl.DateTimeFormat(locale, { timeZone, dateStyle: "medium", timeStyle: "short" }).format(d);
+  const year = (x: Date) => new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric" }).format(x);
+  const text = new Intl.DateTimeFormat(locale, {
+    timeZone,
+    month: "short",
+    day: "numeric",
+    year: year(d) === year(new Date()) ? undefined : "numeric",
+    ...(day ? {} : { hour: "numeric", minute: "2-digit" }),
+  }).format(d);
   return (
     <time datetime={d.toISOString()} class="whitespace-nowrap">
       {text}

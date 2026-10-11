@@ -108,6 +108,18 @@ export function wallToInstant(wall: string, tz: string): Date {
 }
 
 /** Money in minor units, in its currency's own decimals. */
+/** A total at a glance, to the whole unit: "$14,500" on a board column or a card. */
+export function cash(cents: number | string, currency: string, locale = "en-US"): string {
+  const code = currency.toUpperCase();
+  try {
+    const f = new Intl.NumberFormat(locale, { style: "currency", currency: code, maximumFractionDigits: 0 });
+    const digits = new Intl.NumberFormat(locale, { style: "currency", currency: code }).resolvedOptions().maximumFractionDigits ?? 2;
+    return f.format(Number(cents) / 10 ** digits);
+  } catch {
+    return `${Math.round(Number(cents) / 100)} ${code}`;
+  }
+}
+
 export function money(cents: number | string, currency: string, locale = "en-US"): string {
   const code = currency.toUpperCase();
   try {

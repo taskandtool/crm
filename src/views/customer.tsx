@@ -25,7 +25,7 @@ import { money, nowIn } from "../crm/text";
 import { whereText, type Booking } from "../booking/book";
 import { firstText } from "./inbox";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, CustomInput, Field, linkButtonClass, MESSAGES, primaryClass, SaveOnChange, stageOptions, timeZone, Who } from "./ui";
+import { buttonClass, controlClass, CustomInput, Field, linkButtonClass, MESSAGES, primaryClass, RecordLine, SaveOnChange, stageOptions, timeZone } from "./ui";
 import { CustomerVisits } from "./visits";
 import { CustomerMoney, type Owed } from "./money";
 import type { Quote } from "../invoices/quotes";
@@ -60,20 +60,25 @@ export function CustomerPage(p: {
   const missing = missingSentence(p.present, { submissions: true, bookings: true, payments: true });
   const money = p.money && (p.money.quotes.length || p.money.invoices.length) ? p.money : null;
   return (
-    <Layout title={c.name} user={p.user} section="customers">
-      <p class="mb-3 text-label">
-        <a href="/customers">All {vocab.many.toLowerCase()}</a>
-      </p>
+    <Layout
+      title={c.name}
+      user={p.user}
+      section="customers"
+      back={{ href: "/customers", label: vocab.many }}
+      sub={<Reach c={c} />}
+      actions={
+        <>
+          <SaveOnChange action={`${self}/stage`} current={c.stage} options={stageOptions(stages)} label="Status" returnTo={self} />
+          {c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`} class={linkButtonClass}>Call</a> : null}
+          {c.email ? <a href={`mailto:${c.email}`} class={linkButtonClass} title={c.email}>Email</a> : null}
+          {showBooking ? (
+            <a href={listUrl("/bookings/new", { name: c.name, email: c.email, phone: c.phone, address: c.address })} class={linkButtonClass}>Book a time</a>
+          ) : null}
+          {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", { email: c.email, name: c.name, phone: c.phone, address: c.address })} class={linkButtonClass}>New quote</a> : null}
+        </>
+      }
+    >
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
-      <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <SaveOnChange action={`${self}/stage`} current={c.stage} options={stageOptions(stages)} label="Status" returnTo={self} />
-        {c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`} class={linkButtonClass}>Call</a> : null}
-        {c.email ? <a href={`mailto:${c.email}`} class={linkButtonClass} title={c.email}>Email</a> : null}
-        {showBooking ? (
-          <a href={listUrl("/bookings/new", { name: c.name, email: c.email, phone: c.phone, address: c.address })} class={linkButtonClass}>Book a time</a>
-        ) : null}
-        {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", { email: c.email, name: c.name, phone: c.phone, address: c.address })} class={linkButtonClass}>New quote</a> : null}
-      </div>
       {c.archived_at ? (
         <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">
           Archived <When at={c.archived_at} timeZone={timeZone} />. Still here, left out of the lists.
@@ -118,19 +123,30 @@ export function CustomerPage(p: {
               </ul>
             </Section>
           ) : null}
-          <div class="flex flex-wrap gap-2">
-            <a href={`${self}/merge`} class={linkButtonClass}>Merge with another record</a>
-            <form method="post" action={`${self}/archive`}>
-              <input type="hidden" name="archived" value={c.archived_at ? "0" : "1"} />
-              <button class={buttonClass} title={c.archived_at ? "Brings them back into the lists." : "Takes them out of the lists. Nothing is deleted."}>
-                {c.archived_at ? "Unarchive" : "Archive"}
-              </button>
-            </form>
-          </div>
         </div>
       </div>
+      <RecordLine added={c.created_at} addedBy={c.created_by} changed={c.updated_at} changedBy={c.updated_by}>
+        <a href={`${self}/merge`} class="text-ink-2">Merge with another record</a>
+        <form method="post" action={`${self}/archive`}>
+          <input type="hidden" name="archived" value={c.archived_at ? "0" : "1"} />
+          <button class="text-ink-2 underline" title={c.archived_at ? "Brings them back into the lists." : "Takes them out of the lists. Nothing is deleted."}>
+            {c.archived_at ? "Unarchive" : "Archive"}
+          </button>
+        </form>
+      </RecordLine>
     </Layout>
   );
+}
+
+/** How to reach them, under their name: company, phone, email. */
+function Reach({ c }: { c: Customer }) {
+  const parts = [
+    c.company ? <span>{c.company}</span> : null,
+    c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`} class="whitespace-nowrap text-ink-2">{c.phone}</a> : null,
+    c.email ? <a href={`mailto:${c.email}`} class="break-all text-ink-2">{c.email}</a> : null,
+  ].filter(Boolean);
+  if (!parts.length) return null;
+  return <p class="flex flex-wrap gap-x-2">{parts.map((x, i) => <>{i ? <span aria-hidden="true">·</span> : null}{x}</>)}</p>;
 }
 
 /** Their details as values, then Edit for the form. */
@@ -142,10 +158,8 @@ function About({ c, owners }: { c: Customer; owners: string[] }) {
     <div class="flex flex-col gap-3">
       <FieldList
         fields={([
-          { label: "Email", value: c.email ? <a href={`mailto:${c.email}`} class="break-all">{c.email}</a> : null },
+          // Company, phone and email are under their name, at the top.
           ...(c.other_emails?.length ? [{ label: "Also goes by", value: c.other_emails.join(", ") }] : []),
-          { label: "Phone", value: c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`}>{c.phone}</a> : null },
-          { label: "Company", value: c.company },
           { label: "Address", value: c.address },
           { label: ownerLabel, value: c.owner },
           { label: "Source", value: c.source },
@@ -153,7 +167,6 @@ function About({ c, owners }: { c: Customer; owners: string[] }) {
           ...custom,
           { label: "Background", value: c.notes ? <span class="whitespace-pre-wrap">{c.notes}</span> : null },
           { label: "Last contact", value: c.last_contact_at ? <When at={c.last_contact_at} timeZone={timeZone} /> : null },
-          { label: "Added", value: <Who at={c.created_at} by={c.created_by} /> },
         ] as Shown[]).filter(filled)}
       />
       <details>
@@ -242,8 +255,12 @@ function Activity({ c, notes, history, missing }: { c: Customer; notes: Note[]; 
               <option value={k}>{NOTE_LABELS[k]}</option>
             ))}
           </select>
-          <input name="at" type="datetime-local" value={nowIn(timeZone)} aria-label={`When, in ${timeZone}`} class={controlClass} />
-          <button class={primaryClass}>Save</button>
+          <button class={primaryClass}>Add</button>
+          {/* Now, unless it happened earlier: the time is there when it is needed. */}
+          <details class="text-label text-ink-2">
+            <summary class="cursor-pointer">Earlier?</summary>
+            <input name="at" type="datetime-local" max={nowIn(timeZone)} aria-label="When it happened" class={controlClass + " mt-2"} />
+          </details>
         </div>
       </form>
       {missing && (c.email || c.phone) ? <p class="text-label text-ink-3">{missing}</p> : null}

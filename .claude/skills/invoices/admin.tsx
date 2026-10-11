@@ -16,7 +16,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type { Child } from "hono/jsx";
 import { FieldList, Section } from "../admin/detail";
-import { Flash, withFlash, type FlashMessages } from "../admin/flash";
+import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash";
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, readCursor } from "../admin/keyset";
 import { AdminLayout, type NavItem } from "../admin/layout";
@@ -279,7 +279,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       <>
         <p class="mb-3 text-label"><a href={qbase}>All quotes</a></p>
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
-        {c.req.query("problem") ? <p role="alert" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">{c.req.query("problem")}</p> : null}
+        {c.req.query("problem") ? <p role="alert" class={alertClass}>{c.req.query("problem")}</p> : null}
         <div class="mb-4 flex flex-wrap items-center gap-2">
           <StatusBadge value={shown} options={QUOTE_OPTIONS} />
           {qt.status === "draft" ? <a href={`${self}/edit`} class={buttonClass + " no-underline"}>Edit</a> : null}
@@ -305,9 +305,9 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
               <Section title="Their answer">
                 <p class="mb-2 text-label text-ink-3">When they say yes or no, by reply or on the phone.</p>
                 <div class="flex flex-wrap gap-2">
-                  <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="accepted" /><button class={primaryClass}>Accepted</button></form>
-                  <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="declined" /><button class={buttonClass}>Declined</button></form>
-                  {qt.status !== "expired" ? <form method="post" action={`${self}/expire`}><button class={buttonClass}>Expired</button></form> : null}
+                  <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="accepted" /><button class={buttonClass}>Mark accepted</button></form>
+                  <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="declined" /><button class={buttonClass}>Mark declined</button></form>
+                  {qt.status !== "expired" ? <form method="post" action={`${self}/expire`}><button class={buttonClass}>Mark expired</button></form> : null}
                 </div>
               </Section>
             ) : null}
@@ -384,7 +384,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     return framed(c, qbase, `Send quote ${qt.number}`, (
       <>
         <p class="mb-3 text-label"><a href={self}>Back to the quote</a></p>
-        {problem ? <p role="alert" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">{problem}</p> : null}
+        {problem ? <p role="alert" class={alertClass}>{problem}</p> : null}
         <Section title="The email">
           <FieldList fields={[
             { label: "To", value: <span class="break-all">{qt.email}</span> },
@@ -698,7 +698,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       return framed(c, base, `${act.title}: ${inv.number ? `invoice ${inv.number}` : "draft invoice"}`, (
         <>
           <p class="mb-3 text-label"><a href={self}>Back to the invoice</a></p>
-          {problem ? <p role="alert" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">{problem}</p> : null}
+          {problem ? <p role="alert" class={alertClass}>{problem}</p> : null}
           <Section title="What happens">
             <p class="mb-3 max-w-prose">{act.say(inv)}</p>
             <form method="post" action={`${self}/${act.path}`}><button class={primaryClass}>{act.button}</button></form>
@@ -822,8 +822,8 @@ function DocForm({ kind, action, v, errors, rates, cancel }: { kind: "quote" | "
   const problems = Object.keys(errors).length;
   return (
     <form method="post" action={action} class="flex flex-col gap-4">
-      {problems ? <p role="alert" class="rounded-card border border-line-strong bg-panel px-4 py-2">Fix what is marked below. Nothing was saved.</p> : null}
-      {errors.status ? <p role="alert" class="rounded-card border border-line-strong bg-panel px-4 py-2">{errors.status}</p> : null}
+      {problems ? <p role="alert" class={alertClass.replace("mb-4 ", "")}>Fix what is marked below. Nothing was saved.</p> : null}
+      {errors.status ? <p role="alert" class={alertClass.replace("mb-4 ", "")}>{errors.status}</p> : null}
       <input type="hidden" name="visit_id" value={v.visit_id} />
       {kind === "quote" ? <input type="hidden" name="deal_id" value={v.deal_id} /> : null}
       <Section title="Who it is for">

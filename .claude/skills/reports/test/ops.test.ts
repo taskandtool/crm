@@ -73,7 +73,7 @@ test("the funnel matches people by email whatever its case, and only narrows", {
   assert.equal(data.bookings?.recent[0].starts_at, "2026-09-25T14:00:00Z");
   const out = String(await OpsReport({ data }).toString());
   assert.match(out, /Booked 2 \(100% of Leads\), Showed 1 \(50% of Booked\), Paid 1 \(100% of Showed\)/);
-  assert.match(out, /Sep 25, 2026, 10:00/); // 14:00 UTC shown in New York
+  assert.match(out, /Sep 25,( 2026,)? 10:00/); // 14:00 UTC shown in New York
 });
 
 test("revenue is per currency, net of refunds, and never summed across currencies", { skip }, async () => {

@@ -1,6 +1,6 @@
 // The customers list: search and filters (htmx as you type, a plain GET
 // without it), keyset Load more, CSV of the current filter, and a form to
-// add one by hand.
+// a page to add one by hand.
 import { Flash } from "../admin/flash";
 import { DataTable, SearchBar, When, type TableSpec } from "../admin/list";
 import { listUrl } from "../admin/query";
@@ -9,7 +9,7 @@ import { cfg, ownerLabel, vocab } from "../config";
 import type { Customer, ListFilter } from "../crm/customers";
 import type { Stage } from "../crm/stages";
 import { Layout } from "./layout";
-import { controlClass, DueMark, Field, MESSAGES, primaryClass, stageOptions, timeZone } from "./ui";
+import { controlClass, DueMark, Field, MESSAGES, primaryClass, primaryLinkClass, stageOptions, timeZone } from "./ui";
 
 /** Each row's next follow-up (by customer id), who is still in play, and today in the business's zone: what the Next column says. */
 export type NextOf = { next: Map<string, { due_on: string; due_time: string | null }>; inPlay: Set<string>; today: string };
@@ -29,6 +29,7 @@ export function customerSpec(stages: Stage[], n: NextOf): TableSpec<Customer> {
         cell: (r) => (
           <>
             {r.name}
+            {r.company ? <span class="block break-words text-label font-normal text-ink-2">{r.company}</span> : null}
             {r.phone || r.email ? <span class="block break-words text-label font-normal text-ink-2 sm:hidden">{r.phone || r.email}</span> : null}
           </>
         ),
@@ -37,17 +38,16 @@ export function customerSpec(stages: Stage[], n: NextOf): TableSpec<Customer> {
       { label: "Next follow-up", class: "hidden sm:table-cell", cell: (r) => (n.next.has(r.id) || n.inPlay.has(r.id) ? <DueMark next={n.next.get(r.id)} today={n.today} /> : "") },
       {
         label: "Contact",
-        class: "hidden sm:table-cell",
+        class: "hidden md:table-cell",
         cell: (r) => (
-          <span class="wrap-anywhere text-ink-2">
-            {[r.email, r.phone].filter(Boolean).join(" · ")}
+          <span class="text-ink-2">
+            {r.phone ? <span class="block whitespace-nowrap">{r.phone}</span> : null}
+            {r.email ? <span class="block break-all">{r.email}</span> : null}
           </span>
         ),
       },
-      { label: "Company", class: "hidden wrap-anywhere md:table-cell", cell: (r) => r.company ?? "" },
-      { label: "Tags", class: "hidden lg:table-cell", cell: (r) => (r.tags.length ? <span class="text-ink-2">{r.tags.join(", ")}</span> : "") },
       { label: ownerLabel, class: "hidden lg:table-cell", cell: (r) => r.owner ?? "" },
-      { label: "Last contact", class: "hidden md:table-cell", cell: (r) => <When at={r.last_contact_at} timeZone={timeZone} /> },
+      { label: "Last contact", class: "hidden lg:table-cell", cell: (r) => <When at={r.last_contact_at} timeZone={timeZone} day /> },
     ],
   };
 }
@@ -77,7 +77,7 @@ export function Results(p: { stages: Stage[]; filter: ListFilter; rows: Customer
           ) : p.filter.archived ? (
             "Nothing is archived."
           ) : (
-            `No ${vocab.many.toLowerCase()} yet. Add one below or from the Inbox, or ask the AI to import your spreadsheet.`
+            `No ${vocab.many.toLowerCase()} yet. Add one, add them from the Inbox, or ask the AI to import your spreadsheet.`
           )
         }
       />
@@ -101,7 +101,8 @@ export function CustomersPage(p: {
 }) {
   const owners = [...new Set([p.user, ...p.facets.owners])];
   return (
-    <Layout title={vocab.many} user={p.user} section="customers">
+    <Layout title={vocab.many} user={p.user} section="customers"
+      actions={<a href="/customers/new" class={primaryLinkClass}>New {vocab.one.toLowerCase()}</a>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <SearchBar
         action="/customers"
@@ -122,30 +123,28 @@ export function CustomersPage(p: {
         ]}
       />
       <Results stages={p.stages} filter={p.filter} rows={p.rows} next={p.next} paged={p.paged} nextOf={p.nextOf} />
-      <NewCustomer stages={p.stages} />
     </Layout>
   );
 }
 
-function NewCustomer({ stages }: { stages: Stage[] }) {
+/** Add one by hand: who they are, their status and where they came from. */
+export function NewCustomerPage({ user, stages, flash }: { user: string; stages: Stage[]; flash: { code?: string | null; n?: string | null } }) {
   const open = stages.filter((s) => s.kind === "open");
   return (
-    <section class="mt-6 rounded-card border border-line bg-surface p-4" aria-labelledby="new-customer">
-      <h2 id="new-customer" class="mb-3 text-label font-semibold text-ink-2">
-        New {vocab.one.toLowerCase()}
-      </h2>
-      <form method="post" action="/customers" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <Layout title={`New ${vocab.one.toLowerCase()}`} user={user} section="customers" back={{ href: "/customers", label: vocab.many }}>
+      <Flash code={flash.code} n={flash.n} messages={MESSAGES} />
+      <form method="post" action="/customers" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface p-4 sm:grid-cols-2">
         <Field label="Name">
-          <input name="name" maxlength={200} autocomplete="off" class={controlClass} />
+          <input name="name" maxlength={200} autocomplete="off" autofocus class={controlClass} />
+        </Field>
+        <Field label="Company">
+          <input name="company" maxlength={200} autocomplete="off" class={controlClass} />
         </Field>
         <Field label="Email">
           <input name="email" type="email" maxlength={254} autocomplete="off" class={controlClass} />
         </Field>
         <Field label="Phone">
           <input name="phone" type="tel" maxlength={40} autocomplete="off" class={controlClass} />
-        </Field>
-        <Field label="Company">
-          <input name="company" maxlength={200} autocomplete="off" class={controlClass} />
         </Field>
         <Field label="Status">
           <select name="stage" class={controlClass}>
@@ -162,11 +161,11 @@ function NewCustomer({ stages }: { stages: Stage[] }) {
             ))}
           </datalist>
         </Field>
-        <div class="sm:col-span-2 lg:col-span-3">
+        <div class="sm:col-span-2">
           <button class={primaryClass}>Add {vocab.one.toLowerCase()}</button>
-          <span class="ml-3 text-label text-ink-3">Enter a name, email or phone. If they are already here, their record opens.</span>
+          <span class="ml-3 text-label text-ink-3">A name, email or phone is enough. Someone already here opens their record.</span>
         </div>
       </form>
-    </section>
+    </Layout>
   );
 }

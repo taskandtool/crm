@@ -85,7 +85,7 @@ test("a status form posts with its return path, and an inline one swaps its row"
   assert.equal(pickStatus("done", STATUSES), "done");
   assert.equal(pickStatus("deleted", STATUSES), null);
   const badge = await render(StatusBadge({ value: "new", options: STATUSES }));
-  assert.ok(badge.includes("bg-accent") && !/#[0-9a-f]{3,6}\b/i.test(badge));
+  assert.ok(badge.includes("text-accent") && !/#[0-9a-f]{3,6}\b/i.test(badge));
 });
 
 test("the bulk form carries its id and return path", async () => {

@@ -6,8 +6,22 @@ import { dealsCfg, invoicesCfg, showBooking, visitsCfg, vocab } from "../config"
 
 export type Section = "inbox" | "follow-ups" | "deals" | "customers" | "visits" | "bookings" | "forms" | "invoices" | "stages";
 
-export function Layout(props: { title: string; user: string; section: Section; drag?: boolean; wide?: boolean; children?: Child }) {
-  const { title, user, section, drag, wide, children } = props;
+export function Layout(props: {
+  title: string;
+  user: string;
+  section: Section;
+  drag?: boolean;
+  wide?: boolean;
+  /** The list this page belongs to, shown above the title. */
+  back?: { href: string; label: string };
+  /** A line under the title: who it is for, how to reach them. */
+  sub?: Child;
+  /** The page's own actions, beside the title; at most one primary. */
+  actions?: Child;
+  children?: Child;
+}) {
+  const { title, user, section, drag, wide, back, sub, actions, children } = props;
+  // The daily work; Forms and Stages are set up once and sit to the right, quieter.
   const nav: { href: string; label: string; section: Section }[] = [
     { href: "/", label: "Inbox", section: "inbox" },
     { href: "/follow-ups", label: "Follow-ups", section: "follow-ups" },
@@ -15,10 +29,23 @@ export function Layout(props: { title: string; user: string; section: Section; d
     { href: "/customers", label: vocab.many, section: "customers" },
     ...(visitsCfg ? [{ href: "/visits", label: visitsCfg.many, section: "visits" as const }] : []),
     ...(showBooking ? [{ href: "/bookings", label: "Bookings", section: "bookings" as const }] : []),
-    { href: "/forms/submissions", label: "Forms", section: "forms" },
     ...(invoicesCfg ? [{ href: "/invoices", label: "Invoices", section: "invoices" as const }] : []),
+  ];
+  const setup: { href: string; label: string; section: Section }[] = [
+    { href: "/forms/submissions", label: "Forms", section: "forms" },
     { href: "/stages", label: "Stages", section: "stages" },
   ];
+  const link = (n: { href: string; label: string; section: Section }, quiet = false) => (
+    <a
+      href={n.href}
+      aria-current={section === n.section ? "page" : undefined}
+      class={"shrink-0 rounded-control px-2 py-1 no-underline " + (section === n.section ? "bg-panel font-semibold" : (quiet ? "text-label text-ink-3" : "text-ink-2") + " hover:bg-panel")}
+    >
+      {n.label}
+      {/* How many of mine are due, filled in after the page loads so no page waits on it. */}
+      {n.section === "follow-ups" ? <span hx-get="/follow-ups/count" hx-trigger="load" hx-swap="outerHTML"></span> : null}
+    </a>
+  );
   return (
     <html lang="en">
       <head>
@@ -37,27 +64,32 @@ export function Layout(props: { title: string; user: string; section: Section; d
           Skip to content
         </a>
         <header class="border-b border-line bg-surface">
-          <div class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
-            <nav aria-label="CRM" class="flex flex-wrap items-center gap-1">
-              {nav.map((n) => (
-                <a
-                  href={n.href}
-                  aria-current={section === n.section ? "page" : undefined}
-                  class={"rounded-control px-2 py-1 no-underline " + (section === n.section ? "bg-panel font-semibold" : "text-ink-2 hover:bg-panel")}
-                >
-                  {n.label}
-                  {/* How many of mine are due, filled in after the page loads so no page waits on it. */}
-                  {n.section === "follow-ups" ? <span hx-get="/follow-ups/count" hx-trigger="load" hx-swap="outerHTML"></span> : null}
-                </a>
-              ))}
+          {/* One row: it scrolls sideways on a phone rather than wrapping. */}
+          <div class="flex min-w-0 items-center gap-1 overflow-x-auto px-4 py-2">
+            <nav aria-label="CRM" class="flex items-center gap-1">
+              {nav.map((n) => link(n))}
             </nav>
-            <span class="ml-auto hidden max-w-56 truncate text-label text-ink-3 sm:inline" title="Signed in through Task & Tool">
-              {user}
-            </span>
+            <nav aria-label="Setup" class="ml-auto flex items-center gap-1 pl-4">
+              {setup.map((n) => link(n, true))}
+              <span class="hidden max-w-56 truncate pl-2 text-label text-ink-3 lg:inline" title="Signed in through Task & Tool">
+                {user}
+              </span>
+            </nav>
           </div>
         </header>
         <main id="main" class={"mx-auto px-4 py-5 " + (wide ? "max-w-7xl" : "max-w-6xl")}>
-          <h1 class="mb-4 text-title font-semibold">{title}</h1>
+          {back ? (
+            <p class="mb-1 text-label">
+              <a href={back.href} class="text-ink-2">{back.label}</a>
+            </p>
+          ) : null}
+          <div class="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+            <div class="min-w-0">
+              <h1 class="text-title font-semibold">{title}</h1>
+              {sub ? <div class="mt-1 text-ink-2">{sub}</div> : null}
+            </div>
+            {actions ? <div class="flex flex-wrap items-center gap-2">{actions}</div> : null}
+          </div>
           {children}
         </main>
       </body>

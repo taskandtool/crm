@@ -18,6 +18,8 @@ export const primaryClass =
 export const labelClass = "flex flex-col gap-1 text-label text-ink-2";
 /** A link that does an action (call, book, quote): it looks like a button. */
 export const linkButtonClass = buttonClass + " inline-block no-underline";
+/** The page's one primary action when it is a link ("New customer"). */
+export const primaryLinkClass = primaryClass + " inline-block no-underline";
 
 /** Stage options for a select or badge: open stages strong, won in the accent, lost muted. */
 export function stageOptions(stages: Stage[]): StatusOption[] {
@@ -127,6 +129,27 @@ export function CustomInput({ f, value }: { f: CustomField; value: unknown }) {
   return <Field label={f.label}>{input}</Field>;
 }
 
+/** Who added a record and who last changed it, as one quiet line at the foot of its page. */
+export function RecordLine({ added, addedBy, changed, changedBy, children }: { added: Date | null; addedBy: string | null; changed?: Date | null; changedBy?: string | null; children?: Child }) {
+  const sameEdit = !changed || (added && Math.abs(new Date(changed).getTime() - new Date(added).getTime()) < 60_000);
+  return (
+    <div class="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-3 text-label text-ink-3">
+      <p class="min-w-0 break-words">
+        Added <When at={added} timeZone={timeZone} day />
+        {addedBy ? ` by ${addedBy}` : ""}
+        {sameEdit ? null : (
+          <>
+            {" · Changed "}
+            <When at={changed} timeZone={timeZone} day />
+            {changedBy ? ` by ${changedBy}` : ""}
+          </>
+        )}
+      </p>
+      {children}
+    </div>
+  );
+}
+
 /** When something was added or changed, and by whom. */
 export function Who({ at, by }: { at: Date | null; by: string | null }) {
   return (
@@ -144,42 +167,42 @@ export const MESSAGES: FlashMessages = {
   added: `${vocab.one} added.`,
   exists: `That ${one} is already here, so their record opened.`,
   saved: "Saved.",
-  invalid: "Saved, except values that were not a valid number, date, time, amount, option or email.",
+  invalid: { error: "Saved, except values that were not a valid number, date, time, amount, option or email." },
   stage: "Status changed.",
   "deal-added": `${dealsCfg.one} added.`,
   "deal-saved": `${dealsCfg.one} saved.`,
   "deal-stage": "Stage changed.",
-  "deal-title-needed": `Say what the ${dealsCfg.one.toLowerCase()} is first.`,
+  "deal-title-needed": { error: `Say what the ${dealsCfg.one.toLowerCase()} is first.` },
   "deal-archived": `${dealsCfg.one} archived. Nothing was deleted.`,
   "deal-unarchived": `${dealsCfg.one} is back from the archive.`,
   "fu-added": "Follow-up added.",
   "fu-done": "Follow-up completed.",
   "fu-already": "That follow-up was already done.",
   "fu-moved": "Follow-up rescheduled.",
-  "fu-needs": "Add a title and a due date.",
+  "fu-needs": { error: "Add a title and a due date." },
   merged: "Merged. Everything from the other record is here now.",
-  "merge-same": "Choose another record to merge with this one.",
-  "merge-gone": "That record is gone or was already merged.",
+  "merge-same": { error: "Choose another record to merge with this one." },
+  "merge-gone": { error: "That record is gone or was already merged." },
   note: "Note added.",
-  "note-empty": "Write something in the note first.",
+  "note-empty": { error: "Write something in the note first." },
   archived: `${vocab.one} archived. Nothing was deleted; Unarchive brings them back.`,
   unarchived: `${vocab.one} is back from the archive.`,
   done: "Marked done.",
-  "email-taken": `Another ${one} already has that email. Nothing was saved.`,
-  "name-needed": "A name, an email or a phone number is needed.",
-  gone: "That is no longer there.",
+  "email-taken": { error: `Another ${one} already has that email. Nothing was saved.` },
+  "name-needed": { error: "A name, an email or a phone number is needed." },
+  gone: { error: "That is no longer there." },
   "stage-added": "Stage added.",
   "stage-saved": "Stage saved.",
   "stage-moved": "Stage moved.",
   "stage-archived": "Stage archived.",
   "stage-restored": "Stage restored, at the end of the pipeline.",
-  "stage-in-use": "Something is still in that stage. Choose a stage to move it to, then archive it.",
-  "last-open": "Keep at least one open stage in each list: new ones land there.",
-  "bad-target": "Choose an active stage to move them to.",
-  "pick-stage": "Choose one of the stages.",
-  "pick-status": "Choose one of the statuses.",
+  "stage-in-use": { error: "Something is still in that stage. Choose a stage to move it to, then archive it." },
+  "last-open": { error: "Keep at least one open stage in each list: new ones land there." },
+  "bad-target": { error: "Choose an active stage to move them to." },
+  "pick-stage": { error: "Choose one of the stages." },
+  "pick-status": { error: "Choose one of the statuses." },
   "visit-added": `${visitWords.one} added.`,
-  "visit-title-needed": `Say what the ${visitWords.one.toLowerCase()} is for first.`,
+  "visit-title-needed": { error: `Say what the ${visitWords.one.toLowerCase()} is for first.` },
   "visit-status": "Status changed.",
 };
 

@@ -9,7 +9,7 @@ import { StatusBadge, type StatusOption } from "../admin/status";
 import { dealsCfg, vocab } from "../config";
 import type { Overview } from "../crm/overview";
 import { sourceOf, type InboxRow } from "../crm/inbox";
-import { money } from "../crm/text";
+import { cash, money } from "../crm/text";
 import { Layout } from "./layout";
 import { buttonClass, controlClass, linkButtonClass, MESSAGES, primaryClass, timeZone } from "./ui";
 
@@ -56,13 +56,13 @@ function Numbers({ n }: { n: Overview }) {
       {sub ? <span class="text-label text-ink-3">{sub}</span> : null}
     </a>
   );
-  const cash = (cents: string) => money(cents, dealsCfg.currency).replace(/\.00$/, "");
+  const whole = (cents: string) => cash(cents, dealsCfg.currency);
   return (
     <div class="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
       {figure("#results", n.leads ? String(n.leads.current) : "None yet", "New leads, 7 days", n.leads ? `${n.leads.previous} the week before` : "No forms on the project yet")}
-      {figure("/follow-ups", String(due), "Follow-ups due", n.due.overdue ? `${n.due.overdue} overdue` : due ? "All today" : "Nothing overdue")}
-      {figure("/deals", cash(n.open.cents), `Open ${dealsCfg.many.toLowerCase()}`, n.open.count === 1 ? `1 ${dealsCfg.one.toLowerCase()}` : `${n.open.count} ${dealsCfg.many.toLowerCase()}`)}
-      {figure("/deals", cash(n.won.cents), "Won this month", n.won.count === 1 ? `1 ${dealsCfg.one.toLowerCase()}` : `${n.won.count} ${dealsCfg.many.toLowerCase()}`)}
+      {figure("/follow-ups", String(due), "Your follow-ups due", n.due.overdue ? `${n.due.overdue} overdue` : due ? "All today" : "Nothing overdue")}
+      {figure("/deals", whole(n.open.cents), `Open ${dealsCfg.many.toLowerCase()}`, n.open.count === 1 ? `1 ${dealsCfg.one.toLowerCase()}` : `${n.open.count} ${dealsCfg.many.toLowerCase()}`)}
+      {figure("/deals", whole(n.won.cents), "Won this month", n.won.count === 1 ? `1 ${dealsCfg.one.toLowerCase()}` : `${n.won.count} ${dealsCfg.many.toLowerCase()}`)}
     </div>
   );
 }
@@ -73,7 +73,7 @@ export function InboxPage(p: InboxProps) {
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <Numbers n={p.numbers} />
       {/* The box applies on change (htmx swaps #results and pushes the URL,
-          so back and refresh keep it); Apply is the same form without JS. */}
+          so back and refresh keep it); Apply is the same form without JS, so it shows only then. */}
       <form method="get" action="/" hx-get="/" hx-target="#results" hx-swap="outerHTML" hx-push-url="true" class="mb-4 flex flex-wrap items-center gap-3 text-label text-ink-2">
         {p.forms.length ? (
           <label class="flex items-center gap-2">
@@ -88,7 +88,9 @@ export function InboxPage(p: InboxProps) {
           <input type="checkbox" name="unmatched" value="1" checked={p.unmatched} hx-get="/" hx-trigger="change" hx-include="closest form" />
           Not {vocab.many.toLowerCase()} yet
         </label>
-        <button class={buttonClass}>Apply</button>
+        <noscript>
+          <button class={buttonClass}>Apply</button>
+        </noscript>
       </form>
       <InboxResults {...p} />
     </Layout>
@@ -120,7 +122,7 @@ export function InboxResults(p: Pick<InboxProps, "rows" | "next" | "more" | "sel
                 {p.missing ?? "Form submissions, bookings and payments from your other apps show up here."}
               </p>
               <p class="mt-4">
-                <a href="/customers#new-customer" class={linkButtonClass}>Add {vocab.one.toLowerCase()}</a>
+                <a href="/customers/new" class={linkButtonClass}>Add {vocab.one.toLowerCase()}</a>
               </p>
             </>
           )}

@@ -13,7 +13,8 @@ export type Tone = "accent" | "strong" | "neutral" | "muted";
 export type StatusOption = { value: string; label: string; tone?: Tone };
 
 const TONES: Record<Tone, string> = {
-  accent: "bg-accent text-accent-ink border-accent",
+  // Outlined, not filled: a filled accent is a button, and a badge is not one.
+  accent: "bg-surface text-accent border-accent",
   strong: "bg-surface text-ink border-line-strong",
   neutral: "bg-panel text-ink-2 border-line",
   muted: "bg-canvas text-ink-3 border-line",
@@ -34,7 +35,7 @@ export function StatusBadge({ value, options }: { value: string; options: Status
 }
 
 export const controlClass =
-  "rounded-control border border-line-strong bg-canvas px-2 py-1 text-copy text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+  "rounded-control border border-line-strong bg-surface px-2 py-1 text-copy text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 export const buttonClass =
   "rounded-control border border-line-strong bg-surface px-3 py-1 text-label font-semibold text-ink hover:bg-panel focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
