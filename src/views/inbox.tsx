@@ -1,14 +1,14 @@
 // The Inbox: four figures (new leads this week, follow-ups due, open deals,
 // won this month), then To do (or Everything): one row per submission,
-// booking or payment, newest first, each with the person (their name opens
-// them once they are a customer), "Add as customer" while they are not, and
+// booking or payment, newest first; a click on it opens it, the person's
+// name opens them once they are a customer, "Add as customer" while they are not, and
 // "Add as deal" (a repeat customer's new enquiry too). Rows are a list
 // rather than a table so they wrap on a phone.
 import { Flash } from "../admin/flash";
-import { When } from "../admin/list";
+import { rowClick, When } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { StatusBadge, type StatusOption } from "../admin/status";
-import { dealsCfg, vocab } from "../config";
+import { dealsCfg, invoicesCfg, showBooking, vocab } from "../config";
 import type { Overview } from "../crm/overview";
 import { sourceOf, type InboxRow } from "../crm/inbox";
 import { cash, money } from "../crm/text";
@@ -161,13 +161,24 @@ export function InboxRows({ rows, next, more, self }: { rows: InboxRow[]; next: 
   );
 }
 
+/** Where the thing that came in is kept: the submission, the booking, the payment (when this CRM shows that page). */
+function itemHref(row: InboxRow): string | null {
+  if (row.kind === "submission") return `/forms/submissions/${row.id}`;
+  if (row.kind === "booking") return showBooking ? `/bookings/${row.id}` : null;
+  return invoicesCfg ? `/invoices/payments/${row.id}` : null;
+}
+
+// As HubSpot's and Pipedrive's inboxes (and Gmail): a click on a row opens
+// what came in; the person's name opens the customer, the buttons act.
 function Row({ row, self }: { row: InboxRow; self: string }) {
   const person = row.name || row.email || row.phone || "Someone";
+  const href = itemHref(row);
   return (
-    <li id={`${row.kind}-${row.id}`} class="flex flex-col gap-2 border-b border-line px-4 py-3 last:border-b-0 sm:flex-row sm:items-start sm:gap-4">
+    <li id={`${row.kind}-${row.id}`} {...(href ? rowClick(href) : {})}
+      class={"flex flex-col gap-2 border-b border-line px-4 py-3 last:border-b-0 sm:flex-row sm:items-start sm:gap-4" + (href ? " cursor-pointer hover:bg-canvas" : "")}>
       <div class="min-w-0 flex-1">
         <p class="flex flex-wrap items-center gap-x-2 text-label text-ink-3">
-          <span class="font-semibold text-ink-2">{sourceOf(row)}</span>
+          {href ? <a href={href} class="font-semibold text-ink-2 no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">{sourceOf(row)}</a> : <span class="font-semibold text-ink-2">{sourceOf(row)}</span>}
           <When at={row.created_at} timeZone={timeZone} />
           <Status row={row} />
         </p>
