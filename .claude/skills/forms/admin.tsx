@@ -15,10 +15,10 @@ import { FieldList, JsonData, Section } from "../admin/detail";
 import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash";
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, everyPage, readCursor, type Cursor, type Keyed } from "../admin/keyset";
-import { AdminLayout, type NavItem } from "../admin/layout";
+import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
 import { DataTable, SearchBar, TableRow, TableRows, When, type TableSpec } from "../admin/list";
 import { formIds, idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
-import { buttonClass, controlClass, pickStatus, StatusBadge, StatusForm, type StatusOption } from "../admin/status";
+import { buttonClass, controlClass, fieldClass, pickStatus, StatusBadge, StatusForm, type StatusOption } from "../admin/status";
 import { checkFields, FIELD_TYPES, FORM_KEY, PHOTO_PATH, sitePath, type Errors, type Field, type Form } from "./fields";
 import { cameFrom } from "./origin";
 import { linkedTo, type Linked } from "./linked";
@@ -35,7 +35,7 @@ export type FormsAdminOptions = {
   nav?: NavItem[];
   pageSize?: number;
   /** The app's own page frame (the CRM's layout and nav) instead of AdminLayout. */
-  Frame?: (p: { title: string; user: string; children: Child }) => Child;
+  Frame?: Frame;
   /** Where a submission's booking and payment are shown, when the app has those pages. */
   links?: { booking?: (id: string) => string; payment?: (id: string) => string };
 };
@@ -134,29 +134,14 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
 
-  const layout = (c: Context<{ Variables: TeamVars }>, title: string, current: string, body: Child) => {
-    const flash = <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />;
-    if (!opts.Frame) {
-      return (
-        <AdminLayout title={title} css={opts.css} nav={nav} current={current} user={c.get("user")}>
-          {flash}
-          {body}
-        </AdminLayout>
-      );
-    }
-    // In the app's own frame the sections are links at the top, as the booking pages do.
-    const sections = (
-      <nav aria-label="Forms" class="mb-4 flex flex-wrap gap-1 text-label">
-        {nav.map((n) => (
-          <a href={n.href} aria-current={current === n.href ? "page" : undefined}
-            class={"rounded-control px-2 py-1 no-underline " + (current === n.href ? "bg-panel font-semibold" : "text-ink-2 hover:bg-panel")}>
-            {n.label}
-          </a>
-        ))}
-      </nav>
-    );
-    return <>{opts.Frame({ title, user: c.get("user"), children: <>{sections}{flash}{body}</> })}</>;
-  };
+  /** A page: a title, or a whole head (a record's page has `back`, so the tabs give way to the way back). */
+  const layout = (c: Context<{ Variables: TeamVars }>, head: string | Head, current: string, body: Child) => (
+    <SectionPage Frame={opts.Frame} css={opts.css} user={c.get("user")} label="Forms" links={nav} current={current}
+      head={typeof head === "string" ? { title: head } : head}>
+      <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
+      {body}
+    </SectionPage>
+  );
   const withLinks = async (db: Db, rows: Item[]) => {
     const linked = await linkedTo(db, rows.map((r) => r.id));
     return rows.map((r) => ({ ...r, linked: linked.get(r.id) }));
@@ -331,7 +316,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     const results = (
       <div id="results">
         <BulkForm id="bulk" action={`${subs}/bulk`} returnTo={self}>
-          <label class="flex flex-col gap-1 text-label text-ink-2">
+          <label class={fieldClass}>
             Set selected to
             <select name="status" class={controlClass}>
               {STATUSES.map((o) => (
@@ -519,12 +504,9 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     return c.html(
       layout(
         c,
-        who(r),
+        { title: who(r), back: { href: listUrl(subs, { form: r.form_key }), label: `${form?.title ?? r.form_key} submissions` } },
         subs,
         <>
-          <p class="mb-4 text-label">
-            <a href={listUrl(subs, { form: r.form_key })}>All {form?.title ?? r.form_key} submissions</a>
-          </p>
           <div class="grid gap-4 md:grid-cols-3">
             <div class="flex flex-col gap-4 md:col-span-2">
               <Section title="Details">
@@ -725,7 +707,6 @@ const TYPE_LABELS: Record<Field["type"], string> = {
   payment: "Payment",
 };
 
-const fieldCls = "flex flex-col gap-1 text-label text-ink-2";
 
 function Problem({ id, text }: { id: string; text?: string }) {
   return text ? (
@@ -766,27 +747,27 @@ function Editor(props: {
       </div>
       <Section title="The form">
         <div class="grid gap-4 sm:grid-cols-2">
-          <label class={fieldCls}>
+          <label class={fieldClass}>
             Title
             <input name="title" value={form.title} required class={controlClass} aria-invalid={formProblems.title ? "true" : undefined} aria-describedby={formProblems.title ? "p-title" : undefined} />
             <Problem id="p-title" text={formProblems.title} />
           </label>
-          <label class={fieldCls}>
+          <label class={fieldClass}>
             Button text
             <input name="submit_label" value={form.submit_label ?? ""} placeholder="Send" class={controlClass} />
           </label>
-          <label class={fieldCls + " sm:col-span-2"}>
+          <label class={fieldClass + " sm:col-span-2"}>
             Thank-you message
             <textarea name="success_message" rows={2} class={controlClass}>
               {form.success_message ?? ""}
             </textarea>
           </label>
-          <label class={fieldCls}>
+          <label class={fieldClass}>
             Or send people to this page instead
             <input name="redirect_to" value={form.redirect_to ?? ""} placeholder="/thank-you" class={controlClass} aria-invalid={formProblems.redirect_to ? "true" : undefined} aria-describedby={formProblems.redirect_to ? "p-redirect" : undefined} />
             <Problem id="p-redirect" text={formProblems.redirect_to} />
           </label>
-          <label class={fieldCls}>
+          <label class={fieldClass}>
             Email each submission to
             <input name="notify_emails" value={form.notify_emails.join(", ")} placeholder="you@example.com" class={controlClass} aria-invalid={formProblems.notify_emails ? "true" : undefined} aria-describedby="p-notify-help p-notify" />
             <span id="p-notify-help">Needs an email sender connected to this app (Resend or Postmark).</span>
@@ -822,15 +803,15 @@ function Editor(props: {
                     </p>
                   ) : null}
                   <div class="grid gap-3 sm:grid-cols-2">
-                    <label class={fieldCls}>
+                    <label class={fieldClass}>
                       Label
                       <input name={`f.${i}.label`} value={text(f.label)} class={controlClass} />
                     </label>
-                    <label class={fieldCls}>
+                    <label class={fieldClass}>
                       Name
                       <input name={`f.${i}.name`} value={text(f.name)} pattern="[a-z][a-z0-9_]*" class={controlClass} />
                     </label>
-                    <label class={fieldCls}>
+                    <label class={fieldClass}>
                       Type
                       <select name={`f.${i}.type`} class={controlClass}>
                         {FIELD_TYPES.map((t) => (
@@ -844,18 +825,18 @@ function Editor(props: {
                       <input type="checkbox" name={`f.${i}.required`} value="yes" checked={f.required === true} />
                       Required
                     </label>
-                    <label class={fieldCls}>
+                    <label class={fieldClass}>
                       Options, one per line (dropdown, one choice, tick boxes)
                       <textarea name={`f.${i}.options`} rows={3} class={controlClass}>
                         {Array.isArray(f.options) ? f.options.join("\n") : ""}
                       </textarea>
                     </label>
-                    <label class={fieldCls}>
+                    <label class={fieldClass}>
                       Help text
                       <input name={`f.${i}.help`} value={text(f.help)} class={controlClass} />
                     </label>
                     {type === "booking" ? (
-                      <label class={fieldCls}>
+                      <label class={fieldClass}>
                         Booking type (its page address, like intake)
                         <input name={`f.${i}.booking_type`} value={text(f.booking_type)} pattern="[a-z0-9-]+" class={controlClass} />
                       </label>
@@ -900,11 +881,11 @@ function NewForm({ action, key_ = "", title = "", errors = {} }: { action: strin
   return (
     <form method="post" action={action} class="mt-6">
       <div class="flex flex-wrap items-end gap-3">
-        <label class={fieldCls}>
+        <label class={fieldClass}>
           New form title
           <input name="title" value={title} required class={controlClass} aria-invalid={errors.title ? "true" : undefined} aria-describedby={errors.title ? "new-title-p" : undefined} />
         </label>
-        <label class={fieldCls}>
+        <label class={fieldClass}>
           Key
           <input name="key" value={key_} required pattern="[a-z0-9][a-z0-9\-]*" placeholder="quote-request" class={controlClass} aria-invalid={errors.key ? "true" : undefined} aria-describedby="new-key-help new-key-p" />
         </label>

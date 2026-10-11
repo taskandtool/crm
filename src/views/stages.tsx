@@ -43,7 +43,7 @@ function StageList(p: { pipeline: Pipeline; heading: string; intro: string; stag
     <section class="mb-8" aria-labelledby={id}>
       <h2 id={id} class="mb-1 text-copy font-semibold">{p.heading}</h2>
       <p class="mb-4 max-w-2xl text-ink-2">{p.intro}</p>
-      <ol class="flex flex-col overflow-hidden rounded-card border border-line bg-surface">
+      <ol class="flex flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
         {active.map((s, i) => (
           <li class="flex flex-col gap-3 border-b border-line px-4 py-3 last:border-b-0 lg:flex-row lg:items-end">
             <form method="post" action={`${base}/${s.key}`} class="flex flex-1 flex-wrap items-end gap-3">
@@ -100,7 +100,7 @@ function StageList(p: { pipeline: Pipeline; heading: string; intro: string; stag
         ))}
       </ol>
 
-      <form method="post" action={base} aria-label={`Add a ${thing}`} class="mt-3 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4">
+      <form method="post" action={base} aria-label={`Add a ${thing}`} class="mt-3 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface shadow-card p-4">
         <Field label={`New ${thing}`} class="min-w-48 flex-1">
           <input name="label" required maxlength={60} class={controlClass} />
         </Field>

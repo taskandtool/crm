@@ -28,7 +28,7 @@ import {
 } from "./book";
 import { invite } from "./ics";
 import type { BookingNotice } from "./notify";
-import { byLocalDate, formatDate, formatSlot, formatTime, isValidZone, localDate, zoneLabel } from "./slots";
+import { addDays, byLocalDate, durationText, formatDate, formatSlot, formatTime, isValidZone, localDate, weekdayOf, zoneName } from "./slots";
 
 /** What the public pages report to onBooked and afterBook: always with the manage link, absolute. */
 export type BookingEvent = BookingNotice & { manageUrl: string };
@@ -65,8 +65,10 @@ const control =
   "w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-copy text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 const button =
   "rounded-control bg-accent px-4 py-2 font-semibold text-accent-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
-export const chip =
-  "inline-block rounded-control border border-line-strong bg-surface px-3 py-2 text-center no-underline text-ink hover:bg-panel focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+const chipBase =
+  "inline-block rounded-control border px-3 py-2 text-center no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+/** A choice: a time, a day, a host. */
+export const chip = chipBase + " border-line-strong bg-surface text-ink hover:bg-panel";
 
 function PlainPage({ title, css, children }: { title: string; css: string; children: Child }) {
   return (
@@ -99,40 +101,75 @@ export async function upcoming(db: Db, type: BookingType, viewerZone: string, ma
   return byLocalDate(list, viewerZone);
 }
 
-/** The days with open times, a week of them at a time (the chosen day's), with links to the weeks around it. */
-export function DayPicker({ days, chosen, href }: { days: string[]; chosen: string; href: (d: string) => string }) {
-  const PER = 7;
-  const at = Math.max(0, days.indexOf(chosen));
-  const from = Math.floor(at / PER) * PER;
-  const shown = days.slice(from, from + PER);
-  const earlier = from > 0 ? days[from - PER] : null;
-  const later = days[from + PER] ?? null;
+/** A choice that is on (the host picked): the accent's tint, never a filled button. */
+export const chipOn = chipBase + " border-accent bg-accent/10 font-semibold text-accent";
+
+const monthName = (date: string, locale = "en-US") =>
+  new Intl.DateTimeFormat(locale, { timeZone: "UTC", month: "long", year: "numeric" }).format(new Date(date.slice(0, 7) + "-15T12:00:00Z"));
+
+/**
+ * A month as a calendar, as every booking page shows one: the days with open
+ * times are links, the chosen one filled, the rest quiet. The arrows go to the
+ * first open day of the month before or after, so a month with nothing open
+ * is never shown. Weeks start on Sunday.
+ */
+export function MonthPicker({ days, chosen, href }: { days: string[]; chosen: string; href: (d: string) => string }) {
+  const open = new Set(days);
+  const month = chosen.slice(0, 7);
+  const first = `${month}-01`;
+  const cells: (string | null)[] = Array(weekdayOf(first)).fill(null);
+  for (let d = first; d.slice(0, 7) === month; d = addDays(d, 1)) cells.push(d);
+  const before = days.filter((d) => d.slice(0, 7) < month).pop() ?? null;
+  const after = days.find((d) => d.slice(0, 7) > month) ?? null;
+  const before1 = before ? days.find((d) => d.slice(0, 7) === before.slice(0, 7))! : null;
+  const arrow = "flex size-8 items-center justify-center rounded-control text-ink-2 no-underline hover:bg-panel";
   return (
-    <nav aria-label="Days with open times" class="mb-4">
-      <ul class="flex flex-wrap gap-2">
-        {shown.map((d) => (
-          <li>
-            <a href={href(d)} aria-current={d === chosen ? "date" : undefined} class={chip + (d === chosen ? " border-accent font-semibold" : "")}>
-              {formatDate(d)}
-            </a>
-          </li>
-        ))}
-      </ul>
-      {earlier || later ? (
-        <p class="mt-2 flex gap-4 text-label">
-          {earlier ? <a href={href(earlier)}>Earlier days</a> : null}
-          {later ? <a href={href(later)}>Later days</a> : null}
-        </p>
-      ) : null}
+    <nav aria-label="Days with open times">
+      <div class="mb-2 flex items-center justify-between">
+        <h2 class="font-semibold">{monthName(first)}</h2>
+        <span class="flex gap-1">
+          {before1 ? <a href={href(before1)} class={arrow} aria-label="Earlier month">&lsaquo;</a> : <span class={arrow + " opacity-40"} aria-hidden="true">&lsaquo;</span>}
+          {after ? <a href={href(after)} class={arrow} aria-label="Later month">&rsaquo;</a> : <span class={arrow + " opacity-40"} aria-hidden="true">&rsaquo;</span>}
+        </span>
+      </div>
+      <ol class="grid grid-cols-7 gap-1 text-center text-label">
+        {["S", "M", "T", "W", "T", "F", "S"].map((w) => <li aria-hidden="true" class="py-1 text-ink-3">{w}</li>)}
+        {cells.map((d) =>
+          !d ? <li aria-hidden="true" /> : open.has(d) ? (
+            <li>
+              <a href={href(d)} aria-label={formatDate(d)} aria-current={d === chosen ? "date" : undefined}
+                class={"mx-auto flex size-9 items-center justify-center rounded-control font-semibold no-underline " +
+                  (d === chosen ? "bg-accent text-accent-ink" : "bg-accent/10 text-accent hover:bg-accent/20")}>
+                {Number(d.slice(8))}
+              </a>
+            </li>
+          ) : (
+            <li class="flex size-9 items-center justify-center justify-self-center text-ink-3">{Number(d.slice(8))}</li>
+          ),
+        )}
+      </ol>
     </nav>
+  );
+}
+
+/** The calendar beside the chosen day's times: side by side on a wide screen, stacked on a phone. */
+export function DayAndTimes({ days, chosen, href, children }: { days: string[]; chosen: string; href: (d: string) => string; children: Child }) {
+  return (
+    <div class="grid gap-6 sm:grid-cols-[17rem_1fr]">
+      <MonthPicker days={days} chosen={chosen} href={href} />
+      <section aria-label={`Times on ${formatDate(chosen)}`}>
+        <h2 class="mb-2 font-semibold">{formatDate(chosen)}</h2>
+        {children}
+      </section>
+    </div>
   );
 }
 
 function ZoneNote({ zone, business, switchHref }: { zone: string; business: string; switchHref: string | null }) {
   return (
     <p class="mb-4 text-label text-ink-2">
-      Times are in {zone.replace(/_/g, " ")} ({zoneLabel(new Date(), zone)}).{" "}
-      {switchHref ? <a href={switchHref}>Show them in {business.replace(/_/g, " ")} instead.</a> : null}
+      Times are in {zoneName(zone)}.{" "}
+      {switchHref ? <a href={switchHref}>Show them in {zoneName(business)} instead.</a> : null}
     </p>
   );
 }
@@ -227,18 +264,21 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
             <ZoneNote zone={zone} business={host.time_zone} switchHref={zone !== host.time_zone ? listUrl(self, { tz: host.time_zone }) : null} />
             {keys.length ? (
               <>
-                <DayPicker days={keys} chosen={chosen} href={(d) => listUrl(self, { date: d, tz: c.req.query("tz") })} />
-                <ul class="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {(days.get(chosen) ?? []).map((s) => (
-                    <li>
-                      <form method="post" action={`${self}/reschedule`}>
-                        <input type="hidden" name="start" value={s.start.toISOString()} />
-                        <input type="hidden" name="tz" value={zone} />
-                        <button class={chip + " w-full"}>{formatTime(s.start, zone)}</button>
-                      </form>
-                    </li>
-                  ))}
-                </ul>
+                <div class="mb-6">
+                  <DayAndTimes days={keys} chosen={chosen} href={(d) => listUrl(self, { date: d, tz: c.req.query("tz") })}>
+                    <ul class="grid grid-cols-2 gap-2 lg:grid-cols-3">
+                      {(days.get(chosen) ?? []).map((s) => (
+                        <li>
+                          <form method="post" action={`${self}/reschedule`}>
+                            <input type="hidden" name="start" value={s.start.toISOString()} />
+                            <input type="hidden" name="tz" value={zone} />
+                            <button class={chip + " w-full"}>{formatTime(s.start, zone)}</button>
+                          </form>
+                        </li>
+                      ))}
+                    </ul>
+                  </DayAndTimes>
+                </div>
               </>
             ) : (
               <p class="mb-6 text-ink-2">There are no other open times right now.</p>
@@ -313,7 +353,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
               <li>
                 <a href={`${base}/${t.slug}`} class="block rounded-card border border-line-strong bg-surface p-4 no-underline text-ink hover:bg-panel focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
                   <span class="block font-semibold">{t.name}</span>
-                  <span class="block text-label text-ink-2">{t.duration_min} minutes. {typeWhere(t)}.</span>
+                  <span class="block text-label text-ink-2">{durationText(t.duration_min)} · {typeWhere(t)}</span>
                   {t.description ? <span class="mt-1 block text-ink-2">{t.description}</span> : null}
                 </a>
               </li>
@@ -345,15 +385,15 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
       <>
         <p class="mb-2 text-label"><a href={base}>Everything we offer</a></p>
         <h1 class="mb-1 text-title font-semibold">{t.name}</h1>
-        <p class="mb-1 text-ink-2">{t.duration_min} minutes. {typeWhere(t)}.</p>
+        <p class="mb-1 text-ink-2">{durationText(t.duration_min)} · {typeWhere(t)}</p>
         {t.description ? <p class="mb-4 text-ink-2">{t.description}</p> : <div class="mb-4" />}
         {c.req.query("taken") === "1" ? <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">That time was just taken. Pick another.</p> : null}
         {hosts.length > 1 ? (
           <nav aria-label="With" class="mb-4 flex flex-wrap items-center gap-2 text-label">
             <span class="text-ink-2">With</span>
-            <a href={listUrl(self, { tz: tzq })} aria-current={host ? undefined : "true"} class={chip + (host ? "" : " border-accent font-semibold")}>Anyone free</a>
+            <a href={listUrl(self, { tz: tzq })} aria-current={host ? undefined : "true"} class={host ? chip : chipOn}>Anyone free</a>
             {hosts.map((h) => (
-              <a href={listUrl(self, { host: h.id, tz: tzq })} aria-current={host?.id === h.id ? "true" : undefined} class={chip + (host?.id === h.id ? " border-accent font-semibold" : "")}>
+              <a href={listUrl(self, { host: h.id, tz: tzq })} aria-current={host?.id === h.id ? "true" : undefined} class={host?.id === h.id ? chipOn : chip}>
                 {h.name}
               </a>
             ))}
@@ -362,17 +402,17 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
         <ZoneNote zone={zone} business={business} switchHref={zone !== business ? listUrl(self, { tz: business, date: chosen, host: host?.id }) : null} />
         {keys.length ? (
           <>
-            <DayPicker days={keys} chosen={chosen} href={(d) => listUrl(self, { date: d, tz: tzq, host: host?.id })} />
-            <h2 class="mb-2 text-label font-semibold">{formatDate(chosen)}</h2>
-            <ul class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {(days.get(chosen) ?? []).map((s) => (
-                <li>
-                  <a class={chip + " w-full"} href={listUrl(`${self}/confirm`, { start: s.start.toISOString(), tz: zone, host: host?.id })}>
-                    {formatTime(s.start, zone)}
-                  </a>
-                </li>
-              ))}
-            </ul>
+            <DayAndTimes days={keys} chosen={chosen} href={(d) => listUrl(self, { date: d, tz: tzq, host: host?.id })}>
+              <ul class="grid grid-cols-2 gap-2 lg:grid-cols-3">
+                {(days.get(chosen) ?? []).map((s) => (
+                  <li>
+                    <a class={chip + " w-full"} href={listUrl(`${self}/confirm`, { start: s.start.toISOString(), tz: zone, host: host?.id })}>
+                      {formatTime(s.start, zone)}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </DayAndTimes>
           </>
         ) : (
           <p class="text-ink-2">There are no open times right now. Please check back soon.</p>
@@ -391,10 +431,12 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     const end = new Date(start.getTime() + t.duration_min * 60_000);
     return page(c, `Confirm: ${t.name}`, (
       <>
-        <h1 class="mb-1 text-title font-semibold">Confirm your time</h1>
-        <p class="mb-1">{t.name}{host ? `, with ${host.name}` : ""}.</p>
-        <p class="mb-1">{formatSlot({ start, end }, zone)}.</p>
-        <p class="mb-4 text-ink-2">{typeWhere(t)}.</p>
+        <h1 class="mb-4 text-title font-semibold">Confirm your time</h1>
+        <dl class="mb-6 grid gap-x-6 gap-y-1 rounded-card border border-line bg-surface p-4 sm:grid-cols-[auto_1fr]">
+          <dt class="text-label text-ink-3">What</dt><dd class="font-semibold">{t.name}{host ? `, with ${host.name}` : ""}</dd>
+          <dt class="text-label text-ink-3">When</dt><dd>{formatSlot({ start, end }, zone)}</dd>
+          <dt class="text-label text-ink-3">Where</dt><dd>{typeWhere(t)}</dd>
+        </dl>
         {notice ? <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">{notice}</p> : null}
         <form method="post" action={`${base}/${t.slug}`} class="flex flex-col gap-4">
           <input type="hidden" name="start" value={start.toISOString()} />

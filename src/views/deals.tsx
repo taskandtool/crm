@@ -2,7 +2,7 @@
 // its deals are worth; drag a card, or use its select), one deal's page, and
 // the deals section of a customer's page. Plain forms; a card's select posts
 // through htmx and the server answers with the whole board.
-import { FieldList, Section } from "../admin/detail";
+import { Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
 import { listUrl } from "../admin/query";
@@ -19,7 +19,7 @@ import { shownStatus, type Quote } from "../invoices/quotes";
 import { formatMoney } from "../payments/money";
 import { FollowUpsSection } from "./follow-ups";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, dueDayText, DueMark, Field, linkButtonClass, MESSAGES, PersonFields, primaryClass, primaryLinkClass, RecordLine, SaveOnChange, stageOptions, timeZone } from "./ui";
+import { buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, PersonFields, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, stageOptions, timeZone } from "./ui";
 
 /** How many cards a column shows; how many days won and lost ones stay on the board. */
 export const PER_COLUMN = 100;
@@ -40,7 +40,7 @@ export type BoardData = {
 export function DealsPage(p: { user: string; data: BoardData; flash: { code?: string | null; n?: string | null } }) {
   return (
     <Layout title={dealsCfg.many} user={p.user} section="deals" drag wide
-      actions={<a href="/deals/new" class={primaryLinkClass}>New {one}</a>}>
+      actions={<a href="/deals/new" class={primaryClass}>New {one}</a>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <Board data={p.data} />
     </Layout>
@@ -52,7 +52,7 @@ export function NewDealPage(p: { user: string; stages: Stage[]; flash: { code?: 
   return (
     <Layout title={`New ${one}`} user={p.user} section="deals" back={{ href: "/deals", label: dealsCfg.many }}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
-      <form method="post" action="/deals" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface p-4 sm:grid-cols-3">
+      <form method="post" action="/deals" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface shadow-card p-4 sm:grid-cols-3">
         <PersonFields />
         <DealInputs stages={p.stages.filter((s) => s.kind === "open")} />
         <div class="sm:col-span-3">
@@ -196,7 +196,7 @@ export function DealPage(p: {
       actions={
         <>
           <SaveOnChange action={`${self}/stage`} current={d.stage} options={stageOptions(stages)} label="Stage" returnTo={self} />
-          {invoicesCfg && d.customer_email ? <a href={listUrl("/invoices/quotes/new", who)} class={linkButtonClass}>New quote</a> : null}
+          {invoicesCfg && d.customer_email ? <a href={listUrl("/invoices/quotes/new", who)} class={buttonClass}>New quote</a> : null}
         </>
       }
     >
@@ -262,24 +262,18 @@ export function DealPage(p: {
         </div>
         <div class="flex flex-col gap-4">
           <Section title="About">
-            <div class="flex flex-col gap-3">
-              <FieldList
-                fields={[
-                  { label: "Value", value: value ? `${value}${d.from_quote ? " (from the quote)" : ""}` : "Not set" },
-                  ...(d.expected_close ? [{ label: "Expected close", value: dueDayText(d.expected_close, p.today) }] : []),
-                  ...(d.owner ? [{ label: ownerLabel, value: d.owner }] : []),
-                  { label: "In this stage since", value: <When at={d.stage_changed_at} timeZone={timeZone} day /> },
-                  ...(d.closed_at ? [{ label: "Closed", value: <When at={d.closed_at} timeZone={timeZone} day /> }] : []),
-                  ...(d.notes ? [{ label: "Notes", value: <span class="whitespace-pre-wrap">{d.notes}</span> }] : []),
-                ]}
-              />
-              <details>
-                <summary class={buttonClass + " inline-block cursor-pointer list-none"}>Edit</summary>
-                <div class="mt-3">
-                  <DealEdit d={d} owners={p.owners} />
-                </div>
-              </details>
-            </div>
+            <ReadThenEdit
+              fields={[
+                { label: "Value", value: value ? `${value}${d.from_quote ? " (from the quote)" : ""}` : "Not set" },
+                { label: "Expected close", value: d.expected_close ? dueDayText(d.expected_close, p.today) : null },
+                { label: ownerLabel, value: d.owner },
+                { label: "In this stage since", value: <When at={d.stage_changed_at} timeZone={timeZone} day /> },
+                { label: "Closed", value: d.closed_at ? <When at={d.closed_at} timeZone={timeZone} day /> : null },
+                { label: "Notes", value: d.notes ? <span class="whitespace-pre-wrap">{d.notes}</span> : null },
+              ]}
+            >
+              <DealEdit d={d} owners={p.owners} />
+            </ReadThenEdit>
           </Section>
         </div>
       </div>
@@ -348,9 +342,10 @@ export function CustomerDeals({ c, deals, stages }: { c: Customer; deals: Deal[]
       ) : null}
       <details>
         <summary class="cursor-pointer text-label font-semibold text-ink-2">Add {one}</summary>
-        <form method="post" action={`/customers/${c.id}/deals`} class="mt-3 grid gap-3 sm:grid-cols-3">
+        {/* One column: this sits in the narrow side of a customer's page. */}
+        <form method="post" action={`/customers/${c.id}/deals`} class="mt-3 grid gap-3">
           <DealInputs stages={stages.filter((s) => s.kind === "open")} />
-          <div class="sm:col-span-3">
+          <div>
             <button class={primaryClass}>Add {one}</button>
           </div>
         </form>

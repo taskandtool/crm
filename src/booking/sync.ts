@@ -333,7 +333,8 @@ export async function pushBookings(db: Db, gw: Gateway, now = new Date(), limit 
   if (!due.length) return { pushed: 0, errors: [] };
   const cals = (await db.sql`
     select id::text as id, resource_id::text as resource_id, provider, external_id, receives_bookings from calendars
-    where resource_id = any(${[...new Set(due.map((b) => b.resource_id))]}::bigint[]) order by id`) as Cal[];
+    where resource_id = any(${[...new Set(due.map((b) => b.resource_id))]}::bigint[])
+       or id = any(${due.map((b) => b.external_calendar_id).filter(Boolean)}::bigint[]) order by id`) as Cal[];
 
   let pushed = 0;
   const errors: string[] = [];
@@ -347,6 +348,15 @@ export async function pushBookings(db: Db, gw: Gateway, now = new Date(), limit 
         continue;
       }
       const tag = eventTag(b.event_key, k.id);
+      if (k.resource_id !== b.resource_id) {
+        // Moved to another person: out of the old calendar now; the next run
+        // places it in theirs as it would any booking with no event yet.
+        for (const id of b.external_event_id ? [b.external_event_id] : await findEvents(gw, k, tag)) await deleteEvent(gw, k, id);
+        await db.sql`update bookings set external_event_id = null, external_calendar_id = null, synced_sequence = ${b.sequence},
+          push_claimed_at = null, external_error = null where id = ${b.id}::bigint`;
+        pushed++;
+        continue;
+      }
       // Cancelled removes the event; any other status keeps it at the booking's
       // time (a booking moved and then marked completed keeps its event).
       let eventId = b.external_event_id;

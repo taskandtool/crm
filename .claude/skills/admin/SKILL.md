@@ -102,12 +102,16 @@ fragment. The table, history restores, bulk forms and flash messages:
 | `csv.ts` | `csvCell`, `csvResponse`: defused, streamed, BOM-first CSV |
 | `query.ts` | `likePattern`, `listUrl`, `localPath`, `isPartial`, `formIds`, `idParam` |
 | `list.tsx` | `DataTable`, `TableRows`, `TableRow`, `LoadMoreRow`, `SearchBar`, `When` |
-| `status.tsx` | `StatusBadge` (token tones), `StatusForm` (plain or row-swapping), `pickStatus` |
+| `status.tsx` | `StatusBadge` (token tones), `StatusForm` (plain or row-swapping), `pickStatus`; `controlClass`, `buttonClass`, `primaryClass`, `fieldClass`, the one look of every control |
 | `bulk.tsx` | `BulkForm`: the form the row checkboxes post to |
 | `detail.tsx` | `Section`, `FieldList`, `JsonData` (nested, escaped), `Activity` (log plus note box) |
 | `flash.tsx` | `withFlash`, `Flash`: "Saved" after a 303 from a code in the URL |
 | `example.tsx` | `adminRoutes(getDb, opts)`: all of the above over one table, tested end to end |
 | `test/` | component rendering, the core, and `example.tsx` against a scratch database |
+
+The pieces draw only on theme tokens: `canvas`, `surface`, `panel`, `ink`, `ink-2`,
+`ink-3`, `accent`, `accent-ink`, `accent-hover`, `line`, `line-strong`, `radius-control`,
+`radius-card` and `shadow-card`. An app's theme defines each.
 
 Keep the exports of `guard`, `layout`, `keyset` and `csv` as they are.
 

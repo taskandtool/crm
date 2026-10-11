@@ -19,7 +19,7 @@ import type { Child } from "hono/jsx";
 import type { Db, GetDb } from "../data/db";
 import { envOf } from "../data/env";
 import { teamOnly, type TeamVars } from "../admin/guard";
-import { AdminLayout, type NavItem } from "../admin/layout";
+import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
 import { cut, everyPage, readCursor, type Cursor } from "../admin/keyset";
 import { csvResponse, type CsvColumn } from "../admin/csv";
 import { DataTable, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
@@ -38,10 +38,12 @@ export type PaymentsAdminOptions = {
   css: string;
   /** The business's IANA zone; times show in it. */
   timeZone: string;
+  /** The section's tabs, when payments sit among other pages (the CRM's Quotes and invoices), and their name. */
   nav?: NavItem[];
+  navLabel?: string;
   pageSize?: number;
   /** The app's own page frame (the CRM's layout and nav) instead of AdminLayout. */
-  Frame?: (p: { title: string; user: string; children: Child }) => Child;
+  Frame?: Frame;
 };
 
 export type Payment = {
@@ -166,10 +168,11 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
   const base = opts.base.replace(/\/+$/, "");
   const size = opts.pageSize ?? 50;
   const nav = opts.nav ?? [{ href: base, label: "Payments" }];
-  const frame = (c: Context<{ Variables: TeamVars }>, title: string, body: Child) =>
-    opts.Frame
-      ? <>{opts.Frame({ title, user: c.get("user"), children: body })}</>
-      : <AdminLayout title={title} css={opts.css} nav={nav} current={base} user={c.get("user")}>{body}</AdminLayout>;
+  /** A page: a title, or a whole head (a payment's page has `back`, so the tabs give way to the way back). */
+  const frame = (c: Context<{ Variables: TeamVars }>, head: string | Head, body: Child) => (
+    <SectionPage Frame={opts.Frame} css={opts.css} user={c.get("user")} label={opts.navLabel ?? "Payments"} links={nav} current={base}
+      head={typeof head === "string" ? { title: head } : head}>{body}</SectionPage>
+  );
   const tz = opts.timeZone;
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
@@ -267,10 +270,7 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
     const events = await getDb(c).sql<{ id: string; type: string; received_at: Date }>`
       select id, type, received_at from stripe_events where payment_id = ${p.id}::bigint order by received_at`;
     return c.html(
-      frame(c, `Payment ${p.id}`, <>
-        <p class="mb-4 text-label">
-          <a href={base}>All payments</a>
-        </p>
+      frame(c, { title: `Payment ${p.id}`, back: { href: base, label: "Payments" } }, <>
         <Flash code={c.req.query("saved")} messages={MESSAGES} />
         <div class="grid gap-4 md:grid-cols-3">
           <Section title="Details" class="md:col-span-2">
@@ -299,7 +299,7 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
           <div class="flex flex-col gap-4">
             <Section title="Refund">
               {refundable(p) ? (
-                <a href={`${base}/${p.id}/refund`} class={buttonClass + " inline-block no-underline"}>
+                <a href={`${base}/${p.id}/refund`} class={buttonClass}>
                   Refund…
                 </a>
               ) : (
@@ -327,7 +327,7 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
 
   const refundPage = (c: Context<{ Variables: TeamVars }>, p: Payment, amount: string, error?: string) =>
     c.html(
-      frame(c, `Refund payment ${p.id}`, <>
+      frame(c, { title: `Refund payment ${p.id}`, back: { href: `${base}/${p.id}`, label: `Payment ${p.id}` } }, <>
         <RefundForm p={p} base={base} amount={amount} error={error} />
       </>),
       error ? 422 : 200,

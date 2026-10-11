@@ -12,12 +12,12 @@ import type { Child } from "hono/jsx";
 export type Tone = "accent" | "strong" | "neutral" | "muted";
 export type StatusOption = { value: string; label: string; tone?: Tone };
 
+// Tinted, not outlined: an outlined badge reads as a button.
 const TONES: Record<Tone, string> = {
-  // Outlined, not filled: a filled accent is a button, and a badge is not one.
-  accent: "bg-surface text-accent border-accent",
-  strong: "bg-surface text-ink border-line-strong",
-  neutral: "bg-panel text-ink-2 border-line",
-  muted: "bg-canvas text-ink-3 border-line",
+  accent: "bg-accent/10 text-accent ring-accent/25",
+  strong: "bg-panel text-ink ring-line",
+  neutral: "bg-panel text-ink-2 ring-transparent",
+  muted: "bg-surface text-ink-3 ring-line",
 };
 
 /** The submitted status when it is one of the options, otherwise null. */
@@ -28,16 +28,21 @@ export function pickStatus(v: unknown, options: StatusOption[]): string | null {
 export function StatusBadge({ value, options }: { value: string; options: StatusOption[] }) {
   const o = options.find((x) => x.value === value);
   return (
-    <span class={"inline-block whitespace-nowrap rounded-control border px-2 text-label " + TONES[o?.tone ?? "neutral"]}>
+    <span class={"inline-flex items-center whitespace-nowrap rounded-control px-2 py-0.5 text-label font-semibold ring-1 ring-inset " + TONES[o?.tone ?? "neutral"]}>
       {o?.label ?? value}
     </span>
   );
 }
 
-export const controlClass =
-  "rounded-control border border-line-strong bg-surface px-2 py-1 text-copy text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
-export const buttonClass =
-  "rounded-control border border-line-strong bg-surface px-3 py-1 text-label font-semibold text-ink hover:bg-panel focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+const focus = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+/** An input, select or textarea; the same height as a button, so a row of them lines up. */
+export const controlClass = `min-h-9 rounded-control border border-line-strong bg-surface px-2.5 py-1.5 text-copy font-normal text-ink shadow-card ${focus}`;
+/** Any button, or a link that does an action. */
+export const buttonClass = `inline-flex min-h-9 items-center justify-center rounded-control border border-line-strong bg-surface px-3 text-label font-semibold text-ink no-underline shadow-card hover:bg-canvas ${focus}`;
+/** The page's one main action. */
+export const primaryClass = `inline-flex min-h-9 items-center justify-center rounded-control border border-accent bg-accent px-3 text-label font-semibold text-accent-ink no-underline shadow-card hover:border-accent-hover hover:bg-accent-hover ${focus}`;
+/** A label around its control: the words above, the control below. */
+export const fieldClass = "flex flex-col gap-1.5 text-label font-semibold text-ink";
 
 export function StatusForm(props: {
   action: string;

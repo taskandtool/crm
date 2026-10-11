@@ -8,8 +8,11 @@ gives each confirmed booking without an event one, with no attendees
 a raised SEQUENCE moves or deletes the event. The pull fetches each
 calendar's events for the horizon and replaces that calendar's `busy` rows
 in one transaction, leaving out our own events.
+A booking the team moves to another person leaves the first one's
+calendar on the next push (its event deleted, its calendar forgotten) and
+lands in the new person's on the push after, as any booking with no event.
 A failed pull keeps the old rows and writes `calendars.last_error`, which the
-Calendars page shows.
+person's page under Team shows, and the Team list flags.
 
 **We name our events before they exist.** `bookings.event_key` is random and
 filled by the column default. Its tag (`eventTag`: key, `v`, calendar row id

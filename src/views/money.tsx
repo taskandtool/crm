@@ -74,7 +74,7 @@ export function PaidByMonth({ rows }: { rows: PaidMonth[] }) {
   if (!rows.length) return null;
   const month = (b: string) => new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", year: "2-digit" }).format(new Date(b + "T00:00:00Z"));
   return (
-    <details class="mb-4 rounded-card border border-line bg-surface p-4">
+    <details class="mb-4 rounded-card border border-line bg-surface shadow-card p-4">
       <summary class="cursor-pointer text-label font-semibold text-ink-2">Paid by month</summary>
       {rows.map((r) => (
         <div class="mt-3 overflow-x-auto">

@@ -25,7 +25,7 @@ import { addFromInbox, formChoices, inboxPage, markDone, readInboxCursor, type I
 import { board, createDeal, customerDeals, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
 import {
   addFollowUp, customerFollowUps, doneFollowUp, followUpCounts, getFollowUp, inPlay, listFollowUps, moveFollowUp, nextFollowUps, nothingPlanned,
-  pickFollowUpKind, readDay, readTime, addDays, FOLLOW_UP_VIEWS, type FollowUpView,
+  pickFollowUpKind, readDay, readTime, FOLLOW_UP_VIEWS, type FollowUpView,
 } from "./crm/follow-ups";
 import { overview } from "./crm/overview";
 import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
@@ -39,7 +39,8 @@ import type { AppEnv } from "./runtime";
 import { CustomerPage } from "./views/customer";
 import { CustomersPage, customerSpec, filterParams, NewCustomerPage, Results } from "./views/customers";
 import { InboxPage, InboxResults, InboxRows } from "./views/inbox";
-import { Layout, WaitingView } from "./views/layout";
+import { Layout, WaitingView, type Section as NavSection } from "./views/layout";
+import type { Frame } from "./admin/layout";
 import { Board, CLOSED_DAYS, DealPage, DealsPage, NewDealPage, PER_COLUMN, type BoardData } from "./views/deals";
 import { FollowUpsPage } from "./views/follow-ups";
 import { MergePage } from "./views/merge";
@@ -67,6 +68,13 @@ import { jobFromQuote } from "./crm/quotes";
 import { CUSTOMER_VISITS, NewVisitPage, visitParams, VisitPage, VisitResults, VisitsPage, visitSpec } from "./views/visits";
 
 type C = Context<AppEnv>;
+
+/** A skill's pages (bookings, forms, invoices) in the CRM's own frame: its section lit, the page's head in the CRM's header. */
+const frameIn = (section: NavSection): Frame => ({ title, user, back, sub, actions, children }) => (
+  <Layout title={title} user={user} section={section} back={back} sub={sub} actions={actions}>
+    {children}
+  </Layout>
+);
 const PAGE = 50;
 const app = new Hono<AppEnv>();
 
@@ -634,11 +642,7 @@ if (showBooking) {
       // The confirmation of a booking the team made, through the owner's sender (none: nothing is sent).
       onBooked: (c, e) =>
         afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain: new URL(cfg.booking_page ?? c.req.url).host })),
-      Frame: ({ title, user, children }) => (
-        <Layout title={title} user={user} section="bookings">
-          {children}
-        </Layout>
-      ),
+      Frame: frameIn("bookings"),
       // Beside a booking: whose it is here, and its job.
       extra: async (c, b) => {
         const db = dbOf(c);
@@ -684,11 +688,7 @@ app.route(
       ...(showBooking ? { booking: (id: string) => `/bookings/${id}` } : {}),
       ...(invoicesCfg ? { payment: (id: string) => `/invoices/payments/${id}` } : {}),
     },
-    Frame: ({ title, user, children }) => (
-      <Layout title={title} user={user} section="forms">
-        {children}
-      </Layout>
-    ),
+    Frame: frameIn("forms"),
   }),
 );
 
@@ -709,6 +709,14 @@ app.post("/invoices/quotes/:id/job", async (c) => {
   return back(c, `/visits/${r.visitId}`, "visit-added");
 });
 
+/** The Invoices section's tabs: the invoices skill's pages and the payments skill's, one set. */
+const INVOICE_TABS = [
+  { href: "/invoices/quotes", label: "Quotes" },
+  { href: "/invoices", label: "Invoices" },
+  { href: "/invoices/payments", label: "Payments" },
+  { href: "/invoices/tax-rates", label: "Tax rates" },
+];
+
 if (invoicesCfg) {
   // Every payment, where a refund is made: in the CRM's frame, before the invoice pages take /invoices/*.
   app.route(
@@ -717,11 +725,9 @@ if (invoicesCfg) {
       base: "/invoices/payments",
       css: "/crm.css",
       timeZone: cfg.time_zone,
-      Frame: ({ title, user, children }) => (
-        <Layout title={title} user={user} section="invoices">
-          {children}
-        </Layout>
-      ),
+      Frame: frameIn("invoices"),
+      nav: INVOICE_TABS,
+      navLabel: "Quotes and invoices",
     }),
   );
   app.route(
@@ -735,22 +741,13 @@ if (invoicesCfg) {
       currency: invoicesCfg.currency,
       terms: invoicesCfg.terms,
       print: (c, html) => (c as unknown as C).env.runtime.print?.(html) ?? Promise.resolve(null),
-      Frame: ({ title, user, children }) => (
-        <Layout title={title} user={user} section="invoices">
-          {children}
-        </Layout>
-      ),
+      Frame: frameIn("invoices"),
       daysUntilDue: invoicesCfg.days_until_due,
       // A quote or an invoice that went out is contact with the customer.
       afterSend: async (c, doc) => sentTo(dbOf(c), doc.email, (c as unknown as C).var.user),
       // A yes on the quote's page wins the deal it is for.
       afterDecide: async (c) => void (await winFromQuotes(dbOf(c), (c as unknown as C).var.user)),
-      nav: [
-        { href: "/invoices/quotes", label: "Quotes" },
-        { href: "/invoices", label: "Invoices" },
-        { href: "/invoices/payments", label: "Payments" },
-        { href: "/invoices/tax-rates", label: "Tax rates" },
-      ],
+      nav: INVOICE_TABS,
       // Paid by month: this month and the eleven before, one row per currency ever paid in.
       invoicesTop: async (c) => {
         const db = dbOf(c);
@@ -811,7 +808,7 @@ app.get("/follow-ups", async (c) => {
   const day = today();
   const [rows, unplanned, counts] = await Promise.all([
     view === "none" ? [] : listFollowUps(db, view, day, owner, PAGE),
-    view === "none" ? nothingPlanned(db, owner, PAGE) : [],
+    view === "none" ? nothingPlanned(db, owner, PAGE, cfg.time_zone) : [],
     followUpCounts(db, day, owner),
   ]);
   return c.html(

@@ -2,7 +2,7 @@
 // them): the section on a customer's page with its add form, the list of
 // what is coming up and what was done, and one visit's own page. Plain forms
 // throughout, answered with a 303.
-import { FieldList, Section } from "../admin/detail";
+import { Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { DataTable, SearchBar, When, type TableSpec } from "../admin/list";
 import { listUrl } from "../admin/query";
@@ -17,7 +17,7 @@ import { Layout } from "./layout";
 import { VisitMoney } from "./money";
 import type { Quote } from "../invoices/quotes";
 import type { Invoice } from "../invoices/invoices";
-import { buttonClass, controlClass, CustomInput, Field, linkButtonClass, MESSAGES, PersonFields, primaryClass, primaryLinkClass, RecordLine, timeZone } from "./ui";
+import { buttonClass, controlClass, CustomInput, Field, MESSAGES, PersonFields, primaryClass, ReadThenEdit, RecordLine, timeZone } from "./ui";
 
 /** How many a customer's page shows. */
 export const CUSTOMER_VISITS = 100;
@@ -260,7 +260,7 @@ export function VisitsPage(p: {
   const owners = [...new Set([p.user, ...p.owners])];
   return (
     <Layout title={v.many} user={p.user} section="visits"
-      actions={<a href="/visits/new" class={primaryLinkClass}>New {one}</a>}>
+      actions={<a href="/visits/new" class={primaryClass}>New {one}</a>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <SearchBar
         action="/visits"
@@ -289,7 +289,7 @@ export function NewVisitPage(p: { user: string; owners: string[]; flash: { code?
   return (
     <Layout title={`New ${one}`} user={p.user} section="visits" back={{ href: "/visits", label: v.many }}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
-      <form method="post" action="/visits" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface p-4 sm:grid-cols-2">
+      <form method="post" action="/visits" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface shadow-card p-4 sm:grid-cols-2">
         <PersonFields />
         <VisitFields owners={p.owners} defaultOwner={p.user} />
         <div class="sm:col-span-2">
@@ -312,7 +312,7 @@ export function VisitPage(p: {
     unit: r.amount_cents === null ? null : amountText(r.amount_cents, r.currency ?? v.currency),
     currency: r.amount_cents === null ? null : r.currency,
   };
-  const custom = v.fields.map((f) => ({ label: f.label, value: fieldText(r.fields?.[f.key]) || null })).filter((f) => f.value);
+  const custom = v.fields.map((f) => ({ label: f.label, value: fieldText(r.fields?.[f.key]) || null }));
   return (
     <Layout
       title={r.title}
@@ -335,8 +335,8 @@ export function VisitPage(p: {
               <button class={buttonClass}>Mark done</button>
             </form>
           ) : null}
-          {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", doc)} class={linkButtonClass}>Quote this {one}</a> : null}
-          {invoicesCfg ? <a href={listUrl("/invoices/new", doc)} class={linkButtonClass}>Invoice this {one}</a> : null}
+          {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", doc)} class={buttonClass}>Quote this {one}</a> : null}
+          {invoicesCfg ? <a href={listUrl("/invoices/new", doc)} class={buttonClass}>Invoice this {one}</a> : null}
         </>
       }
     >
@@ -344,26 +344,22 @@ export function VisitPage(p: {
       <div class="grid gap-4 md:grid-cols-3">
         <div class="min-w-0 md:col-span-2">
           <Section title="Details">
-            <div class="flex flex-col gap-3">
-              <FieldList
-                fields={[
-                  { label: "When", value: <WhenOf r={r} /> },
-                  ...(r.owner ? [{ label: ownerLabel, value: r.owner }] : []),
-                  ...(r.amount_cents !== null ? [{ label: "Amount", value: amountOf(r) }] : []),
-                  ...custom,
-                  ...(r.notes ? [{ label: "Notes", value: <span class="whitespace-pre-wrap">{r.notes}</span> }] : []),
-                ]}
-              />
-              <details>
-                <summary class={buttonClass + " inline-block cursor-pointer list-none"}>Edit</summary>
-                <form method="post" action={self} class="mt-3 grid gap-3 sm:grid-cols-2">
-                  <VisitFields r={r} owners={p.owners} />
-                  <div class="sm:col-span-2">
-                    <button class={primaryClass}>Save</button>
-                  </div>
-                </form>
-              </details>
-            </div>
+            <ReadThenEdit
+              fields={[
+                { label: "When", value: <WhenOf r={r} /> },
+                { label: ownerLabel, value: r.owner },
+                { label: "Amount", value: amountOf(r) },
+                ...custom,
+                { label: "Notes", value: r.notes ? <span class="whitespace-pre-wrap">{r.notes}</span> : null },
+              ]}
+            >
+              <form method="post" action={self} class="grid gap-3 sm:grid-cols-2">
+                <VisitFields r={r} owners={p.owners} />
+                <div class="sm:col-span-2">
+                  <button class={primaryClass}>Save</button>
+                </div>
+              </form>
+            </ReadThenEdit>
           </Section>
         </div>
         <div class="flex flex-col gap-4">{p.money ? <VisitMoney {...p.money} /> : null}</div>

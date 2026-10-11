@@ -82,7 +82,7 @@ await withDb(async (db) => {
         return result(r, `${r.open.length} open for ${c.name}, soonest first`, { lines: r.open.map(fmt) });
       }
       if (has(a, "none")) {
-        const rows = await nothingPlanned(db, owner, limit);
+        const rows = await nothingPlanned(db, owner, limit, cfg.time_zone);
         const page = rows.slice(0, limit);
         if (!page.length) return result(page, "everyone in play has something planned");
         return result(page, `${page.length} in play with nothing planned, quietest first`, {

@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applySchema } from "../../data/migrate";
 import { scratch, why, type Scratch } from "../../data/test/scratch";
-import { book, cancelByToken, reschedule, setStatus } from "../book";
+import { book, cancelByToken, reschedule, rescheduleById, setStatus } from "../book";
 import { addWindow, createPerson, createType, setHosts } from "../hours";
 import { gatewayFetch } from "../../data/gateway";
 import { eventTag, GOOGLE_TAG, MICROSOFT_TAG, syncCalendars, type Gateway } from "../sync";
@@ -546,4 +546,33 @@ test("event_key is filled for every booking, old rows included, and stays put", 
     assert.notEqual(before[0].event_key, before[1].event_key);
     await applySchema(s.db, schema);
     assert.deepEqual(await s.db.sql`select event_key from bookings order by id`, before, "running the schema again changes nothing");
+  }));
+
+test("a booking moved to another person leaves the first one's calendar and lands in theirs", (t) =>
+  withDb(t, async (s) => {
+    const { resource, calendarId } = await setup(s, "google");
+    const sam = await createPerson(s.db, { name: "Sam", email: "sam@example.com", time_zone: "UTC" }, "o@example.com", "test");
+    assert.ok(sam.ok);
+    for (let d = 0; d < 7; d++) await addWindow(s.db, sam.value.id, String(d), "09:00", "17:00", "o@example.com");
+    const [p] = await s.db.sql`select resource_id::text as id from calendars where id = ${calendarId}::bigint`;
+    await setHosts(s.db, resource.id, [p.id, sam.value.id]);
+    const [samCal] = await s.db.sql`insert into calendars (resource_id, provider, external_id) values (${sam.value.id}::bigint, 'google', 'sam@example.com') returning id::text as id`;
+    const a = await book(s.db, { typeId: resource.id, hostId: p.id, start: T("2026-03-09T10:00:00Z"), name: "Ann", email: "ann@example.com", source: "website", now: NOW });
+    assert.ok(a.ok);
+    const g = googleCalendar();
+    const { gw } = fake(g.routes);
+    await syncCalendars(s.db, gw, NOW);
+    const [first] = g.ours();
+    assert.match(first.id, new RegExp(`v${Number(calendarId).toString(32)}v0$`), "in Pat's calendar");
+
+    assert.ok((await rescheduleById(s.db, a.booking.id, T("2026-03-09T11:00:00Z"), "o@example.com", sam.value.id, NOW)).ok);
+    await syncCalendars(s.db, gw, NOW);
+    assert.equal(g.events.get(first.id).status, "cancelled", "out of Pat's calendar");
+    await syncCalendars(s.db, gw, NOW);
+    const live = g.ours().filter((e) => e.status !== "cancelled");
+    assert.equal(live.length, 1);
+    assert.match(live[0].id, new RegExp(`v${Number(samCal.id).toString(32)}v\\d+$`), "in Sam's calendar");
+    assert.equal(live[0].start.dateTime, "2026-03-09T11:00:00.000Z");
+    const [b] = await s.db.sql`select external_calendar_id::text as k from bookings`;
+    assert.equal(b.k, samCal.id);
   }));

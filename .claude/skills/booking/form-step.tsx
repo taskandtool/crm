@@ -17,8 +17,8 @@ import type { GetDb } from "../data/db";
 import type { FormStep } from "../forms/steps";
 import { formatMoney } from "../payments/money";
 import { book, bookingForSubmission, hostsOf, typeBySlug, type Booking, type BookingType } from "./book";
-import { chip, DayPicker, upcoming } from "./public";
-import { formatDate, formatTime, localDate } from "./slots";
+import { chip, MonthPicker, upcoming } from "./public";
+import { formatDate, formatTime, localDate, zoneName } from "./slots";
 
 export type BookingStepOptions = {
   /** This app's slug, stored on the booking. */
@@ -60,9 +60,11 @@ export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
         <form method="post" action={ctx.action} class="grid gap-4">
           {ctx.hidden}
           <p class="text-ink-2">
-            {t.name}, {t.duration_min} minutes{t.price_cents ? `, ${formatMoney(t.price_cents, t.currency ?? "usd")}` : ""}. Times are in {zone.replace(/_/g, " ")}.
+            {t.name}, {t.duration_min} minutes{t.price_cents ? `, ${formatMoney(t.price_cents, t.currency ?? "usd")}` : ""}. Times are in {zoneName(zone)}.
           </p>
-          <DayPicker days={keys} chosen={chosen} href={(d) => `${ctx.self}&date=${d}`} />
+          <div class="max-w-xs">
+            <MonthPicker days={keys} chosen={chosen} href={(d) => `${ctx.self}&date=${d}`} />
+          </div>
           <fieldset class="grid gap-2">
             <legend class="mb-2 font-semibold">{formatDate(chosen)}</legend>
             {err("start")}
@@ -70,7 +72,7 @@ export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
               {(days.get(chosen) ?? []).map((s) => {
                 const iso = s.start.toISOString();
                 return (
-                  <label class={chip + " flex items-center justify-center gap-2"}>
+                  <label class={chip + " flex items-center justify-center gap-2 has-[:checked]:border-accent has-[:checked]:bg-accent/10 has-[:checked]:font-semibold has-[:checked]:text-accent"}>
                     <input type="radio" name="start" value={iso} checked={iso === picked} required />
                     {formatTime(s.start, zone)}
                   </label>

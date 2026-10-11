@@ -39,7 +39,7 @@ export function Layout(props: {
     <a
       href={n.href}
       aria-current={section === n.section ? "page" : undefined}
-      class={"shrink-0 rounded-control px-2 py-1 no-underline " + (section === n.section ? "bg-panel font-semibold" : (quiet ? "text-label text-ink-3" : "text-ink-2") + " hover:bg-panel")}
+      class={"shrink-0 rounded-control px-2 py-1 no-underline " + (section === n.section ? "bg-panel font-semibold" : (quiet ? "text-label text-ink-3" : "text-ink-2") + " hover:bg-canvas hover:text-ink")}
     >
       {n.label}
       {/* How many of mine are due, filled in after the page loads so no page waits on it. */}
@@ -67,7 +67,8 @@ export function Layout(props: {
         </a>
         <header class="border-b border-line bg-surface">
           {/* One row: it scrolls sideways on a phone rather than wrapping. */}
-          <div class="flex min-w-0 items-center gap-1 overflow-x-auto px-4 py-2">
+          {/* The same width as the page below, so the nav and the title line up. */}
+          <div class={"mx-auto flex min-w-0 items-center gap-1 overflow-x-auto px-4 py-2 " + (wide ? "max-w-7xl" : "max-w-6xl")}>
             <nav aria-label="CRM" class="flex items-center gap-1">
               {nav.map((n) => link(n))}
             </nav>

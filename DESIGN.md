@@ -13,23 +13,27 @@ carries meaning. `npm run check` enforces the parts that can be checked.
 | `--color-surface` | A card, a section, a row list, a panel that floats. |
 | `--color-panel` | A pipeline column, a flash, a hover, the current nav item. |
 | `--color-ink` / `ink-2` / `ink-3` | Text, secondary text, metadata. Every pair meets 4.5:1 on canvas and panel. |
-| `--color-accent` / `accent-ink` | The one action colour: a page's primary action, Save, the focus ring. A badge in it (New, a won stage) is outlined, never filled: a filled accent is a button. |
+| `--color-accent` / `accent-ink` / `accent-hover` | The one action colour: a page's primary action, Save, the focus ring; `accent-hover` under the pointer. A badge in it (New, a won stage) is a 10% tint with accent text, never filled: a filled accent is a button. |
 | `--color-late` | An overdue follow-up, in its words ("Overdue"), never a colour alone. Nothing else is red. |
 | `--color-line` / `line-strong` | Hairlines; input, button and table edges. `line-strong` keeps 3:1 on every ground, the floor for a control's edge. |
 
 Change a value in `styles/theme.css` and keep its row here. The Tailwind
 default palette is off, so `bg-blue-500` does not exist; add a role.
 Badges (`src/admin/status.tsx`) use only these tokens: an open stage is
-strong, won is the accent outline, lost is muted. An error (nothing was
+a tint (open strong, won the accent, lost muted), never an outline: an
+outlined badge reads as a button. An error (nothing was
 saved) is an alert set apart by weight and a heavy left edge, not by red.
 
 ## Type and space
 
 One family (`--font-body`), three sizes: `text-title` (a page heading),
 `text-copy` (everything), `text-label` (metadata, filters, buttons).
-Weights: normal and semibold. Radii: `rounded-control` for inputs and
-buttons, `rounded-card` for cards and sections. Depth: `shadow-card` on a
-pipeline card, `shadow-lift` on something that floats.
+Weights: normal and semibold. Radii: `rounded-control` for inputs,
+buttons and badges, `rounded-card` for cards and sections. Depth:
+`shadow-card` on every card, table and control, `shadow-lift` on something
+that floats. Controls and buttons are one height (`min-h-9`), so a row of
+them lines up; their classes come from `src/admin/status.tsx`, never
+written again. A link is underlined in `line-strong` until pointed at.
 
 ## Composition
 

@@ -9,7 +9,7 @@ import { cfg, ownerLabel, vocab } from "../config";
 import type { Customer, ListFilter } from "../crm/customers";
 import type { Stage } from "../crm/stages";
 import { Layout } from "./layout";
-import { controlClass, DueMark, Field, MESSAGES, primaryClass, primaryLinkClass, stageOptions, timeZone } from "./ui";
+import { controlClass, DueMark, Field, MESSAGES, primaryClass, stageOptions, timeZone } from "./ui";
 
 /** Each row's next follow-up (by customer id), who is still in play, and today in the business's zone: what the Next column says. */
 export type NextOf = { next: Map<string, { due_on: string; due_time: string | null }>; inPlay: Set<string>; today: string };
@@ -102,7 +102,7 @@ export function CustomersPage(p: {
   const owners = [...new Set([p.user, ...p.facets.owners])];
   return (
     <Layout title={vocab.many} user={p.user} section="customers"
-      actions={<a href="/customers/new" class={primaryLinkClass}>New {vocab.one.toLowerCase()}</a>}>
+      actions={<a href="/customers/new" class={primaryClass}>New {vocab.one.toLowerCase()}</a>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <SearchBar
         action="/customers"
@@ -133,7 +133,7 @@ export function NewCustomerPage({ user, stages, flash }: { user: string; stages:
   return (
     <Layout title={`New ${vocab.one.toLowerCase()}`} user={user} section="customers" back={{ href: "/customers", label: vocab.many }}>
       <Flash code={flash.code} n={flash.n} messages={MESSAGES} />
-      <form method="post" action="/customers" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface p-4 sm:grid-cols-2">
+      <form method="post" action="/customers" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface shadow-card p-4 sm:grid-cols-2">
         <Field label="Name">
           <input name="name" maxlength={200} autocomplete="off" autofocus class={controlClass} />
         </Field>

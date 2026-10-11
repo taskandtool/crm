@@ -109,7 +109,7 @@ export function readPerson(f: PersonFields): { ok: true; value: Omit<Resource, "
   const email = rawEmail ? normalizeEmail(rawEmail) : null;
   if (rawEmail && !email) errors.email = "Enter an email address like name@example.com.";
   const zone = typeof f.time_zone === "string" ? f.time_zone.trim() : "";
-  if (!isValidZone(zone)) errors.time_zone = "Enter a time zone like America/New_York.";
+  if (!isValidZone(zone)) errors.time_zone = "Choose a time zone.";
   if (Object.keys(errors).length) return { ok: false, errors };
   return { ok: true, value: { name, email, time_zone: zone, active: checked(f.active) } };
 }
@@ -165,7 +165,9 @@ export function readType(f: TypeFields): { ok: true; value: Omit<BookingType, "i
   const errors: Errors = {};
   const name = typeof f.name === "string" ? f.name.trim() : "";
   if (!name || name.length > 120) errors.name = "Enter a name of up to 120 characters, like Installation estimate.";
-  const slug = typeof f.slug === "string" ? f.slug.trim().toLowerCase() : "";
+  // Left empty, the page's address is made from the name: "Install estimate" is install-estimate.
+  const typed = typeof f.slug === "string" ? f.slug.trim().toLowerCase() : "";
+  const slug = typed || name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64).replace(/-+$/, "");
   if (!SLUG.test(slug)) errors.slug = "Use lowercase letters, digits and hyphens, like install-estimate.";
   else if (slug === "manage") errors.slug = "This address is used by the manage links. Choose another.";
   const description = typeof f.description === "string" ? f.description.trim().slice(0, 2000) : "";

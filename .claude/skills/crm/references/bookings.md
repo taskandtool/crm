@@ -6,10 +6,10 @@ Read when setting up what can be booked, who takes it, their hours and calendars
 
 A customer books a **type** (an estimate visit, an installation, a video
 call) and one of its **hosts** takes it. Here, under Bookings, the team
-sets what can be booked (`/bookings/types`: length, buffers for travel,
+sets its Services (`/bookings/types`: length, gaps for travel,
 notice, and where it happens, whether at their place, at ours, by phone or
 by video link), who takes each, each person's weekly hours, time off and Google or
-Outlook calendar (`/bookings/people`), and sees every booking. The public
+Outlook calendar (Team, `/bookings/people`), and sees every booking. The public
 page that takes bookings is the Website's (`/book`, the booking skill's
 recipe): this CRM is private as a whole and never shows a booking page.
 The CRM and that page read and write the same tables, so a change here is

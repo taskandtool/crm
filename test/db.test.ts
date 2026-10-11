@@ -360,6 +360,9 @@ test("nothing planned: everyone in play with no follow-up and nothing booked", a
   if (skip) return t.skip(skip);
   const { customer } = await createCustomer(db, { name: "Quiet", email: "quiet@example.com", stage: "new", last_contact_at: "2026-01-01T00:00:00Z" }, ME);
   assert.ok((await nothingPlanned(db, null, 500)).some((c) => c.id === customer.id), "an open status with nothing planned");
+  // Added at 23:00 yesterday is a day ago, however few hours have passed since.
+  await db.sql`update customers set last_contact_at = null, created_at = date_trunc('day', now() at time zone 'UTC') at time zone 'UTC' - interval '1 hour' where id = ${customer.id}::bigint`;
+  assert.equal((await nothingPlanned(db, null, 500, "UTC")).find((c) => c.id === customer.id)?.quiet_days, 1, "calendar days, not 24-hour spans");
   await setStage(db, customer.id, "won", ME);
   assert.ok(!(await nothingPlanned(db, null, 500)).some((c) => c.id === customer.id), "a won status with no open deal is not in play");
 });

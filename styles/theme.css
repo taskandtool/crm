@@ -24,6 +24,7 @@
   /* The one action colour */
   --color-accent: #2f5bea;                    /* 5.1:1 on canvas, 4.6:1 on panel */
   --color-accent-ink: #ffffff;
+  --color-accent-hover: color-mix(in oklab, var(--color-accent) 85%, black);  /* a primary button under the pointer */
 
   /* Overdue: a follow-up past its day, and nothing else */
   --color-late: #b42318;                      /* 6.1:1 on canvas, 5.5:1 on panel */

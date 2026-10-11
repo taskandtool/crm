@@ -436,18 +436,31 @@ export async function bookingByToken(db: Db, token: string): Promise<Booking | n
 
 export type ChangeResult = { ok: true; booking: Booking } | { ok: false; reason: "not_found" | "closed" | "taken" };
 
-/**
- * Move a confirmed, future booking to another open start of its type, with
- * the same host. SEQUENCE rises, so the calendar event and any invite are
- * updated rather than duplicated.
- */
+/** The booker moves their booking, by its manage link: `moveBooking`. */
 export async function reschedule(db: Db, token: string, newStart: Date, now = new Date()): Promise<ChangeResult> {
   const b = await bookingByToken(db, token);
-  if (!b) return { ok: false, reason: "not_found" };
+  return b ? moveBooking(db, b, newStart, null, now) : { ok: false, reason: "not_found" };
+}
+
+/** The team moves a booking from its page, to another time and, with `hostId`, another of its type's hosts: `moveBooking`. */
+export async function rescheduleById(db: Db, id: string, newStart: Date, by: string, hostId?: string | null, now = new Date()): Promise<ChangeResult> {
+  const [r] = await db.sql`select * from bookings where id = ${id}::bigint`;
+  return r ? moveBooking(db, toBooking(r), newStart, by, now, hostId) : { ok: false, reason: "not_found" };
+}
+
+/**
+ * Move a confirmed, future booking to another open start of its type, with
+ * the same host or `hostId`. SEQUENCE rises, so the calendar event and any
+ * invite are updated rather than duplicated (sync.ts moves the event to the
+ * new host's calendar). `by` is the team member who moved it; null when the
+ * booker did.
+ */
+async function moveBooking(db: Db, b: Booking, newStart: Date, by: string | null, now: Date, hostId?: string | null): Promise<ChangeResult> {
+  const host = hostId || b.resource_id;
   if (b.status !== "confirmed" || b.starts_at <= now) return { ok: false, reason: "closed" };
   const type = await typeById(db, b.type_id);
   if (!type) return { ok: false, reason: "not_found" };
-  const slot = await openSlotAt(db, type, newStart, now, { hosts: [b.resource_id], exceptBooking: b.id });
+  const slot = await openSlotAt(db, type, newStart, now, { hosts: [host], exceptBooking: b.id });
   if (!slot) return { ok: false, reason: "taken" };
 
   const st = settingsOf(type);
@@ -455,25 +468,26 @@ export async function reschedule(db: Db, token: string, newStart: Date, now = ne
   const gap = st.bufferBeforeMin + st.bufferAfterMin;
   const move = q`
     update bookings b
-    set starts_at = ${start}::timestamptz, ends_at = ${end}::timestamptz, sequence = b.sequence + 1, updated_at = now()
+    set starts_at = ${start}::timestamptz, ends_at = ${end}::timestamptz, resource_id = ${host}::bigint, sequence = b.sequence + 1, updated_at = now(),
+        updated_by = coalesce(${by}::citext, b.updated_by)
     where b.id = ${b.id}::bigint and b.status = 'confirmed' and b.starts_at > ${now.toISOString()}::timestamptz
       and not exists (
         select 1 from bookings o
-        where o.resource_id = b.resource_id and o.id <> b.id and o.status = 'confirmed'
+        where o.resource_id = ${host}::bigint and o.id <> b.id and o.status = 'confirmed'
           and o.starts_at < ${end}::timestamptz + ${gap}::int * interval '1 minute'
           and o.ends_at > ${start}::timestamptz - ${gap}::int * interval '1 minute')
       and not exists (
         select 1 from busy x join calendars k on k.id = x.calendar_id
-        where k.resource_id = b.resource_id
+        where k.resource_id = ${host}::bigint
           and x.starts_at < ${end}::timestamptz + ${st.bufferAfterMin}::int * interval '1 minute'
           and x.ends_at > ${start}::timestamptz - ${st.bufferBeforeMin}::int * interval '1 minute')
       and not exists (
         select 1 from time_off t
-        where t.resource_id = b.resource_id
+        where t.resource_id = ${host}::bigint
           and t.starts_at < ${end}::timestamptz + ${st.bufferAfterMin}::int * interval '1 minute'
           and t.ends_at > ${start}::timestamptz - ${st.bufferBeforeMin}::int * interval '1 minute')
     returning *`;
-  const results = await db.transaction([...locks([b.resource_id]), move]);
+  const results = await db.transaction([...locks([host]), move]);
   const row = results[results.length - 1][0];
   return row ? { ok: true, booking: toBooking(row) } : { ok: false, reason: "taken" };
 }

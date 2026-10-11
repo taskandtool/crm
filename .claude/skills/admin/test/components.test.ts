@@ -104,8 +104,8 @@ test("JSON a visitor sent is readable and escaped", async () => {
   assert.ok(html.includes("a, b") && html.includes(">Yes<"));
   assert.ok(!html.includes("<a "), "stored values are never links");
   assert.ok((await render(JsonData({ data: {} }))).includes("Nothing else was sent."));
-  const fields = await render(FieldList({ fields: [{ label: "Email", value: null }] }));
-  assert.ok(fields.includes(">None<"));
+  const fields = await render(FieldList({ fields: [{ label: "Email", value: null }, { label: "Phone", value: "555 0100" }] }));
+  assert.ok(!fields.includes(">Email<") && fields.includes(">Phone<"), "an empty value leaves its row out");
 });
 
 test("activity shows times in the business's zone, not the server's", async () => {

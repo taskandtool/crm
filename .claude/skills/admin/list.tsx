@@ -28,7 +28,9 @@ export type TableSpec<T extends { id: string | number | bigint }> = {
 export type Option = { value: string; label: string };
 export type Filter = { name: string; label: string; options: Option[]; value?: string | null; any?: string };
 
-const cell = "px-3 py-2 align-top";
+// Borders sit on the cells, not the rows: with collapsed borders a hovered
+// row's background paints over part of the header's line in Safari.
+const cell = "px-4 py-3 align-top";
 
 export function DataTable<T extends { id: string | number | bigint }>(props: {
   spec: TableSpec<T>;
@@ -42,13 +44,13 @@ export function DataTable<T extends { id: string | number | bigint }>(props: {
   const width = spec.columns.length + (spec.select ? 1 : 0);
   const form = spec.select?.form.replace(/[^\w-]/g, "");
   return (
-    <div class="overflow-x-auto rounded-card border border-line bg-surface">
-      <table id={spec.id} class="w-full border-collapse text-copy">
+    <div class="overflow-x-auto rounded-card border border-line bg-surface shadow-card">
+      <table id={spec.id} class="w-full border-separate border-spacing-0 text-copy">
         <caption class="sr-only">{caption}</caption>
         <thead>
-          <tr class="border-b border-line-strong text-left text-label text-ink-3">
+          <tr class="text-left text-label text-ink-2">
             {form ? (
-              <th scope="col" class={cell + " w-10"}>
+              <th scope="col" class={cell + " w-10 border-b border-line"}>
                 <input
                   type="checkbox"
                   aria-label="Select all shown"
@@ -57,7 +59,7 @@ export function DataTable<T extends { id: string | number | bigint }>(props: {
               </th>
             ) : null}
             {spec.columns.map((c) => (
-              <th scope="col" class={cell + " font-semibold " + (c.class ?? "")}>
+              <th scope="col" class={cell + " border-b border-line font-semibold " + (c.class ?? "")}>
                 {c.label}
               </th>
             ))}
@@ -101,14 +103,14 @@ export function TableRows<T extends { id: string | number | bigint }>(props: {
 export function TableRow<T extends { id: string | number | bigint }>({ spec, row }: { spec: TableSpec<T>; row: T }) {
   const href = spec.href?.(row);
   return (
-    <tr id={`${spec.id}-row-${row.id}`} class="border-b border-line last:border-b-0 hover:bg-panel">
+    <tr id={`${spec.id}-row-${row.id}`} class="group hover:bg-canvas">
       {spec.select ? (
-        <td class={cell}>
+        <td class={cell + " border-b border-line group-last:border-b-0"}>
           <input type="checkbox" name="id" value={String(row.id)} form={spec.select.form} aria-label={`Select ${spec.select.label(row)}`} />
         </td>
       ) : null}
       {spec.columns.map((c, i) => (
-        <td class={cell + " " + (c.class ?? "")}>
+        <td class={cell + " border-b border-line group-last:border-b-0 " + (c.class ?? "")}>
           {i === 0 && href ? (
             <a href={href} class="font-semibold text-ink no-underline underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
               {c.cell(row)}
@@ -131,7 +133,7 @@ export function LoadMoreRow({ id, href, width }: { id: string; href: string; wid
   return (
     <tr id={id}>
       <td colspan={width} class="px-3 py-3 text-center">
-        <a href={href} hx-get={href} hx-target="closest tr" hx-swap="outerHTML" hx-push-url="false" class={buttonClass + " inline-block no-underline"}>
+        <a href={href} hx-get={href} hx-target="closest tr" hx-swap="outerHTML" hx-push-url="false" class={buttonClass}>
           Load more
         </a>
       </td>
@@ -154,7 +156,7 @@ export function SearchBar(props: {
 }) {
   const { action, target, q, label = "Search", placeholder, filters = [] } = props;
   const active = !!q || filters.some((f) => f.value);
-  const field = "flex flex-col gap-1 text-label text-ink-2";
+  // Each select's first option ("Any status") says what it filters, so its label is for screen readers.
   return (
     <form
       method="get"
@@ -164,10 +166,14 @@ export function SearchBar(props: {
       hx-target={target}
       hx-swap="outerHTML"
       hx-push-url="true"
-      class="mb-4 flex flex-wrap items-end gap-3"
+      class="mb-4 flex flex-wrap items-center gap-2"
     >
-      <label class={field + " min-w-48 flex-1"}>
-        {label}
+      <label class="relative min-w-48 flex-1">
+        <span class="sr-only">{label}</span>
+        <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-3">
+          <circle cx="7" cy="7" r="4.5" />
+          <path d="m10.5 10.5 3 3" />
+        </svg>
         <input
           type="search"
           name="q"
@@ -177,13 +183,13 @@ export function SearchBar(props: {
           hx-get={action}
           hx-trigger="input changed delay:300ms, search"
           hx-include="closest form"
-          class={controlClass}
+          class={controlClass + " w-full pl-8"}
         />
       </label>
       {filters.map((f) => (
-        <label class={field}>
-          {f.label}
-          <select name={f.name} hx-get={action} hx-trigger="change" hx-include="closest form" class={controlClass}>
+        <label class="min-w-32 flex-1 sm:flex-none">
+          <span class="sr-only">{f.label}</span>
+          <select name={f.name} hx-get={action} hx-trigger="change" hx-include="closest form" class={controlClass + " w-full"}>
             <option value="">{f.any ?? "All"}</option>
             {f.options.map((o) => (
               <option value={o.value} selected={o.value === f.value}>
@@ -198,7 +204,7 @@ export function SearchBar(props: {
         <button class={buttonClass}>Apply</button>
       </noscript>
       {active ? (
-        <a href={action} class="py-1 text-label text-ink-2">
+        <a href={action} class="px-1 text-label text-ink-2">
           Clear
         </a>
       ) : null}

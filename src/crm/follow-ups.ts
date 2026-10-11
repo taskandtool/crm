@@ -266,12 +266,13 @@ export type Unplanned = {
  * Everyone in play with nothing planned: an open status or an open deal, no
  * open follow-up, no visit planned from today on. Quietest first (their last
  * contact, or when they were added). `owner` narrows to the customers one
- * person looks after, or whose open deal they own.
+ * person looks after, or whose open deal they own. Days are calendar days in
+ * `timeZone`: someone added late yesterday was added yesterday.
  */
-export async function nothingPlanned(db: Db, owner: string | null, limit = 100): Promise<Unplanned[]> {
+export async function nothingPlanned(db: Db, owner: string | null, limit = 100, timeZone = "UTC"): Promise<Unplanned[]> {
   return db.sql<Unplanned>`
     select c.id::text as id, c.name, c.phone, c.email::text as email, c.owner::text as owner,
-           extract(day from now() - coalesce(c.last_contact_at, c.created_at))::int as quiet_days,
+           ((now() at time zone ${timeZone})::date - (coalesce(c.last_contact_at, c.created_at) at time zone ${timeZone})::date)::int as quiet_days,
            c.last_contact_at is not null as contacted,
            coalesce((select array_agg(d.title order by d.created_at) from deals d join deal_stages s on s.key = d.stage
                      where d.customer_id = c.id and d.archived_at is null and s.kind = 'open'), '{}') as deals

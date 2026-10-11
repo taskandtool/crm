@@ -19,10 +19,10 @@ import { FieldList, Section } from "../admin/detail";
 import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash";
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, readCursor } from "../admin/keyset";
-import { AdminLayout, type NavItem } from "../admin/layout";
+import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
 import { DataTable, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { idParam, isPartial, listUrl, str } from "../admin/query";
-import { buttonClass, controlClass, StatusBadge, type StatusOption } from "../admin/status";
+import { buttonClass, controlClass, fieldClass, primaryClass, StatusBadge, type StatusOption } from "../admin/status";
 import type { GetDb } from "../data/db";
 import { envOf } from "../data/env";
 import { sendEmail, type Email, type Sent } from "../data/send";
@@ -42,7 +42,7 @@ import {
 import { closePayLink, markPaidOutOfBand, markUncollectible, payLinkForQuote, sendInvoice, voidInvoice } from "./stripe";
 
 type Ctx = Context<{ Variables: TeamVars }>;
-export type Frame = (p: { title: string; user: string; children: Child }) => Child;
+export type { Frame } from "../admin/layout";
 /** What went out, and to whom. */
 export type SentDoc = { kind: "quote" | "invoice"; id: string; email: string };
 
@@ -120,9 +120,6 @@ const MESSAGES: FlashMessages = {
   gone: "That is no longer there.",
 };
 
-const fieldClass = "flex flex-col gap-1 text-label text-ink-2";
-const primaryClass =
-  "rounded-control border border-accent bg-accent px-3 py-1 text-label font-semibold text-accent-ink hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 /** Today in the business's zone, as YYYY-MM-DD. */
 export function todayIn(zone: string, now = new Date()): string {
@@ -175,21 +172,10 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
 
-  const framed = (c: Ctx, current: string, title: string, body: Child, status = 200) => {
-    const user = c.get("user");
-    if (!opts.Frame) return c.html(<AdminLayout title={title} css={opts.css} nav={links} current={current} user={user}>{body}</AdminLayout>, status as 200);
-    const sections = (
-      <nav aria-label="Quotes and invoices" class="mb-4 flex flex-wrap gap-1 text-label">
-        {links.map((n) => (
-          <a href={n.href} aria-current={current === n.href ? "page" : undefined}
-            class={"rounded-control px-2 py-1 no-underline " + (current === n.href ? "bg-panel font-semibold" : "text-ink-2 hover:bg-panel")}>
-            {n.label}
-          </a>
-        ))}
-      </nav>
-    );
-    return c.html(<>{opts.Frame({ title, user, children: <>{sections}{body}</> })}</>, status as 200);
-  };
+  /** A page: a title, or a whole head (a record's page has `back`, so the tabs give way to the way back). */
+  const framed = (c: Ctx, current: string, head: string | Head, body: Child, status = 200) =>
+    c.html(<SectionPage Frame={opts.Frame} css={opts.css} user={c.get("user")} label="Quotes and invoices" links={links} current={current}
+      head={typeof head === "string" ? { title: head } : head}>{body}</SectionPage>, status as 200);
   const back = (c: Ctx, path: string, code: string) => c.redirect(withFlash(path, code), 303);
   const money = (cents: string | number, currency: string) => formatMoney(cents, currency);
 
@@ -229,7 +215,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     return framed(c, qbase, "Quotes", (
       <>
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
-        <p class="mb-3"><a href={`${qbase}/new`} class={buttonClass + " no-underline"}>New quote</a></p>
+        <p class="mb-3"><a href={`${qbase}/new`} class={buttonClass}>New quote</a></p>
         <SearchBar action={qbase} target="#results" q={q} placeholder="Number, name or email"
           filters={[{ name: "status", label: "Status", options: QUOTE_OPTIONS, value: status, any: "Any status" }]} />
         {results}
@@ -275,17 +261,16 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const open = qt.status === "draft" || qt.status === "sent" || qt.status === "expired";
     const extra = opts.quoteExtra ? await opts.quoteExtra(c, qt) : null;
     const invoices = (await invoicesFor(getDb(c), { quoteId: qt.id })).filter((i) => i.status !== "void");
-    return framed(c, qbase, `Quote ${qt.number}`, (
+    return framed(c, qbase, { title: `Quote ${qt.number}`, back: { href: qbase, label: "Quotes" } }, (
       <>
-        <p class="mb-3 text-label"><a href={qbase}>All quotes</a></p>
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
         {c.req.query("problem") ? <p role="alert" class={"mb-4 " + alertClass}>{c.req.query("problem")}</p> : null}
         <div class="mb-4 flex flex-wrap items-center gap-2">
           <StatusBadge value={shown} options={QUOTE_OPTIONS} />
-          {qt.status === "draft" ? <a href={`${self}/edit`} class={buttonClass + " no-underline"}>Edit</a> : null}
-          <a href={`${self}/document`} class={buttonClass + " no-underline"} target="_blank">Preview</a>
+          {qt.status === "draft" ? <a href={`${self}/edit`} class={buttonClass}>Edit</a> : null}
+          <a href={`${self}/document`} class={buttonClass} target="_blank">Preview</a>
           {qt.status === "draft" || qt.status === "sent" ? (
-            <a href={`${self}/send`} class={primaryClass + " no-underline"}>{qt.status === "sent" ? "Send again" : "Send"}</a>
+            <a href={`${self}/send`} class={primaryClass}>{qt.status === "sent" ? "Send again" : "Send"}</a>
           ) : null}
         </div>
         <div class="grid gap-4 md:grid-cols-3">
@@ -381,9 +366,8 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const payUrl = (await invoicesFor(getDb(c), { quoteId: qt.id })).find((i) => i.status === "open" && i.hosted_url)?.hosted_url ?? null;
     const msg = quoteMessage(qt, await taxRates(getDb(c)), doc, payUrl);
     const problem = c.req.query("problem");
-    return framed(c, qbase, `Send quote ${qt.number}`, (
+    return framed(c, qbase, { title: `Send quote ${qt.number}`, back: { href: self, label: `Quote ${qt.number}` } }, (
       <>
-        <p class="mb-3 text-label"><a href={self}>Back to the quote</a></p>
         {problem ? <p role="alert" class={"mb-4 " + alertClass}>{problem}</p> : null}
         <Section title="The email">
           <FieldList fields={[
@@ -531,7 +515,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       <>
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
         {top}
-        <p class="mb-3"><a href={`${base}/new`} class={buttonClass + " no-underline"}>New invoice</a></p>
+        <p class="mb-3"><a href={`${base}/new`} class={buttonClass}>New invoice</a></p>
         <SearchBar action={base} target="#results" q={q} placeholder="Number, name or email"
           filters={[{ name: "status", label: "Status", options: [...INVOICE_OPTIONS, { value: "due", label: "Past due" }], value: params.status, any: "Any status" }]} />
         {results}
@@ -574,17 +558,16 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const self = `${base}/${inv.id}`;
     const draft = inv.status === "draft" && !inv.stripe_invoice_id;
     const extra = opts.invoiceExtra ? await opts.invoiceExtra(c, inv) : null;
-    return framed(c, base, inv.number ? `Invoice ${inv.number}` : "Draft invoice", (
+    return framed(c, base, { title: inv.number ? `Invoice ${inv.number}` : "Draft invoice", back: { href: base, label: "Invoices" } }, (
       <>
-        <p class="mb-3 text-label"><a href={base}>All invoices</a></p>
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
         <div class="mb-4 flex flex-wrap items-center gap-2">
           <StatusBadge value={inv.status} options={INVOICE_OPTIONS} />
           {inv.livemode === false ? <span class="text-label text-ink-3">Stripe test mode: not real money</span> : null}
-          {draft ? <a href={`${self}/edit`} class={buttonClass + " no-underline"}>Edit</a> : null}
-          {inv.status === "draft" || (inv.status === "open" && !inv.sent_at) ? <a href={`${self}/send`} class={primaryClass + " no-underline"}>Send with Stripe</a> : null}
-          {inv.hosted_url ? <a href={inv.hosted_url} target="_blank" rel="noopener" class={buttonClass + " no-underline"}>Their payment page</a> : null}
-          {inv.pdf_url ? <a href={inv.pdf_url} target="_blank" rel="noopener" class={buttonClass + " no-underline"}>PDF</a> : null}
+          {draft ? <a href={`${self}/edit`} class={buttonClass}>Edit</a> : null}
+          {inv.status === "draft" || (inv.status === "open" && !inv.sent_at) ? <a href={`${self}/send`} class={primaryClass}>Send with Stripe</a> : null}
+          {inv.hosted_url ? <a href={inv.hosted_url} target="_blank" rel="noopener" class={buttonClass}>Their payment page</a> : null}
+          {inv.pdf_url ? <a href={inv.pdf_url} target="_blank" rel="noopener" class={buttonClass}>PDF</a> : null}
         </div>
         {inv.payment_failed_at && inv.status === "open" ? (
           <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">
@@ -602,9 +585,9 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             {inv.status === "open" || inv.status === "uncollectible" ? (
               <Section title="Paid another way, or not at all">
                 <div class="flex flex-wrap gap-2">
-                  <a href={`${self}/paid`} class={buttonClass + " no-underline"}>Mark paid</a>
-                  {inv.status === "open" ? <a href={`${self}/uncollectible`} class={buttonClass + " no-underline"}>Uncollectible</a> : null}
-                  <a href={`${self}/void`} class={buttonClass + " no-underline"}>Void</a>
+                  <a href={`${self}/paid`} class={buttonClass}>Mark paid</a>
+                  {inv.status === "open" ? <a href={`${self}/uncollectible`} class={buttonClass}>Uncollectible</a> : null}
+                  <a href={`${self}/void`} class={buttonClass}>Void</a>
                 </div>
               </Section>
             ) : null}
@@ -695,9 +678,8 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       const self = `${base}/${inv.id}`;
       if (!act.allowed(inv)) return back(c, self, "not-now");
       const problem = c.req.query("problem");
-      return framed(c, base, `${act.title}: ${inv.number ? `invoice ${inv.number}` : "draft invoice"}`, (
+      return framed(c, base, { title: `${act.title}: ${inv.number ? `invoice ${inv.number}` : "draft invoice"}`, back: { href: self, label: inv.number ? `Invoice ${inv.number}` : "Draft invoice" } }, (
         <>
-          <p class="mb-3 text-label"><a href={self}>Back to the invoice</a></p>
           {problem ? <p role="alert" class={"mb-4 " + alertClass}>{problem}</p> : null}
           <Section title="What happens">
             <p class="mb-3 max-w-prose">{act.say(inv)}</p>
@@ -751,7 +733,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
               {errors.name ? <span class="text-ink">{errors.name}</span> : null}</label>
             <label class={fieldClass}>Percent<input name="percent" required inputmode="decimal" placeholder="8.25" class={controlClass} />
               {errors.percent ? <span class="text-ink">{errors.percent}</span> : null}</label>
-            <label class="flex items-center gap-2 self-end text-label text-ink-2"><input type="checkbox" name="inclusive" /> Included in prices</label>
+            <label class="flex min-h-9 items-center gap-2 self-end text-ink-2"><input type="checkbox" name="inclusive" class="size-4" /> Included in prices</label>
             <div class="sm:col-span-3"><button class={primaryClass}>Add</button></div>
           </form>
         </Section>
@@ -838,20 +820,24 @@ function DocForm({ kind, action, v, errors, rates, cancel }: { kind: "quote" | "
         <p class="mb-3 text-label text-ink-3">Blank rows are left out. Save to get more rows.</p>
         {err("lines")}
         <div class="flex flex-col gap-3">
-          {rows.map((l, i) => (
-            <fieldset class="grid gap-2 border-b border-line pb-3 sm:grid-cols-12">
+          {rows.map((l, i) => {
+            // The column names show once, over the first row; each row's own are for a phone and a screen reader.
+            const name = (text: string) => <span class={i ? "sm:sr-only" : ""}>{text}</span>;
+            return (
+            <fieldset class={"grid gap-2 sm:grid-cols-12 " + (i ? "border-t border-line pt-3 sm:border-0 sm:pt-0" : "")}>
               <legend class="sr-only">Line {i + 1}</legend>
-              <label class={fieldClass + " sm:col-span-6"}>Description<input name="description" value={l.description} maxlength={500} class={controlClass} />{err(`lines.${i}.description`)}</label>
-              <label class={fieldClass + " sm:col-span-2"}>Qty<input name="quantity" value={l.quantity} placeholder="1" inputmode="decimal" class={controlClass} />{err(`lines.${i}.quantity`)}</label>
-              <label class={fieldClass + " sm:col-span-2"}>Price<input name="unit" value={l.unit} inputmode="decimal" class={controlClass} />{err(`lines.${i}.unit`)}</label>
-              <label class={fieldClass + " sm:col-span-2"}>Tax
+              <label class={fieldClass + " sm:col-span-6"}>{name("Description")}<input name="description" value={l.description} maxlength={500} class={controlClass} />{err(`lines.${i}.description`)}</label>
+              <label class={fieldClass + " sm:col-span-2"}>{name("Qty")}<input name="quantity" value={l.quantity} placeholder="1" inputmode="decimal" class={controlClass} />{err(`lines.${i}.quantity`)}</label>
+              <label class={fieldClass + " sm:col-span-2"}>{name("Price")}<input name="unit" value={l.unit} inputmode="decimal" class={controlClass} />{err(`lines.${i}.unit`)}</label>
+              <label class={fieldClass + " sm:col-span-2"}>{name("Tax")}
                 <select name="tax_rate_id" class={controlClass}>
                   <option value="">None</option>
                   {offered.map((r) => <option value={r.id} selected={r.id === l.tax_rate_id}>{r.name} {percentText(r.percent_bp)}</option>)}
                 </select>{err(`lines.${i}.tax_rate_id`)}
               </label>
             </fieldset>
-          ))}
+            );
+          })}
         </div>
       </Section>
       <Section title={kind === "quote" ? "Terms" : "Payment"}>

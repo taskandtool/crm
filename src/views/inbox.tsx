@@ -11,7 +11,7 @@ import type { Overview } from "../crm/overview";
 import { sourceOf, type InboxRow } from "../crm/inbox";
 import { cash, money } from "../crm/text";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, linkButtonClass, MESSAGES, timeZone } from "./ui";
+import { buttonClass, controlClass, MESSAGES, timeZone } from "./ui";
 
 const SUBMISSION: StatusOption[] = [
   { value: "new", label: "New", tone: "accent" },
@@ -50,7 +50,7 @@ export type InboxProps = {
 function Numbers({ n }: { n: Overview }) {
   const due = n.due.overdue + n.due.today;
   const figure = (href: string, value: string, label: string, sub: string | null) => (
-    <a href={href} class="flex min-w-0 flex-col rounded-card border border-line bg-surface px-4 py-3 no-underline hover:border-line-strong">
+    <a href={href} class="flex min-w-0 flex-col rounded-card border border-line bg-surface shadow-card px-4 py-3 no-underline hover:border-line-strong">
       <span class="text-title font-semibold text-ink">{value}</span>
       <span class="text-label text-ink-2">{label}</span>
       {sub ? <span class="text-label text-ink-3">{sub}</span> : null}
@@ -108,11 +108,11 @@ export function InboxResults(p: Pick<InboxProps, "rows" | "next" | "more" | "sel
         </p>
       ) : null}
       {p.rows.length ? (
-        <ol id="inbox" class="flex flex-col overflow-hidden rounded-card border border-line bg-surface">
+        <ol id="inbox" class="flex flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
           <InboxRows rows={p.rows} next={p.next} more={p.more} self={p.self} />
         </ol>
       ) : (
-        <div class="rounded-card border border-line bg-surface px-4 py-8 text-center text-ink-2">
+        <div class="rounded-card border border-line bg-surface shadow-card px-4 py-8 text-center text-ink-2">
           {p.unmatched ? (
             <p>Everyone who got in touch is already a {vocab.one.toLowerCase()}.</p>
           ) : (
@@ -122,7 +122,7 @@ export function InboxResults(p: Pick<InboxProps, "rows" | "next" | "more" | "sel
                 {p.missing ?? "Form submissions, bookings and payments from your other apps show up here."}
               </p>
               <p class="mt-4">
-                <a href="/customers/new" class={linkButtonClass}>Add {vocab.one.toLowerCase()}</a>
+                <a href="/customers/new" class={buttonClass}>Add {vocab.one.toLowerCase()}</a>
               </p>
             </>
           )}
@@ -141,7 +141,7 @@ export function InboxRows({ rows, next, more, self }: { rows: InboxRow[]; next: 
       ))}
       {next ? (
         <li class="px-4 py-3 text-center">
-          <a href={more(next)} hx-get={more(next)} hx-target="closest li" hx-swap="outerHTML" hx-push-url="false" class={linkButtonClass}>
+          <a href={more(next)} hx-get={more(next)} hx-target="closest li" hx-swap="outerHTML" hx-push-url="false" class={buttonClass}>
             Load more
           </a>
         </li>
@@ -169,7 +169,7 @@ function Row({ row, self }: { row: InboxRow; self: string }) {
       </div>
       <div class="flex flex-wrap items-center gap-2">
         {row.customer_id ? (
-          <a href={`/customers/${row.customer_id}`} class={buttonClass + " no-underline"}>
+          <a href={`/customers/${row.customer_id}`} class={buttonClass}>
             Open {row.customer_name}
             {row.customer_archived_at ? " (archived)" : ""}
           </a>

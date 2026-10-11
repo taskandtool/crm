@@ -27,12 +27,15 @@ who takes it. A type no active person takes is left off `/book`.
 **The team's side in another app (the CRM).** Mount `bookingAdmin(getDb,
 { base: "/bookings", css, source: "crm", Frame, extra, timeZone,
 manageBase, onBooked })` on its private routes: the list of bookings, the
-Schedule (a week of bookings and time off, by person), Book for someone
+Schedule (a week of bookings and time off, by person), Reschedule (another
+open time, with the same person or another who takes it) and Cancel, each told
+to the booker through `onBooked`, Book for someone
 (`/new`, which takes `name`, `email`, `phone` and `address` in its link so
-a team member starting from a customer types nothing twice), the types and
-their hosts, each person's hours, time off and calendars. `Frame` puts the
-pages in the app's own layout (the booking sections become links at the
-top); `extra` adds to a booking's page (the CRM's customer and "Make it a
+a team member starting from a customer types nothing twice), Services (the
+types and who takes each) and Team (each person's hours, time off and
+calendars). `Frame` puts the pages in the app's own layout: it gets each
+page's title, and a record's way back, the line under its title and its
+actions; the sections are tabs on the list pages. `extra` adds to a booking's page (the CRM's customer and "Make it a
 job"); `timeZone` is the Schedule's; `manageBase` is the Website's `/book`
 address, so a team booking's confirmation carries a manage link; `onBooked`
 sends it. It writes the tables the Website's `/book` reads, so a change is
@@ -45,7 +48,7 @@ neither, ask with
 `python3 ~/tools/taskandtool.py request-connection google --why "read busy times and add bookings to your calendar"`
 (or `microsoft`), give the owner the review link,
 and stop until it is granted; a Google owner also enables the Calendar API
-on their Google Cloud project. Add the calendar on the person's page in the
-editor's People and hours (`primary` is the main calendar), schedule the sync job (`references/calendar-sync.md`), run it
-once by hand (`npx tsx src/booking/sync.ts`) and check the Calendars page
+on their Google Cloud project. Add the calendar on the person's page under
+Team (`primary` is the main calendar), schedule the sync job (`references/calendar-sync.md`), run it
+once by hand (`npx tsx src/booking/sync.ts`) and check that page's Calendars
 for a sync time and no error.

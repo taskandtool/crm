@@ -159,7 +159,7 @@ test("customers: create, open, edit, note, archive", async (t) => {
   assert.ok(detail.indexOf(">Follow-ups</h2>") < detail.indexOf(">Activity</h2>"));
   assert.ok(detail.indexOf(">Activity</h2>") < detail.indexOf(">About</h2>"));
   assert.match(detail, /<form method="post" action="\/customers\/\d+\/notes" aria-label="Log activity"/);
-  assert.match(detail, /<summary[^>]*>Edit<\/summary>/);
+  assert.match(detail, /<summary[^>]*><span[^>]*>Edit<\/span>/);
   assert.doesNotMatch(detail, /Quotes and invoices/, "no quotes or invoices yet, so no section");
   assert.match(detail, /hx-trigger="change"[^>]*>[\s\S]*?name="status"/, "the status saves when chosen");
   assert.equal((await get("/customers/999999")).status, 404);
@@ -509,7 +509,7 @@ test("bookings in the CRM: its own frame, a type and a person, Make it a job fro
   assert.match(html, /Estimate visit/);
   html = await (await get("/bookings/schedule")).text();
   assert.match(html, /<a href="\/bookings" aria-current="page"[^>]*>Bookings<\/a>/, "inside the CRM's frame");
-  assert.match(html, /Times are in UTC\./, "the CRM's zone");
+  assert.match(html, /Times are in UTC/, "the CRM's zone");
 });
 
 test("quotes in the CRM: from a job, sent, accepted, made a job; Make it a job once", async (t) => {

@@ -1,25 +1,19 @@
-// Small pieces the CRM's pages share: the primary button, the stage badge,
+// Small pieces the CRM's pages share: the stage badge,
 // a follow-up's day and its mark, the flash messages, a field with its
 // label, a custom field's input, the record's "added by" line.
 import type { Child } from "hono/jsx";
 import type { FlashMessages } from "../admin/flash";
-import { buttonClass, controlClass, type StatusOption } from "../admin/status";
+import { buttonClass, controlClass, fieldClass, primaryClass, type StatusOption } from "../admin/status";
 import { cfg, dealsCfg, visitsCfg, vocab } from "../config";
 import type { CustomField } from "../config-schema";
 import { When } from "../admin/list";
+import { FieldList, type Field as Shown } from "../admin/detail";
 import { fieldText } from "../crm/fields";
 import type { Stage } from "../crm/stages";
 import { addDays, dueOf, type Due } from "../crm/follow-ups";
 
-export { buttonClass, controlClass };
-
-export const primaryClass =
-  "rounded-control border border-accent bg-accent px-3 py-1 text-label font-semibold text-accent-ink hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
-export const labelClass = "flex flex-col gap-1 text-label text-ink-2";
-/** A link that does an action (call, book, quote): it looks like a button. */
-export const linkButtonClass = buttonClass + " inline-block no-underline";
-/** The page's one primary action when it is a link ("New customer"). */
-export const primaryLinkClass = primaryClass + " inline-block no-underline";
+// One look for every control: the admin skill's, which a link that does an action shares.
+export { buttonClass, controlClass, primaryClass };
 
 /** Stage options for a select or badge: open stages strong, won in the accent, lost muted. */
 export function stageOptions(stages: Stage[]): StatusOption[] {
@@ -28,10 +22,10 @@ export function stageOptions(stages: Stage[]): StatusOption[] {
 
 export function Field(props: { label: string; children: Child; class?: string; hint?: string }) {
   return (
-    <label class={labelClass + " " + (props.class ?? "")}>
+    <label class={fieldClass + " " + (props.class ?? "")}>
       {props.label}
       {props.children}
-      {props.hint ? <span class="text-ink-3">{props.hint}</span> : null}
+      {props.hint ? <span class="font-normal text-ink-3">{props.hint}</span> : null}
     </label>
   );
 }
@@ -97,6 +91,25 @@ export function SaveOnChange(p: { action: string; current: string; options: Stat
         <button class={buttonClass}>Save</button>
       </noscript>
     </form>
+  );
+}
+
+/**
+ * A record's details as values, with Edit: the form takes their place while it
+ * is open, and Cancel puts them back. Values with nothing in them are left out.
+ */
+export function ReadThenEdit({ fields, children }: { fields: Shown[]; children: Child }) {
+  return (
+    <div class="flex flex-col gap-3 [&:has(>details[open])>dl]:hidden">
+      <FieldList fields={fields} />
+      <details class="group">
+        <summary class={buttonClass + " cursor-pointer list-none"}>
+          <span class="group-open:hidden">Edit</span>
+          <span class="hidden group-open:inline">Cancel</span>
+        </summary>
+        <div class="mt-4">{children}</div>
+      </details>
+    </div>
   );
 }
 

@@ -313,10 +313,34 @@ export function formatDate(date: string, locale = "en-US"): string {
   return spaces(shownWith(locale, { timeZone: "UTC", weekday: "long", month: "long", day: "numeric" }).format(new Date(Date.UTC(y, m - 1, d, 12))));
 }
 
+/** "Tue, Mar 10" for a local date, or "March 10" with `long`; no zone arithmetic involved. */
+export function formatShortDate(date: string, opts: { long?: boolean } = {}, locale = "en-US"): string {
+  const [y, m, d] = parseDate(date);
+  const style: Intl.DateTimeFormatOptions = opts.long ? { month: "long", day: "numeric" } : { weekday: "short", month: "short", day: "numeric" };
+  return spaces(shownWith(locale, { timeZone: "UTC", ...style }).format(new Date(Date.UTC(y, m - 1, d, 12))));
+}
+
+/** A length as people say it: "20 min", "1 hr", "1 hr 30 min". */
+export function durationText(minutes: number): string {
+  const h = Math.floor(minutes / 60), m = minutes % 60;
+  return [h ? `${h} hr` : "", m ? `${m} min` : ""].filter(Boolean).join(" ") || "0 min";
+}
+
 /** The zone's short name at that instant: "EDT", "GMT+5:30". */
 export function zoneLabel(t: Date, zone: string, locale = "en-US"): string {
   const p = shownWith(locale, { timeZone: zone, timeZoneName: "short" }).formatToParts(t).find((x) => x.type === "timeZoneName");
   return p?.value ?? zone;
+}
+
+/** "Chicago (Central Time)": the place, and the zone's everyday name; for people, where zoneLabel is for a time. */
+export function zoneName(zone: string, locale = "en-US"): string {
+  const place = zone.split("/").pop()!.replace(/_/g, " ");
+  try {
+    const p = shownWith(locale, { timeZone: zone, timeZoneName: "longGeneric" }).formatToParts(new Date()).find((x) => x.type === "timeZoneName");
+    return p?.value && p.value !== place ? `${place} (${p.value})` : place;
+  } catch {
+    return place;
+  }
 }
 
 /** "Tuesday, March 10, 9:30 AM to 10:00 AM EDT": a slot for a viewer, in the viewer's zone, zone named. */

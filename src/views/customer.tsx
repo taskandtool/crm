@@ -5,7 +5,7 @@
 // values, Edit for the form), their deals, quotes and invoices, possible
 // duplicates, Merge and Archive. Empty sections are left out. Plain forms
 // throughout: every change is a POST answered with a 303 back here.
-import { FieldList, JsonData, Section, type Field as Shown } from "../admin/detail";
+import { JsonData, Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
 import { cfg, dealsCfg, invoicesCfg, ownerLabel, showBooking, visitsCfg, vocab } from "../config";
@@ -25,7 +25,7 @@ import { money } from "../crm/text";
 import { whereText, type Booking } from "../booking/book";
 import { firstText } from "./inbox";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, CustomInput, Field, linkButtonClass, MESSAGES, primaryClass, RecordLine, SaveOnChange, stageOptions, timeZone } from "./ui";
+import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, stageOptions, timeZone } from "./ui";
 import { CustomerVisits } from "./visits";
 import { CustomerMoney, type Owed } from "./money";
 import type { Quote } from "../invoices/quotes";
@@ -69,12 +69,12 @@ export function CustomerPage(p: {
       actions={
         <>
           <SaveOnChange action={`${self}/stage`} current={c.stage} options={stageOptions(stages)} label="Status" returnTo={self} />
-          {c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`} class={linkButtonClass}>Call</a> : null}
-          {c.email ? <a href={`mailto:${c.email}`} class={linkButtonClass} title={c.email}>Email</a> : null}
+          {c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`} class={buttonClass}>Call</a> : null}
+          {c.email ? <a href={`mailto:${c.email}`} class={buttonClass} title={c.email}>Email</a> : null}
           {showBooking ? (
-            <a href={listUrl("/bookings/new", { name: c.name, email: c.email, phone: c.phone, address: c.address })} class={linkButtonClass}>Book a time</a>
+            <a href={listUrl("/bookings/new", { name: c.name, email: c.email, phone: c.phone, address: c.address })} class={buttonClass}>Book a time</a>
           ) : null}
-          {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", { email: c.email, name: c.name, phone: c.phone, address: c.address })} class={linkButtonClass}>New quote</a> : null}
+          {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", { email: c.email, name: c.name, phone: c.phone, address: c.address })} class={buttonClass}>New quote</a> : null}
         </>
       }
     >
@@ -152,12 +152,9 @@ function Reach({ c }: { c: Customer }) {
 /** Their details as values, then Edit for the form. */
 function About({ c, owners }: { c: Customer; owners: string[] }) {
   const custom = cfg.fields.map((f) => ({ label: f.label, value: fieldText(c.fields?.[f.key]) || null }));
-  // Only what is filled shows; Edit adds the rest.
-  const filled = (f: Shown) => f.value !== null && f.value !== undefined && f.value !== "";
   return (
-    <div class="flex flex-col gap-3">
-      <FieldList
-        fields={([
+    <ReadThenEdit
+      fields={[
           // Company, phone and email are under their name, at the top.
           ...(c.other_emails?.length ? [{ label: "Also goes by", value: c.other_emails.join(", ") }] : []),
           { label: "Address", value: c.address },
@@ -167,15 +164,10 @@ function About({ c, owners }: { c: Customer; owners: string[] }) {
           ...custom,
           { label: "Background", value: c.notes ? <span class="whitespace-pre-wrap">{c.notes}</span> : null },
           { label: "Last contact", value: c.last_contact_at ? <When at={c.last_contact_at} timeZone={timeZone} /> : null },
-        ] as Shown[]).filter(filled)}
-      />
-      <details>
-        <summary class={buttonClass + " inline-block cursor-pointer list-none"}>Edit</summary>
-        <div class="mt-3">
-          <Details c={c} owners={owners} />
-        </div>
-      </details>
-    </div>
+      ]}
+    >
+      <Details c={c} owners={owners} />
+    </ReadThenEdit>
   );
 }
 

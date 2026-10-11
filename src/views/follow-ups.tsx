@@ -57,7 +57,7 @@ export function FollowUpsPage(p: FollowUpsProps) {
             Open leads and {dealsCfg.many.toLowerCase()} with nothing scheduled, longest without contact first.
           </p>
           {p.unplanned.length ? (
-            <ol class="flex flex-col overflow-hidden rounded-card border border-line bg-surface">
+            <ol class="flex flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
               {p.unplanned.map((u) => <UnplannedRow u={u} today={p.today} returnTo={self} user={p.user} />)}
             </ol>
           ) : (
@@ -65,7 +65,7 @@ export function FollowUpsPage(p: FollowUpsProps) {
           )}
         </>
       ) : p.rows.length ? (
-        <ol class="flex flex-col overflow-hidden rounded-card border border-line bg-surface">
+        <ol class="flex flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
           {p.rows.map((f) => (
             <li class="border-b border-line px-4 py-3 last:border-b-0">
               <FollowUpItem f={f} today={p.today} returnTo={self} showCustomer showOwner={!p.mine} />
@@ -84,7 +84,7 @@ export function FollowUpsPage(p: FollowUpsProps) {
 }
 
 function Empty({ children }: { children: Child }) {
-  return <div class="rounded-card border border-line bg-surface px-4 py-8 text-center text-ink-2">{children}</div>;
+  return <div class="rounded-card border border-line bg-surface shadow-card px-4 py-8 text-center text-ink-2">{children}</div>;
 }
 
 /** One follow-up: when, what, for whom, and Done and Move. */
@@ -194,15 +194,15 @@ export function FollowUpForm(p: {
   title?: string;
 }) {
   return (
-    <form method="post" action={`/customers/${p.customerId}/follow-ups`} aria-label="Add a follow-up" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <form method="post" action={`/customers/${p.customerId}/follow-ups`} aria-label="Add a follow-up" class="grid gap-3 sm:grid-cols-2">
       <input type="hidden" name="return" value={p.returnTo} />
+      <Field label="Title" class="sm:col-span-2">
+        <input name="title" required maxlength={200} value={p.title ?? ""} placeholder="Call back about the quote" class={controlClass} />
+      </Field>
       <Field label="Type">
         <select name="kind" class={controlClass}>
           {FOLLOW_UP_KINDS.map((k) => <option value={k}>{FOLLOW_UP_LABELS[k]}</option>)}
         </select>
-      </Field>
-      <Field label="Title" class="sm:col-span-1 lg:col-span-3">
-        <input name="title" required maxlength={200} value={p.title ?? ""} placeholder="Call back about the quote" class={controlClass} />
       </Field>
       <Field label="Due date">
         <input name="on" type="date" required value={addDays(p.today, 1)} class={controlClass} />
@@ -224,7 +224,7 @@ export function FollowUpForm(p: {
           </select>
         </Field>
       ) : null}
-      <div class="sm:col-span-2 lg:col-span-4">
+      <div class="sm:col-span-2">
         <button class={primaryClass}>Add follow-up</button>
       </div>
     </form>

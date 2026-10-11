@@ -10,6 +10,49 @@ import type { Child } from "hono/jsx";
 
 export type NavItem = { href: string; label: string };
 
+/** A page's head: its title, the list it belongs to, a line under the title, its actions (at most one primary). */
+export type Head = { title: string; back?: { href: string; label: string }; sub?: Child; actions?: Child };
+/** An app's own page frame (the CRM's layout), given each page's head. */
+export type Frame = (p: Head & { user: string; children: Child }) => Child;
+
+/** A section's pages as tabs, the current one underlined. */
+export function SectionTabs({ label, links, current }: { label: string; links: NavItem[]; current: string }) {
+  return (
+    <nav aria-label={label} class="mb-4 flex flex-wrap gap-1 border-b border-line text-label">
+      {links.map((n) => (
+        <a href={n.href} aria-current={current === n.href ? "page" : undefined}
+          class={"-mb-px border-b-2 px-3 py-2 no-underline " + (current === n.href ? "border-accent font-semibold text-ink" : "border-transparent text-ink-2 hover:border-line-strong hover:text-ink")}>
+          {n.label}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
+/**
+ * A page of a skill's section: in the app's own frame, or in AdminLayout with
+ * the section's pages as its nav. A list page shows the section's tabs; a
+ * record's page (one with `back`) shows the way back instead.
+ */
+export function SectionPage(p: { Frame?: Frame; css: string; user: string; label: string; links: NavItem[]; current: string; head: Head; children: Child }) {
+  const { head } = p;
+  if (!p.Frame) {
+    // AdminLayout has a title and nav only: the rest of the head opens the body.
+    const top = head.back || head.sub || head.actions ? (
+      <div class="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div class="min-w-0">
+          {head.back ? <p class="text-label"><a href={head.back.href}>{head.back.label}</a></p> : null}
+          {head.sub ? <div class="text-ink-2">{head.sub}</div> : null}
+        </div>
+        {head.actions ? <div class="flex flex-wrap items-center gap-2">{head.actions}</div> : null}
+      </div>
+    ) : null;
+    return <AdminLayout title={head.title} css={p.css} nav={p.links} current={p.current} user={p.user}>{top}{p.children}</AdminLayout>;
+  }
+  const tabs = head.back ? null : <SectionTabs label={p.label} links={p.links} current={p.current} />;
+  return <>{p.Frame({ ...head, user: p.user, children: <>{tabs}{p.children}</> })}</>;
+}
+
 export const HTMX_SRC = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.6/htmx.min.js";
 
 export function AdminLayout(props: {
