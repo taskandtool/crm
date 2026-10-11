@@ -47,10 +47,10 @@ function StageList(p: { pipeline: Pipeline; heading: string; intro: string; stag
         {active.map((s, i) => (
           <li class="flex flex-col gap-3 border-b border-line px-4 py-3 last:border-b-0 lg:flex-row lg:items-end">
             <form method="post" action={`${base}/${s.key}`} class="flex flex-1 flex-wrap items-end gap-3">
-              <Field label="Name" class="min-w-48 flex-1">
+              <Field label="Name" class="min-w-48 flex-1" quiet={i > 0}>
                 <input name="label" value={s.label} required maxlength={60} class={controlClass} />
               </Field>
-              <Field label="Counts as">
+              <Field label="Counts as" quiet={i > 0}>
                 <select name="kind" class={controlClass}>
                   {STAGE_KINDS.map((k) => (
                     <option value={k} selected={k === s.kind}>
@@ -77,7 +77,8 @@ function StageList(p: { pipeline: Pipeline; heading: string; intro: string; stag
               </form>
               <details class="relative">
                 <summary class={buttonClass + " cursor-pointer list-none"}>Archive</summary>
-                <form method="post" action={`${base}/${s.key}/archive`} class="mt-2 flex flex-col gap-2 rounded-card border border-line bg-surface p-3 shadow-lift">
+                {/* Floats over the rows below rather than pushing this one apart. */}
+                <form method="post" action={`${base}/${s.key}/archive`} class="absolute right-0 z-10 mt-2 flex w-64 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-card border border-line bg-surface p-3 shadow-lift">
                   {s.count > 0 ? (
                     <Field label={`Move its ${count(s.count)} to`}>
                       <select name="move_to" required class={controlClass}>

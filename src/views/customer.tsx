@@ -250,7 +250,7 @@ function Activity({ c, notes, history, missing }: { c: Customer; notes: Note[]; 
           <button class={primaryClass}>Add</button>
           {/* Now, unless it happened earlier: the time is there when it is needed. */}
           <details class="text-label text-ink-2">
-            <summary class="cursor-pointer">Earlier?</summary>
+            <summary class="cursor-pointer list-none underline decoration-line-strong underline-offset-2 hover:decoration-current">Another time</summary>
             <input name="at" type="datetime-local" aria-label="When it happened" class={controlClass + " mt-2"} />
           </details>
         </div>

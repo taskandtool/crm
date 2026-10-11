@@ -10,7 +10,7 @@ import { listUrl } from "../admin/query";
 import { dealsCfg, ownerLabel } from "../config";
 import { addDays, FOLLOW_UP_KINDS, FOLLOW_UP_LABELS, UPCOMING_DAYS, type FollowUp, type FollowUpView, type Unplanned } from "../crm/follow-ups";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, DueMark, Field, MESSAGES, primaryClass, timeText, timeZone } from "./ui";
+import { AddToggle, buttonClass, controlClass, DueMark, Field, MESSAGES, primaryClass, timeText, timeZone } from "./ui";
 
 export type FollowUpsProps = {
   user: string;
@@ -126,7 +126,7 @@ export function FollowUpItem(p: { f: FollowUp; today: string; returnTo: string; 
               <button class={buttonClass + " self-start"}>Mark done with this note</button>
             </form>
             <div class="flex flex-col gap-2">
-              <span class="text-label text-ink-2">Reschedule</span>
+              <span class="text-label font-semibold text-ink">Reschedule</span>
               <div class="flex flex-wrap gap-2">
                 {[["Tomorrow", addDays(today, 1)], ["Next week", addDays(today, 7)]].map(([text, day]) => (
                   <form method="post" action={`/follow-ups/${f.id}/move`}>
@@ -136,11 +136,12 @@ export function FollowUpItem(p: { f: FollowUp; today: string; returnTo: string; 
                   </form>
                 ))}
               </div>
-              <form method="post" action={`/follow-ups/${f.id}/move`} class="flex flex-wrap items-end gap-2">
+              {/* A day and a time side by side, then the button: they fit the menu's width. */}
+              <form method="post" action={`/follow-ups/${f.id}/move`} class="grid grid-cols-2 gap-2">
                 <input type="hidden" name="return" value={p.returnTo} />
-                <input name="on" type="date" required value={f.due_on} aria-label="Day" class={controlClass} />
-                <input name="at" type="time" value={f.due_time ?? ""} aria-label="Time, or blank for any time" class={controlClass} />
-                <button class={buttonClass}>Reschedule</button>
+                <input name="on" type="date" required value={f.due_on} aria-label="Day" class={controlClass + " min-w-0"} />
+                <input name="at" type="time" value={f.due_time ?? ""} aria-label="Time, or blank for any time" class={controlClass + " min-w-0"} />
+                <button class={buttonClass + " col-span-2"}>Reschedule</button>
               </form>
             </div>
           </div>
@@ -259,12 +260,9 @@ export function FollowUpsSection(p: {
       ) : prompt ? (
         <p class="font-semibold">No follow-up scheduled.</p>
       ) : null}
-      <details open={prompt && !p.open.length}>
-        <summary class="cursor-pointer text-label font-semibold text-ink-2">Add follow-up</summary>
-        <div class="mt-3">
-          <FollowUpForm customerId={p.customerId} deals={p.deals} dealId={p.dealId} owners={p.owners} user={p.user} today={p.today} returnTo={p.returnTo} />
-        </div>
-      </details>
+      <AddToggle label="Add follow-up" open={prompt && !p.open.length}>
+        <FollowUpForm customerId={p.customerId} deals={p.deals} dealId={p.dealId} owners={p.owners} user={p.user} today={p.today} returnTo={p.returnTo} />
+      </AddToggle>
       {p.done.length ? (
         <details>
           <summary class="cursor-pointer text-label text-ink-2">Completed</summary>

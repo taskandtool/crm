@@ -18,7 +18,7 @@ import { cut, everyPage, readCursor, type Cursor, type Keyed } from "../admin/ke
 import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
 import { DataTable, SearchBar, TableRow, TableRows, When, type TableSpec } from "../admin/list";
 import { formIds, idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
-import { buttonClass, controlClass, fieldClass, pickStatus, StatusBadge, StatusForm, type StatusOption } from "../admin/status";
+import { buttonClass, controlClass, fieldClass, pickStatus, primaryClass, StatusBadge, StatusForm, type StatusOption } from "../admin/status";
 import { checkFields, FIELD_TYPES, FORM_KEY, PHOTO_PATH, sitePath, type Errors, type Field, type Form } from "./fields";
 import { cameFrom } from "./origin";
 import { linkedTo, type Linked } from "./linked";
@@ -316,8 +316,8 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     const results = (
       <div id="results">
         <BulkForm id="bulk" action={`${subs}/bulk`} returnTo={self}>
-          <label class={fieldClass}>
-            Set selected to
+          <label class="flex items-center gap-2 text-label font-semibold text-ink-2">
+            Mark selected as
             <select name="status" class={controlClass}>
               {STATUSES.map((o) => (
                 <option value={o.value}>{o.label}</option>
@@ -739,12 +739,10 @@ function Editor(props: {
       ) : null}
       <input type="hidden" name="version" value={version} />
       <input type="hidden" name="count" value={String(raw.length)} />
-      {/* The first submit button is the one Enter presses: keep it Save. */}
-      <div>
-        <button name="op" value="save" class={buttonClass}>
-          Save
-        </button>
-      </div>
+      {/* The first submit button is the one Enter presses: a Save the eye never sees, so Enter saves; the visible one is at the foot. */}
+      <button name="op" value="save" class="sr-only" tabindex={-1} aria-hidden="true">
+        Save
+      </button>
       <Section title="The form">
         <div class="grid gap-4 sm:grid-cols-2">
           <label class={fieldClass}>
@@ -770,11 +768,11 @@ function Editor(props: {
           <label class={fieldClass}>
             Email each submission to
             <input name="notify_emails" value={form.notify_emails.join(", ")} placeholder="you@example.com" class={controlClass} aria-invalid={formProblems.notify_emails ? "true" : undefined} aria-describedby="p-notify-help p-notify" />
-            <span id="p-notify-help">Needs an email sender connected to this app (Resend or Postmark).</span>
+            <span id="p-notify-help" class="font-normal text-ink-3">Needs an email sender connected to this app (Resend or Postmark).</span>
             <Problem id="p-notify" text={formProblems.notify_emails} />
           </label>
           <label class="flex items-center gap-2">
-            <input type="checkbox" name="active" value="yes" checked={form.active} />
+            <input type="checkbox" name="active" value="yes" checked={form.active} class="size-4" />
             Taking submissions
           </label>
         </div>
@@ -821,12 +819,13 @@ function Editor(props: {
                         ))}
                       </select>
                     </label>
-                    <label class="flex items-center gap-2 self-end">
-                      <input type="checkbox" name={`f.${i}.required`} value="yes" checked={f.required === true} />
+                    <label class="flex min-h-9 items-center gap-2 self-end">
+                      <input type="checkbox" name={`f.${i}.required`} value="yes" checked={f.required === true} class="size-4" />
                       Required
                     </label>
-                    <label class={fieldClass}>
-                      Options, one per line (dropdown, one choice, tick boxes)
+                    {/* Only a dropdown, one choice or tick boxes takes options. */}
+                    <label class={fieldClass + " hidden [fieldset:has(option[value=select]:checked)_&]:flex [fieldset:has(option[value=radio]:checked)_&]:flex [fieldset:has(option[value=checkbox]:checked)_&]:flex"}>
+                      Options, one per line
                       <textarea name={`f.${i}.options`} rows={3} class={controlClass}>
                         {Array.isArray(f.options) ? f.options.join("\n") : ""}
                       </textarea>
@@ -863,11 +862,11 @@ function Editor(props: {
           })}
         </ol>
         <div class="mt-4 flex flex-wrap gap-2">
+          <button name="op" value="save" class={primaryClass}>
+            Save
+          </button>
           <button name="op" value="add" class={buttonClass}>
             Add a question
-          </button>
-          <button name="op" value="save" class={buttonClass}>
-            Save
           </button>
         </div>
       </Section>

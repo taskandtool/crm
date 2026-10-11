@@ -17,7 +17,7 @@ import { Layout } from "./layout";
 import { VisitMoney } from "./money";
 import type { Quote } from "../invoices/quotes";
 import type { Invoice } from "../invoices/invoices";
-import { buttonClass, controlClass, CustomInput, Field, MESSAGES, PersonFields, primaryClass, ReadThenEdit, RecordLine, timeZone } from "./ui";
+import { AddToggle, buttonClass, controlClass, CustomInput, Field, MESSAGES, PersonFields, primaryClass, ReadThenEdit, RecordLine, timeZone } from "./ui";
 
 /** How many a customer's page shows. */
 export const CUSTOMER_VISITS = 100;
@@ -126,15 +126,14 @@ export function CustomerVisits({ c, visits, owners }: { c: Customer; visits: Vis
           The {CUSTOMER_VISITS} most recent. The rest are in <a href={`/visits?view=all&q=${encodeURIComponent(c.name)}`}>All {many}</a>.
         </p>
       ) : null}
-      <details>
-        <summary class="cursor-pointer text-label font-semibold text-ink-2">Add {one}</summary>
-        <form method="post" action={`/customers/${c.id}/visits`} aria-label={`Add a ${one}`} class="mt-3 grid gap-3 sm:grid-cols-2">
+      <AddToggle label={`Add ${one}`}>
+        <form method="post" action={`/customers/${c.id}/visits`} aria-label={`Add a ${one}`} class="grid gap-3 sm:grid-cols-2">
           <VisitFields owners={owners} defaultOwner={c.owner} />
           <div class="sm:col-span-2">
             <button class={primaryClass}>Add {one}</button>
           </div>
         </form>
-      </details>
+      </AddToggle>
     </div>
   );
 }
@@ -290,7 +289,7 @@ export function NewVisitPage(p: { user: string; owners: string[]; flash: { code?
     <Layout title={`New ${one}`} user={p.user} section="visits" back={{ href: "/visits", label: v.many }}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <form method="post" action="/visits" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface shadow-card p-4 sm:grid-cols-2">
-        <PersonFields />
+        <PersonFields pairs />
         <VisitFields owners={p.owners} defaultOwner={p.user} />
         <div class="sm:col-span-2">
           <button class={primaryClass}>Add {one}</button>

@@ -19,7 +19,7 @@ import { shownStatus, type Quote } from "../invoices/quotes";
 import { formatMoney } from "../payments/money";
 import { FollowUpsSection } from "./follow-ups";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, PersonFields, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, stageOptions, timeZone } from "./ui";
+import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, PersonFields, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, stageOptions, timeZone } from "./ui";
 
 /** How many cards a column shows; how many days won and lost ones stay on the board. */
 export const PER_COLUMN = 100;
@@ -340,16 +340,15 @@ export function CustomerDeals({ c, deals, stages }: { c: Customer; deals: Deal[]
           <ul class="mt-2 flex flex-col gap-2">{closed.map(item)}</ul>
         </details>
       ) : null}
-      <details>
-        <summary class="cursor-pointer text-label font-semibold text-ink-2">Add {one}</summary>
+      <AddToggle label={`Add ${one}`}>
         {/* One column: this sits in the narrow side of a customer's page. */}
-        <form method="post" action={`/customers/${c.id}/deals`} class="mt-3 grid gap-3">
+        <form method="post" action={`/customers/${c.id}/deals`} class="grid gap-3">
           <DealInputs stages={stages.filter((s) => s.kind === "open")} />
           <div>
             <button class={primaryClass}>Add {one}</button>
           </div>
         </form>
-      </details>
+      </AddToggle>
     </div>
   );
 }

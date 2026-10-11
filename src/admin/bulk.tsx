@@ -17,7 +17,7 @@ export function BulkForm(props: {
 }) {
   const { id, action, returnTo, children, submit = "Apply to selected" } = props;
   return (
-    <form id={id} method="post" action={action} aria-label="Change selected rows" class="mb-3 flex flex-wrap items-end gap-3">
+    <form id={id} method="post" action={action} aria-label="Change selected rows" class="mb-3 flex flex-wrap items-center gap-2">
       <input type="hidden" name="return" value={returnTo} />
       {children}
       <button class={buttonClass}>{submit}</button>

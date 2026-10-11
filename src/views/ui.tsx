@@ -20,10 +20,11 @@ export function stageOptions(stages: Stage[]): StatusOption[] {
   return stages.map((s) => ({ value: s.key, label: s.label, tone: s.kind === "won" ? "accent" : s.kind === "lost" ? "muted" : "strong" }));
 }
 
-export function Field(props: { label: string; children: Child; class?: string; hint?: string }) {
+/** A label around its control. `quiet` keeps the label for screen readers only on a wide screen, where a row above names the column. */
+export function Field(props: { label: string; children: Child; class?: string; hint?: string; quiet?: boolean }) {
   return (
     <label class={fieldClass + " " + (props.class ?? "")}>
-      {props.label}
+      <span class={props.quiet ? "lg:sr-only" : undefined}>{props.label}</span>
       {props.children}
       {props.hint ? <span class="font-normal text-ink-3">{props.hint}</span> : null}
     </label>
@@ -113,11 +114,24 @@ export function ReadThenEdit({ fields, children }: { fields: Shown[]; children: 
   );
 }
 
-/** Who a new deal or visit is for: matched by email or phone, or added. */
-export function PersonFields() {
+/** "+ Add follow-up": a form that opens in place, the link turning to Cancel while it is open. */
+export function AddToggle({ label, open, children }: { label: string; open?: boolean; children: Child }) {
+  return (
+    <details open={open} class="group">
+      <summary class="inline-flex cursor-pointer list-none items-center rounded-control text-label font-semibold text-accent hover:underline">
+        <span class="group-open:hidden">+ {label}</span>
+        <span class="hidden text-ink-2 group-open:inline">Cancel</span>
+      </summary>
+      <div class="mt-3">{children}</div>
+    </details>
+  );
+}
+
+/** Who a new deal or visit is for: matched by email or phone, or added. In a two-column form the name takes a row, so email and phone pair up. */
+export function PersonFields({ pairs }: { pairs?: boolean }) {
   return (
     <>
-      <Field label={`${vocab.one} name`}>
+      <Field label={`${vocab.one} name`} class={pairs ? "sm:col-span-2" : ""}>
         <input name="name" maxlength={200} autocomplete="off" autofocus class={controlClass} />
       </Field>
       <Field label="Email">
