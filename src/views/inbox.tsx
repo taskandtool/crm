@@ -1,10 +1,12 @@
 // The Inbox: four figures (new leads this week, follow-ups due, open deals,
-// won this month), then one row per submission, booking or payment, newest
-// first, each with the person, their customer or "Add as customer", and
+// won this month), then To do (or Everything): one row per submission,
+// booking or payment, newest first, each with the person (their name opens
+// them once they are a customer), "Add as customer" while they are not, and
 // "Add as deal" (a repeat customer's new enquiry too). Rows are a list
 // rather than a table so they wrap on a phone.
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
+import { listUrl } from "../admin/query";
 import { StatusBadge, type StatusOption } from "../admin/status";
 import { dealsCfg, vocab } from "../config";
 import type { Overview } from "../crm/overview";
@@ -36,7 +38,8 @@ export type InboxProps = {
   next: string | null;
   more: (cursor: string) => string;
   self: string;
-  unmatched: boolean;
+  /** Everything, rather than To do. */
+  all: boolean;
   /** The form chosen, and the forms to choose from. */
   form: string | null;
   forms: { key: string; title: string }[];
@@ -72,33 +75,37 @@ export function InboxPage(p: InboxProps) {
     <Layout title="Inbox" user={p.user} section="inbox">
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <Numbers n={p.numbers} />
-      {/* The box applies on change (htmx swaps #results and pushes the URL,
-          so back and refresh keep it); Apply is the same form without JS, so it shows only then. */}
-      <form method="get" action="/" hx-get="/" hx-target="#results" hx-swap="outerHTML" hx-push-url="true" class="mb-4 flex flex-wrap items-center gap-3 text-label text-ink-2">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3 text-label">
+        <nav aria-label="Which" class="flex gap-1">
+          {[["To do", false], ["Everything", true]].map(([label, all]) => (
+            <a href={listUrl("/", { view: all ? "all" : null, form: p.form })} aria-current={p.all === all ? "page" : undefined}
+              class={"rounded-control px-2 py-1 no-underline " + (p.all === all ? "bg-panel font-semibold" : "text-ink-2 hover:bg-panel")}>
+              {label}
+            </a>
+          ))}
+        </nav>
+        {/* Applies on change (htmx swaps #results and pushes the URL); the button is for a browser without JavaScript. */}
         {p.forms.length ? (
-          <label class="flex items-center gap-2">
-            From
-            <select name="form" hx-get="/" hx-trigger="change" hx-include="closest form" class={controlClass}>
-              <option value="">Everything</option>
-              {p.forms.map((f) => <option value={f.key} selected={f.key === p.form}>{f.title}</option>)}
-            </select>
-          </label>
+          <form method="get" action="/" hx-get="/" hx-target="#results" hx-swap="outerHTML" hx-push-url="true" class="flex items-center gap-2">
+            {p.all ? <input type="hidden" name="view" value="all" /> : null}
+            <label>
+              <span class="sr-only">From</span>
+              <select name="form" hx-get="/" hx-trigger="change" hx-include="closest form" class={controlClass}>
+                <option value="">Everything that came in</option>
+                {p.forms.map((f) => <option value={f.key} selected={f.key === p.form}>Only {f.title}</option>)}
+              </select>
+            </label>
+            <noscript><button class={buttonClass}>Apply</button></noscript>
+          </form>
         ) : null}
-        <label class="flex items-center gap-2">
-          <input type="checkbox" name="unmatched" value="1" checked={p.unmatched} hx-get="/" hx-trigger="change" hx-include="closest form" />
-          Not {vocab.many.toLowerCase()} yet
-        </label>
-        <noscript>
-          <button class={buttonClass}>Apply</button>
-        </noscript>
-      </form>
+      </div>
       <InboxResults {...p} />
     </Layout>
   );
 }
 
 /** Everything under the filter. Also the htmx answer to the filter. */
-export function InboxResults(p: Pick<InboxProps, "rows" | "next" | "more" | "self" | "unmatched" | "paged" | "missing">) {
+export function InboxResults(p: Pick<InboxProps, "rows" | "next" | "more" | "self" | "all" | "form" | "paged" | "missing">) {
   return (
     <div id="results">
       {p.missing && p.rows.length ? <p class="mb-4 text-label text-ink-3">{p.missing}</p> : null}
@@ -113,8 +120,12 @@ export function InboxResults(p: Pick<InboxProps, "rows" | "next" | "more" | "sel
         </ol>
       ) : (
         <div class="rounded-card border border-line bg-surface shadow-card px-4 py-8 text-center text-ink-2">
-          {p.unmatched ? (
-            <p>Everyone who got in touch is already a {vocab.one.toLowerCase()}.</p>
+          {!p.all ? (
+            <>
+              <p class="font-semibold text-ink">All caught up.</p>
+              <p class="mt-1">New form requests, and bookings and payments from people who are not {vocab.many.toLowerCase()} yet, land here.</p>
+              <p class="mt-3 text-label"><a href={listUrl("/", { view: "all", form: p.form })}>See everything that came in</a></p>
+            </>
           ) : (
             <>
               <p class="font-semibold text-ink">No leads yet.</p>
@@ -161,19 +172,21 @@ function Row({ row, self }: { row: InboxRow; self: string }) {
           <Status row={row} />
         </p>
         <p class="mt-1 break-words">
-          <span class="font-semibold">{person}</span>
+          {/* A customer already: their name (as the record has it) opens them. */}
+          {row.customer_id ? (
+            <a href={`/customers/${row.customer_id}`} class="font-semibold no-underline hover:underline">
+              {row.customer_name ?? person}{row.customer_archived_at ? " (archived)" : ""}
+            </a>
+          ) : (
+            <span class="font-semibold">{person}</span>
+          )}
           {row.email && row.email !== person ? <span class="text-ink-2"> · {row.email}</span> : null}
           {row.phone && row.phone !== person ? <span class="text-ink-2"> · <span class="whitespace-nowrap">{row.phone}</span></span> : null}
         </p>
         <What row={row} />
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        {row.customer_id ? (
-          <a href={`/customers/${row.customer_id}`} class={buttonClass}>
-            Open {row.customer_name}
-            {row.customer_archived_at ? " (archived)" : ""}
-          </a>
-        ) : (
+        {row.customer_id ? null : (
           <form method="post" action="/inbox/add">
             <input type="hidden" name="kind" value={row.kind} />
             <input type="hidden" name="id" value={row.id} />

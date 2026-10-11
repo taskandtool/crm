@@ -42,8 +42,9 @@ export function Layout(props: {
       class={"shrink-0 rounded-control px-2 py-1 no-underline " + (section === n.section ? "bg-panel font-semibold" : (quiet ? "text-label text-ink-3" : "text-ink-2") + " hover:bg-canvas hover:text-ink")}
     >
       {n.label}
-      {/* How many of mine are due, filled in after the page loads so no page waits on it. */}
+      {/* How many follow-ups of mine are due, and what is in the Inbox's To do: filled in after the page loads so no page waits on them. */}
       {n.section === "follow-ups" ? <span hx-get="/follow-ups/count" hx-trigger="load" hx-swap="outerHTML"></span> : null}
+      {n.section === "inbox" ? <span hx-get="/inbox/count" hx-trigger="load" hx-swap="outerHTML"></span> : null}
     </a>
   );
   return (

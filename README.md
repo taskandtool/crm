@@ -21,7 +21,10 @@ runs anywhere with Node 20 and a Postgres.
 
 - **Inbox**: form submissions (not spam), bookings and paid
   payments from the project's other apps, with Add as customer, Add as
-  deal (a returning customer's new enquiry too) and Mark done. A source
+  deal (a returning customer's new enquiry too) and Mark done. It opens
+  on To do, which empties as you work: a request leaves once it is done
+  or made a customer, a booking or payment once its person is a customer;
+  Everything keeps the lot, and the nav counts what is to do. A source
   the project does not have yet is simply left out.
 - **Follow-ups**: a call, email, meeting, text or task due on a day, by
   one person. Due (overdue first, then today), Upcoming and Nothing

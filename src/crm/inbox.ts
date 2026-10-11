@@ -1,5 +1,5 @@
 // The Inbox: form submissions (not spam), bookings and payments, newest
-// first across all three, each matched to a customer (by email, then by
+// first across all three, or only what still needs someone (`todo`), each matched to a customer (by email, then by
 // phone where one side has no email: customers.ts findMatch says why) or
 // offered as a new one. Tables the project does not have are skipped
 // (tables.ts), and crm.config.json's `inbox` says which forms count.
@@ -47,6 +47,11 @@ export type InboxOptions = {
   unmatched?: boolean;
   /** Only this form's submissions (no bookings or payments). */
   form?: string | null;
+  /**
+   * Only what still needs someone: a submission not yet marked done, and a
+   * booking (not cancelled) or payment from someone who is not a customer yet.
+   */
+  todo?: boolean;
 };
 
 export function makeInboxCursor(row: InboxRow): string {
@@ -82,6 +87,7 @@ export async function inboxPage(
   const since = opts.since ?? null;
   const unmatched = !!opts.unmatched;
   const form = opts.form ?? null;
+  const todo = !!opts.todo;
   const n = size + 1;
   const ak = after?.k ?? null;
   const ar = after?.r ?? null;
@@ -111,6 +117,7 @@ export async function inboxPage(
           and (${form}::text is null or s.form_key = ${form}::text)
           and (${since}::timestamptz is null or s.created_at >= ${since}::timestamptz)
           and (not ${unmatched}::boolean or m.id is null)
+          and (not ${todo}::boolean or s.status in ('new', 'read'))
           and (${ak}::timestamptz is null or (s.created_at, 0, s.id) < (${ak}::timestamptz, ${ar}::int, ${aid}::bigint))
         order by s.created_at desc, s.id desc
         limit ${n}`,
@@ -136,6 +143,7 @@ export async function inboxPage(
           limit 1) m on true
         where (${since}::timestamptz is null or b.created_at >= ${since}::timestamptz)
           and (not ${unmatched}::boolean or m.id is null)
+          and (not ${todo}::boolean or (m.id is null and b.status <> 'cancelled'))
           and (${ak}::timestamptz is null or (b.created_at, 1, b.id) < (${ak}::timestamptz, ${ar}::int, ${aid}::bigint))
         order by b.created_at desc, b.id desc
         limit ${n}`,
@@ -158,6 +166,7 @@ export async function inboxPage(
         where p.status in ('paid', 'refunded', 'partially_refunded')
           and (${since}::timestamptz is null or p.created_at >= ${since}::timestamptz)
           and (not ${unmatched}::boolean or m.id is null)
+          and (not ${todo}::boolean or m.id is null)
           and (${ak}::timestamptz is null or (p.created_at, 2, p.id) < (${ak}::timestamptz, ${ar}::int, ${aid}::bigint))
         order by p.created_at desc, p.id desc
         limit ${n}`,

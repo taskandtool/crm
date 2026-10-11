@@ -170,23 +170,24 @@ const back = (c: C, path: string, code: string) => c.redirect(backTo(path, code)
 // ---- the inbox -------------------------------------------------------------
 
 app.get("/", async (c) => {
-  const unmatched = c.req.query("unmatched") === "1";
+  // To do unless asked for everything: what still needs someone.
+  const all = c.req.query("view") === "all";
   const asked = c.req.query("form") ?? "";
   const form = /^[a-z0-9][a-z0-9-]{0,62}$/.test(asked) ? asked : null;
   const after = readInboxCursor(c.req.query("after"));
   const [{ rows, next, present }, numbers] = await Promise.all([
-    inboxPage(c.var.db, { inbox: cfg.inbox, unmatched, form }, after, PAGE),
+    inboxPage(c.var.db, { inbox: cfg.inbox, todo: !all, form }, after, PAGE),
     after || isPartial(c) ? null : overview(c.var.db, { timeZone: cfg.time_zone, currency: dealsCfg.currency, user: c.var.user }),
   ]);
-  const filter = { unmatched: unmatched ? "1" : null, form };
+  const filter = { view: all ? "all" : null, form };
   const self = listUrl("/", filter);
   const more = (cur: string) => listUrl("/", { ...filter, after: cur });
   if (isPartial(c) && after) return c.html(<InboxRows rows={rows} next={next} more={more} self={self} />);
   const missing = missingSentence(present, { submissions: true, bookings: cfg.inbox.bookings !== false, payments: cfg.inbox.payments !== false });
   // The filter box (htmx): everything under it.
-  if (isPartial(c)) return c.html(<InboxResults rows={rows} next={next} more={more} self={self} unmatched={unmatched} paged={false} missing={missing} />);
+  if (isPartial(c)) return c.html(<InboxResults rows={rows} next={next} more={more} self={self} all={all} form={form} paged={false} missing={missing} />);
   return c.html(
-    <InboxPage user={c.var.user} rows={rows} next={next} more={more} self={self} unmatched={unmatched} form={form} forms={await formChoices(c.var.db, cfg.inbox)}
+    <InboxPage user={c.var.user} rows={rows} next={next} more={more} self={self} all={all} form={form} forms={await formChoices(c.var.db, cfg.inbox)}
       paged={!!after} missing={missing} numbers={numbers ?? await overview(c.var.db, { timeZone: cfg.time_zone, currency: dealsCfg.currency, user: c.var.user })} flash={flashOf(c)} />,
   );
 });
@@ -210,6 +211,8 @@ app.post("/inbox/add", async (c) => {
   if (!stage) return back(c, "/stages", "last-open");
   const r = await addFromInbox(c.var.db, kind as InboxKind, str(body.id), stage.key, c.var.user, cfg.fields);
   if (!r) return back(c, "/", "gone");
+  // Handled: a form request leaves To do once it has made a customer.
+  if (kind === "submission") await markDone(c.var.db, str(body.id), c.var.user);
   if (r.created) await newLeadCall(c.var.db, r.customer, null, c.var.user);
   return back(c, `/customers/${r.customer.id}`, r.created ? "added" : "exists");
 });
@@ -228,8 +231,20 @@ app.post("/inbox/deal", async (c) => {
   if (!r) return back(c, "/", "gone");
   const deal = await createDeal(db, r.customer.id, { title: `${r.customer.name}, ${r.source}`.slice(0, 200), value_cents: null, currency: dealsCfg.currency, owner: c.var.user, expected_close: null, notes: null }, stage.key, c.var.user);
   if (!deal) return back(c, "/", "gone");
+  if (kind === "submission") await markDone(db, str(body.id), c.var.user);
   await newLeadCall(db, r.customer, deal.id, c.var.user);
   return back(c, `/deals/${deal.id}`, "deal-added");
+});
+
+/** The nav's count: what is in To do, filled in after the page loads so no page waits on it. */
+app.get("/inbox/count", async (c) => {
+  const { rows, next } = await inboxPage(c.var.db, { inbox: cfg.inbox, todo: true }, null, 99);
+  if (!rows.length) return c.html(<span></span>);
+  return c.html(
+    <span class="ml-1 rounded-control bg-accent px-1 text-label font-semibold text-accent-ink">
+      <span class="sr-only">, </span>{next ? "99+" : rows.length}<span class="sr-only"> to do</span>
+    </span>,
+  );
 });
 
 app.post("/inbox/done", async (c) => {

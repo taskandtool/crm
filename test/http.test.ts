@@ -108,14 +108,15 @@ test("the Inbox, then Add as customer and Mark done", async (t) => {
   assert.match(html, /Do you service boilers\?/);
   assert.match(html, /Add as customer/);
   assert.doesNotMatch(html, /This project has no/, "every table is there");
-  // The filter applies on change with htmx; Apply is the same form without it.
-  assert.match(html, /<input type="checkbox" name="unmatched" value="1" hx-get="\/" hx-trigger="change" hx-include="closest form"\/?>/);
+  // To do by default, Everything a click away; the form filter applies on change with htmx, Apply without it.
+  assert.match(html, /aria-current="page"[^>]*>To do</);
+  assert.match(html, /href="\/\?view=all"/);
   assert.match(html, /<form method="get" action="\/" hx-get="\/" hx-target="#results" hx-swap="outerHTML" hx-push-url="true"/);
   assert.match(html, /<button[^>]*>Apply<\/button>/);
-  const filtered = await (await get("/?unmatched=1", { ...ME, "hx-request": "true" })).text();
-  assert.ok(filtered.startsWith('<div id="results">'), "htmx gets the results block only");
-  assert.match(filtered, /Pat Doe/);
-  assert.match(filtered, /name="return" value="\/\?unmatched=1"/, "Mark done comes back to the filter");
+  const everything = await (await get("/?view=all", { ...ME, "hx-request": "true" })).text();
+  assert.ok(everything.startsWith('<div id="results">'), "htmx gets the results block only");
+  assert.match(everything, /Pat Doe/);
+  assert.match(everything, /name="return" value="\/\?view=all"/, "Mark done comes back to the view");
 
   const [sub] = await db.sql<{ id: string }>`select id::text as id from submissions`;
   const add = await post("/inbox/add", { kind: "submission", id: sub.id });
@@ -128,8 +129,13 @@ test("the Inbox, then Add as customer and Mark done", async (t) => {
   // A new lead gets a call back today, for whoever added them.
   const [call] = await db.sql<{ title: string; owner: string; today: boolean }>`select title, owner::text as owner, due_on = (now() at time zone 'UTC')::date as today from follow_ups where customer_id = ${id}::bigint`;
   assert.deepEqual(call, { title: "Call back Pat Doe", owner: "ann@team.example", today: true });
-  assert.match(await (await get("/")).text(), /Open Pat Doe/);
+  // Handled: the request is done, so it leaves To do; in Everything their name opens them.
+  const [after] = await db.sql<{ status: string }>`select status from submissions where id = ${sub.id}::bigint`;
+  assert.equal(after.status, "done");
+  assert.doesNotMatch(await (await get("/")).text(), /Do you service boilers\?/);
+  assert.match(await (await get("/?view=all")).text(), new RegExp(`href="/customers/${id}"[^>]*>Pat Doe<`));
 
+  await db.sql`update submissions set status = 'new' where id = ${sub.id}::bigint`;
   const done = await post("/inbox/done", { id: sub.id, return: "//evil.example/x" });
   assert.equal(done.headers.get("location"), "/?saved=done", "a return path cannot leave the app");
   const [row] = await db.sql<{ status: string }>`select status from submissions where id = ${sub.id}::bigint`;
@@ -293,7 +299,7 @@ test("Add as deal: a new person, and a customer already here getting another", a
   assert.deepEqual(deals.map((d) => d.title), ["Gil Ross, Contact us", "Gil Ross, Contact us"], "one person, two deals");
   const calls = await db.sql<{ n: number }>`select count(*)::int as n from follow_ups f join customers c on c.id = f.customer_id where c.email = 'gil@example.com'`;
   assert.equal(calls[0].n, 1, "one open call back is enough");
-  assert.match(await (await get("/")).text(), /Add as deal/);
+  assert.match(await (await get("/?view=all")).text(), /Add as deal/, "a customer's new enquiry can still be a deal");
 });
 
 test("merge: preview, merge, history under either address, the merged record opens the kept one", async (t) => {
@@ -320,8 +326,8 @@ test("merge: preview, merge, history under either address, the merged record ope
   assert.match(after, /From the office/, "what came in under the other address");
   assert.match(after, /Also goes by/);
   // What comes in under the other address now matches the kept record.
-  const inbox = await (await get("/")).text();
-  assert.match(inbox, new RegExp(`/customers/${a}"[^>]*>\\s*Open Hal Moe`));
+  const inbox = await (await get("/?view=all")).text();
+  assert.match(inbox, new RegExp(`/customers/${a}"[^>]*>\\s*Hal Moe`));
   assert.equal((await post(`/customers/${a}/merge`, { other: b })).headers.get("location"), `/customers/${a}/merge?saved=merge-gone`, "not twice");
 });
 
@@ -642,8 +648,8 @@ test("forms in the CRM: submissions by form, an order with its payment, the Inbo
   html = await (await get("/?form=order")).text();
   assert.match(html, /Olive Order/);
   assert.doesNotMatch(html, /Pat Doe/);
-  assert.match(html, /<option value="order" selected="">Cookie order<\/option>/);
-  assert.match(await (await get("/")).text(), /Pat Doe/, "everything, unfiltered");
+  assert.match(html, /<option value="order" selected="">Only Cookie order<\/option>/);
+  assert.match(await (await get("/?view=all")).text(), /Pat Doe/, "everything, unfiltered");
 
   assert.equal((await get("/forms/submissions", { host: "crm.example" })).status, 404, "team only");
 });
