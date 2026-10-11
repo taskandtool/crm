@@ -695,8 +695,8 @@ app.route(
     source: "crm",
     timeZone: cfg.time_zone,
     nav: [
-      { href: "/forms/submissions", label: "Submissions" },
       { href: "/forms", label: "Forms" },
+      { href: "/forms/submissions", label: "Submissions" },
     ],
     links: {
       ...(showBooking ? { booking: (id: string) => `/bookings/${id}` } : {}),

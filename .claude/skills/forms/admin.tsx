@@ -16,10 +16,10 @@ import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, everyPage, readCursor, type Cursor, type Keyed } from "../admin/keyset";
 import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
-import { DataTable, SearchBar, TableRow, TableRows, When, type TableSpec } from "../admin/list";
+import { DataTable, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { formIds, idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
 import { buttonClass, controlClass, fieldClass, pickStatus, primaryClass, StatusBadge, StatusForm, type StatusOption } from "../admin/status";
-import { checkFields, FIELD_TYPES, FORM_KEY, PHOTO_PATH, sitePath, type Errors, type Field, type Form } from "./fields";
+import { checkFields, FIELD_TYPES, FORM_KEY, formKeyFrom, PHOTO_PATH, sitePath, type Errors, type Field, type Form } from "./fields";
 import { cameFrom } from "./origin";
 import { linkedTo, type Linked } from "./linked";
 import { priceOf } from "./price";
@@ -46,6 +46,9 @@ export const STATUSES: StatusOption[] = [
   { value: "done", label: "Done", tone: "neutral" },
   { value: "spam", label: "Spam", tone: "muted" },
 ];
+
+/** A form switched off shows so in the list; one taking submissions needs no word. */
+const FORM_STATES: StatusOption[] = [{ value: "off", label: "Switched off", tone: "muted" }];
 
 const MESSAGES: FlashMessages = {
   status: "Status saved.",
@@ -106,10 +109,11 @@ async function formTitles(db: Db): Promise<Map<string, string>> {
 }
 
 async function allForms(db: Db) {
-  return db.sql<{ key: string; title: string; active: boolean; new_count: number; total: number }>`
+  return db.sql<{ key: string; title: string; active: boolean; new_count: number; total: number; last_at: Date | null }>`
     select f.key, f.title, f.active,
            (select count(*) from submissions s where s.form_key = f.key and s.status = 'new')::int as new_count,
-           (select count(*) from submissions s where s.form_key = f.key and s.status <> 'spam')::int as total
+           (select count(*) from submissions s where s.form_key = f.key and s.status <> 'spam')::int as total,
+           (select max(created_at) from submissions s where s.form_key = f.key and s.status <> 'spam') as last_at
     from forms f
     order by f.title, f.key`;
 }
@@ -149,79 +153,93 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
 
   // ---- forms -------------------------------------------------------------
 
-  app.get("/", async (c) => {
-    const forms = await allForms(getDb(c));
-    return c.html(
-      layout(
-        c,
-        "Forms",
-        base,
-        <>
-          {forms.length ? (
-            <div class="overflow-x-auto rounded-card border border-line bg-surface">
-              <table class="w-full border-collapse text-copy">
-                <caption class="sr-only">Forms</caption>
-                <thead>
-                  <tr class="border-b border-line-strong text-left text-label text-ink-3">
-                    <th scope="col" class="px-3 py-2 font-semibold">Form</th>
-                    <th scope="col" class="px-3 py-2 font-semibold">New</th>
-                    <th scope="col" class="px-3 py-2 font-semibold">All</th>
-                    <th scope="col" class="px-3 py-2 font-semibold">State</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {forms.map((f) => (
-                    <tr class="border-b border-line last:border-b-0">
-                      <td class="px-3 py-2">
-                        <a href={`${base}/form/${f.key}`} class="font-semibold">
-                          {f.title}
-                        </a>
-                        <span class="ml-2 text-label text-ink-3">{f.key}</span>
-                      </td>
-                      <td class="px-3 py-2">
-                        <a href={listUrl(subs, { form: f.key, status: "new" })}>{f.new_count}</a>
-                      </td>
-                      <td class="px-3 py-2">
-                        <a href={listUrl(subs, { form: f.key })}>{f.total}</a>
-                      </td>
-                      <td class="px-3 py-2 text-ink-2">{f.active ? "Taking submissions" : "Switched off"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p class="text-ink-2">There are no forms yet.</p>
-          )}
-          <NewForm action={base} />
-        </>,
-      ),
-    );
+  /** A form's page: back to the forms, its submissions one click away. */
+  const editorHead = (form: Form): Head => ({
+    title: form.title,
+    back: { href: base, label: "Forms" },
+    sub: form.active ? null : <StatusBadge value="off" options={FORM_STATES} />,
+    actions: <a href={listUrl(subs, { form: form.key })} class={buttonClass}>Submissions</a>,
   });
 
+  // As Google Forms and HubSpot list them: each form, whether it is taking
+  // submissions, what is new, how many in all and when the last one came.
+  const formsPage = async (c: Context<{ Variables: TeamVars }>, newForm: Child) => {
+    const forms = await allForms(getDb(c));
+    return layout(
+        c,
+        { title: "Forms", actions: newForm },
+        base,
+        forms.length ? (
+          <div class="overflow-x-auto rounded-card border border-line bg-surface">
+            <table class="w-full border-collapse text-copy">
+              <caption class="sr-only">Forms</caption>
+              <thead>
+                <tr class="border-b border-line-strong text-left text-label text-ink-3">
+                  <th scope="col" class="px-4 py-2 font-semibold">Form</th>
+                  <th scope="col" class="px-4 py-2 font-semibold">New</th>
+                  <th scope="col" class="px-4 py-2 font-semibold">Submissions</th>
+                  <th scope="col" class="hidden px-4 py-2 font-semibold sm:table-cell">Last one</th>
+                </tr>
+              </thead>
+              <tbody>
+                {forms.map((f) => (
+                  <tr class="border-b border-line last:border-b-0 hover:bg-panel">
+                    <td class="px-4 py-3">
+                      <a href={`${base}/form/${f.key}`} class="font-semibold">
+                        {f.title}
+                      </a>
+                      {f.active ? null : <span class="ml-2"><StatusBadge value="off" options={FORM_STATES} /></span>}
+                    </td>
+                    <td class="px-4 py-3">
+                      {f.new_count ? <a href={listUrl(subs, { form: f.key, status: "new" })} class="font-semibold">{f.new_count}</a> : <span class="text-ink-3">0</span>}
+                    </td>
+                    <td class="px-4 py-3">
+                      {f.total ? <a href={listUrl(subs, { form: f.key })}>{f.total}</a> : <span class="text-ink-3">0</span>}
+                    </td>
+                    <td class="hidden px-4 py-3 text-ink-2 sm:table-cell">{f.last_at ? <When at={f.last_at} timeZone={opts.timeZone} /> : "None yet"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p class="text-ink-2">There are no forms yet.</p>
+        ),
+    );
+  };
+
+  app.get("/", async (c) => c.html(await formsPage(c, <NewForm action={base} />)));
+
+  // A title is all a new form needs; its key (its address) is made from it,
+  // numbered when taken. A key given (the AI, a script) is used as given.
   app.post("/", async (c) => {
     const body = await c.req.parseBody();
-    const key = str(body.key).trim().toLowerCase();
+    const given = str(body.key).trim().toLowerCase();
     const title = str(body.title).trim();
     const errors: Errors = {};
-    if (!FORM_KEY.test(key)) errors.key = "Use lowercase letters, digits and hyphens, like contact or quote-request.";
+    if (given && !FORM_KEY.test(given)) errors.key = "Use lowercase letters, digits and hyphens, like contact or quote-request.";
     if (!title) errors.title = "Give the form a title.";
     if (!errors.key && !errors.title) {
-      const made = await getDb(c).sql`
-        insert into forms (key, title, fields, source, updated_by)
-        values (${key}, ${title}, ${JSON.stringify(CONTACT_FORM.fields)}::jsonb, ${opts.source}, ${c.get("user")})
-        on conflict (key) do nothing
-        returning key`;
-      if (made.length) return c.redirect(withFlash(`${base}/form/${key}`, "created"), 303);
-      errors.key = "A form with this key exists already. Choose another.";
+      const db = getDb(c);
+      const stem = given || formKeyFrom(title);
+      for (let n = 1; n <= (given ? 1 : 20); n++) {
+        const key = n === 1 ? stem : `${stem}-${n}`;
+        const made = await db.sql`
+          insert into forms (key, title, fields, source, updated_by)
+          values (${key}, ${title}, ${JSON.stringify(CONTACT_FORM.fields)}::jsonb, ${opts.source}, ${c.get("user")})
+          on conflict (key) do nothing
+          returning key`;
+        if (made.length) return c.redirect(withFlash(`${base}/form/${key}`, "created"), 303);
+      }
+      errors.key = given ? "A form with this key exists already. Choose another." : "There are many forms with this title already. Choose another.";
     }
-    return c.html(layout(c, "Forms", base, <NewForm action={base} key_={key} title={title} errors={errors} />), 422);
+    return c.html(await formsPage(c, <NewForm action={base} title={title} errors={errors} open />), 422);
   });
 
   app.get("/form/:key", async (c) => {
     const found = await formRow(getDb(c), c.req.param("key"));
     if (!found) return c.notFound();
-    return c.html(layout(c, `Edit ${found.form.title}`, base, <Editor base={base} form={found.form} raw={found.raw} version={found.version} />));
+    return c.html(layout(c, editorHead(found.form), base, <Editor base={base} form={found.form} raw={found.raw} version={found.version} />));
   });
 
   app.post("/form/:key", async (c) => {
@@ -248,7 +266,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       c.html(
         layout(
           c,
-          `Edit ${found.form.title}`,
+          editorHead(found.form),
           base,
           <Editor base={base} form={form} raw={draft.fields} version={version} problems={problems} formProblems={formProblems} note={note} />,
         ),
@@ -273,7 +291,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
 
   // ---- submissions -------------------------------------------------------
 
-  const spec = (returnTo: string, showForm: boolean, titles: Map<string, string>): TableSpec<Item> => ({
+  const spec = (showForm: boolean, titles: Map<string, string>): TableSpec<Item> => ({
     id: "subs",
     href: (r) => `${subs}/${r.id}`,
     select: { form: "bulk", label: who },
@@ -283,7 +301,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       ...(showForm ? [{ label: "Form", cell: (r: Item) => titles.get(r.form_key) ?? r.form_key, class: "hidden md:table-cell" }] : []),
       {
         label: "Status",
-        cell: (r) => <StatusForm action={`${subs}/${r.id}/status`} current={r.status} options={STATUSES} returnTo={returnTo} label={`Status of ${who(r)}`} swap="closest tr" />,
+        cell: (r) => <StatusBadge value={r.status} options={STATUSES} />,
       },
       {
         label: "Booked, paid",
@@ -310,11 +328,13 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     const params = { q: f.q, status: f.status, form: f.form };
     const self = listUrl(subs, params);
     const more = (cur: string) => listUrl(subs, { ...params, after: cur });
-    const s = spec(self, !f.form, await formTitles(db));
+    const s = spec(!f.form, await formTitles(db));
     if (isPartial(c) && after) return c.html(<TableRows spec={s} rows={page} next={next} more={more} />);
 
     const results = (
-      <div id="results">
+      <div id="results" class="group/bulk">
+        {/* As Gmail: the bar for the ticked rows shows once one is ticked. */}
+        <div class="hidden group-has-[input[name=id]:checked]/bulk:block">
         <BulkForm id="bulk" action={`${subs}/bulk`} returnTo={self}>
           <label class="flex items-center gap-2 text-label font-semibold text-ink-2">
             Mark selected as
@@ -325,6 +345,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
             </select>
           </label>
         </BulkForm>
+        </div>
         {after ? (
           <p class="mb-3 text-label">
             <a href={self}>Back to the newest</a>
@@ -504,70 +525,75 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     return c.html(
       layout(
         c,
-        { title: who(r), back: { href: listUrl(subs, { form: r.form_key }), label: `${form?.title ?? r.form_key} submissions` } },
+        {
+          title: who(r),
+          back: { href: listUrl(subs, { form: r.form_key }), label: `${form?.title ?? r.form_key} submissions` },
+          sub: (
+            <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <StatusBadge value={r.status} options={STATUSES} />
+              {r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : null}
+              {r.phone ? <a href={`tel:${r.phone}`}>{r.phone}</a> : null}
+            </span>
+          ),
+        },
         subs,
-        <>
-          <div class="grid gap-4 md:grid-cols-3">
-            <div class="flex flex-col gap-4 md:col-span-2">
-              <Section title="Details">
-                <FieldList
-                  fields={[
-                    { label: "Name", value: r.name },
-                    { label: "Email", value: r.email },
-                    { label: "Phone", value: r.phone },
-                    { label: "Form", value: form?.title ?? r.form_key },
-                    { label: "Status", value: <StatusBadge value={r.status} options={STATUSES} /> },
-                    { label: "Received", value: <When at={r.created_at} timeZone={opts.timeZone} /> },
-                    { label: "Completed", value: r.completed_at ? <When at={r.completed_at} timeZone={opts.timeZone} /> : "Not yet: a booking or payment step is still to do" },
-                    { label: "Page", value: r.page },
-                    { label: "Came from", value: from },
-                    { label: "App", value: r.source },
-                    { label: "Last changed", value: r.updated_by ? <>{r.updated_by}, <When at={r.updated_at} timeZone={opts.timeZone} /></> : null },
-                  ]}
-                />
+        // As a response in Typeform or HubSpot: the answers are the page; who,
+        // when and where from sit beside them.
+        <div class="grid gap-4 md:grid-cols-3">
+          <div class="flex flex-col gap-4 md:col-span-2">
+            {price ? (
+              <Section title="Order">
+                <FieldList fields={[
+                  ...price.lines.map((l) => ({ label: l.quantity > 1 ? `${l.quantity} x ${l.label}` : l.label, value: formatMoney(l.quantity * l.unit_cents, price!.currency) })),
+                  { label: "Total before tax", value: <strong>{formatMoney(price.subtotal_cents, price.currency)}</strong> },
+                ]} />
               </Section>
-              {price ? (
-                <Section title="Order">
-                  <FieldList fields={[
-                    ...price.lines.map((l) => ({ label: l.quantity > 1 ? `${l.quantity} x ${l.label}` : l.label, value: formatMoney(l.quantity * l.unit_cents, price!.currency) })),
-                    { label: "Total before tax", value: <strong>{formatMoney(price.subtotal_cents, price.currency)}</strong> },
-                  ]} />
-                </Section>
-              ) : null}
-              <Section title="Answers">
-                {answers.length ? <FieldList fields={answers} /> : null}
-                {Object.keys(data).length ? <JsonData data={data} /> : answers.length ? null : <p class="text-ink-3">No other answers.</p>}
+            ) : null}
+            <Section title="Answers">
+              {answers.length ? <FieldList fields={answers} /> : null}
+              {Object.keys(data).length ? <JsonData data={data} /> : answers.length ? null : <p class="text-ink-3">No other answers.</p>}
+            </Section>
+            {consent && Object.keys(consent).length ? (
+              <Section title="Agreed to">
+                <ul class="list-disc pl-5">
+                  {Object.values(consent).map((t) => (
+                    <li>{t}</li>
+                  ))}
+                </ul>
               </Section>
-              {consent && Object.keys(consent).length ? (
-                <Section title="Agreed to">
-                  <ul class="list-disc pl-5">
-                    {Object.values(consent).map((t) => (
-                      <li>{t}</li>
-                    ))}
-                  </ul>
-                </Section>
-              ) : null}
-            </div>
-            <div class="flex flex-col gap-4">
-              <Section title="Status">
-                <StatusForm action={`${self}/status`} current={r.status} options={STATUSES} returnTo={self} label="Status" />
-              </Section>
-              {linked.booking ? (
-                <Section title="Booking">
-                  <p><When at={linked.booking.starts_at} timeZone={opts.timeZone} /></p>
-                  <p class="text-label text-ink-2">{linked.booking.status === "cancelled" ? "Cancelled" : linked.booking.held && !linked.payment?.label.startsWith("Paid") ? "Held until it is paid" : "Booked"}</p>
-                  {opts.links?.booking ? <p class="mt-2 text-label"><a href={opts.links.booking(linked.booking.id)}>The booking</a></p> : null}
-                </Section>
-              ) : null}
-              {linked.payment ? (
-                <Section title="Payment">
-                  <p>{linked.payment.label}</p>
-                  {opts.links?.payment ? <p class="mt-2 text-label"><a href={opts.links.payment(linked.payment.id)}>The payment</a></p> : null}
-                </Section>
-              ) : null}
-            </div>
+            ) : null}
           </div>
-        </>,
+          <div class="flex flex-col gap-4">
+            <Section title="Status">
+              <StatusForm action={`${self}/status`} current={r.status} options={STATUSES} returnTo={self} label="Status" />
+            </Section>
+            {linked.booking ? (
+              <Section title="Booking">
+                <p><When at={linked.booking.starts_at} timeZone={opts.timeZone} /></p>
+                <p class="text-label text-ink-2">{linked.booking.status === "cancelled" ? "Cancelled" : linked.booking.held && !linked.payment?.label.startsWith("Paid") ? "Held until it is paid" : "Booked"}</p>
+                {opts.links?.booking ? <p class="mt-2 text-label"><a href={opts.links.booking(linked.booking.id)}>The booking</a></p> : null}
+              </Section>
+            ) : null}
+            {linked.payment ? (
+              <Section title="Payment">
+                <p>{linked.payment.label}</p>
+                {opts.links?.payment ? <p class="mt-2 text-label"><a href={opts.links.payment(linked.payment.id)}>The payment</a></p> : null}
+              </Section>
+            ) : null}
+            <Section title="Details">
+              <FieldList
+                fields={[
+                  { label: "Form", value: form?.title ?? r.form_key },
+                  { label: "Received", value: <When at={r.created_at} timeZone={opts.timeZone} /> },
+                  { label: "Finished", value: r.completed_at ? null : "Not yet: a booking or payment step is still to do" },
+                  { label: "Page", value: r.page },
+                  { label: "Came from", value: from },
+                  { label: "Last changed", value: r.updated_by ? <>{r.updated_by}, <When at={r.updated_at} timeZone={opts.timeZone} /></> : null },
+                ]}
+              />
+            </Section>
+          </div>
+        </div>,
       ),
     );
   });
@@ -579,14 +605,12 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     const status = pickStatus(body.status, STATUSES);
     if (!status) return c.text("Choose one of the listed statuses.", 400);
     const ret = localPath(str(body.return), subs, `${subs}/${id}`);
-    const [row] = await getDb(c).sql<Item>`
+    const [row] = await getDb(c).sql`
       update submissions
       set status = ${status}, updated_at = now(), updated_by = ${c.get("user")}
       where id = ${id}::bigint
-      returning id::text as id, form_key, name, email::text as email, phone, status, page, source, created_at, completed_at,
-                updated_by::text as updated_by, created_at::text as k, null::jsonb as data`;
+      returning id`;
     if (!row) return c.notFound();
-    if (isPartial(c)) return c.html(<TableRow spec={spec(ret, !ret.includes("form="), await formTitles(getDb(c)))} row={(await withLinks(getDb(c), [row]))[0]} />);
     return c.redirect(withFlash(ret, "status"), 303);
   });
 
@@ -729,9 +753,6 @@ function Editor(props: {
   const text = (v: unknown) => (typeof v === "string" ? v : "");
   return (
     <form method="post" action={`${base}/form/${form.key}`} class="flex flex-col gap-6">
-      <p class="text-label">
-        <a href={listUrl(`${base}/submissions`, { form: form.key })}>See submissions</a>
-      </p>
       {note ? (
         <p role="alert" class={alertClass}>
           {note}
@@ -779,7 +800,7 @@ function Editor(props: {
       </Section>
       <Section title="Questions">
         <p class="mb-4 text-label text-ink-2">
-          A question's name is where its answers are stored. Renaming one starts a new column; earlier answers keep the old name.
+          A question's column is where its answers are kept. Renaming it starts a new column; earlier answers keep the old one.
         </p>
         <ol id="fields" class="flex flex-col gap-4">
           {raw.map((f, i) => {
@@ -800,14 +821,11 @@ function Editor(props: {
                       {type === "items" ? `Sells ${Array.isArray(f.items) ? f.items.length : 0} things.` : `${Array.isArray(f.fees) ? f.fees.length : 0} fees${f.tax_rate_id ? ", taxed" : ""}.`} Ask the AI to change what it sells, its prices or fees; they are kept as they are here.
                     </p>
                   ) : null}
-                  <div class="grid gap-3 sm:grid-cols-2">
+                  {/* As Google Forms lays a question out: what it asks and its type on one line, the rest under it, the moves at its foot. */}
+                  <div class="grid gap-3 sm:grid-cols-[2fr_1fr]">
                     <label class={fieldClass}>
-                      Label
+                      Question
                       <input name={`f.${i}.label`} value={text(f.label)} class={controlClass} />
-                    </label>
-                    <label class={fieldClass}>
-                      Name
-                      <input name={`f.${i}.name`} value={text(f.name)} pattern="[a-z][a-z0-9_]*" class={controlClass} />
                     </label>
                     <label class={fieldClass}>
                       Type
@@ -819,12 +837,8 @@ function Editor(props: {
                         ))}
                       </select>
                     </label>
-                    <label class="flex min-h-9 items-center gap-2 self-end">
-                      <input type="checkbox" name={`f.${i}.required`} value="yes" checked={f.required === true} class="size-4" />
-                      Required
-                    </label>
                     {/* Only a dropdown, one choice or tick boxes takes options. */}
-                    <label class={fieldClass + " hidden [fieldset:has(option[value=select]:checked)_&]:flex [fieldset:has(option[value=radio]:checked)_&]:flex [fieldset:has(option[value=checkbox]:checked)_&]:flex"}>
+                    <label class={fieldClass + " hidden sm:col-span-2 [fieldset:has(option[value=select]:checked)_&]:flex [fieldset:has(option[value=radio]:checked)_&]:flex [fieldset:has(option[value=checkbox]:checked)_&]:flex"}>
                       Options, one per line
                       <textarea name={`f.${i}.options`} rows={3} class={controlClass}>
                         {Array.isArray(f.options) ? f.options.join("\n") : ""}
@@ -832,16 +846,24 @@ function Editor(props: {
                     </label>
                     <label class={fieldClass}>
                       Help text
-                      <input name={`f.${i}.help`} value={text(f.help)} class={controlClass} />
+                      <input name={`f.${i}.help`} value={text(f.help)} placeholder="Optional" class={controlClass} />
+                    </label>
+                    <label class={fieldClass}>
+                      Column
+                      <input name={`f.${i}.name`} value={text(f.name)} pattern="[a-z][a-z0-9_]*" class={controlClass} />
                     </label>
                     {type === "booking" ? (
-                      <label class={fieldClass}>
+                      <label class={fieldClass + " sm:col-span-2"}>
                         Booking type (its page address, like intake)
                         <input name={`f.${i}.booking_type`} value={text(f.booking_type)} pattern="[a-z0-9-]+" class={controlClass} />
                       </label>
                     ) : null}
                   </div>
-                  <div class="mt-3 flex flex-wrap gap-2">
+                  <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+                    <label class="mr-auto flex items-center gap-2">
+                      <input type="checkbox" name={`f.${i}.required`} value="yes" checked={f.required === true} class="size-4" />
+                      Required
+                    </label>
                     {i > 0 ? (
                       <button name="op" value={`up:${i}`} class={buttonClass} aria-label={`Move question ${i + 1} up`}>
                         Move up
@@ -861,38 +883,33 @@ function Editor(props: {
             );
           })}
         </ol>
-        <div class="mt-4 flex flex-wrap gap-2">
-          <button name="op" value="save" class={primaryClass}>
-            Save
-          </button>
-          <button name="op" value="add" class={buttonClass}>
-            Add a question
-          </button>
-        </div>
+        <button name="op" value="add" class={buttonClass + " mt-4"}>
+          Add a question
+        </button>
       </Section>
+      {/* As Shopify's save bar: Save stays in reach however long the form is. */}
+      <div class="sticky bottom-0 -mx-4 flex justify-end border-t border-line bg-surface px-4 py-3 sm:mx-0 sm:rounded-card sm:border sm:px-4">
+        <button name="op" value="save" class={primaryClass}>
+          Save
+        </button>
+      </div>
     </form>
   );
 }
-
-function NewForm({ action, key_ = "", title = "", errors = {} }: { action: string; key_?: string; title?: string; errors?: Errors }) {
-  // The hint and any problem sit under the row, so the two fields and the
-  // button line up whatever each one has to say.
+/** "New form" in the page's head: a title, nothing else (its key is made from it). Open again when the title was refused. */
+function NewForm({ action, title = "", errors = {}, open = false }: { action: string; title?: string; errors?: Errors; open?: boolean }) {
   return (
-    <form method="post" action={action} class="mt-6">
-      <div class="flex flex-wrap items-end gap-3">
+    <details class="relative max-sm:open:basis-full" open={open}>
+      <summary class={primaryClass + " cursor-pointer list-none"}>New form</summary>
+      <form method="post" action={action} class="mt-2 flex flex-col gap-3 rounded-card border border-line bg-surface p-3 shadow-lift sm:absolute sm:right-0 sm:z-10 sm:w-72">
         <label class={fieldClass}>
-          New form title
-          <input name="title" value={title} required class={controlClass} aria-invalid={errors.title ? "true" : undefined} aria-describedby={errors.title ? "new-title-p" : undefined} />
+          Title
+          <input name="title" value={title} required autofocus placeholder="Quote request" class={controlClass}
+            aria-invalid={errors.title || errors.key ? "true" : undefined} aria-describedby={errors.title || errors.key ? "new-form-p" : undefined} />
         </label>
-        <label class={fieldClass}>
-          Key
-          <input name="key" value={key_} required pattern="[a-z0-9][a-z0-9\-]*" placeholder="quote-request" class={controlClass} aria-invalid={errors.key ? "true" : undefined} aria-describedby="new-key-help new-key-p" />
-        </label>
-        <button class={buttonClass}>Create the form</button>
-      </div>
-      <p id="new-key-help" class="mt-1 text-label text-ink-2">The key is used in the form's address. It cannot be changed later.</p>
-      <Problem id="new-title-p" text={errors.title} />
-      <Problem id="new-key-p" text={errors.key} />
-    </form>
+        <Problem id="new-form-p" text={errors.title ?? errors.key} />
+        <button class={primaryClass}>Create the form</button>
+      </form>
+    </details>
   );
 }

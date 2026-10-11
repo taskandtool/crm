@@ -395,6 +395,12 @@ export function stepsOf(fields: Field[]): Step[] {
 /** A form's address and key: lowercase letters, digits and hyphens. */
 export const FORM_KEY = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
+/** A key made from a title ("Quote request" is quote-request), or "form" when the title has no letters to use. */
+export function formKeyFrom(title: string): string {
+  const key = title.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 56).replace(/-+$/, "");
+  return key || "form";
+}
+
 /** A path on this site to send people to after a submission, or null. Never another site. */
 export function sitePath(p: unknown): string | null {
   return typeof p === "string" && /^\/(?![/\\])[^\s]*$/.test(p) && p.length <= 300 ? p : null;

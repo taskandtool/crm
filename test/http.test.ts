@@ -656,7 +656,7 @@ test("forms in the CRM: submissions by form, an order with its payment, the Inbo
 
   let html = await (await get("/forms/submissions?form=order")).text();
   assert.match(html, /<nav aria-label="CRM"/, "the CRM's own frame");
-  assert.match(html, /<a href="\/forms\/submissions" aria-current="page"[^>]*>Forms<\/a>/);
+  assert.match(html, /<a href="\/forms" aria-current="page"[^>]*>Forms<\/a>/);
   assert.match(html, /Olive Order/);
   assert.match(html, /Paid \$86\.60/);
   assert.doesNotMatch(html, /Pat Doe/, "only the order form's");

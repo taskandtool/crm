@@ -32,7 +32,7 @@ export function Layout(props: {
     ...(invoicesCfg ? [{ href: "/invoices", label: "Invoices", section: "invoices" as const }] : []),
   ];
   const setup: { href: string; label: string; section: Section }[] = [
-    { href: "/forms/submissions", label: "Forms", section: "forms" },
+    { href: "/forms", label: "Forms", section: "forms" },
     { href: "/stages", label: "Stages", section: "stages" },
   ];
   const link = (n: { href: string; label: string; section: Section }, quiet = false) => (
