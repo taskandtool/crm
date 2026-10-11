@@ -522,7 +522,8 @@ function readVisitForm(body: Record<string, unknown>, current?: Visit) {
 
 function readVisitFilter(c: C): VisitFilter {
   const view = c.req.query("view");
-  return { view: view === "done" || view === "all" ? view : "upcoming", owner: clean(c.req.query("owner"), 200), q: clean(c.req.query("q"), 100) };
+  const known = view === "done" || view === "all" || (view === "invoice" && !!invoicesCfg);
+  return { view: known ? (view as VisitFilter["view"]) : "upcoming", owner: clean(c.req.query("owner"), 200), q: clean(c.req.query("q"), 100) };
 }
 
 app.get("/visits", async (c) => {

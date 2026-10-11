@@ -53,7 +53,7 @@ export type VisitInput = {
 };
 
 /** The views of the list: what is coming up (planned, soonest first), what was done, everything. */
-export type VisitView = "upcoming" | "done" | "all";
+export type VisitView = "upcoming" | "invoice" | "done" | "all";
 export type VisitFilter = { view: VisitView; owner: string | null; q: string | null };
 
 const digitsOf = (currency: string): number => {
@@ -181,8 +181,8 @@ export function customerVisits(db: Db, customerId: string, limit = 100): Promise
 /**
  * A page of the list. Coming up is the planned ones, soonest first: one past
  * its time and not marked done sits at the top, and so does one not
- * scheduled yet, by when it was added. Done and all are newest first. Keyset
- * by when it happens, then id.
+ * scheduled yet, by when it was added. To invoice, done and all are newest
+ * first. Keyset by when it happens, then id.
  */
 export function visitsPage(db: Db, f: VisitFilter, after: Cursor | null, size: number): Promise<Visit[]> {
   const k = after?.k ?? null;
@@ -198,6 +198,21 @@ export function visitsPage(db: Db, f: VisitFilter, after: Cursor | null, size: n
         and (${pat}::text is null or v.title ilike ${pat} or c.name ilike ${pat})
         and (${k}::timestamptz is null or (coalesce(v.starts_at, v.created_at), v.id) > (${k}::timestamptz, ${id}::bigint))
       order by coalesce(v.starts_at, v.created_at) asc, v.id asc
+      limit ${size + 1}`;
+  }
+  if (f.view === "invoice") {
+    // Done and not billed yet (Jobber's "requires invoicing"): no invoice but a void one, and not free.
+    // Only asked when invoices are on, so the invoices table is there.
+    return db.sql<Visit>`
+      select v.*, to_char(coalesce(v.starts_at, v.created_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k,
+             c.name as customer_name, c.email::text as customer_email, c.phone as customer_phone
+      from customer_visits v join customers c on c.id = v.customer_id
+      where v.status = 'done' and coalesce(v.amount_cents, 1) <> 0
+        and not exists (select 1 from invoices i where i.visit_id = v.id and i.status <> 'void')
+        and (${f.owner}::citext is null or v.owner = ${f.owner}::citext)
+        and (${pat}::text is null or v.title ilike ${pat} or c.name ilike ${pat})
+        and (${k}::timestamptz is null or (coalesce(v.starts_at, v.created_at), v.id) < (${k}::timestamptz, ${id}::bigint))
+      order by coalesce(v.starts_at, v.created_at) desc, v.id desc
       limit ${size + 1}`;
   }
   const status = f.view === "done" ? "done" : null;

@@ -11,6 +11,7 @@
 // <TableRows> alone (it replaces the Load more row), any other htmx request
 // is the #results block, and a plain request is the whole page.
 import type { Child } from "hono/jsx";
+import { listUrl } from "./query";
 import { buttonClass, controlClass } from "./status";
 
 export type Column<T> = { label: string; cell: (row: T) => Child; class?: string };
@@ -153,8 +154,10 @@ export function SearchBar(props: {
   label?: string;
   placeholder?: string;
   filters?: Filter[];
+  /** Values the search carries unchanged, as a view chosen with tabs above it: { view: "done" }. */
+  keep?: Record<string, string | null | undefined>;
 }) {
-  const { action, target, q, label = "Search", placeholder, filters = [] } = props;
+  const { action, target, q, label = "Search", placeholder, filters = [], keep = {} } = props;
   const active = !!q || filters.some((f) => f.value);
   // Each select's first option ("Any status") says what it filters, so its label is for screen readers.
   return (
@@ -168,6 +171,7 @@ export function SearchBar(props: {
       hx-push-url="true"
       class="mb-4 flex flex-wrap items-center gap-2"
     >
+      {Object.entries(keep).map(([name, value]) => (value ? <input type="hidden" name={name} value={value} /> : null))}
       <label class="relative min-w-48 flex-1">
         <span class="sr-only">{label}</span>
         <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-3">
@@ -204,7 +208,7 @@ export function SearchBar(props: {
         <button class={buttonClass}>Apply</button>
       </noscript>
       {active ? (
-        <a href={action} class="px-1 text-label text-ink-2">
+        <a href={listUrl(action, keep)} class="px-1 text-label text-ink-2">
           Clear
         </a>
       ) : null}

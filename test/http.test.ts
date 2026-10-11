@@ -450,6 +450,12 @@ test("visits: add from the customer's page, the list, its page, status, CSV", as
   assert.equal((await post(`/visits/${vid}/status`, { status: "maybe", return: `/visits/${vid}` })).headers.get("location"), `/visits/${vid}?saved=pick-status`);
   assert.doesNotMatch(await (await get("/visits")).text(), /Boiler service/, "done is not coming up");
   assert.match(await (await get("/visits?view=done")).text(), /Boiler service/);
+  // Done and not billed: under To invoice (Jobber's "requires invoicing"), with the invoice as the job's next step.
+  assert.match(await (await get("/visits?view=invoice")).text(), /Boiler service/);
+  assert.match(await (await get(`/visits/${vid}`)).text(), /href="\/invoices\/new\?[^"]*" class="[^"]*bg-accent[^"]*">Invoice this visit</);
+  await db.sql`insert into invoices (visit_id, email, currency, status) values (${vid}::bigint, 'val@example.com', 'usd', 'draft')`;
+  assert.doesNotMatch(await (await get("/visits?view=invoice")).text(), /Boiler service/, "invoiced, even as a draft");
+  await db.sql`delete from invoices where visit_id = ${vid}::bigint`;
   assert.ok((await getCustomer(db, cid))!.last_contact_at, "done counts as contact");
 
   const csv = await get("/visits/export.csv?view=done&q=boiler");

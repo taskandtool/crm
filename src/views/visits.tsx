@@ -138,8 +138,10 @@ export function CustomerVisits({ c, visits, owners }: { c: Customer; visits: Vis
   );
 }
 
+/** The views, as Jobber's jobs list has them: what is coming, what is finished but not billed, what is done. */
 const VIEWS: { value: VisitFilter["view"]; label: string }[] = [
   { value: "upcoming", label: "Coming up" },
+  ...(invoicesCfg ? [{ value: "invoice" as const, label: "To invoice" }] : []),
   { value: "done", label: "Done" },
   { value: "all", label: "All" },
 ];
@@ -206,6 +208,8 @@ export function VisitResults(p: { filter: VisitFilter; rows: Visit[]; next: stri
             </>
           ) : p.filter.view === "upcoming" ? (
             `Nothing planned.`
+          ) : p.filter.view === "invoice" ? (
+            `Every finished ${one} is invoiced.`
           ) : (
             `No ${many} yet.`
           )
@@ -261,13 +265,22 @@ export function VisitsPage(p: {
     <Layout title={v.many} user={p.user} section="visits"
       actions={<a href="/visits/new" class={primaryClass}>New {one}</a>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
+      <nav aria-label="Which" class="mb-3 flex flex-wrap gap-1 text-label">
+        {VIEWS.map((v) => (
+          <a href={listUrl("/visits", { view: v.value === "upcoming" ? null : v.value, owner: p.filter.owner, q: p.filter.q })}
+            aria-current={p.filter.view === v.value ? "page" : undefined}
+            class={"rounded-control px-2 py-1 no-underline " + (p.filter.view === v.value ? "bg-panel font-semibold" : "text-ink-2 hover:bg-panel")}>
+            {v.label}
+          </a>
+        ))}
+      </nav>
       <SearchBar
         action="/visits"
         target="#results"
         q={p.filter.q}
         placeholder={`What, or a ${cfg.vocabulary.one.toLowerCase()}'s name`}
+        keep={{ view: p.filter.view === "upcoming" ? null : p.filter.view }}
         filters={[
-          { name: "view", label: "Show", options: VIEWS.filter((x) => x.value !== "upcoming"), value: p.filter.view === "upcoming" ? null : p.filter.view, any: "Coming up" },
           {
             name: "owner",
             label: ownerLabel,
@@ -312,6 +325,8 @@ export function VisitPage(p: {
     currency: r.amount_cents === null ? null : r.currency,
   };
   const custom = v.fields.map((f) => ({ label: f.label, value: fieldText(r.fields?.[f.key]) || null }));
+  // Invoiced already (a void one does not count): no second "Invoice this job".
+  const billed = !!p.money?.invoices.some((i) => i.status !== "void");
   return (
     <Layout
       title={r.title}
@@ -325,17 +340,20 @@ export function VisitPage(p: {
           {r.customer_phone ? <><span aria-hidden="true">·</span><a href={`tel:${r.customer_phone.replace(/[^0-9+]/g, "")}`} class="whitespace-nowrap text-ink-2">{r.customer_phone}</a></> : null}
         </p>
       }
+      // The next step is the blue one, as in Jobber: Mark done while it is planned; once done, the invoice it still needs.
       actions={
         <>
+          {invoicesCfg && r.status === "planned" ? <a href={listUrl("/invoices/quotes/new", doc)} class={buttonClass}>Quote this {one}</a> : null}
+          {invoicesCfg && r.status !== "cancelled" && !billed ? (
+            <a href={listUrl("/invoices/new", doc)} class={r.status === "done" ? primaryClass : buttonClass}>Invoice this {one}</a>
+          ) : null}
           {r.status === "planned" ? (
             <form method="post" action={`${self}/status`}>
               <input type="hidden" name="status" value="done" />
               <input type="hidden" name="return" value={self} />
-              <button class={buttonClass}>Mark done</button>
+              <button class={primaryClass}>Mark done</button>
             </form>
           ) : null}
-          {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", doc)} class={buttonClass}>Quote this {one}</a> : null}
-          {invoicesCfg ? <a href={listUrl("/invoices/new", doc)} class={buttonClass}>Invoice this {one}</a> : null}
         </>
       }
     >
