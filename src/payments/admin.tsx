@@ -22,7 +22,7 @@ import { teamOnly, type TeamVars } from "../admin/guard";
 import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
 import { cut, everyPage, readCursor, type Cursor } from "../admin/keyset";
 import { csvResponse, type CsvColumn } from "../admin/csv";
-import { DataTable, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
+import { DataTable, EmptyState, NoMatches, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { FieldList, Section } from "../admin/detail";
 import { Flash, withFlash, type FlashMessages } from "../admin/flash";
 import { idParam, isPartial, likePattern, listUrl, str } from "../admin/query";
@@ -219,11 +219,9 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
           more={more}
           empty={
             filtered ? (
-              <>
-                No payments match these filters. <a href={base}>Clear filters</a>
-              </>
+              <NoMatches clear={base} />
             ) : (
-              "No payments yet."
+              <EmptyState title="No payments yet.">Money paid through your forms, bookings and invoices shows here.</EmptyState>
             )
           }
         />

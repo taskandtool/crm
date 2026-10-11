@@ -17,8 +17,8 @@ export type InboxConfig = {
 export type VisitsConfig = { one: string; many: string; fields: CustomField[]; currency?: string };
 /** Deals: what one piece of work being won is called, the stages seeded on the first run, the currency of their values, and the reasons offered when one is lost. */
 export type DealsConfig = { one: string; many: string; stages: StageConfig[]; currency?: string; lost_reasons?: string[] };
-/** Follow-ups: whether a lead added from the Inbox gets a "Call back" due that day. On unless false. */
-export type FollowUpsConfig = { new_lead?: boolean };
+/** Tasks: whether a lead added from the Inbox gets a "Call back" due that day. On unless false. */
+export type TasksConfig = { new_lead?: boolean };
 /** Quotes and invoices: the name printed on them, their currency, standing terms, days to pay. */
 export type InvoicesConfig = { name: string; currency?: string; terms?: string; days_until_due?: number };
 export type Config = {
@@ -27,7 +27,7 @@ export type Config = {
   /** A customer's status (Lead, Customer, Not a fit), seeded on the first run. */
   statuses: StageConfig[];
   deals: DealsConfig;
-  follow_ups?: FollowUpsConfig;
+  tasks?: TasksConfig;
   sources: string[];
   fields: CustomField[];
   owner_label?: string;
@@ -79,9 +79,9 @@ export function validate(raw: unknown): string[] {
       out.push("deals.lost_reasons must be a list of short reasons (it may be empty)");
     }
   }
-  const fu = c.follow_ups as Partial<FollowUpsConfig> | undefined;
+  const fu = c.tasks as Partial<TasksConfig> | undefined;
   if (fu !== undefined && (!fu || typeof fu !== "object" || Array.isArray(fu) || (fu.new_lead !== undefined && typeof fu.new_lead !== "boolean"))) {
-    out.push('follow_ups must be an object, e.g. { "new_lead": true }');
+    out.push('tasks must be an object, e.g. { "new_lead": true }');
   }
 
   if (!Array.isArray(c.sources) || c.sources.some((s) => typeof s !== "string" || !s.trim())) out.push("sources must be a list of names (it may be empty)");

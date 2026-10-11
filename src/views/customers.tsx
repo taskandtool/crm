@@ -2,20 +2,20 @@
 // without it), keyset Load more, CSV of the current filter, and a form to
 // a page to add one by hand.
 import { Flash } from "../admin/flash";
-import { DataTable, SearchBar, When, type TableSpec } from "../admin/list";
+import { DataTable, EmptyState, NoMatches, SearchBar, When, type TableSpec } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { StatusBadge } from "../admin/status";
-import { cfg, ownerLabel, vocab } from "../config";
+import { cfg, dealsCfg, ownerLabel, visitsCfg, vocab } from "../config";
 import type { Customer, ListFilter } from "../crm/customers";
 import type { Stage } from "../crm/stages";
 import { Layout } from "./layout";
 import { controlClass, DueMark, Field, MESSAGES, primaryClass, stageOptions, timeZone } from "./ui";
 
-/** Each row's next follow-up (by customer id), who is still in play, and today in the business's zone: what the Next column says. */
+/** Each row's next task (by customer id), who is still in play, and today in the business's zone: what the Next column says. */
 export type NextOf = { next: Map<string, { due_on: string; due_time: string | null }>; inPlay: Set<string>; today: string };
 
 export function filterParams(f: ListFilter) {
-  return { q: f.q, stage: f.stage, tag: f.tag, owner: f.owner, show: f.archived ? "archived" : null };
+  return { q: f.q, stage: f.stage, tag: f.tag, owner: f.owner, next: f.unplanned ? "none" : null, show: f.archived ? "archived" : null };
 }
 
 export function customerSpec(stages: Stage[], n: NextOf): TableSpec<Customer> {
@@ -35,7 +35,7 @@ export function customerSpec(stages: Stage[], n: NextOf): TableSpec<Customer> {
         ),
       },
       { label: "Status", cell: (r) => <StatusBadge value={r.stage} options={options} /> },
-      { label: "Next follow-up", class: "hidden sm:table-cell", cell: (r) => (n.next.has(r.id) || n.inPlay.has(r.id) ? <DueMark next={n.next.get(r.id)} today={n.today} /> : "") },
+      { label: "Next task", class: "hidden sm:table-cell", cell: (r) => (n.next.has(r.id) || n.inPlay.has(r.id) ? <DueMark next={n.next.get(r.id)} today={n.today} /> : "") },
       {
         label: "Contact",
         class: "hidden md:table-cell",
@@ -55,7 +55,7 @@ export function customerSpec(stages: Stage[], n: NextOf): TableSpec<Customer> {
 export function Results(p: { stages: Stage[]; filter: ListFilter; rows: Customer[]; next: string | null; paged: boolean; nextOf: NextOf }) {
   const params = filterParams(p.filter);
   const self = listUrl("/customers", params);
-  const filtered = !!(p.filter.q || p.filter.stage || p.filter.tag || p.filter.owner);
+  const filtered = !!(p.filter.q || p.filter.stage || p.filter.tag || p.filter.owner || p.filter.unplanned);
   return (
     <div id="results">
       {p.paged ? (
@@ -70,14 +70,16 @@ export function Results(p: { stages: Stage[]; filter: ListFilter; rows: Customer
         next={p.next}
         more={(cur) => listUrl("/customers", { ...params, after: cur })}
         empty={
-          filtered ? (
-            <>
-              Nothing matches these filters. <a href="/customers">Clear filters</a>
-            </>
+          p.filter.unplanned && !(p.filter.q || p.filter.stage || p.filter.tag || p.filter.owner) ? (
+            <EmptyState title="Everyone has a next step.">Every open lead and {dealsCfg.one.toLowerCase()} has a task or a {visitsCfg ? visitsCfg.one.toLowerCase() : "visit"} planned.</EmptyState>
+          ) : filtered ? (
+            <NoMatches clear="/customers" />
           ) : p.filter.archived ? (
             "Nothing is archived."
           ) : (
-            `No ${vocab.many.toLowerCase()} yet. Add one, add them from the Inbox, or ask the AI to import your spreadsheet.`
+            <EmptyState title={`No ${vocab.many.toLowerCase()} yet.`} action={<a href="/customers/new" class={primaryClass}>New {vocab.one.toLowerCase()}</a>}>
+              Add one here, add them from the Inbox as they get in touch, or ask the AI to import your spreadsheet.
+            </EmptyState>
           )
         }
       />
@@ -119,6 +121,8 @@ export function CustomersPage(p: {
             value: p.filter.owner,
             any: "Anyone",
           },
+          // As Pipedrive marks a deal with no activity: the ones in play with nothing planned next.
+          { name: "next", label: "Next step", options: [{ value: "none", label: "No next step" }], value: p.filter.unplanned ? "none" : null, any: "Any next step" },
           { name: "show", label: "Show", options: [{ value: "archived", label: "Archived" }], value: p.filter.archived ? "archived" : null, any: "Active" },
         ]}
       />

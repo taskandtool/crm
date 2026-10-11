@@ -12,11 +12,11 @@ import { teamOnly } from "./admin/guard";
 import { cut, everyPage } from "./admin/keyset";
 import { TableRows } from "./admin/list";
 import { idParam, isPartial, listUrl, localPath, str } from "./admin/query";
-import { cfg, dealsCfg, invoicesCfg, newLeadFollowUp, showBooking, visitsCfg, KEY } from "./config";
+import { cfg, dealsCfg, invoicesCfg, newLeadTask, showBooking, visitsCfg, KEY } from "./config";
 import { normalizeEmail } from "./data/email";
 import {
-  createCustomer, facets, findMatch, getCustomer, listPage, readListCursor, saveDetails, sentTo, setArchived, setStage,
-  type Customer, type ListFilter,
+  createCustomer, customerChoices, facets, findMatch, getCustomer, listPage, readListCursor, saveDetails, sentTo, setArchived, setStage,
+  NO_FILTER, type Customer, type ListFilter,
 } from "./crm/customers";
 import { csvColumns } from "./crm/columns";
 import { readFields } from "./crm/fields";
@@ -24,9 +24,9 @@ import { everythingFrom } from "./crm/history";
 import { addFromInbox, formChoices, inboxPage, markDone, readInboxCursor, type InboxKind } from "./crm/inbox";
 import { board, createDeal, customerDeals, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
 import {
-  addFollowUp, customerFollowUps, doneFollowUp, followUpCounts, getFollowUp, inPlay, listFollowUps, moveFollowUp, nextFollowUps, nothingPlanned,
-  pickFollowUpKind, readDay, readTime, FOLLOW_UP_VIEWS, type FollowUpView,
-} from "./crm/follow-ups";
+  addTask, customerTasks, doneTask, taskCounts, getTask, inPlay, listTasks, moveTask, nextTasks,
+  pickTaskKind, readDay, readTime, TASK_VIEWS, type TaskView,
+} from "./crm/tasks";
 import { overview } from "./crm/overview";
 import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
 import { addNote, listNotes, pickNoteKind } from "./crm/notes";
@@ -42,7 +42,7 @@ import { InboxPage, InboxResults, InboxRows } from "./views/inbox";
 import { Layout, WaitingView, type Section as NavSection } from "./views/layout";
 import type { Frame } from "./admin/layout";
 import { Board, CLOSED_DAYS, DealPage, DealsPage, NewDealPage, PER_COLUMN, type BoardData } from "./views/deals";
-import { FollowUpsPage } from "./views/follow-ups";
+import { NewTaskPage, TasksPage } from "./views/tasks";
 import { MergePage } from "./views/merge";
 import { StagesPage } from "./views/stages";
 import { bookingAdmin } from "./booking/admin";
@@ -193,14 +193,14 @@ app.get("/", async (c) => {
 });
 
 /**
- * A lead's follow-up: "Call back <name>" today, for whoever added them, unless
+ * A lead's task: "Call back <name>" today, for whoever added them, unless
  * crm.config.json turns it off or they already have one open.
  */
 async function newLeadCall(db: Db, customer: Customer, dealId: string | null, user: string) {
-  if (!newLeadFollowUp) return;
-  const open = await customerFollowUps(db, customer.id);
+  if (!newLeadTask) return;
+  const open = await customerTasks(db, customer.id);
   if (open.open.length) return;
-  await addFollowUp(db, customer.id, { kind: "call", title: `Call back ${customer.name}`, due_on: today(), due_time: null, owner: user, deal_id: dealId }, user);
+  await addTask(db, customer.id, { kind: "call", title: `Call back ${customer.name}`, due_on: today(), due_time: null, owner: user, deal_id: dealId }, user);
 }
 
 app.post("/inbox/add", async (c) => {
@@ -264,6 +264,7 @@ async function readFilter(c: C): Promise<ListFilter> {
     tag: clean(c.req.query("tag"), 40),
     owner: clean(c.req.query("owner"), 200),
     archived: c.req.query("show") === "archived",
+    unplanned: c.req.query("next") === "none",
   };
 }
 
@@ -274,7 +275,7 @@ app.get("/customers", async (c) => {
   const [stages, rows] = await Promise.all([listStages(db, "customers"), listPage(db, f, after, PAGE)]);
   const { page, next } = cut(rows, PAGE);
   const ids = page.map((r) => r.id);
-  const [dues, playing] = await Promise.all([nextFollowUps(db, ids), inPlay(db, ids)]);
+  const [dues, playing] = await Promise.all([nextTasks(db, ids), inPlay(db, ids)]);
   const nextOf = { next: dues, inPlay: playing, today: today() };
   if (isPartial(c) && after) {
     const more = (cur: string) => listUrl("/customers", { ...filterParams(f), after: cur });
@@ -344,16 +345,16 @@ app.get("/customers/:id", async (c) => {
   if (!customer) return c.notFound();
   // A record merged into another opens that one.
   if (customer.merged_into) return c.redirect(`/customers/${customer.merged_into}`, 302);
-  const [stages, notes, visits, history, f, money, deals, dealStages, followUps] = await Promise.all([
+  const [stages, notes, visits, history, f, money, deals, dealStages, tasks] = await Promise.all([
     listStages(db, "customers"), listNotes(db, customer.id), visitsCfg ? customerVisits(db, customer.id, CUSTOMER_VISITS) : [], everythingFrom(db, customer), facets(db),
     invoicesCfg ? moneyFor(db, customer) : null,
-    customerDeals(db, customer.id), listStages(db, "deals"), customerFollowUps(db, customer.id),
+    customerDeals(db, customer.id), listStages(db, "deals"), customerTasks(db, customer.id),
   ]);
   const duplicates = customer.archived_at ? [] : await possibleDuplicates(db, customer);
   const owners = [...new Set([c.var.user, ...f.owners])];
   return c.html(
     <CustomerPage user={c.var.user} customer={customer} stages={stages} notes={notes} visits={visits} history={history.items} present={history.present} owners={owners}
-      deals={deals} dealStages={dealStages} followUps={followUps} today={today()}
+      deals={deals} dealStages={dealStages} tasks={tasks} today={today()}
       money={money} duplicates={duplicates} flash={flashOf(c)} />,
   );
 });
@@ -417,19 +418,19 @@ app.post("/customers/:id/deals", async (c) => {
   return deal ? back(c, `/deals/${deal.id}`, input.invalid ? "invalid" : "deal-added") : c.notFound();
 });
 
-// A follow-up for a customer, from their page, a deal's page, or Nothing planned.
-app.post("/customers/:id/follow-ups", async (c) => {
+// A task for a customer, from their page or a deal's page.
+app.post("/customers/:id/tasks", async (c) => {
   const id = idParam(c.req.param("id"));
   if (!id) return c.notFound();
   const body = await c.req.parseBody();
   const ret = localPath(str(body.return), "", `/customers/${id}`);
   const title = clean(body.title, 200);
   const on = readDay(body.on);
-  if (!title || !on) return back(c, ret, "fu-needs");
-  const f = await addFollowUp(c.var.db, id, {
-    kind: pickFollowUpKind(body.kind) ?? "call", title, due_on: on, due_time: readTime(body.at), owner: clean(body.owner, 200), deal_id: clean(body.deal, 20),
+  if (!title || !on) return back(c, ret, "task-needs");
+  const f = await addTask(c.var.db, id, {
+    kind: pickTaskKind(body.kind) ?? "call", title, due_on: on, due_time: readTime(body.at), owner: clean(body.owner, 200), deal_id: clean(body.deal, 20),
   }, c.var.user);
-  return f ? back(c, ret, "fu-added") : c.notFound();
+  return f ? back(c, ret, "task-added") : c.notFound();
 });
 
 app.post("/customers/:id/notes", async (c) => {
@@ -452,7 +453,7 @@ app.get("/customers/:id/merge", async (c) => {
   const q = clean(c.req.query("q"), 100);
   const other = idParam(c.req.query("other"));
   const [found, duplicates, preview] = await Promise.all([
-    q ? listPage(db, { q, stage: null, tag: null, owner: null, archived: false }, null, 20) : [],
+    q ? listPage(db, { ...NO_FILTER, q }, null, 20) : [],
     possibleDuplicates(db, keep, 10),
     other && other !== keep.id ? mergePreview(db, keep.id, other) : null,
   ]);
@@ -799,29 +800,54 @@ if (invoicesCfg) {
   );
 }
 
-// ---- follow-ups -----------------------------------------------------------
+// ---- tasks -----------------------------------------------------------
 
-app.get("/follow-ups", async (c) => {
+app.get("/tasks", async (c) => {
   const db = c.var.db;
   const asked = c.req.query("view");
-  const view: FollowUpView = FOLLOW_UP_VIEWS.includes(asked as FollowUpView) ? (asked as FollowUpView) : "due";
+  const view: TaskView = TASK_VIEWS.includes(asked as TaskView) ? (asked as TaskView) : "today";
   const mine = c.req.query("who") !== "all";
   const owner = mine ? c.var.user : null;
   const day = today();
-  const [rows, unplanned, counts] = await Promise.all([
-    view === "none" ? [] : listFollowUps(db, view, day, owner, PAGE),
-    view === "none" ? nothingPlanned(db, owner, PAGE, cfg.time_zone) : [],
-    followUpCounts(db, day, owner),
-  ]);
-  return c.html(
-    <FollowUpsPage user={c.var.user} view={view} mine={mine} today={day} rows={rows.slice(0, PAGE)} unplanned={unplanned.slice(0, PAGE)}
-      more={rows.length > PAGE || unplanned.length > PAGE} counts={counts} flash={flashOf(c)} />,
-  );
+  const [rows, counts] = await Promise.all([listTasks(db, view, day, owner, PAGE), taskCounts(db, day, owner)]);
+  return c.html(<TasksPage user={c.var.user} view={view} mine={mine} today={day} rows={rows.slice(0, PAGE)} more={rows.length > PAGE} counts={counts} flash={flashOf(c)} />);
 });
 
-// The nav's count: the viewer's follow-ups due today and overdue (htmx, after the page loads).
-app.get("/follow-ups/count", async (c) => {
-  const n = await followUpCounts(c.var.db, today(), c.var.user);
+app.get("/tasks/new", async (c) => {
+  const [f, customers] = await Promise.all([facets(c.var.db), customerChoices(c.var.db)]);
+  return c.html(<NewTaskPage user={c.var.user} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} customers={customers} flash={flashOf(c)} />);
+});
+
+// A task from the Tasks page: for the customer picked, or for someone new
+// (matched by email or phone, or added, as a new job does).
+app.post("/tasks", async (c) => {
+  const db = c.var.db;
+  const body = await c.req.parseBody();
+  const title = clean(body.title, 200);
+  const on = readDay(body.on);
+  if (!title || !on) return back(c, "/tasks/new", "task-needs");
+  const picked = idParam(str(body.customer));
+  let customerId: string;
+  if (picked) {
+    const found = await getCustomer(db, picked);
+    if (!found) return back(c, "/tasks/new", "gone");
+    customerId = found.id;
+  } else {
+    const { name, email, phone } = personOf(body);
+    if (!name) return back(c, "/tasks/new", "name-needed");
+    const status = await firstOpenStage(db, "customers");
+    if (!status) return back(c, "/stages", "last-open");
+    customerId = (await createCustomer(db, { name, email, phone, stage: status.key }, c.var.user)).customer.id;
+  }
+  const t = await addTask(db, customerId, {
+    kind: pickTaskKind(body.kind) ?? "call", title, due_on: on, due_time: readTime(body.at), owner: clean(body.owner, 200) ?? c.var.user, deal_id: null,
+  }, c.var.user);
+  return t ? back(c, "/tasks", "task-added") : back(c, "/tasks/new", "gone");
+});
+
+// The nav's count: the viewer's tasks due today and overdue (htmx, after the page loads).
+app.get("/tasks/count", async (c) => {
+  const n = await taskCounts(c.var.db, today(), c.var.user);
   const due = n.overdue + n.today;
   if (!due) return c.html(<span></span>);
   return c.html(
@@ -831,27 +857,27 @@ app.get("/follow-ups/count", async (c) => {
   );
 });
 
-app.post("/follow-ups/:id/done", async (c) => {
+app.post("/tasks/:id/done", async (c) => {
   const id = idParam(c.req.param("id"));
   if (!id) return c.notFound();
   const body = await c.req.parseBody();
-  const r = await doneFollowUp(c.var.db, id, clean(body.outcome, 10_000), c.var.user);
+  const r = await doneTask(c.var.db, id, clean(body.outcome, 10_000), c.var.user);
   if (!r) return c.notFound();
-  return back(c, localPath(str(body.return), "", `/customers/${r.followUp.customer_id}`), r.already ? "fu-already" : "fu-done");
+  return back(c, localPath(str(body.return), "", `/customers/${r.task.customer_id}`), r.already ? "task-already" : "task-done");
 });
 
-app.post("/follow-ups/:id/move", async (c) => {
+app.post("/tasks/:id/move", async (c) => {
   const id = idParam(c.req.param("id"));
   if (!id) return c.notFound();
   const body = await c.req.parseBody();
-  const f = await getFollowUp(c.var.db, id);
+  const f = await getTask(c.var.db, id);
   if (!f) return c.notFound();
   const ret = localPath(str(body.return), "", `/customers/${f.customer_id}`);
   const on = readDay(body.on);
-  if (!on) return back(c, ret, "fu-needs");
+  if (!on) return back(c, ret, "task-needs");
   // A time box sent (even empty) sets the time; the Tomorrow and Next week buttons send none and keep it.
   const at = "at" in body ? readTime(body.at) : undefined;
-  return back(c, ret, (await moveFollowUp(c.var.db, id, on, at, c.var.user)) ? "fu-moved" : "fu-already");
+  return back(c, ret, (await moveTask(c.var.db, id, on, at, c.var.user)) ? "task-moved" : "task-already");
 });
 
 // ---- deals ----------------------------------------------------------------
@@ -887,7 +913,7 @@ async function boardData(c: C): Promise<BoardData> {
     listStages(db, "deals"),
     board(db, { per: PER_COLUMN, closedDays: CLOSED_DAYS, currency: dealsCfg.currency }),
   ]);
-  return { stages, cards, totals, next: await nextFollowUps(db, [...new Set(cards.map((d) => d.customer_id))]), today: today() };
+  return { stages, cards, totals, next: await nextTasks(db, [...new Set(cards.map((d) => d.customer_id))]), today: today() };
 }
 
 app.get("/deals", async (c) => {
@@ -919,9 +945,9 @@ app.get("/deals/:id", async (c) => {
   const id = idParam(c.req.param("id"));
   const deal = id ? await getDeal(db, id) : null;
   if (!deal) return c.notFound();
-  const [stages, followUps, deals, f, quotes, jobs] = await Promise.all([
+  const [stages, tasks, deals, f, quotes, jobs] = await Promise.all([
     listStages(db, "deals"),
-    customerFollowUps(db, deal.customer_id),
+    customerTasks(db, deal.customer_id),
     customerDeals(db, deal.customer_id),
     facets(db),
     invoicesCfg ? db.sql<{ id: string }>`select id::text as id from quotes where deal_id = ${deal.id}::bigint order by created_at desc, id desc` : null,
@@ -929,7 +955,7 @@ app.get("/deals/:id", async (c) => {
   ]);
   const full = quotes ? (await Promise.all(quotes.map((q) => quoteById(db, q.id)))).filter((q): q is NonNullable<typeof q> => !!q) : null;
   return c.html(
-    <DealPage user={c.var.user} deal={deal} stages={stages} followUps={followUps} openDeals={deals.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title }))}
+    <DealPage user={c.var.user} deal={deal} stages={stages} tasks={tasks} openDeals={deals.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title }))}
       quotes={full} jobs={jobs} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} flash={flashOf(c)} />,
   );
 });

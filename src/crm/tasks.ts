@@ -1,28 +1,28 @@
-// Follow-ups: the next thing to do for a customer, and the deal it is for,
-// if any. A call, email, meeting, text or task, due on a day in the
+// Tasks: the next thing to do for a customer, and the deal it is for,
+// if any. A call, email, meeting, text or to-do, due on a day in the
 // business's zone (a date, so "today" and "overdue" never cross a DST
 // boundary), at a time or any time that day, by one person. Ticking one off
 // writes it on the customer's timeline as a note of the same kind, so a call
 // done moves their last contact as any call does. Never deleted.
 //
 // "Nothing planned" is everyone in play (an open status, or an open deal)
-// with no open follow-up and no visit planned from today on: the list
+// with no open task and no visit planned from today on: the list
 // nobody should be on for long, quietest first.
 import { q, type Db } from "../data/db";
 import { addDays } from "../reports/sql";
 
 export { addDays };
 
-export const FOLLOW_UP_KINDS = ["call", "email", "meeting", "text", "task"] as const;
-export type FollowUpKind = (typeof FOLLOW_UP_KINDS)[number];
-export const FOLLOW_UP_LABELS: Record<FollowUpKind, string> = { call: "Call", email: "Email", meeting: "Meeting", text: "Text", task: "To do" };
-export const pickFollowUpKind = (v: unknown): FollowUpKind | null => (FOLLOW_UP_KINDS.includes(v as FollowUpKind) ? (v as FollowUpKind) : null);
+export const TASK_KINDS = ["call", "email", "meeting", "text", "task"] as const;
+export type TaskKind = (typeof TASK_KINDS)[number];
+export const TASK_LABELS: Record<TaskKind, string> = { call: "Call", email: "Email", meeting: "Meeting", text: "Text", task: "To do" };
+export const pickTaskKind = (v: unknown): TaskKind | null => (TASK_KINDS.includes(v as TaskKind) ? (v as TaskKind) : null);
 
-export type FollowUp = {
+export type Task = {
   id: string;
   customer_id: string;
   deal_id: string | null;
-  kind: FollowUpKind;
+  kind: TaskKind;
   title: string;
   /** YYYY-MM-DD in the business's zone. */
   due_on: string;
@@ -39,8 +39,8 @@ export type FollowUp = {
   deal_title: string | null;
 };
 
-export type FollowUpInput = {
-  kind: FollowUpKind;
+export type TaskInput = {
+  kind: TaskKind;
   title: string;
   due_on: string;
   due_time: string | null;
@@ -49,8 +49,8 @@ export type FollowUpInput = {
 };
 
 /** The views of the list. */
-export const FOLLOW_UP_VIEWS = ["due", "upcoming", "none"] as const;
-export type FollowUpView = (typeof FOLLOW_UP_VIEWS)[number];
+export const TASK_VIEWS = ["today", "upcoming"] as const;
+export type TaskView = (typeof TASK_VIEWS)[number];
 export const UPCOMING_DAYS = 14;
 
 const ID = /^\d{1,18}$/;
@@ -112,9 +112,9 @@ function withCols(strings: TemplateStringsArray): TemplateStringsArray {
 }
 const sql = <T extends Record<string, any>>(db: Db) => (strings: TemplateStringsArray, ...values: unknown[]) => db.sql<T>(withCols(strings), ...values);
 
-export async function getFollowUp(db: Db, id: string): Promise<FollowUp | null> {
+export async function getTask(db: Db, id: string): Promise<Task | null> {
   if (!ID.test(id)) return null;
-  const [f] = await sql<FollowUp>(db)`select {select} {from} where f.id = ${id}::bigint`;
+  const [f] = await sql<Task>(db)`select {select} {from} where f.id = ${id}::bigint`;
   return f ?? null;
 }
 
@@ -122,7 +122,7 @@ export async function getFollowUp(db: Db, id: string): Promise<FollowUp | null> 
  * Add one for a customer. A deal named must be theirs, or it is left off.
  * Null when the customer does not exist.
  */
-export async function addFollowUp(db: Db, customerId: string, f: FollowUpInput, user: string): Promise<FollowUp | null> {
+export async function addTask(db: Db, customerId: string, f: TaskInput, user: string): Promise<Task | null> {
   if (!ID.test(customerId)) return null;
   const deal = f.deal_id && ID.test(f.deal_id) ? f.deal_id : null;
   const [made] = await db.sql<{ id: string }>`
@@ -131,7 +131,7 @@ export async function addFollowUp(db: Db, customerId: string, f: FollowUpInput, 
            ${f.kind}, ${f.title}, ${f.due_on}::date, ${f.due_time}::time, ${f.owner}::citext, ${user}, ${user}
     from customers c where c.id = ${customerId}::bigint
     returning id::text as id`;
-  return made ? getFollowUp(db, made.id) : null;
+  return made ? getTask(db, made.id) : null;
 }
 
 /**
@@ -140,7 +140,7 @@ export async function addFollowUp(db: Db, customerId: string, f: FollowUpInput, 
  * call, email, meeting or text moves their last contact. Null when it does
  * not exist; `already` when it was done before.
  */
-export async function doneFollowUp(db: Db, id: string, outcome: string | null, user: string): Promise<{ followUp: FollowUp; already: boolean } | null> {
+export async function doneTask(db: Db, id: string, outcome: string | null, user: string): Promise<{ task: Task; already: boolean } | null> {
   if (!ID.test(id)) return null;
   const said = (outcome ?? "").trim().slice(0, 10_000);
   const [done] = await db.transaction([
@@ -160,12 +160,12 @@ export async function doneFollowUp(db: Db, id: string, outcome: string | null, u
       where c.id = (select customer_id from follow_ups where id = ${id}::bigint)
         and c.last_contact_at is distinct from greatest(c.last_contact_at, (select max(n.happened_at) from customer_notes n where n.customer_id = c.id and n.kind <> 'note'))`,
   ]);
-  const f = await getFollowUp(db, id);
-  return f ? { followUp: f, already: done.length === 0 } : null;
+  const f = await getTask(db, id);
+  return f ? { task: f, already: done.length === 0 } : null;
 }
 
 /** Move an open one to another day (and time, when given; null for any time). False when it is done or missing. */
-export async function moveFollowUp(db: Db, id: string, dueOn: string, dueTime: string | null | undefined, user: string): Promise<boolean> {
+export async function moveTask(db: Db, id: string, dueOn: string, dueTime: string | null | undefined, user: string): Promise<boolean> {
   if (!ID.test(id)) return false;
   const keep = dueTime === undefined;
   const rows = await db.sql`
@@ -178,25 +178,25 @@ export async function moveFollowUp(db: Db, id: string, dueOn: string, dueTime: s
 }
 
 /**
- * The open ones in a view, soonest first: due (today and every day before
- * it, so nothing overdue hides) or upcoming (the next UPCOMING_DAYS days).
+ * The open ones in a view, soonest first: today (and every day before it,
+ * so nothing overdue hides) or upcoming (the next UPCOMING_DAYS days).
  * `owner` narrows to one person's; `limit` and one more.
  */
-export async function listFollowUps(db: Db, view: Exclude<FollowUpView, "none">, today: string, owner: string | null, limit = 100): Promise<FollowUp[]> {
+export async function listTasks(db: Db, view: TaskView, today: string, owner: string | null, limit = 100): Promise<Task[]> {
   const until = addDays(today, UPCOMING_DAYS);
-  return sql<FollowUp>(db)`
+  return sql<Task>(db)`
     select {select} {from}
     where f.done_at is null and c.archived_at is null
       and (${owner}::text is null or f.owner = ${owner}::citext)
       and case ${view}::text
-            when 'due' then f.due_on <= ${today}::date
+            when 'today' then f.due_on <= ${today}::date
             else f.due_on > ${today}::date and f.due_on <= ${until}::date end
     order by f.due_on, f.due_time nulls last, f.id
     limit ${limit + 1}`;
 }
 
 /** How many are overdue and due today: everyone's, or one person's. */
-export async function followUpCounts(db: Db, today: string, owner: string | null): Promise<{ overdue: number; today: number }> {
+export async function taskCounts(db: Db, today: string, owner: string | null): Promise<{ overdue: number; today: number }> {
   const [r] = await db.sql<{ overdue: number; today: number }>`
     select count(*) filter (where f.due_on < ${today}::date)::int as overdue,
            count(*) filter (where f.due_on = ${today}::date)::int as today
@@ -207,17 +207,17 @@ export async function followUpCounts(db: Db, today: string, owner: string | null
 }
 
 /** A customer's open ones, soonest first, and the last few done. */
-export async function customerFollowUps(db: Db, customerId: string): Promise<{ open: FollowUp[]; done: FollowUp[] }> {
+export async function customerTasks(db: Db, customerId: string): Promise<{ open: Task[]; done: Task[] }> {
   if (!ID.test(customerId)) return { open: [], done: [] };
   const [open, done] = await Promise.all([
-    sql<FollowUp>(db)`select {select} {from} where f.customer_id = ${customerId}::bigint and f.done_at is null order by f.due_on, f.due_time nulls last, f.id`,
-    sql<FollowUp>(db)`select {select} {from} where f.customer_id = ${customerId}::bigint and f.done_at is not null order by f.done_at desc, f.id desc limit 5`,
+    sql<Task>(db)`select {select} {from} where f.customer_id = ${customerId}::bigint and f.done_at is null order by f.due_on, f.due_time nulls last, f.id`,
+    sql<Task>(db)`select {select} {from} where f.customer_id = ${customerId}::bigint and f.done_at is not null order by f.done_at desc, f.id desc limit 5`,
   ]);
   return { open, done };
 }
 
 /** Each customer's next open one: what a pipeline card and a list row mark. */
-export async function nextFollowUps(db: Db, customerIds: string[]): Promise<Map<string, { due_on: string; due_time: string | null }>> {
+export async function nextTasks(db: Db, customerIds: string[]): Promise<Map<string, { due_on: string; due_time: string | null }>> {
   const ids = customerIds.filter((x) => ID.test(x));
   if (!ids.length) return new Map();
   const rows = await db.sql<{ customer_id: string; due_on: string; due_time: string | null }>`
@@ -264,7 +264,7 @@ export type Unplanned = {
 
 /**
  * Everyone in play with nothing planned: an open status or an open deal, no
- * open follow-up, no visit planned from today on. Quietest first (their last
+ * open task, no visit planned from today on. Quietest first (their last
  * contact, or when they were added). `owner` narrows to the customers one
  * person looks after, or whose open deal they own. Days are calendar days in
  * `timeZone`: someone added late yesterday was added yesterday.

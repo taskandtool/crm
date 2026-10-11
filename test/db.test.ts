@@ -13,7 +13,7 @@ import { parseCsv } from "../src/crm/csv-read";
 import { guessMap, planRows, runImport } from "../src/crm/importer";
 import { addFromInbox, inboxPage, markDone, readInboxCursor, type InboxRow } from "../src/crm/inbox";
 import { addNote, listNotes } from "../src/crm/notes";
-import { nothingPlanned } from "../src/crm/follow-ups";
+import { nothingPlanned } from "../src/crm/tasks";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, restoreStage, seedStages } from "../src/crm/stages";
 import { missingSentence, present } from "../src/crm/tables";
 import { addVisit, bookingsWithoutJob, customerVisits, saveVisit, setVisitStatus, visitFromBooking, visitsPage, type VisitInput } from "../src/crm/visits";
@@ -356,7 +356,7 @@ test("Add as customer keeps what the person gave: address, custom fields, a phon
   assert.equal(paid!.customer.phone, "555 818 4545", "the latest non-empty phone, spam left out");
 });
 
-test("nothing planned: everyone in play with no follow-up and nothing booked", async (t) => {
+test("nothing planned: everyone in play with no task and nothing booked", async (t) => {
   if (skip) return t.skip(skip);
   const { customer } = await createCustomer(db, { name: "Quiet", email: "quiet@example.com", stage: "new", last_contact_at: "2026-01-01T00:00:00Z" }, ME);
   assert.ok((await nothingPlanned(db, null, 500)).some((c) => c.id === customer.id), "an open status with nothing planned");
@@ -553,7 +553,7 @@ test("visits: planned, done and cancelled; done counts as contact; the list's vi
   assert.equal(later.starts_at!.toISOString(), "2099-01-15T15:30:00.000Z", "a wall time in the business's zone");
   assert.equal(later.customer_name, "Vi Sit");
   assert.equal((await getCustomer(db, customer.id))!.last_contact_at, null, "planned is not contact");
-  // Someone with a visit coming up is not waiting on a follow-up.
+  // Someone with a visit coming up is not waiting on a task.
   await db.sql`update customers set last_contact_at = now() - interval '60 days' where id = ${customer.id}::bigint`;
   assert.ok(!(await nothingPlanned(db, null, 500)).some((c) => c.id === customer.id));
 

@@ -3,7 +3,7 @@ import { dealsCfg, visitsCfg } from "../src/config";
 import { createDeal, customerDeals, getDeal, listDeals, saveDeal, setDealArchived, setDealStage, setLostReason, type Deal, type DealInput } from "../src/crm/deals";
 import { firstOfKind, firstOpenStage, listStages, resolveStage } from "../src/crm/stages";
 import { clean, money } from "../src/crm/text";
-import { readDay } from "../src/crm/follow-ups";
+import { readDay } from "../src/crm/tasks";
 import { amountText, parseAmount, visitFromDeal } from "../src/crm/visits";
 import { done, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, resolveCustomer, usage, who, withDb } from "./lib";
 
@@ -111,7 +111,7 @@ await withDb(async (db) => {
           d.notes ? `notes: ${d.notes}` : "",
           `added ${local(d.created_at)}${d.created_by ? " by " + d.created_by : ""}`,
         ].filter(Boolean),
-        next: `node scripts/follow-ups.mjs list --customer ${d.customer_id}`,
+        next: `node scripts/tasks.mjs list --customer ${d.customer_id}`,
       });
     }
 
@@ -125,7 +125,7 @@ await withDb(async (db) => {
       if (same) return result(same, `already here, not added: ${fmt(same)}`, { lines: ["an open one with that title for them; left alone"], next: show(same.id) });
       const input: DealInput = { title, value_cents: valueFlag(null), currency: dealsCfg.currency, owner: ownerOf(), expected_close: closeFlag(null), notes: clean(flag(a, "notes"), 10_000) };
       const d = (await createDeal(db, c.id, input, st.key, user)) ?? fail(`${at}: no customer ${c.id}`, "node scripts/customers.mjs list");
-      return result(d, `added ${fmt(d)}`, { next: `node scripts/follow-ups.mjs add ${c.id} "Call ${c.name}" --on tomorrow --deal ${d.id}` });
+      return result(d, `added ${fmt(d)}`, { next: `node scripts/tasks.mjs add ${c.id} "Call ${c.name}" --on tomorrow --deal ${d.id}` });
     }
 
     case "update": {

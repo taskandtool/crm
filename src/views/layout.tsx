@@ -4,7 +4,7 @@
 import type { Child } from "hono/jsx";
 import { dealsCfg, invoicesCfg, showBooking, visitsCfg, vocab } from "../config";
 
-export type Section = "inbox" | "follow-ups" | "deals" | "customers" | "visits" | "bookings" | "forms" | "invoices" | "stages";
+export type Section = "inbox" | "tasks" | "deals" | "customers" | "visits" | "bookings" | "forms" | "invoices" | "stages";
 
 export function Layout(props: {
   title: string;
@@ -24,7 +24,7 @@ export function Layout(props: {
   // The daily work; Forms and Stages are set up once and sit to the right, quieter.
   const nav: { href: string; label: string; section: Section }[] = [
     { href: "/", label: "Inbox", section: "inbox" },
-    { href: "/follow-ups", label: "Follow-ups", section: "follow-ups" },
+    { href: "/tasks", label: "Tasks", section: "tasks" },
     { href: "/deals", label: dealsCfg.many, section: "deals" },
     { href: "/customers", label: vocab.many, section: "customers" },
     ...(visitsCfg ? [{ href: "/visits", label: visitsCfg.many, section: "visits" as const }] : []),
@@ -42,8 +42,8 @@ export function Layout(props: {
       class={"shrink-0 rounded-control px-2 py-1 no-underline " + (section === n.section ? "bg-panel font-semibold" : (quiet ? "text-label text-ink-3" : "text-ink-2") + " hover:bg-canvas hover:text-ink")}
     >
       {n.label}
-      {/* How many follow-ups of mine are due, and what is in the Inbox's To do: filled in after the page loads so no page waits on them. */}
-      {n.section === "follow-ups" ? <span hx-get="/follow-ups/count" hx-trigger="load" hx-swap="outerHTML"></span> : null}
+      {/* How many tasks of mine are due, and what is in the Inbox's To do: filled in after the page loads so no page waits on them. */}
+      {n.section === "tasks" ? <span hx-get="/tasks/count" hx-trigger="load" hx-swap="outerHTML"></span> : null}
       {n.section === "inbox" ? <span hx-get="/inbox/count" hx-trigger="load" hx-swap="outerHTML"></span> : null}
     </a>
   );

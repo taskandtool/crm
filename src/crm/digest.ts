@@ -1,4 +1,4 @@
-// The morning email: each team member with follow-ups due gets one message,
+// The morning email: each team member with tasks due gets one message,
 // at or after `hour` in the business's zone, listing what is overdue and what
 // is due today, and how many leads came in since yesterday. Through a `Send`
 // (booking/notify.ts; the owner's connected sender), never Task & Tool's.
@@ -7,11 +7,11 @@
 // Each person's email is claimed in follow_up_digests (email, day) before it
 // is sent, so a job run every hour sends it once a day, and a failed send is
 // recorded, not retried into a flood. Only owners written as an email
-// address get one; a follow-up whose owner is a name has nobody to mail.
+// address get one; a task whose owner is a name has nobody to mail.
 import { q, type Db } from "../data/db";
 import type { Send } from "../booking/notify";
 import { todayIn } from "../reports/sql";
-import { FOLLOW_UP_LABELS, type FollowUpKind } from "./follow-ups";
+import { TASK_LABELS, type TaskKind } from "./tasks";
 import { present } from "./tables";
 import { nowIn } from "./text";
 
@@ -19,7 +19,7 @@ export const DEFAULT_HOUR = 7;
 
 export type DigestRun = { sent: number; none: number; failed: number; errors: string[]; early: boolean };
 
-type Due = { owner: string; kind: FollowUpKind; title: string; due_on: string; due_time: string | null; customer_name: string; customer_phone: string | null };
+type Due = { owner: string; kind: TaskKind; title: string; due_on: string; due_time: string | null; customer_name: string; customer_phone: string | null };
 
 /** Send every morning email due now. */
 export async function sendDigests(db: Db, send: Send, opts: { timeZone: string; hour?: number; now?: Date }): Promise<DigestRun> {
@@ -60,18 +60,18 @@ export function digestMessage(to: string, items: Due[], today: string, leads: nu
   const overdue = items.filter((i) => i.due_on < today);
   const todays = items.filter((i) => i.due_on === today);
   const line = (i: Due) =>
-    `- ${FOLLOW_UP_LABELS[i.kind]}: ${i.title} (${i.customer_name}${i.kind === "call" && i.customer_phone ? `, ${i.customer_phone}` : ""})` +
+    `- ${TASK_LABELS[i.kind]}: ${i.title} (${i.customer_name}${i.kind === "call" && i.customer_phone ? `, ${i.customer_phone}` : ""})` +
     (i.due_on < today ? `, due ${i.due_on}` : i.due_time ? `, ${i.due_time}` : "");
   const subject = overdue.length && todays.length
     ? `${overdue.length} overdue and ${todays.length} due today`
-    : overdue.length ? `${overdue.length} follow-up${overdue.length === 1 ? "" : "s"} overdue` : `${todays.length} follow-up${todays.length === 1 ? "" : "s"} due today`;
+    : overdue.length ? `${overdue.length} task${overdue.length === 1 ? "" : "s"} overdue` : `${todays.length} task${todays.length === 1 ? "" : "s"} due today`;
   const text = [
     "Good morning. Here is what is due in the CRM.",
     ...(overdue.length ? ["", "Overdue", ...overdue.map(line)] : []),
     ...(todays.length ? ["", "Today", ...todays.map(line)] : []),
     ...(leads ? ["", `${leads} new lead${leads === 1 ? "" : "s"} came in since yesterday.`] : []),
     "",
-    "Tick them off on the CRM's Follow-ups page.",
+    "Tick them off on the CRM's Tasks page.",
   ].join("\n");
   return { to, subject, text };
 }

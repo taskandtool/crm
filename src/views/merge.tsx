@@ -40,7 +40,7 @@ export function MergePage(p: {
           </h2>
           <p class="mb-3 text-ink-2">{who(p.preview.other) || "No email or phone"}</p>
           <ul class="mb-3 flex list-disc flex-col gap-1 pl-5">
-            <li>{p.preview.moves.notes} notes, {p.preview.moves.deals} {dealsCfg.many.toLowerCase()}, {p.preview.moves.followUps} follow-ups{visitsCfg ? `, ${p.preview.moves.visits} ${visitsCfg.many.toLowerCase()}` : ""} move here.</li>
+            <li>{p.preview.moves.notes} notes, {p.preview.moves.deals} {dealsCfg.many.toLowerCase()}, {p.preview.moves.tasks} tasks{visitsCfg ? `, ${p.preview.moves.visits} ${visitsCfg.many.toLowerCase()}` : ""} move here.</li>
             {p.preview.fills.length ? <li>{p.keep.name} gains: {p.preview.fills.join(", ")}.</li> : null}
             <li>What they sent, booked, paid and were quoted under either address shows here.</li>
             <li>{p.preview.other.name}'s record is archived and opens this one. A merge is not undone.</li>

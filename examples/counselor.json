@@ -19,7 +19,7 @@
     ],
     "lost_reasons": ["Not the right fit", "Cost", "Chose someone else", "No reply"]
   },
-  "follow_ups": { "new_lead": true },
+  "tasks": { "new_lead": true },
   "sources": ["Website", "Directory listing", "Referral", "Phone"],
   "fields": [
     { "key": "preferred_contact", "label": "Preferred contact", "type": "select", "options": ["Phone", "Email", "Text"] },

@@ -3,7 +3,7 @@
 // the address they came in with), so the record kept takes the other's email
 // as one it also goes by (customers.other_emails), and everything those
 // tables hold under it is still theirs. The record kept also takes the
-// other's notes, jobs, deals and follow-ups, fills its blanks from the
+// other's notes, jobs, deals and tasks, fills its blanks from the
 // other's details (its own values win), and gains its tags. The other is
 // archived with merged_into set and its email and phone cleared, so nothing
 // matches it again; a note on the kept record says what was merged. One
@@ -14,7 +14,7 @@ import { getCustomer, type Customer } from "./customers";
 export type MergePreview = {
   keep: Customer;
   other: Customer;
-  moves: { notes: number; visits: number; deals: number; followUps: number };
+  moves: { notes: number; visits: number; deals: number; tasks: number };
   /** The details the kept record gains, by name ("phone", "company"...). */
   fills: string[];
 };
@@ -37,7 +37,7 @@ export async function mergePreview(db: Db, keepId: string, otherId: string): Pro
   const fills: string[] = (["phone", "company", "address", "source", "owner"] as const).filter((k) => blank(keep[k]) && !blank(other[k]));
   for (const [k, v] of Object.entries(other.fields ?? {})) if (blank(keep.fields?.[k]) && !blank(v)) fills.push(k);
   if (other.email && other.email.toLowerCase() !== keep.email?.toLowerCase()) fills.push(`also goes by ${other.email}`);
-  return { keep, other, moves: { notes: n.notes, visits: n.visits, deals: n.deals, followUps: n.follow_ups }, fills };
+  return { keep, other, moves: { notes: n.notes, visits: n.visits, deals: n.deals, tasks: n.follow_ups }, fills };
 }
 
 /** Merge `otherId` into `keepId`. */

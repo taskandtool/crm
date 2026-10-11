@@ -31,7 +31,7 @@ export function StagesPage(p: { user: string; deals: StageWithCount[]; statuses:
       <StageList
         pipeline="customers"
         heading={`${vocab.one} statuses`}
-        intro={`Where each ${vocab.one.toLowerCase()} stands. New ones land in the first open status; open ones with nothing planned show on Follow-ups. A won ${dealsCfg.one.toLowerCase()} moves an open status to the first won one.`}
+        intro={`Where each ${vocab.one.toLowerCase()} stands. New ones land in the first open status; open ones with nothing planned show on Tasks. A won ${dealsCfg.one.toLowerCase()} moves an open status to the first won one.`}
         stages={p.statuses}
         words={[vocab.one.toLowerCase(), vocab.many.toLowerCase()]}
       />

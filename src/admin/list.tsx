@@ -71,8 +71,8 @@ export function DataTable<T extends { id: string | number | bigint }>(props: {
             <TableRows spec={spec} rows={rows} next={next} more={more} />
           ) : (
             <tr>
-              <td colspan={width} class="px-3 py-8 text-center text-ink-3">
-                {empty}
+              <td colspan={width} class="px-4 py-10">
+                {typeof empty === "string" ? <EmptyState title={empty} /> : empty}
               </td>
             </tr>
           )}
@@ -80,6 +80,35 @@ export function DataTable<T extends { id: string | number | bigint }>(props: {
       </table>
     </div>
   );
+}
+
+/**
+ * An empty list, as Tailwind's empty states and HubSpot's say it: what goes
+ * here (the title), how it fills (a line), and the button that makes the
+ * first one. Inside a DataTable's `empty`, or in EmptyCard on its own.
+ */
+export function EmptyState({ title, children, action }: { title: string; children?: Child; action?: Child }) {
+  return (
+    <div class="text-center">
+      <p class="font-semibold text-ink">{title}</p>
+      {children ? <p class="mx-auto mt-1 max-w-md text-ink-2">{children}</p> : null}
+      {action ? <div class="mt-4 flex flex-wrap justify-center gap-2">{action}</div> : null}
+    </div>
+  );
+}
+
+/** EmptyState on a card of its own, where there is no table around it. */
+export function EmptyCard(props: { title: string; children?: Child; action?: Child }) {
+  return (
+    <div class="rounded-card border border-line bg-surface px-4 py-10 shadow-card">
+      <EmptyState {...props} />
+    </div>
+  );
+}
+
+/** A search or filter that found nothing: say so, and offer the way back. */
+export function NoMatches({ clear }: { clear: string }) {
+  return <EmptyState title="Nothing matches these filters." action={<a href={clear} class={buttonClass}>Clear filters</a>} />;
 }
 
 /** The rows, then a Load more row when there is a next page. Also the htmx answer to "Load more". */

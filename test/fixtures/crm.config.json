@@ -22,7 +22,7 @@
     ],
     "lost_reasons": ["Price", "Went with someone else", "No reply", "Not a fit"]
   },
-  "follow_ups": { "new_lead": true },
+  "tasks": { "new_lead": true },
   "sources": ["Website", "Phone", "Referral", "Walk-in"],
   "fields": [],
   "owner_label": "Owner",

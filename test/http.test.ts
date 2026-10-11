@@ -63,7 +63,7 @@ test("Stripe's webhook is the one other path without a sign-in, and it wants a s
 
 test("no identity: 404 everywhere but /healthz", async (t) => {
   if (skip) return t.skip(skip);
-  for (const p of ["/", "/customers", "/customers/1", "/customers/export.csv", "/deals", "/deals/1", "/follow-ups", "/follow-ups/count", "/stages", "/nope"]) {
+  for (const p of ["/", "/customers", "/customers/1", "/customers/export.csv", "/deals", "/deals/1", "/tasks", "/tasks/count", "/stages", "/nope"]) {
     assert.equal((await get(p, { host: "crm.example" })).status, 404, p);
   }
   assert.equal((await post("/customers", { name: "x" }, { host: "crm.example", origin: HOST })).status, 404);
@@ -160,9 +160,9 @@ test("customers: create, open, edit, note, archive", async (t) => {
   const detail = await (await get(`/customers/${id}?saved=added`)).text();
   assert.match(detail, /Quinn Ray/);
   assert.match(detail, /Customer added\./);
-  // A record page: follow-ups, then one Activity timeline with its note box, then About beside them;
+  // A record page: tasks, then one Activity timeline with its note box, then About beside them;
   // details are values with Edit, not an open form; nothing empty shows.
-  assert.ok(detail.indexOf(">Follow-ups</h2>") < detail.indexOf(">Activity</h2>"));
+  assert.ok(detail.indexOf(">Tasks</h2>") < detail.indexOf(">Activity</h2>"));
   assert.ok(detail.indexOf(">Activity</h2>") < detail.indexOf(">About</h2>"));
   assert.match(detail, /<form method="post" action="\/customers\/\d+\/notes" aria-label="Log activity"/);
   assert.match(detail, /<summary[^>]*><span[^>]*>Edit<\/span>/);
@@ -238,7 +238,7 @@ test("deals: the board's columns and totals; a move answers htmx with the board 
   // Its page: details saved, the value as typed; a won deal becomes a job once.
   const detail = await (await get(`/deals/${dealId}`)).text();
   assert.match(detail, /Lost reason/);
-  assert.doesNotMatch(detail, /No follow-up scheduled|Create visit/, "a lost deal asks for nothing next");
+  assert.doesNotMatch(detail, /No task scheduled|Create visit/, "a lost deal asks for nothing next");
   assert.match(detail, new RegExp(`For <a href="/customers/${pat.id}">Pat Doe</a>`));
   assert.match(detail, /Pat Doe/);
   assert.equal((await post(`/deals/${dealId}`, { title: "New boiler and flue", value: "5200", owner: "sam@team.example", expected_close: "2026-11-30", notes: "" })).headers.get("location"), `/deals/${dealId}?saved=deal-saved`);
@@ -259,40 +259,50 @@ test("deals: the board's columns and totals; a move answers htmx with the board 
   assert.equal(rae.stage, "lead");
 });
 
-test("follow-ups: added, listed as due, the nav's count, done onto the timeline, moved; nothing planned", async (t) => {
+test("tasks: added, listed for today, the nav's count, done onto the timeline, moved; New task; no next step", async (t) => {
   if (skip) return t.skip(skip);
   const made = await post("/customers", { name: "Fay Lo", email: "fay@example.com", phone: "555 404 1212" });
   const id = made.headers.get("location")!.match(/\/customers\/(\d+)/)![1];
-  // Nothing planned for a lead nobody has called.
-  assert.match(await (await get("/follow-ups?view=none&who=all")).text(), /Fay Lo/);
+  // No next step for a lead nobody has called: the Customers filter finds them.
+  assert.match(await (await get("/customers?next=none")).text(), /Fay Lo/);
 
   const today = new Date().toISOString().slice(0, 10);
-  assert.equal((await post(`/customers/${id}/follow-ups`, { kind: "call", title: "", on: today })).headers.get("location"), `/customers/${id}?saved=fu-needs`);
-  assert.equal((await post(`/customers/${id}/follow-ups`, { kind: "call", title: "Call about the estimate", on: today, at: "09:30", owner: "ann@team.example" })).headers.get("location"), `/customers/${id}?saved=fu-added`);
-  assert.doesNotMatch(await (await get("/follow-ups?view=none&who=all")).text(), /Fay Lo/, "planned now");
+  assert.equal((await post(`/customers/${id}/tasks`, { kind: "call", title: "", on: today })).headers.get("location"), `/customers/${id}?saved=task-needs`);
+  assert.equal((await post(`/customers/${id}/tasks`, { kind: "call", title: "Call about the estimate", on: today, at: "09:30", owner: "ann@team.example" })).headers.get("location"), `/customers/${id}?saved=task-added`);
+  assert.doesNotMatch(await (await get("/customers?next=none")).text(), /Fay Lo/, "planned now");
 
-  const due = await (await get("/follow-ups")).text();
+  const due = await (await get("/tasks")).text();
   assert.match(due, /Call about the estimate/);
   assert.match(due, /<h2[^>]*>Today<\/h2>[\s\S]*9:30 AM[\s\S]*Call about the estimate|<h2[^>]*>Today<\/h2>[\s\S]*Call about the estimate[\s\S]*9:30 AM/, "under Today, with its time");
   assert.match(due, /href="tel:5554041212"/, "a call shows the number");
-  assert.match(await (await get("/follow-ups/count")).text(), /\d+<span class="sr-only"> due/);
+  assert.match(await (await get("/tasks/count")).text(), /\d+<span class="sr-only"> due/);
   const customerPage = await (await get(`/customers/${id}`)).text();
-  assert.ok(customerPage.indexOf(">Follow-ups</h2>") < customerPage.indexOf(">Activity</h2>"), "what happens next leads the page");
+  assert.ok(customerPage.indexOf(">Tasks</h2>") < customerPage.indexOf(">Activity</h2>"), "what happens next leads the page");
   assert.match(customerPage, /Call about the estimate/);
 
   const [f] = await db.sql<{ id: string }>`select id::text as id from follow_ups where customer_id = ${id}::bigint`;
-  assert.equal((await post(`/follow-ups/${f.id}/move`, { on: "2099-01-02", return: "/follow-ups" })).headers.get("location"), "/follow-ups?saved=fu-moved");
+  assert.equal((await post(`/tasks/${f.id}/move`, { on: "2099-01-02", return: "/tasks" })).headers.get("location"), "/tasks?saved=task-moved");
   const [moved] = await db.sql<{ due_on: string; due_time: string }>`select to_char(due_on, 'YYYY-MM-DD') as due_on, to_char(due_time, 'HH24:MI') as due_time from follow_ups where id = ${f.id}::bigint`;
   assert.deepEqual(moved, { due_on: "2099-01-02", due_time: "09:30" }, "a day button keeps the time");
-  assert.match(await (await get("/follow-ups?view=upcoming")).text(), /Nothing in the next 14 days/);
+  assert.match(await (await get("/tasks?view=upcoming")).text(), /Nothing in the next 14 days/);
 
-  const done = await post(`/follow-ups/${f.id}/done`, { outcome: "Booked the visit", return: "//evil.example" });
-  assert.equal(done.headers.get("location"), `/customers/${id}?saved=fu-done`);
-  assert.equal((await post(`/follow-ups/${f.id}/done`, {})).headers.get("location"), `/customers/${id}?saved=fu-already`);
+  const done = await post(`/tasks/${f.id}/done`, { outcome: "Booked the visit", return: "//evil.example" });
+  assert.equal(done.headers.get("location"), `/customers/${id}?saved=task-done`);
+  assert.equal((await post(`/tasks/${f.id}/done`, {})).headers.get("location"), `/customers/${id}?saved=task-already`);
   const [note] = await db.sql<{ kind: string; body: string }>`select kind, body from customer_notes where customer_id = ${id}::bigint`;
   assert.deepEqual(note, { kind: "call", body: "Call about the estimate\nBooked the visit" });
   assert.ok((await getCustomer(db, id))!.last_contact_at, "a call done is contact");
-  assert.match(await (await get(`/customers/${id}`)).text(), /No follow-up scheduled\./);
+  assert.match(await (await get(`/customers/${id}`)).text(), /No task scheduled\./);
+
+  // New task from the Tasks page: for the customer picked, or for someone new.
+  assert.match(await (await get("/tasks/new")).text(), /<option value="\d+">Fay Lo \(fay@example\.com\)<\/option>/, "the picker offers who is here");
+  assert.equal((await post("/tasks", { name: "Fay Lo", title: "" , on: today })).headers.get("location"), "/tasks/new?saved=task-needs");
+  assert.equal((await post("/tasks", { customer: id, title: "Send the brochure", kind: "email", on: today })).headers.get("location"), "/tasks?saved=task-added");
+  assert.equal((await post("/tasks", { customer: "new", name: "Gus New", phone: "555 404 9999", title: "Call Gus", on: today })).headers.get("location"), "/tasks?saved=task-added");
+  const added = await db.sql<{ title: string; email: string | null; name: string }>`
+    select t.title, c.email::text as email, c.name from follow_ups t join customers c on c.id = t.customer_id where t.title in ('Send the brochure', 'Call Gus') order by t.title`;
+  assert.deepEqual(added, [{ title: "Call Gus", email: null, name: "Gus New" }, { title: "Send the brochure", email: "fay@example.com", name: "Fay Lo" }]);
+  assert.match(await (await get("/tasks?view=upcoming")).text(), /New task/, "the empty state offers New task");
 });
 
 test("Add as deal: a new person, and a customer already here getting another", async (t) => {
@@ -530,7 +540,7 @@ test("bookings in the CRM: its own frame, a type and a person, Make it a job fro
   html = await (await get(bookLink)).text();
   assert.match(html, /<h1[^>]*>Book a time for Lee Wong<\/h1>/);
   assert.match(html, /Estimate visit/);
-  html = await (await get("/bookings/schedule")).text();
+  html = await (await get("/bookings/calendar")).text();
   assert.match(html, /<a href="\/bookings" aria-current="page"[^>]*>Bookings<\/a>/, "inside the CRM's frame");
   assert.match(html, /Times are in UTC/, "the CRM's zone");
 });

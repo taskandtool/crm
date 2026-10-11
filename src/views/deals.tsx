@@ -11,14 +11,14 @@ import { StatusBadge, StatusForm } from "../admin/status";
 import { dealsCfg, invoicesCfg, ownerLabel, visitsCfg, vocab } from "../config";
 import type { Customer } from "../crm/customers";
 import type { Deal } from "../crm/deals";
-import { dueOf, type FollowUp } from "../crm/follow-ups";
+import { dueOf, type Task } from "../crm/tasks";
 import { KIND_LABELS, type Stage } from "../crm/stages";
 import { cash } from "../crm/text";
 import { amountText, type Visit } from "../crm/visits";
 import { QUOTE_OPTIONS, todayIn } from "../invoices/admin";
 import { shownStatus, type Quote } from "../invoices/quotes";
 import { formatMoney } from "../payments/money";
-import { FollowUpsSection } from "./follow-ups";
+import { TasksSection } from "./tasks";
 import { Layout } from "./layout";
 import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, PersonFields, primaryClass, ReadThenEdit, RecordLine, stageOptions, timeZone } from "./ui";
 
@@ -169,18 +169,18 @@ function Card({ d, options, stray, next, today, open }: { d: Deal; options: Retu
   );
 }
 
-/** A card's next follow-up: Today and Overdue say what they are; a later day says it is the follow-up. */
+/** A card's next task: Today and Overdue say what they are; a later day says it is the task. */
 function NextMark({ next, today }: { next: { due_on: string; due_time: string | null } | undefined; today: string }) {
   const later = !!next && dueOf(next, today) === "later";
-  return later ? <span>Follow-up <DueMark next={next} today={today} /></span> : <DueMark next={next} today={today} />;
+  return later ? <span>Task <DueMark next={next} today={today} /></span> : <DueMark next={next} today={today} />;
 }
 
-/** One deal: its stage, worth, follow-ups, details, quotes and jobs. */
+/** One deal: its stage, worth, tasks, details, quotes and jobs. */
 export function DealPage(p: {
   user: string;
   deal: Deal;
   stages: Stage[];
-  followUps: { open: FollowUp[]; done: FollowUp[] };
+  tasks: { open: Task[]; done: Task[] };
   openDeals: { id: string; title: string }[];
   quotes: Quote[] | null;
   jobs: Visit[];
@@ -265,9 +265,9 @@ export function DealPage(p: {
               </form>
             </Section>
           ) : null}
-          {!closed || p.followUps.open.length ? (
-            <Section title="Follow-ups">
-              <FollowUpsSection customerId={d.customer_id} open={p.followUps.open} done={p.followUps.done} deals={p.openDeals} dealId={d.id}
+          {!closed || p.tasks.open.length ? (
+            <Section title="Tasks">
+              <TasksSection customerId={d.customer_id} open={p.tasks.open} done={p.tasks.done} deals={p.openDeals} dealId={d.id}
                 owners={p.owners} user={p.user} today={p.today} returnTo={self} prompt={!closed} />
             </Section>
           ) : null}

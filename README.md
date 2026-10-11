@@ -4,8 +4,8 @@ The customer record for a small business: everyone who got in touch, in
 one place, and what happens next. Its first screen is the **Inbox**:
 everything that came in across the project (form submissions from the
 Website, bookings, payments), newest first, each matched to a customer by email or offered as a new one
-or a new deal, under four figures: leads this week, follow-ups due, the
-open pipeline and what was won this month. Then the follow-ups due, the
+or a new deal, under four figures: leads this week, tasks due, the
+open pipeline and what was won this month. Then the tasks due, the
 deals on a board you drag between stages, the customers themselves, a
 timeline of notes and calls per customer, and their jobs or visits: what
 was done, when, by whom, for how much. It works the minute it
@@ -26,10 +26,11 @@ runs anywhere with Node 20 and a Postgres.
   or made a customer, a booking or payment once its person is a customer;
   Everything keeps the lot, and the nav counts what is to do. A source
   the project does not have yet is simply left out.
-- **Follow-ups**: a call, email, meeting, text or task due on a day, by
-  one person. Due (overdue first, then today), Upcoming and Nothing
-  planned, mine or everyone's; the next one at the top of a customer's
-  page and on every card. Done goes on the timeline. A new lead gets a
+- **Tasks**: a call, email, meeting, text or to-do due on a day, by
+  one person. Today (overdue first) and Upcoming, mine or everyone's, and
+  New task; the next one at the top of a customer's page and on every
+  card. Customers' "No next step" filter shows who is in play with
+  nothing planned. Done goes on the timeline. A new lead gets a
   "Call back" for that day, and a morning email lists what is due.
 - **Deals**: one piece of work being won, for one customer, who may have
   many. Stages you name, a value (a quote's total until one is typed),
@@ -39,7 +40,7 @@ runs anywhere with Node 20 and a Postgres.
   status (Lead, Customer, Not a fit): search by name, email, phone or
   company, filter by status, tag and owner, export the filter as CSV,
   archive (never delete), and merge two records of one person.
-- **A customer's page**, laid out as CRMs lay out a record: follow-ups,
+- **A customer's page**, laid out as CRMs lay out a record: tasks,
   one Activity timeline (notes and calls, and everything they sent,
   booked, paid and were quoted) with a note box on top, and their visits;
   beside it About (details and custom fields, Edit), their deals, quotes
@@ -65,7 +66,7 @@ runs anywhere with Node 20 and a Postgres.
   so nobody is added twice, with a dry run first.
 - **The AI's hands**: scripts to find, add, update, note, tag, merge,
   import and export customers from chat, add and move deals, plan and
-  tick off follow-ups, add and close jobs or visits, quote and invoice,
+  tick off tasks, add and close jobs or visits, quote and invoice,
   and list the Inbox. Sending anything to a customer, and a merge,
   waits for your yes.
 
@@ -103,14 +104,14 @@ Stages page. A field that deserves a real column is an additive line in
 crm.config.json          the levers: words, statuses, deals, sources, fields, zone, inbox
 schema.sql               the tables, additive only, applied at start and deploy
 src/app.tsx              the Hono app: the team-only gate, the routes
-src/crm/                 customers, stages, deals, follow-ups, notes, visits, the inbox, history, merge, import
-src/views/               inbox, follow-ups, deals, customers, a customer, visits, stages
+src/crm/                 customers, stages, deals, tasks, notes, visits, the inbox, history, merge, import
+src/views/               inbox, tasks, deals, customers, a customer, visits, stages
 src/booking/             a copy of the booking skill: the Bookings section, the calendar sync job
 src/forms/               a copy of the forms skill: submissions by form, the form editor
 src/invoices/            a copy of the invoices skill: quotes, invoices, tax rates, Stripe
 src/data/  src/admin/    copies of the data and admin business skills, and what is
 src/payments/ src/reports/   used of payments and reports
-scripts/                 customers, deals, follow-ups, visits, forms, quotes, invoices, inbox, stages, import, export, migrate (--help)
+scripts/                 customers, deals, tasks, visits, forms, quotes, invoices, inbox, stages, import, export, migrate (--help)
 styles/  static/         the tokens; the built CSS, vendored htmx and SortableJS, crm.js
 examples/                hvac, dental, restaurant, plumbing, counselor configs
 test/                    node:test

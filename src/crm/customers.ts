@@ -48,8 +48,9 @@ export type NewCustomer = {
   last_contact_at?: Date | string | null;
 };
 
-export type ListFilter = { q: string | null; stage: string | null; tag: string | null; owner: string | null; archived: boolean };
-export const NO_FILTER: ListFilter = { q: null, stage: null, tag: null, owner: null, archived: false };
+/** `unplanned`: only the ones still in play with no next step (tasks.ts nothingPlanned says the same, quietest first). */
+export type ListFilter = { q: string | null; stage: string | null; tag: string | null; owner: string | null; archived: boolean; unplanned: boolean };
+export const NO_FILTER: ListFilter = { q: null, stage: null, tag: null, owner: null, archived: false, unplanned: false };
 
 // A list cursor's time: fixed-width UTC text with microseconds, so it casts
 // back to the exact instant (admin/keyset.ts has the microsecond rule).
@@ -84,10 +85,23 @@ export function listPage(db: Db, f: ListFilter, after: Cursor | null, size: numb
       and (${f.tag}::text is null or c.tags @> array[${f.tag}::text])
       and (${f.owner}::text is null or c.owner = ${f.owner}::citext)
       and ((c.archived_at is not null) = ${f.archived}::boolean)
+      and (not ${f.unplanned}::boolean or (
+            (exists (select 1 from pipeline_stages s where s.key = c.stage and s.kind = 'open')
+             or exists (select 1 from deals d join deal_stages s on s.key = d.stage where d.customer_id = c.id and d.archived_at is null and s.kind = 'open'))
+            and not exists (select 1 from follow_ups t where t.customer_id = c.id and t.done_at is null)
+            and not exists (select 1 from customer_visits v where v.customer_id = c.id and v.status = 'planned' and v.starts_at >= now())))
       and (${after?.k ?? null}::timestamptz is null
            or (c.updated_at, c.id) < (${after?.k ?? null}::timestamptz, ${after?.id ?? null}::bigint))
     order by c.updated_at desc, c.id desc
     limit ${size + 1}`;
+}
+
+/** Everyone active, by name: what a picker offers (New task). */
+export function customerChoices(db: Db, limit = 2000): Promise<{ id: string; name: string; email: string | null }[]> {
+  return db.sql`
+    select id::text as id, name, email::text as email from customers
+    where archived_at is null and merged_into is null
+    order by lower(name), id limit ${limit}`;
 }
 
 export async function getCustomer(db: Db, id: string): Promise<Customer | null> {

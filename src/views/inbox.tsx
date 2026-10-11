@@ -1,11 +1,11 @@
-// The Inbox: four figures (new leads this week, follow-ups due, open deals,
+// The Inbox: four figures (new leads this week, tasks due, open deals,
 // won this month), then To do (or Everything): one row per submission,
 // booking or payment, newest first; a click on it opens it, the person's
 // name opens them once they are a customer, "Add as customer" while they are not, and
 // "Add as deal" (a repeat customer's new enquiry too). Rows are a list
 // rather than a table so they wrap on a phone.
 import { Flash } from "../admin/flash";
-import { rowClick, When } from "../admin/list";
+import { EmptyCard, rowClick, When } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { StatusBadge, type StatusOption } from "../admin/status";
 import { dealsCfg, invoicesCfg, showBooking, vocab } from "../config";
@@ -63,7 +63,7 @@ function Numbers({ n }: { n: Overview }) {
   return (
     <div class="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
       {figure("#results", n.leads ? String(n.leads.current) : "None yet", "New leads, 7 days", n.leads ? `${n.leads.previous} the week before` : "No forms on the project yet")}
-      {figure("/follow-ups", String(due), "Your follow-ups due", n.due.overdue ? `${n.due.overdue} overdue` : due ? "All today" : "Nothing overdue")}
+      {figure("/tasks", String(due), "Your tasks due", n.due.overdue ? `${n.due.overdue} overdue` : due ? "All today" : "Nothing overdue")}
       {figure("/deals", whole(n.open.cents), `Open ${dealsCfg.many.toLowerCase()}`, n.open.count === 1 ? `1 ${dealsCfg.one.toLowerCase()}` : `${n.open.count} ${dealsCfg.many.toLowerCase()}`)}
       {figure("/deals", whole(n.won.cents), "Won this month", n.won.count === 1 ? `1 ${dealsCfg.one.toLowerCase()}` : `${n.won.count} ${dealsCfg.many.toLowerCase()}`)}
     </div>
@@ -119,25 +119,15 @@ export function InboxResults(p: Pick<InboxProps, "rows" | "next" | "more" | "sel
           <InboxRows rows={p.rows} next={p.next} more={p.more} self={p.self} />
         </ol>
       ) : (
-        <div class="rounded-card border border-line bg-surface shadow-card px-4 py-8 text-center text-ink-2">
-          {!p.all ? (
-            <>
-              <p class="font-semibold text-ink">All caught up.</p>
-              <p class="mt-1">New form requests, and bookings and payments from people who are not {vocab.many.toLowerCase()} yet, land here.</p>
-              <p class="mt-3 text-label"><a href={listUrl("/", { view: "all", form: p.form })}>See everything that came in</a></p>
-            </>
-          ) : (
-            <>
-              <p class="font-semibold text-ink">No leads yet.</p>
-              <p class="mx-auto mt-1 max-w-xl">
-                {p.missing ?? "Form submissions, bookings and payments from your other apps show up here."}
-              </p>
-              <p class="mt-4">
-                <a href="/customers/new" class={buttonClass}>Add {vocab.one.toLowerCase()}</a>
-              </p>
-            </>
-          )}
-        </div>
+        !p.all ? (
+          <EmptyCard title="All caught up." action={<a href={listUrl("/", { view: "all", form: p.form })} class={buttonClass}>See everything that came in</a>}>
+            New form requests, and bookings and payments from people who are not {vocab.many.toLowerCase()} yet, land here.
+          </EmptyCard>
+        ) : (
+          <EmptyCard title="No leads yet." action={<a href="/customers/new" class={buttonClass}>Add {vocab.one.toLowerCase()}</a>}>
+            {p.missing ?? "Form submissions, bookings and payments from your other apps show up here."}
+          </EmptyCard>
+        )
       )}
     </div>
   );

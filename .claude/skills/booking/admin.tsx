@@ -19,7 +19,7 @@ import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, readCursor, type Cursor, type Keyed } from "../admin/keyset";
 import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
-import { DataTable, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
+import { DataTable, EmptyState, NoMatches, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
 import { buttonClass, controlClass, fieldClass, pickStatus, primaryClass, StatusBadge, type StatusOption } from "../admin/status";
 import { book, bookableTypes, hostsOf, LOCATION_KINDS, rescheduleById, resourceById, setStatus, toBooking, typeById, whereText, type Booking, type BookingType, type Resource } from "./book";
@@ -54,7 +54,7 @@ export type BookingAdminOptions = {
    * one adds a calendar that never syncs. Default true.
    */
   calendars?: boolean;
-  /** The business's zone: the Schedule and the bookings list show times in it. Absent, the Schedule shows the first person's and the list each host's. */
+  /** The business's zone: the Calendar and the bookings list show times in it. Absent, the Calendar shows the first person's and the list each host's. */
   timeZone?: string;
   /**
    * The public booking pages' address, absolute ("https://acme.com/book"), so
@@ -150,7 +150,7 @@ export function bookingsPage(db: Db, f: Filter, after: Cursor | null, size: numb
 function nav(base: string, opts: BookingAdminOptions): NavItem[] {
   return opts.nav ?? [
     { href: base, label: "Bookings" },
-    { href: `${base}/schedule`, label: "Schedule" },
+    { href: `${base}/calendar`, label: "Calendar" },
     { href: `${base}/types`, label: "Services" },
     { href: `${base}/people`, label: "Team" },
   ];
@@ -200,7 +200,11 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
       <div id="results">
         {after ? <p class="mb-3 text-label"><a href={self}>Back to the start</a></p> : null}
         <DataTable spec={spec} caption={f.when === "past" ? "Past bookings, latest first" : "Upcoming bookings, soonest first"} rows={page} next={next} more={more}
-          empty={f.q || f.resource || f.type || f.status ? <>Nothing matches these filters. <a href={listUrl(base, { when: params.when })}>Clear filters</a></> : f.when === "past" ? "No past bookings yet." : "No upcoming bookings."} />
+          empty={f.q || f.resource || f.type || f.status ? <NoMatches clear={listUrl(base, { when: params.when })} /> : f.when === "past" ? "No past bookings yet." : (
+            <EmptyState title="No upcoming bookings." action={<a href={`${base}/new`} class={primaryClass}>Book for someone</a>}>
+              Times people book on your booking page, and the ones the team books for them, show here.
+            </EmptyState>
+          )} />
       </div>
     );
     if (isPartial(c)) return c.html(results);
@@ -223,7 +227,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
 
   const zoneOf = async (c: Context<{ Variables: TeamVars }>) => opts.timeZone ?? (await allPeople(getDb(c)))[0]?.time_zone ?? "UTC";
 
-  app.get("/schedule", async (c) => {
+  app.get("/calendar", async (c) => {
     const d = getDb(c);
     const zone = await zoneOf(c);
     const people = await allPeople(d);
@@ -246,11 +250,11 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
       where t.starts_at < ${to}::timestamptz and t.ends_at > ${from}::timestamptz
         and (${person}::bigint is null or t.resource_id = ${person}::bigint)
       order by t.starts_at`;
-    const self = (week: string) => listUrl(`${base}/schedule`, { week, person });
+    const self = (week: string) => listUrl(`${base}/calendar`, { week, person });
     const time = (t: Date) => formatTime(new Date(t), zone);
     const thisWeek = addDays(today, -((weekdayOf(today) + 6) % 7));
     const arrow = buttonClass + " px-2";
-    return framed(c, opts, links, `${base}/schedule`, { title: "Schedule", actions: <a href={`${base}/new`} class={primaryClass}>Book for someone</a> }, (
+    return framed(c, opts, links, `${base}/calendar`, { title: "Calendar", actions: <a href={`${base}/new`} class={primaryClass}>Book for someone</a> }, (
       <>
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div class="flex flex-wrap items-center gap-2">
@@ -259,7 +263,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
             <a href={self(addDays(monday, 7))} class={arrow} aria-label="Week after">&rsaquo;</a>
             <h2 class="ml-2 font-semibold">Week of {formatShortDate(monday, { long: true })}</h2>
           </div>
-          <form method="get" action={`${base}/schedule`} class="flex items-center gap-2">
+          <form method="get" action={`${base}/calendar`} class="flex items-center gap-2">
             <input type="hidden" name="week" value={monday} />
             <label>
               <span class="sr-only">Whose</span>

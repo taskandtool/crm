@@ -19,7 +19,7 @@
     ],
     "lost_reasons": ["Cost", "Insurance would not cover it", "Wants a second opinion", "No reply"]
   },
-  "follow_ups": { "new_lead": true },
+  "tasks": { "new_lead": true },
   "sources": ["Website", "Google", "Insurance directory", "Referral", "Walk-in"],
   "fields": [
     { "key": "insurance", "label": "Insurance", "type": "text" },

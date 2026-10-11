@@ -20,7 +20,7 @@
     ],
     "lost_reasons": ["Price", "Went with another plumber", "Outside our area", "No reply"]
   },
-  "follow_ups": { "new_lead": true },
+  "tasks": { "new_lead": true },
   "sources": ["Website", "Google", "Phone", "Home warranty", "Property manager", "Referral"],
   "fields": [
     { "key": "location", "label": "Location", "type": "select", "options": ["North", "Downtown", "South"] },

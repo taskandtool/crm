@@ -1,5 +1,5 @@
 // Small pieces the CRM's pages share: the stage badge,
-// a follow-up's day and its mark, the flash messages, a field with its
+// a task's day and its mark, the flash messages, a field with its
 // label, a custom field's input, the record's "added by" line.
 import type { Child } from "hono/jsx";
 import type { FlashMessages } from "../admin/flash";
@@ -10,7 +10,7 @@ import { When } from "../admin/list";
 import { FieldList, type Field as Shown } from "../admin/detail";
 import { fieldText } from "../crm/fields";
 import type { Stage } from "../crm/stages";
-import { addDays, dueOf, type Due } from "../crm/follow-ups";
+import { addDays, dueOf, type Due } from "../crm/tasks";
 
 // One look for every control: the admin skill's, which a link that does an action shares.
 export { buttonClass, controlClass, primaryClass };
@@ -32,7 +32,7 @@ export function Field(props: { label: string; children: Child; class?: string; h
 }
 
 /**
- * A follow-up's day as the team says it: Today, Tomorrow, Yesterday, else
+ * A task's day as the team says it: Today, Tomorrow, Yesterday, else
  * "Fri, Oct 9" (with the year when it is not this one), and its time.
  */
 export function dueDayText(day: string, today: string, time?: string | null): string {
@@ -58,12 +58,12 @@ const DUE_CLASS: Record<Due, string> = {
   none: "text-ink-3",
 };
 
-/** The mark on a card or a row: when the next follow-up is, in words, or that nothing is planned. */
+/** The mark on a card or a row: when the next task is, in words, or that nothing is planned. */
 export function DueMark({ next, today }: { next: { due_on: string; due_time: string | null } | undefined; today: string }) {
   const due = dueOf(next, today);
-  const text = !next ? "Nothing scheduled" : due === "overdue" ? `Overdue, ${dueDayText(next.due_on, today)}` : dueDayText(next.due_on, today, next.due_time);
+  const text = !next ? "No next step" : due === "overdue" ? `Overdue, ${dueDayText(next.due_on, today)}` : dueDayText(next.due_on, today, next.due_time);
   return (
-    <span class={"whitespace-nowrap text-label " + DUE_CLASS[due]} title={next ? "Next follow-up" : undefined}>
+    <span class={"whitespace-nowrap text-label " + DUE_CLASS[due]} title={next ? "Next task" : undefined}>
       {text}
     </span>
   );
@@ -114,7 +114,7 @@ export function ReadThenEdit({ fields, children }: { fields: Shown[]; children: 
   );
 }
 
-/** "+ Add follow-up": a form that opens in place, the link turning to Cancel while it is open. */
+/** "+ Add task": a form that opens in place, the link turning to Cancel while it is open. */
 export function AddToggle({ label, open, children }: { label: string; open?: boolean; children: Child }) {
   return (
     <details open={open} class="group">
@@ -209,11 +209,11 @@ export const MESSAGES: FlashMessages = {
   "deal-title-needed": { error: `Say what the ${dealsCfg.one.toLowerCase()} is first.` },
   "deal-archived": `${dealsCfg.one} archived. Nothing was deleted.`,
   "deal-unarchived": `${dealsCfg.one} is back from the archive.`,
-  "fu-added": "Follow-up added.",
-  "fu-done": "Follow-up completed.",
-  "fu-already": "That follow-up was already done.",
-  "fu-moved": "Follow-up rescheduled.",
-  "fu-needs": { error: "Add a title and a due date." },
+  "task-added": "Task added.",
+  "task-done": "Task completed.",
+  "task-already": "That task was already done.",
+  "task-moved": "Task rescheduled.",
+  "task-needs": { error: "Add a title and a due date." },
   merged: "Merged. Everything from the other record is here now.",
   "merge-same": { error: "Choose another record to merge with this one." },
   "merge-gone": { error: "That record is gone or was already merged." },

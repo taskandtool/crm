@@ -59,7 +59,7 @@ test("statuses and deal stages each need an open one, slug keys, no repeats and 
   assert.deepEqual(validate(e), []);
 });
 
-test("deals need words and stages; a currency and lost reasons when given; follow-ups an object", () => {
+test("deals need words and stages; a currency and lost reasons when given; tasks an object", () => {
   const c = good();
   delete c.deals;
   assert.ok(validate(c).some((p) => p.startsWith("deals must be an object")));
@@ -71,10 +71,10 @@ test("deals need words and stages; a currency and lost reasons when given; follo
   assert.ok(p.some((x) => x.includes("deals.currency")));
   assert.ok(p.some((x) => x.includes("deals.lost_reasons")));
   const f = good();
-  f.follow_ups = { new_lead: "yes" };
-  assert.ok(validate(f).some((x) => x.includes("follow_ups must be an object")));
-  delete f.follow_ups;
-  assert.deepEqual(validate(f), [], "follow_ups is optional");
+  f.tasks = { new_lead: "yes" };
+  assert.ok(validate(f).some((x) => x.includes("tasks must be an object")));
+  delete f.tasks;
+  assert.deepEqual(validate(f), [], "tasks is optional");
 });
 
 test("custom fields: known types, select options, no built-in or repeated keys", () => {

@@ -20,7 +20,7 @@
     ],
     "lost_reasons": ["Price", "Went with another company", "Repaired it themselves", "No reply"]
   },
-  "follow_ups": { "new_lead": true },
+  "tasks": { "new_lead": true },
   "sources": ["Website", "Google", "Phone", "Referral", "Repeat customer", "Truck sign"],
   "fields": [
     { "key": "system", "label": "System", "type": "select", "options": ["Gas furnace", "Heat pump", "Central AC", "Boiler", "Mini-split", "Other"] },

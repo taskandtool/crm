@@ -4,10 +4,10 @@
 // throughout, answered with a 303.
 import { Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
-import { DataTable, SearchBar, When, type TableSpec } from "../admin/list";
+import { DataTable, EmptyState, NoMatches, SearchBar, When, type TableSpec } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { StatusBadge, type StatusOption } from "../admin/status";
-import { cfg, invoicesCfg, ownerLabel, visitsCfg } from "../config";
+import { cfg, invoicesCfg, ownerLabel, visitsCfg, vocab } from "../config";
 import type { CustomField } from "../config-schema";
 import type { Customer } from "../crm/customers";
 import { fieldText } from "../crm/fields";
@@ -140,7 +140,7 @@ export function CustomerVisits({ c, visits, owners }: { c: Customer; visits: Vis
 
 /** The views, as Jobber's jobs list has them: what is coming, what is finished but not billed, what is done. */
 const VIEWS: { value: VisitFilter["view"]; label: string }[] = [
-  { value: "upcoming", label: "Coming up" },
+  { value: "upcoming", label: "Upcoming" },
   ...(invoicesCfg ? [{ value: "invoice" as const, label: "To invoice" }] : []),
   { value: "done", label: "Done" },
   { value: "all", label: "All" },
@@ -197,21 +197,21 @@ export function VisitResults(p: { filter: VisitFilter; rows: Visit[]; next: stri
       ) : null}
       <DataTable
         spec={visitSpec()}
-        caption={p.filter.view === "upcoming" ? `${v.many} coming up, soonest first` : `${v.many}, newest first`}
+        caption={p.filter.view === "upcoming" ? `Upcoming ${v.many.toLowerCase()}, soonest first` : `${v.many}, newest first`}
         rows={p.rows}
         next={p.next}
         more={(cur) => listUrl("/visits", { ...params, after: cur })}
         empty={
           p.filter.owner || p.filter.q ? (
-            <>
-              Nothing matches here. <a href={listUrl("/visits", { view: params.view })}>Clear the search and {ownerLabel.toLowerCase()}</a>
-            </>
+            <NoMatches clear={listUrl("/visits", { view: params.view })} />
           ) : p.filter.view === "upcoming" ? (
-            `Nothing planned.`
+            <EmptyState title={`No ${many} planned.`} action={<a href="/visits/new" class={primaryClass}>New {one}</a>}>
+              Plan one here, from a {vocab.one.toLowerCase()}'s page, or from a booking.
+            </EmptyState>
           ) : p.filter.view === "invoice" ? (
-            `Every finished ${one} is invoiced.`
+            <EmptyState title="Nothing to invoice.">Every finished {one} is invoiced.</EmptyState>
           ) : (
-            `No ${many} yet.`
+            <EmptyState title={`No ${many} yet.`} action={<a href="/visits/new" class={primaryClass}>New {one}</a>} />
           )
         }
       />

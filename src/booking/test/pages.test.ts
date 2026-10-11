@@ -340,11 +340,11 @@ test("the team books for someone: carried details, a time, the confirmation sent
     assert.match(await res.text(), /just taken/);
 
     const week = start.slice(0, 10);
-    html = await (await app.request(`/bookings/schedule?week=${week}`, { headers: team })).text();
+    html = await (await app.request(`/bookings/calendar?week=${week}`, { headers: team })).text();
     assert.match(html, /Joy Park<\/a><span class="text-ink-2"> · Intro call with Pat/);
     assert.equal((html.match(/<h3 class=/g) ?? []).length, 7, "seven days");
     assert.match(html, /We will call you on 555 202 3030/);
-    const nextWeek = /href="(\/bookings\/schedule\?week=[\d-]+)"[^>]*aria-label="Week after"/.exec(html)![1];
+    const nextWeek = /href="(\/bookings\/calendar\?week=[\d-]+)"[^>]*aria-label="Week after"/.exec(html)![1];
     assert.doesNotMatch(await (await app.request(nextWeek, { headers: team })).text(), /Joy Park/);
 
     // The team reschedules: the booking's page offers it, the calendar leaves out its own time, a time moves it and the booker is told.

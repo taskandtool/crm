@@ -20,7 +20,7 @@ import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, readCursor } from "../admin/keyset";
 import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
-import { DataTable, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
+import { DataTable, EmptyState, NoMatches, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { idParam, isPartial, listUrl, str } from "../admin/query";
 import { buttonClass, controlClass, fieldClass, primaryClass, StatusBadge, type StatusOption } from "../admin/status";
 import type { GetDb } from "../data/db";
@@ -240,7 +240,11 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       <div id="results">
         {after ? <p class="mb-3 text-label"><a href={self}>Back to the start</a></p> : null}
         <DataTable spec={spec} caption="Quotes, newest first" rows={page} next={next} more={more}
-          empty={q || status ? <>Nothing matches. <a href={qbase}>Clear filters</a></> : "No quotes yet."} />
+          empty={q || status ? <NoMatches clear={qbase} /> : (
+            <EmptyState title="No quotes yet." action={<a href={`${qbase}/new`} class={primaryClass}>New quote</a>}>
+              A quote is the price you send before the work. Once it is accepted, invoice it.
+            </EmptyState>
+          )} />
       </div>
     );
     if (isPartial(c)) return c.html(results);
@@ -547,7 +551,11 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       <div id="results">
         {after ? <p class="mb-3 text-label"><a href={self}>Back to the start</a></p> : null}
         <DataTable spec={ispec} caption="Invoices, newest first" rows={page} next={next} more={more}
-          empty={q || asked ? <>Nothing matches. <a href={base}>Clear filters</a></> : "No invoices yet."} />
+          empty={q || asked ? <NoMatches clear={base} /> : (
+            <EmptyState title="No invoices yet." action={<a href={`${base}/new`} class={primaryClass}>New invoice</a>}>
+              Send one for a finished job, or from an accepted quote. Your customer pays it online.
+            </EmptyState>
+          )} />
       </div>
     );
     if (isPartial(c)) return c.html(results);

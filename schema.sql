@@ -149,9 +149,10 @@ create index if not exists deals_customer on deals (customer_id, created_at desc
 create index if not exists deals_stage_updated on deals (stage, updated_at desc, id desc);
 create index if not exists deals_closed on deals (closed_at) where closed_at is not null;
 
--- Follow-ups: the next thing to do for a customer (and the deal it is for),
+-- Tasks: the next thing to do for a customer (and the deal it is for),
 -- due on a day in the business's zone, at a time or any time that day,
--- by one person. Ticked off, never deleted.
+-- by one person. Ticked off, never deleted. The tables keep the name they
+-- were made with (follow_ups), as tables are never renamed.
 create table if not exists follow_ups (
   id           bigserial primary key,
   customer_id  bigint not null references customers (id) on delete cascade,
@@ -202,8 +203,8 @@ comment on table deal_stages is 'The deal pipeline, one row per stage, edited by
 comment on table deals is 'Work the team is trying to win, one customer each: its stage, value, owner and expected close. Won or lost stages set closed_at. Archived, never deleted.';
 comment on column deals.value_cents is 'What it is worth, in minor units of currency. Blank: the latest quote made for it stands in.';
 comment on column deals.stage_changed_at is 'When the stage last moved: a quote accepted after it wins the deal; one accepted before does not undo a later move.';
-comment on table follow_ups is 'The next things to do for a customer: a call, email, meeting, text or task due on a day (in the business''s zone), by one person. Done ones keep done_at and done_by.';
-comment on table follow_up_digests is 'The morning email of due follow-ups, claimed once per person per day.';
+comment on table follow_ups is 'Tasks: the next things to do for a customer: a call, email, meeting, text or to-do due on a day (in the business''s zone), by one person. Done ones keep done_at and done_by.';
+comment on table follow_up_digests is 'The morning email of due tasks, claimed once per person per day.';
 comment on column customers.other_emails is 'Other addresses this customer goes by, from a merge: matched everywhere their email is.';
 comment on column customers.merged_into is 'The customer this record was merged into; set on the archived duplicate.';
 

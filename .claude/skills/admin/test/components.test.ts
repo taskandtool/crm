@@ -48,7 +48,7 @@ test("Load more appears only when there is a next page, and swaps itself", async
 
 test("an empty table says so", async () => {
   const html = await render(DataTable({ spec, caption: "S", rows: [], next: null, more, empty: "Nothing has come in yet." }));
-  assert.match(html, /colspan="3"[^>]*>Nothing has come in yet\./);
+  assert.match(html, /colspan="3"[^>]*><div class="text-center"><p class="font-semibold text-ink">Nothing has come in yet\./, "a plain string is the empty state's title");
 });
 
 test("the search form is a plain GET that htmx enhances", async () => {

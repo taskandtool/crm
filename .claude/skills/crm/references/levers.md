@@ -18,8 +18,8 @@ Everything a business wants changed is one of these.
      the service seeded the defaults the moment the database appeared. On a
      running CRM the config's lists change nothing: use lever 2, then make
      the config match so a fresh install gets the same.
-   - `follow_ups`: `{ "new_lead": false }` stops the same-day "Call back"
-     follow-up that a lead added from the Inbox gets.
+   - `tasks`: `{ "new_lead": false }` stops the same-day "Call back"
+     task that a lead added from the Inbox gets.
    - `sources`: suggestions for the Source field.
    - `fields`: custom fields (lever 3).
    - `owner_label`: what the owner column is called (`Technician`,
@@ -111,7 +111,7 @@ the party size, the reason for the visit). A visit is a record, not a
 schedule: times people book stay in `bookings`, and a booking becomes a
 visit only when the owner asks (`visits.mjs add`).
 
-## Deals and follow-ups
+## Deals and tasks
 
 The rules the code keeps, so the AI never redoes them by hand:
 
@@ -122,13 +122,14 @@ The rules the code keeps, so the AI never redoes them by hand:
   (`quotes.mjs add --deal <id>`, or New quote on the deal's page). That
   quote's yes wins the deal, whether given on the page, by script or by
   paying online.
-- A done follow-up goes on the timeline as a note of its kind, so a done
+- A done task goes on the timeline as a note of its kind, so a done
   call counts as contact; so does a quote or an invoice that went out.
-  "Nothing planned" is everyone with an open status or an open deal and no
-  open follow-up or planned visit.
-- The morning email lists each person's follow-ups due, through the
+  "No next step" (the Customers filter, `tasks.mjs list --none`) is
+  everyone with an open status or an open deal and no open task or
+  planned visit.
+- The morning email lists each person's tasks due, through the
   owner's connected sender, once a day. Schedule it once a sender is set
-  up: `python3 ~/tools/taskandtool.py schedule-job "Follow-up emails"
+  up: `python3 ~/tools/taskandtool.py schedule-job "Task emails"
   --when "0 * * * *" --command "npx tsx src/crm/digest-job.ts"` (hourly; it
   sends at 7:00 in the business's zone, `--hour` to change). Only owners
   written as an email get one.

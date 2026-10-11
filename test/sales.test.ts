@@ -1,4 +1,4 @@
-// Deals, follow-ups, merging and the morning email, against a real Postgres
+// Deals, tasks, merging and the morning email, against a real Postgres
 // when TEST_DATABASE_URL is set (each run in its own schema, dropped after);
 // the pure parts run everywhere.
 import { after, before, test } from "node:test";
@@ -11,8 +11,8 @@ import { createCustomer, findMatch, getCustomer } from "../src/crm/customers";
 import { board, createDeal, dealTotals, getDeal, setDealStage, winFromQuotes, type DealInput } from "../src/crm/deals";
 import { digestMessage, sendDigests } from "../src/crm/digest";
 import {
-  addDays, addFollowUp, doneFollowUp, dueOf, followUpCounts, listFollowUps, moveFollowUp, nextFollowUps, nothingPlanned, readDay, readTime, relativeDay,
-} from "../src/crm/follow-ups";
+  addDays, addTask, doneTask, dueOf, taskCounts, listTasks, moveTask, nextTasks, nothingPlanned, readDay, readTime, relativeDay,
+} from "../src/crm/tasks";
 import { everythingFrom } from "../src/crm/history";
 import { mergeCustomers, mergePreview, possibleDuplicates } from "../src/crm/merge";
 import type { StageConfig } from "../src/config-schema";
@@ -134,36 +134,36 @@ test("a quote accepted after the deal last moved wins it, once, whichever way th
   assert.deepEqual(await winFromQuotes(db, ME), []);
 });
 
-test("follow-ups: due and upcoming, mine and everyone's, done once (even twice at once), moved; nothing planned", async (t) => {
+test("tasks: due and upcoming, mine and everyone's, done once (even twice at once), moved; nothing planned", async (t) => {
   if (skip) return t.skip(skip);
   const today = "2026-10-08";
   const { customer } = await createCustomer(db, { name: "Fol Low", email: "follow@example.com", stage: "lead" }, ME);
   assert.ok((await nothingPlanned(db, null, 500)).some((u) => u.id === customer.id));
   const other = await createCustomer(db, { name: "Not Theirs", email: "else@example.com", stage: "lead" }, ME);
   const theirDeal = (await createDeal(db, other.customer.id, deal("Not theirs"), "new", ME))!;
-  const late = (await addFollowUp(db, customer.id, { kind: "call", title: "Call", due_on: "2026-10-01", due_time: null, owner: ME, deal_id: theirDeal.id }, ME))!;
+  const late = (await addTask(db, customer.id, { kind: "call", title: "Call", due_on: "2026-10-01", due_time: null, owner: ME, deal_id: theirDeal.id }, ME))!;
   assert.equal(late.deal_id, null, "a deal that is not theirs is left off");
-  await addFollowUp(db, customer.id, { kind: "email", title: "Email", due_on: today, due_time: "10:00", owner: "bob@team.example", deal_id: null }, ME);
-  await addFollowUp(db, customer.id, { kind: "meeting", title: "Meet", due_on: "2026-10-12", due_time: null, owner: ME, deal_id: null }, ME);
-  await addFollowUp(db, customer.id, { kind: "task", title: "Far off", due_on: "2027-01-01", due_time: null, owner: ME, deal_id: null }, ME);
-  assert.equal(await addFollowUp(db, "999999", { kind: "call", title: "x", due_on: today, due_time: null, owner: ME, deal_id: null }, ME), null);
+  await addTask(db, customer.id, { kind: "email", title: "Email", due_on: today, due_time: "10:00", owner: "bob@team.example", deal_id: null }, ME);
+  await addTask(db, customer.id, { kind: "meeting", title: "Meet", due_on: "2026-10-12", due_time: null, owner: ME, deal_id: null }, ME);
+  await addTask(db, customer.id, { kind: "task", title: "Far off", due_on: "2027-01-01", due_time: null, owner: ME, deal_id: null }, ME);
+  assert.equal(await addTask(db, "999999", { kind: "call", title: "x", due_on: today, due_time: null, owner: ME, deal_id: null }, ME), null);
 
-  const mine = (await listFollowUps(db, "due", today, ME)).filter((f) => f.customer_id === customer.id);
+  const mine = (await listTasks(db, "today", today, ME)).filter((f) => f.customer_id === customer.id);
   assert.deepEqual(mine.map((f) => f.title), ["Call"], "due is mine only");
-  const all = (await listFollowUps(db, "due", today, null)).filter((f) => f.customer_id === customer.id);
+  const all = (await listTasks(db, "today", today, null)).filter((f) => f.customer_id === customer.id);
   assert.deepEqual(all.map((f) => f.title), ["Call", "Email"], "overdue first");
-  assert.deepEqual((await listFollowUps(db, "upcoming", today, null)).filter((f) => f.customer_id === customer.id).map((f) => f.title), ["Meet"], "the next 14 days only");
-  const counts = await followUpCounts(db, today, ME);
+  assert.deepEqual((await listTasks(db, "upcoming", today, null)).filter((f) => f.customer_id === customer.id).map((f) => f.title), ["Meet"], "the next 14 days only");
+  const counts = await taskCounts(db, today, ME);
   assert.ok(counts.overdue >= 1);
-  assert.equal((await nextFollowUps(db, [customer.id])).get(customer.id)?.due_on, "2026-10-01");
+  assert.equal((await nextTasks(db, [customer.id])).get(customer.id)?.due_on, "2026-10-01");
   assert.ok(!(await nothingPlanned(db, null, 500)).some((u) => u.id === customer.id));
 
-  const [one, two] = await Promise.all([doneFollowUp(db, late.id, "Spoke to them", ME), doneFollowUp(db, late.id, "Spoke to them", "bob@team.example")]);
+  const [one, two] = await Promise.all([doneTask(db, late.id, "Spoke to them", ME), doneTask(db, late.id, "Spoke to them", "bob@team.example")]);
   assert.deepEqual([one!.already, two!.already].sort(), [false, true], "ticked off once");
   const notes = await db.sql<{ kind: string; body: string }>`select kind, body from customer_notes where customer_id = ${customer.id}::bigint`;
   assert.deepEqual(notes, [{ kind: "call", body: "Call\nSpoke to them" }], "one note on the timeline");
   assert.ok((await getCustomer(db, customer.id))!.last_contact_at);
-  assert.equal(await moveFollowUp(db, late.id, today, null, ME), false, "a done one does not move");
+  assert.equal(await moveTask(db, late.id, today, null, ME), false, "a done one does not move");
 });
 
 test("merge: everything moves, the address is kept, the other never matches again; a race merges once", async (t) => {
@@ -171,11 +171,11 @@ test("merge: everything moves, the address is kept, the other never matches agai
   const keep = (await createCustomer(db, { name: "Mia Merge", email: "mia@example.com", stage: "lead", tags: ["vip"] }, ME)).customer;
   const other = (await createCustomer(db, { name: "Mia Merge", email: "Mia.M@Work.example", phone: "555 321 9876", company: "Work Co", stage: "customer", tags: ["VIP", "work"], fields: { size: "L" } }, ME)).customer;
   await createDeal(db, other.id, deal("Her deal"), "new", ME);
-  await addFollowUp(db, other.id, { kind: "call", title: "Her call", due_on: "2026-10-08", due_time: null, owner: ME, deal_id: null }, ME);
+  await addTask(db, other.id, { kind: "call", title: "Her call", due_on: "2026-10-08", due_time: null, owner: ME, deal_id: null }, ME);
   await db.sql`insert into submissions (form_key, name, email, data, source) values ('contact', 'Mia', 'mia.m@work.example', '{"message": "work one"}', 'website')`;
   assert.ok((await possibleDuplicates(db, keep)).some((d) => d.id === other.id));
   const pv = (await mergePreview(db, keep.id, other.id))!;
-  assert.deepEqual(pv.moves, { notes: 0, visits: 0, deals: 1, followUps: 1 });
+  assert.deepEqual(pv.moves, { notes: 0, visits: 0, deals: 1, tasks: 1 });
   assert.deepEqual(pv.fills, ["phone", "company", "size", "also goes by mia.m@work.example"]);
 
   const results = await Promise.all([mergeCustomers(db, keep.id, other.id, ME), mergeCustomers(db, keep.id, other.id, ME)]);
@@ -200,8 +200,8 @@ test("merge: everything moves, the address is kept, the other never matches agai
 test("the morning email goes once a day, at or after the hour, to owners with an email", async (t) => {
   if (skip) return t.skip(skip);
   const { customer } = await createCustomer(db, { name: "Dig Est", email: "digest@example.com", phone: "555 999 1111", stage: "lead" }, ME);
-  await addFollowUp(db, customer.id, { kind: "call", title: "Ring Dig", due_on: "2026-10-08", due_time: null, owner: "zed@team.example", deal_id: null }, ME);
-  await addFollowUp(db, customer.id, { kind: "call", title: "No mailbox", due_on: "2026-10-08", due_time: null, owner: "Zed", deal_id: null }, ME);
+  await addTask(db, customer.id, { kind: "call", title: "Ring Dig", due_on: "2026-10-08", due_time: null, owner: "zed@team.example", deal_id: null }, ME);
+  await addTask(db, customer.id, { kind: "call", title: "No mailbox", due_on: "2026-10-08", due_time: null, owner: "Zed", deal_id: null }, ME);
   const sent: { to: string; subject: string; text: string }[] = [];
   const send = async (m: { to: string; subject: string; text: string }) => (sent.push(m), { status: "sent" as const, via: "fake" });
   const early = await sendDigests(db, send, { timeZone: "America/Chicago", now: new Date("2026-10-08T11:00:00Z") });

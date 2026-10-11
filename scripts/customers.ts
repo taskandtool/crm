@@ -2,7 +2,7 @@
 // archive, merge. `node scripts/customers.mjs --help`.
 import { cfg, dealsCfg, visitsCfg } from "../src/config";
 import { customerDeals } from "../src/crm/deals";
-import { customerFollowUps } from "../src/crm/follow-ups";
+import { customerTasks } from "../src/crm/tasks";
 import { mergeCustomers, mergePreview } from "../src/crm/merge";
 import { cut } from "../src/admin/keyset";
 import {
@@ -22,7 +22,7 @@ const HELP = `customers.mjs <command> [...] [--json] [--as <email>]
 
   list [--status s] [--tag t] [--owner o] [--archived] [--limit 50]
   find <text>                          name, email, phone or company
-  show <who>                           details, notes, follow-ups, deals, visits, and what they sent, booked and paid
+  show <who>                           details, notes, tasks, deals, visits, and what they sent, booked and paid
   add "<name>" [--email e] [--phone p] [--company c] [--address a] [--status s]
                [--source s] [--tag t]... [--owner o] [--notes n] [--field key=value]...
                                        an email or phone already here is reported, not added twice
@@ -101,18 +101,18 @@ await withDb(async (db) => {
 
     case "show": {
       const c = await resolveCustomer(db, rest[0], at);
-      const [notes, visits, history, deals, followUps] = await Promise.all([
-        listNotes(db, c.id, 20), visitsCfg ? customerVisits(db, c.id, 20) : [], everythingFrom(db, c, 20), customerDeals(db, c.id, 20), customerFollowUps(db, c.id),
+      const [notes, visits, history, deals, tasks] = await Promise.all([
+        listNotes(db, c.id, 20), visitsCfg ? customerVisits(db, c.id, 20) : [], everythingFrom(db, c, 20), customerDeals(db, c.id, 20), customerTasks(db, c.id),
       ]);
       const dealStage = new Map((await listStages(db, "deals", { archived: true })).map((s) => [s.key, s.label]));
-      return result({ customer: c, notes, visits, history: history.items, deals, followUps: followUps.open }, fmtCustomer(c, label(c.stage)), {
+      return result({ customer: c, notes, visits, history: history.items, deals, tasks: tasks.open }, fmtCustomer(c, label(c.stage)), {
         lines: [
           c.address ? `address: ${c.address}` : "",
           c.source ? `source: ${c.source}` : "",
           ...Object.entries(c.fields ?? {}).map(([k, v]) => `${cfg.fields.find((f) => f.key === k)?.label ?? k}: ${String(v)}`),
           c.notes ? `about: ${c.notes}` : "",
-          followUps.open.length
-            ? "follow-ups:\n" + followUps.open.map((f) => `  #${f.id} ${f.due_on}${f.due_time ? " " + f.due_time : ""} ${f.kind}: ${f.title}${f.owner ? " @" + f.owner : ""}`).join("\n")
+          tasks.open.length
+            ? "tasks:\n" + tasks.open.map((f) => `  #${f.id} ${f.due_on}${f.due_time ? " " + f.due_time : ""} ${f.kind}: ${f.title}${f.owner ? " @" + f.owner : ""}`).join("\n")
             : "nothing planned",
           deals.length
             ? `${dealsCfg.many.toLowerCase()}:\n` + deals.map((d) => `  #${d.id} ${d.title} [${dealStage.get(d.stage) ?? d.stage}]${d.shown_cents !== null ? " " + money(d.shown_cents, d.currency ?? dealsCfg.currency) : ""}`).join("\n")
@@ -237,7 +237,7 @@ await withDb(async (db) => {
       if (other.merged_into) return result(other, `#${other.id} was already merged into #${other.merged_into}; left alone`, { next: show(other.merged_into) });
       const pv = (await mergePreview(db, keep.id, other.id)) ?? fail(`${at}: one of them is gone`, "node scripts/customers.mjs list");
       const lines = [
-        `moves: ${pv.moves.notes} notes, ${pv.moves.deals} deals, ${pv.moves.followUps} follow-ups${visitsCfg ? `, ${pv.moves.visits} ${visitsCfg.many.toLowerCase()}` : ""}`,
+        `moves: ${pv.moves.notes} notes, ${pv.moves.deals} deals, ${pv.moves.tasks} tasks${visitsCfg ? `, ${pv.moves.visits} ${visitsCfg.many.toLowerCase()}` : ""}`,
         pv.fills.length ? `${keep.name} gains: ${pv.fills.join(", ")}` : `${keep.name} keeps every detail it has`,
         `#${other.id} is archived and opens #${keep.id}; not undone`,
       ];

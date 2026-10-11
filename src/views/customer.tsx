@@ -1,5 +1,5 @@
 // One customer, laid out as every CRM lays out a record: what happens next
-// (follow-ups), one Activity timeline (notes and calls, and everything they
+// (tasks), one Activity timeline (notes and calls, and everything they
 // sent, booked, paid and were quoted, newest first) with a small box to log
 // a note on top, and their visits; beside it, About (their details as
 // values, Edit for the form), their deals, quotes and invoices, possible
@@ -12,9 +12,9 @@ import { When } from "../admin/list";
 import { cfg, dealsCfg, invoicesCfg, ownerLabel, showBooking, visitsCfg, vocab } from "../config";
 import type { Deal } from "../crm/deals";
 import { fieldText } from "../crm/fields";
-import type { FollowUp } from "../crm/follow-ups";
+import type { Task } from "../crm/tasks";
 import { CustomerDeals } from "./deals";
-import { FollowUpsSection } from "./follow-ups";
+import { TasksSection } from "./tasks";
 import { listUrl } from "../admin/query";
 import type { Customer } from "../crm/customers";
 import type { HistoryItem } from "../crm/history";
@@ -46,7 +46,7 @@ export function CustomerPage(p: {
   owners: string[];
   deals: Deal[];
   dealStages: Stage[];
-  followUps: { open: FollowUp[]; done: FollowUp[] };
+  tasks: { open: Task[]; done: Task[] };
   today: string;
   /** Quotes and invoices, when they are on; null when off. */
   money: { quotes: Quote[]; invoices: Invoice[]; owed: Owed[] } | null;
@@ -87,8 +87,8 @@ export function CustomerPage(p: {
       ) : null}
       <div class="grid gap-4 md:grid-cols-3">
         <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
-          <Section title="Follow-ups">
-            <FollowUpsSection customerId={c.id} open={p.followUps.open} done={p.followUps.done}
+          <Section title="Tasks">
+            <TasksSection customerId={c.id} open={p.tasks.open} done={p.tasks.done}
               deals={p.deals.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title }))}
               owners={p.owners} user={p.user} today={p.today} returnTo={self} />
           </Section>
@@ -228,7 +228,7 @@ type Entry = { at: Date; note?: Note; item?: HistoryItem };
 
 /**
  * One timeline: what the team logged (notes, calls, emails, meetings,
- * texts, follow-ups done) and what the person did across the project
+ * texts, tasks done) and what the person did across the project
  * (submissions, bookings, payments, quotes and invoices sent), newest
  * first; the latest RECENT, then the rest behind "Show older".
  */

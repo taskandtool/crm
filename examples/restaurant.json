@@ -19,7 +19,7 @@
     ],
     "lost_reasons": ["Date taken", "Budget", "Went elsewhere", "No reply"]
   },
-  "follow_ups": { "new_lead": true },
+  "tasks": { "new_lead": true },
   "sources": ["Website", "Walk-in", "Instagram", "Phone", "Reservation app", "Referral"],
   "fields": [
     { "key": "dietary", "label": "Allergies and diet", "type": "text" },

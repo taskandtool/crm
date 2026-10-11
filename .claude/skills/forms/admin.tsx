@@ -16,7 +16,7 @@ import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, everyPage, readCursor, type Cursor, type Keyed } from "../admin/keyset";
 import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
-import { DataTable, rowClick, rowLink, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
+import { DataTable, EmptyCard, EmptyState, NoMatches, rowClick, rowLink, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { formIds, idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
 import { buttonClass, controlClass, fieldClass, pickStatus, primaryClass, StatusBadge, StatusForm, type StatusOption } from "../admin/status";
 import { checkFields, FIELD_TYPES, FORM_KEY, formKeyFrom, PHOTO_PATH, sitePath, type Errors, type Field, type Form } from "./fields";
@@ -203,7 +203,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
             </table>
           </div>
         ) : (
-          <p class="text-ink-2">There are no forms yet.</p>
+          <EmptyCard title="No forms yet.">A form is how people ask for something on your website: a quote, a booking, a question. Make one with New form.</EmptyCard>
         ),
     );
   };
@@ -357,7 +357,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
           rows={page}
           next={next}
           more={more}
-          empty={f.q || f.status || f.form ? <>Nothing matches these filters. <a href={subs}>Clear filters</a></> : "Nothing has come in yet."}
+          empty={f.q || f.status || f.form ? <NoMatches clear={subs} /> : <EmptyState title="Nothing has come in yet.">What people send through your forms shows here.</EmptyState>}
         />
         <p class="mt-3 flex flex-wrap gap-x-4 text-label">
           <a href={listUrl(`${subs}.csv`, params)}>Export CSV</a>

@@ -31,7 +31,7 @@ for (const script of scripts) {
 const READ: Record<string, string[]> = {
   "customers.mjs": ["list"], "visits.mjs": ["list"], "stages.mjs": ["list"], "inbox.mjs": ["list"], "forms.mjs": ["list"],
   "quotes.mjs": ["list"], "invoices.mjs": ["list"], "import.mjs": ["file.csv"], "export.mjs": [], "migrate.mjs": [],
-  "deals.mjs": ["list"], "follow-ups.mjs": ["list"],
+  "deals.mjs": ["list"], "tasks.mjs": ["list"],
 };
 test("every script is in the bad-input table", () => assert.deepEqual(Object.keys(READ).sort(), [...scripts].sort()));
 
@@ -56,15 +56,15 @@ test("stray arguments and malformed ones are misuse", () => {
   refused(run("inbox.mjs", ["done"]), 2, "inbox done with no id");
   refused(run("import.mjs", []), 2, "import with no file");
   refused(run("deals.mjs", ["list", "--won", "--lost"]), 2, "deals list with two kinds");
-  refused(run("follow-ups.mjs", ["done"]), 2, "follow-ups done with no id");
+  refused(run("tasks.mjs", ["done"]), 2, "tasks done with no id");
   refused(run("deals.mjs", ["won", "abc"]), 2, "deals won with no id");
-  refused(run("follow-ups.mjs", ["list", "--upcoming", "--none"]), 2, "follow-ups list with two views");
+  refused(run("tasks.mjs", ["list", "--upcoming", "--none"]), 2, "tasks list with two views");
   refused(run("customers.mjs", ["merge", "1"]), 2, "customers merge with one record");
 });
 
-// deals, follow-ups and merge from chat, against a throwaway database: each
+// deals, tasks and merge from chat, against a throwaway database: each
 // says what happened first, a re-run is "already", and a merge waits for --confirm.
-test("deals.mjs, follow-ups.mjs and customers merge, end to end", { skip: !process.env.TEST_DATABASE_URL && "TEST_DATABASE_URL is not set" }, async () => {
+test("deals.mjs, tasks.mjs and customers merge, end to end", { skip: !process.env.TEST_DATABASE_URL && "TEST_DATABASE_URL is not set" }, async () => {
   const pg = (await import("pg")).default;
   const admin = process.env.TEST_DATABASE_URL!;
   const name = "crm_sales_scripts_" + Date.now().toString(36);
@@ -80,7 +80,7 @@ test("deals.mjs, follow-ups.mjs and customers merge, end to end", { skip: !proce
     assert.equal(r.status, 0, r.stderr);
     r = sh("deals.mjs", "add", "ann@example.com", "New furnace", "--value", "6500");
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^deals add: added #\d+  New furnace  \[New\]  Ann Lee  \$6,500\.00  @ann@team\.example\n\nNext: node scripts\/follow-ups\.mjs add \d+ "Call Ann Lee" --on tomorrow --deal \d+\n$/);
+    assert.match(r.stdout, /^deals add: added #\d+  New furnace  \[New\]  Ann Lee  \$6,500\.00  @ann@team\.example\n\nNext: node scripts\/tasks\.mjs add \d+ "Call Ann Lee" --on tomorrow --deal \d+\n$/);
     const deal = r.stdout.match(/#(\d+)/)![1];
     r = sh("deals.mjs", "add", "ann@example.com", "new furnace");
     assert.match(r.stdout, /^deals add: already here, not added/, "the same open deal twice is one");
@@ -98,27 +98,27 @@ test("deals.mjs, follow-ups.mjs and customers merge, end to end", { skip: !proce
     r = sh("deals.mjs", "job", deal);
     assert.match(r.stdout, /^deals job: already made: visit #\d+/);
 
-    r = sh("follow-ups.mjs", "add", "ann@example.com", "Call about the install", "--on", "2099-03-04", "--at", "9:30", "--deal", deal);
+    r = sh("tasks.mjs", "add", "ann@example.com", "Call about the install", "--on", "2099-03-04", "--at", "9:30", "--deal", deal);
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^follow-ups add: added #\d+  2099-03-04 09:30  call: Call about the install  for Ann Lee \(#\d+\)  re New furnace \(#\d+\)  @ann@team\.example\n  say back the day: 2099-03-04 at 09:30/);
+    assert.match(r.stdout, /^tasks add: added #\d+  2099-03-04 09:30  call: Call about the install  for Ann Lee \(#\d+\)  re New furnace \(#\d+\)  @ann@team\.example\n  say back the day: 2099-03-04 at 09:30/);
     const fu = r.stdout.match(/#(\d+)/)![1];
-    r = sh("follow-ups.mjs", "add", "ann@example.com", "call about the install", "--on", "2099-03-04");
-    assert.match(r.stdout, /^follow-ups add: already planned, not added/);
-    r = sh("follow-ups.mjs", "add", "ann@example.com", "Call", "--on", "someday");
+    r = sh("tasks.mjs", "add", "ann@example.com", "call about the install", "--on", "2099-03-04");
+    assert.match(r.stdout, /^tasks add: already planned, not added/);
+    r = sh("tasks.mjs", "add", "ann@example.com", "Call", "--on", "someday");
     assert.equal(r.status, 2);
     assert.match(r.stderr, /--on someday: write the day as/);
-    r = sh("follow-ups.mjs", "list");
-    assert.match(r.stdout, /^follow-ups list: nothing due today or overdue\n/);
-    r = sh("follow-ups.mjs", "move", fu, "--on", "today", "--at", "");
-    assert.match(r.stdout, /^follow-ups move: moved #\d+ Call about the install: 2099-03-04 09:30 -> today\n/);
-    r = sh("follow-ups.mjs", "list");
-    assert.match(r.stdout, /^follow-ups list: 1 due today or overdue, soonest first\n  #\d+  today  call: Call about the install/);
-    r = sh("follow-ups.mjs", "done", fu, "--outcome", "Booked for Tuesday");
-    assert.match(r.stdout, /^follow-ups done: done: call: Call about the install for Ann Lee; noted on their timeline\n/);
-    r = sh("follow-ups.mjs", "done", fu);
-    assert.match(r.stdout, /^follow-ups done: #\d+ was already done; left alone/);
-    r = sh("follow-ups.mjs", "list", "--none");
-    assert.match(r.stdout, /^follow-ups list: everyone in play has something planned/, "a customer with no open deal is not in play");
+    r = sh("tasks.mjs", "list");
+    assert.match(r.stdout, /^tasks list: nothing due today or overdue\n/);
+    r = sh("tasks.mjs", "move", fu, "--on", "today", "--at", "");
+    assert.match(r.stdout, /^tasks move: moved #\d+ Call about the install: 2099-03-04 09:30 -> today\n/);
+    r = sh("tasks.mjs", "list");
+    assert.match(r.stdout, /^tasks list: 1 due today or overdue, soonest first\n  #\d+  today  call: Call about the install/);
+    r = sh("tasks.mjs", "done", fu, "--outcome", "Booked for Tuesday");
+    assert.match(r.stdout, /^tasks done: done: call: Call about the install for Ann Lee; noted on their timeline\n/);
+    r = sh("tasks.mjs", "done", fu);
+    assert.match(r.stdout, /^tasks done: #\d+ was already done; left alone/);
+    r = sh("tasks.mjs", "list", "--none");
+    assert.match(r.stdout, /^tasks list: everyone in play has something planned/, "a customer with no open deal is not in play");
 
     r = sh("customers.mjs", "add", "Ann L", "--email", "ann@work.example", "--phone", "555 222 1111");
     const dup = r.stdout.match(/#(\d+)/)![1];
