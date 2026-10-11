@@ -36,7 +36,7 @@ import {
   type Quote, type QuoteRow, type QuoteStatus,
 } from "./quotes";
 import {
-  createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, INVOICE_STATUSES, INVOICE_STATUS_LABELS, saveInvoice,
+  createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, INVOICE_STATUSES, INVOICE_STATUS_LABELS, invoiceTotals, saveInvoice,
   type Invoice, type InvoiceRow, type InvoiceStatus,
 } from "./invoices";
 import { closePayLink, markPaidOutOfBand, markUncollectible, payLinkForQuote, sendInvoice, voidInvoice } from "./stripe";
@@ -77,8 +77,6 @@ export type InvoicesAdminOptions = {
   afterSend?: (c: Ctx, doc: SentDoc) => Promise<void>;
   /** After a person marks a quote accepted or declined here: the CRM wins the deal it is for. Throwing shows nothing; the answer stands. */
   afterDecide?: (c: Ctx, qt: Quote) => Promise<void>;
-  /** More at the top of the invoices list: the CRM's paid-by-month table. */
-  invoicesTop?: (c: Ctx) => Child | Promise<Child>;
   /** Days a new invoice gives to pay; default 30. */
   daysUntilDue?: number;
   /** The Stripe caller; default stripeFrom(envOf(c)), the owner's connected account. */
@@ -90,6 +88,40 @@ export const INVOICE_OPTIONS: StatusOption[] = INVOICE_STATUSES.map((s) => ({
   label: INVOICE_STATUS_LABELS[s],
   tone: s === "paid" ? "accent" : s === "open" ? "strong" : s === "draft" ? "neutral" : "muted",
 }));
+/** An open invoice past its due date shows as Past due, as the list's filter names it. */
+const SHOWN_INVOICE: StatusOption[] = [...INVOICE_OPTIONS, { value: "due", label: "Past due", tone: "strong" }];
+
+/** What is owed, how much of it is late, and what came in this month: each a link to the invoices behind it. */
+function Totals({ totals, currency, base }: { totals: Awaited<ReturnType<typeof invoiceTotals>>; currency: string; base: string }) {
+  const whole = (cents: string) => formatMoney(cents, currency).replace(/\.00$/, "");
+  const count = (n: number) => (n === 1 ? "1 invoice" : `${n} invoices`);
+  const figure = (href: string, value: string, label: string, sub: string) => (
+    <a href={href} class="flex flex-col rounded-card border border-line bg-surface px-4 py-3 no-underline shadow-card hover:border-line-strong">
+      <span class="text-title font-semibold text-ink">{value}</span>
+      <span class="text-label text-ink-2">{label}</span>
+      <span class="text-label text-ink-3">{sub}</span>
+    </a>
+  );
+  return (
+    <div class="mb-5 grid gap-3 sm:grid-cols-3">
+      {figure(listUrl(base, { status: "open" }), whole(totals.open.cents), "Outstanding", count(totals.open.count))}
+      {figure(listUrl(base, { status: "due" }), whole(totals.due.cents), "Past due", totals.due.count ? count(totals.due.count) : "None late")}
+      {figure(listUrl(base, { status: "paid" }), whole(totals.paid.cents), "Paid this month", "Through Stripe and marked paid")}
+    </div>
+  );
+}
+
+/** A record's foot: when it was made and by whom, and its rare actions as quiet links. */
+function RecordFoot({ made, by, timeZone, children }: { made: Date; by: string | null; timeZone: string; children?: Child }) {
+  return (
+    <div class="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-3 text-label text-ink-3">
+      <p>Made <When at={made} timeZone={timeZone} />{by ? ` by ${by}` : ""}</p>
+      {children}
+    </div>
+  );
+}
+/** A quiet action in a record's foot: a POST, or a link to a page that says what will happen. */
+const footLink = "text-ink-2 underline decoration-line-strong underline-offset-2 hover:decoration-current";
 
 export const QUOTE_OPTIONS: StatusOption[] = QUOTE_STATUSES.map((s) => ({
   value: s,
@@ -212,10 +244,9 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       </div>
     );
     if (isPartial(c)) return c.html(results);
-    return framed(c, qbase, "Quotes", (
+    return framed(c, qbase, { title: "Quotes", actions: <a href={`${qbase}/new`} class={primaryClass}>New quote</a> }, (
       <>
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
-        <p class="mb-3"><a href={`${qbase}/new`} class={buttonClass}>New quote</a></p>
         <SearchBar action={qbase} target="#results" q={q} placeholder="Number, name or email"
           filters={[{ name: "status", label: "Status", options: QUOTE_OPTIONS, value: status, any: "Any status" }]} />
         {results}
@@ -261,18 +292,28 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const open = qt.status === "draft" || qt.status === "sent" || qt.status === "expired";
     const extra = opts.quoteExtra ? await opts.quoteExtra(c, qt) : null;
     const invoices = (await invoicesFor(getDb(c), { quoteId: qt.id })).filter((i) => i.status !== "void");
-    return framed(c, qbase, { title: `Quote ${qt.number}`, back: { href: qbase, label: "Quotes" } }, (
-      <>
-        <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
-        {c.req.query("problem") ? <p role="alert" class={"mb-4 " + alertClass}>{c.req.query("problem")}</p> : null}
-        <div class="mb-4 flex flex-wrap items-center gap-2">
+    return framed(c, qbase, {
+      title: `Quote ${qt.number}`,
+      back: { href: qbase, label: "Quotes" },
+      sub: (
+        <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <StatusBadge value={shown} options={QUOTE_OPTIONS} />
+          <span>{qt.name ?? qt.email} · {money(qt.total_cents, qt.currency)}</span>
+        </p>
+      ),
+      actions: (
+        <>
           {qt.status === "draft" ? <a href={`${self}/edit`} class={buttonClass}>Edit</a> : null}
           <a href={`${self}/document`} class={buttonClass} target="_blank">Preview</a>
           {qt.status === "draft" || qt.status === "sent" ? (
             <a href={`${self}/send`} class={primaryClass}>{qt.status === "sent" ? "Send again" : "Send"}</a>
           ) : null}
-        </div>
+        </>
+      ),
+    }, (
+      <>
+        <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
+        {c.req.query("problem") ? <p role="alert" class={"mb-4 " + alertClass}>{c.req.query("problem")}</p> : null}
         <div class="grid gap-4 md:grid-cols-3">
           <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
             <Section title="Lines">
@@ -288,7 +329,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
           <div class="flex flex-col gap-4">
             {open ? (
               <Section title="Their answer">
-                <p class="mb-2 text-label text-ink-3">When they say yes or no, by reply or on the phone.</p>
+                <p class="mb-3 text-label text-ink-3">When they say yes or no, by reply or on the phone.</p>
                 <div class="flex flex-wrap gap-2">
                   <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="accepted" /><button class={buttonClass}>Mark accepted</button></form>
                   <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="declined" /><button class={buttonClass}>Mark declined</button></form>
@@ -305,22 +346,21 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
                 )}
               </Section>
             ) : null}
-            {extra}
-            <Section title="Quote">
+            <Section title="Details">
               <FieldList fields={[
                 { label: "For", value: <>{qt.name ? <>{qt.name}<br /></> : null}<span class="break-all">{qt.email}</span>{qt.phone ? <><br />{qt.phone}</> : null}</> },
-                ...(qt.address ? [{ label: "Address", value: qt.address }] : []),
-                { label: "Valid until", value: qt.valid_until ? dayText(qt.valid_until) : "No date" },
-                { label: "Sent", value: qt.sent_at ? <When at={qt.sent_at} timeZone={opts.timeZone} /> : "Not yet" },
-                ...(qt.decided_at ? [{ label: QUOTE_STATUS_LABELS[qt.status], value: <><When at={qt.decided_at} timeZone={opts.timeZone} />{qt.decided_by ? ` by ${qt.decided_by}` : ""}</> }] : []),
-                { label: "Made", value: <><When at={qt.created_at} timeZone={opts.timeZone} />{qt.created_by ? ` by ${qt.created_by}` : ""}</> },
+                { label: "Address", value: qt.address },
+                { label: "Valid until", value: qt.valid_until ? dayText(qt.valid_until) : null },
+                { label: "Sent", value: qt.sent_at ? <When at={qt.sent_at} timeZone={opts.timeZone} /> : null },
+                { label: QUOTE_STATUS_LABELS[qt.status], value: qt.decided_at ? <><When at={qt.decided_at} timeZone={opts.timeZone} />{qt.decided_by ? ` by ${qt.decided_by}` : ""}</> : null },
               ]} />
-              <form method="post" action={`${self}/copy`} class="mt-3">
-                <button class={buttonClass}>Copy to a new quote</button>
-              </form>
             </Section>
+            {extra}
           </div>
         </div>
+        <RecordFoot made={qt.created_at} by={qt.created_by} timeZone={opts.timeZone}>
+          <form method="post" action={`${self}/copy`}><button class={footLink}>Copy to a new quote</button></form>
+        </RecordFoot>
       </>
     ));
   });
@@ -486,8 +526,9 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       { label: "Invoice", cell: (r) => r.number ?? `Draft ${r.id}` },
       { label: "For", cell: (r) => r.name ?? r.email },
       { label: "Total", cell: (r) => money(r.total_cents, r.currency), class: "text-right" },
-      { label: "Status", cell: (r) => <><StatusBadge value={r.status} options={INVOICE_OPTIONS} />{r.livemode === false ? <span class="ml-1 text-label text-ink-3">test</span> : null}</> },
-      { label: "Due", cell: (r) => (r.due_date ? dayText(r.due_date) : ""), class: "hidden sm:table-cell" },
+      { label: "Status", cell: (r) => <><StatusBadge value={r.past_due ? "due" : r.status} options={SHOWN_INVOICE} />{r.livemode === false ? <span class="ml-1 text-label text-ink-3">test</span> : null}</> },
+      // When it was paid once it is; when it is due while it is open; nothing for a draft or a void.
+      { label: "Due", cell: (r) => (r.status === "paid" && r.paid_at ? <>Paid <When at={r.paid_at} timeZone={opts.timeZone} day /></> : r.status === "open" && r.due_date ? dayText(r.due_date) : ""), class: "hidden sm:table-cell" },
     ],
   };
 
@@ -510,12 +551,12 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       </div>
     );
     if (isPartial(c)) return c.html(results);
-    const top = opts.invoicesTop && !after ? await opts.invoicesTop(c) : null;
-    return framed(c, base, "Invoices", (
+    const currency = (opts.currency ?? "usd").toLowerCase();
+    const totals = after ? null : await invoiceTotals(getDb(c), { today: todayIn(opts.timeZone), timeZone: opts.timeZone, currency });
+    return framed(c, base, { title: "Invoices", actions: <a href={`${base}/new`} class={primaryClass}>New invoice</a> }, (
       <>
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
-        {top}
-        <p class="mb-3"><a href={`${base}/new`} class={buttonClass}>New invoice</a></p>
+        {totals ? <Totals totals={totals} currency={currency} base={base} /> : null}
         <SearchBar action={base} target="#results" q={q} placeholder="Number, name or email"
           filters={[{ name: "status", label: "Status", options: [...INVOICE_OPTIONS, { value: "due", label: "Past due" }], value: params.status, any: "Any status" }]} />
         {results}
@@ -558,17 +599,31 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const self = `${base}/${inv.id}`;
     const draft = inv.status === "draft" && !inv.stripe_invoice_id;
     const extra = opts.invoiceExtra ? await opts.invoiceExtra(c, inv) : null;
-    return framed(c, base, { title: inv.number ? `Invoice ${inv.number}` : "Draft invoice", back: { href: base, label: "Invoices" } }, (
-      <>
-        <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
-        <div class="mb-4 flex flex-wrap items-center gap-2">
-          <StatusBadge value={inv.status} options={INVOICE_OPTIONS} />
+    const quote = inv.quote_id ? await quoteById(getDb(c), inv.quote_id) : null;
+    const pastDue = inv.status === "open" && !!inv.due_date && inv.due_date < todayIn(opts.timeZone) && (!quote || quote.status === "accepted");
+    return framed(c, base, {
+      title: inv.number ? `Invoice ${inv.number}` : "Draft invoice",
+      back: { href: base, label: "Invoices" },
+      sub: (
+        <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <StatusBadge value={pastDue ? "due" : inv.status} options={SHOWN_INVOICE} />
+          <span>{inv.name ?? inv.email} · {money(inv.total_cents, inv.currency)}</span>
           {inv.livemode === false ? <span class="text-label text-ink-3">Stripe test mode: not real money</span> : null}
+        </p>
+      ),
+      // The one thing to do next is the blue one: send a draft; an open one is paid on Stripe's page, or marked paid here.
+      actions: (
+        <>
           {draft ? <a href={`${self}/edit`} class={buttonClass}>Edit</a> : null}
           {inv.status === "draft" || (inv.status === "open" && !inv.sent_at) ? <a href={`${self}/send`} class={primaryClass}>Send with Stripe</a> : null}
-          {inv.hosted_url ? <a href={inv.hosted_url} target="_blank" rel="noopener" class={buttonClass}>Their payment page</a> : null}
+          {inv.hosted_url && inv.status !== "void" ? <a href={inv.hosted_url} target="_blank" rel="noopener" class={buttonClass}>Payment page</a> : null}
           {inv.pdf_url ? <a href={inv.pdf_url} target="_blank" rel="noopener" class={buttonClass}>PDF</a> : null}
-        </div>
+          {inv.status === "open" || inv.status === "uncollectible" ? <a href={`${self}/paid`} class={buttonClass}>Mark paid</a> : null}
+        </>
+      ),
+    }, (
+      <>
+        <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
         {inv.payment_failed_at && inv.status === "open" ? (
           <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">
             A payment attempt failed <When at={inv.payment_failed_at} timeZone={opts.timeZone} />. The invoice is still open on their payment page.
@@ -582,33 +637,25 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             {inv.notes ? <Section title="Note on the invoice"><p class="whitespace-pre-wrap break-words">{inv.notes}</p></Section> : null}
           </div>
           <div class="flex flex-col gap-4">
-            {inv.status === "open" || inv.status === "uncollectible" ? (
-              <Section title="Paid another way, or not at all">
-                <div class="flex flex-wrap gap-2">
-                  <a href={`${self}/paid`} class={buttonClass}>Mark paid</a>
-                  {inv.status === "open" ? <a href={`${self}/uncollectible`} class={buttonClass}>Uncollectible</a> : null}
-                  <a href={`${self}/void`} class={buttonClass}>Void</a>
-                </div>
-              </Section>
-            ) : null}
-            {extra}
-            <Section title="Invoice">
+            <Section title="Details">
               <FieldList fields={[
-                { label: "For", value: <>{inv.name ? <>{inv.name}<br /></> : null}<span class="break-all">{inv.email}</span>{inv.phone ? <><br />{inv.phone}</> : null}</> },
+                { label: "Bill to", value: <>{inv.name ? <>{inv.name}<br /></> : null}<span class="break-all">{inv.email}</span>{inv.phone ? <><br />{inv.phone}</> : null}</> },
                 inv.due_date ? { label: "Due", value: dayText(inv.due_date) } : { label: "Days to pay", value: String(inv.days_until_due) },
-                { label: "Sent", value: inv.sent_at ? <When at={inv.sent_at} timeZone={opts.timeZone} /> : "Not yet" },
-                ...(inv.paid_at ? [{ label: "Paid", value: <When at={inv.paid_at} timeZone={opts.timeZone} /> }] : []),
-                ...(inv.quote_id ? [{ label: "From", value: <a href={`${qbase}/${inv.quote_id}`}>the quote</a> }] : []),
-                { label: "Made", value: <><When at={inv.created_at} timeZone={opts.timeZone} />{inv.created_by ? ` by ${inv.created_by}` : ""}</> },
+                { label: "Sent", value: inv.sent_at ? <When at={inv.sent_at} timeZone={opts.timeZone} /> : null },
+                { label: "Paid", value: inv.paid_at ? <When at={inv.paid_at} timeZone={opts.timeZone} /> : null },
+                { label: "Quote", value: quote ? <a href={`${qbase}/${quote.id}`}>Quote {quote.number}</a> : null },
               ]} />
-              {draft ? (
-                <form method="post" action={`${self}/discard`} class="mt-3">
-                  <button class={buttonClass}>Discard this draft</button>
-                </form>
-              ) : null}
             </Section>
+            {extra}
           </div>
         </div>
+        <RecordFoot made={inv.created_at} by={inv.created_by} timeZone={opts.timeZone}>
+          {draft ? (
+            <form method="post" action={`${self}/discard`}><button class={footLink}>Discard this draft</button></form>
+          ) : null}
+          {inv.status === "open" ? <a href={`${self}/uncollectible`} class={footLink}>Write off</a> : null}
+          {inv.status === "open" || inv.status === "uncollectible" ? <a href={`${self}/void`} class={footLink}>Void</a> : null}
+        </RecordFoot>
       </>
     ));
   });
@@ -665,7 +712,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       run: (c, i) => voidInvoice(getDb(c), stripeOf(c), i.id),
     },
     {
-      path: "uncollectible", title: "Uncollectible", button: "Mark uncollectible", done: "asked-uncollectible",
+      path: "uncollectible", title: "Write off", button: "Write it off", done: "asked-uncollectible",
       allowed: (i) => i.status === "open",
       say: () => "Written off as not going to be paid. It can still be paid later, or voided.",
       run: (c, i) => markUncollectible(getDb(c), stripeOf(c), i.id),
@@ -681,9 +728,12 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       return framed(c, base, { title: `${act.title}: ${inv.number ? `invoice ${inv.number}` : "draft invoice"}`, back: { href: self, label: inv.number ? `Invoice ${inv.number}` : "Draft invoice" } }, (
         <>
           {problem ? <p role="alert" class={"mb-4 " + alertClass}>{problem}</p> : null}
-          <Section title="What happens">
-            <p class="mb-3 max-w-prose">{act.say(inv)}</p>
-            <form method="post" action={`${self}/${act.path}`}><button class={primaryClass}>{act.button}</button></form>
+          <Section title="What happens" class="max-w-2xl">
+            <p class="mb-4 max-w-prose">{act.say(inv)}</p>
+            <form method="post" action={`${self}/${act.path}`} class="flex items-center gap-4">
+              <button class={primaryClass}>{act.button}</button>
+              <a href={self} class="text-label text-ink-2">Cancel</a>
+            </form>
           </Section>
         </>
       ));

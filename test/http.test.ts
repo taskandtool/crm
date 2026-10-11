@@ -596,10 +596,13 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Make it a job o
   assert.match(html, /Invoice ACME-0042<\/a>[\s\S]*?due January 31, 2099/);
   html = await (await get(`/visits/${vid}`)).text();
   assert.match(html, /<h2[^>]*>Quote and invoice<\/h2>[\s\S]*Invoice ACME-0042/);
-  assert.doesNotMatch(await (await get("/invoices")).text(), /Paid by month/, "nothing paid yet");
+  html = await (await get("/invoices")).text();
+  assert.match(html, /\$1,200<\/span><span[^>]*>Outstanding</, "owed, on the invoices page");
+  assert.match(html, /\$0<\/span><span[^>]*>Paid this month</, "nothing paid yet");
   await db.sql`update invoices set status = 'paid', paid_at = now() where id = ${iid}::bigint`;
   html = await (await get("/invoices")).text();
-  assert.match(html, /Paid by month[\s\S]*\$1,200\.00/);
+  assert.match(html, /\$1,200<\/span><span[^>]*>Paid this month</);
+  assert.match(html, /\$0<\/span><span[^>]*>Outstanding</);
   assert.doesNotMatch(await (await get(`/customers/${cid}`)).text(), /Owes /);
 
   assert.equal((await get(`/invoices/quotes/${qid}`, { host: "crm.example" })).status, 404, "team only");

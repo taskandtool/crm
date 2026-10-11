@@ -66,34 +66,3 @@ export function VisitMoney({ quotes, invoices }: { quotes: Quote[]; invoices: In
     </Section>
   );
 }
-
-export type PaidMonth = { currency: string; months: { bucket: string; value: number }[] };
-
-/** Paid invoices by month, live money, one row of months per currency. */
-export function PaidByMonth({ rows }: { rows: PaidMonth[] }) {
-  if (!rows.length) return null;
-  const month = (b: string) => new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", year: "2-digit" }).format(new Date(b + "T00:00:00Z"));
-  return (
-    <details class="mb-4 rounded-card border border-line bg-surface shadow-card p-4">
-      <summary class="cursor-pointer text-label font-semibold text-ink-2">Paid by month</summary>
-      {rows.map((r) => (
-        <div class="mt-3 overflow-x-auto">
-          <table class="w-full border-collapse text-label">
-            <caption class="sr-only">Invoices paid by month, {r.currency.toUpperCase()}</caption>
-            <thead>
-              <tr class="border-b border-line-strong text-left text-ink-3">
-                {r.months.map((m) => <th scope="col" class="whitespace-nowrap px-2 py-1 text-right font-semibold">{month(m.bucket)}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                {r.months.map((m) => <td class="whitespace-nowrap px-2 py-1 text-right">{m.value ? formatMoney(m.value, r.currency) : <span class="text-ink-3">0</span>}</td>)}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      ))}
-      <p class="mt-2 text-label text-ink-3">Invoices marked paid, by the month they were paid, the current month so far. Stripe test mode is left out.</p>
-    </details>
-  );
-}

@@ -19,7 +19,7 @@ import { readHead } from "./quotes";
 export const INVOICE_STATUSES = ["draft", "open", "paid", "void", "uncollectible"] as const;
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
-  draft: "Draft", open: "Open", paid: "Paid", void: "Void", uncollectible: "Uncollectible",
+  draft: "Draft", open: "Open", paid: "Paid", void: "Void", uncollectible: "Written off",
 };
 
 export type Invoice = {
@@ -183,7 +183,7 @@ export async function invoicesFor(db: Db, by: { email?: string | null; visitId?:
   return rows.map(toInvoice);
 }
 
-export type InvoiceRow = Invoice & { k: string };
+export type InvoiceRow = Invoice & { k: string; past_due: boolean };
 export type InvoiceFilter = { q: string | null; status: InvoiceStatus | null; due: boolean };
 
 /** The invoices list, newest first, keyset paged on (created_at, id). `due` is open and past its due date. */
@@ -191,14 +191,17 @@ export async function invoicesPage(db: Db, f: InvoiceFilter, after: { k: string;
   const pat = likePattern(f.q);
   const k = after?.k ?? null, id = after?.id ?? null;
   const rows = await db.sql`
-    select *, to_char(due_date, 'YYYY-MM-DD') as due_day, created_at::text as k from invoices
+    select *, to_char(due_date, 'YYYY-MM-DD') as due_day, created_at::text as k,
+           (status = 'open' and due_date < ${today}::date
+            and (quote_id is null or exists (select 1 from quotes q where q.id = invoices.quote_id and q.status = 'accepted'))) as past_due
+    from invoices
     where (${pat}::text is null or number ilike ${pat} or email::text ilike ${pat} or name ilike ${pat})
       and (${f.status}::text is null or status = ${f.status})
       and (not ${f.due} or (status = 'open' and due_date < ${today}::date
                              and (quote_id is null or exists (select 1 from quotes q where q.id = invoices.quote_id and q.status = 'accepted'))))
       and (${k}::timestamptz is null or (created_at, id) < (${k}::timestamptz, ${id}::bigint))
     order by created_at desc, id desc limit ${size + 1}`;
-  return rows.map((r) => ({ ...toInvoice(r), k: r.k }));
+  return rows.map((r) => ({ ...toInvoice(r), k: r.k, past_due: r.past_due === true }));
 }
 
 /** What a customer owes now: open invoices, live mode only, one total per currency. */
@@ -210,6 +213,32 @@ export async function owed(db: Db, email: string): Promise<{ currency: string; c
       and (quote_id is null or exists (select 1 from quotes q where q.id = invoices.quote_id and q.status = 'accepted'))
     group by currency order by currency`;
   return rows.map((r) => ({ currency: r.currency, cents: r.cents, count: Number(r.count) }));
+}
+
+/**
+ * The money at a glance, in one currency, live mode only: what is owed
+ * (open), the part of it past due, and what was paid this calendar month in
+ * `timeZone`. A proposal's Pay button is not owed until its quote is accepted.
+ */
+export async function invoiceTotals(db: Db, opts: { today: string; timeZone: string; currency: string }) {
+  const [r] = await db.sql`
+    with owed as (
+      select total_cents, due_date from invoices
+      where status = 'open' and livemode is true and currency = ${opts.currency}
+        and (quote_id is null or exists (select 1 from quotes q where q.id = invoices.quote_id and q.status = 'accepted')))
+    select
+      (select coalesce(sum(total_cents), 0)::text from owed) as open_cents,
+      (select count(*)::int from owed) as open_count,
+      (select coalesce(sum(total_cents), 0)::text from owed where due_date < ${opts.today}::date) as due_cents,
+      (select count(*)::int from owed where due_date < ${opts.today}::date) as due_count,
+      (select coalesce(sum(total_cents), 0)::text from invoices
+        where status = 'paid' and livemode is true and currency = ${opts.currency}
+          and paid_at >= (date_trunc('month', ${opts.today}::date)::timestamp at time zone ${opts.timeZone})) as paid_cents`;
+  return {
+    open: { cents: r.open_cents as string, count: Number(r.open_count) },
+    due: { cents: r.due_cents as string, count: Number(r.due_count) },
+    paid: { cents: r.paid_cents as string },
+  };
 }
 
 // Every read selects `*` and due_date as text (due_day): pg reads a `date` as local midnight.

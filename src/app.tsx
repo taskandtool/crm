@@ -62,8 +62,6 @@ import { todayIn as todayInZone } from "./reports/sql";
 import { stripeWebhook } from "./payments/webhook";
 import { quoteById, quotesFor } from "./invoices/quotes";
 import { invoicesFor, owed } from "./invoices/invoices";
-import { run, seriesQuery, todayIn } from "./reports/sql";
-import { PaidByMonth } from "./views/money";
 import { jobFromQuote } from "./crm/quotes";
 import { CUSTOMER_VISITS, NewVisitPage, visitParams, VisitPage, VisitResults, VisitsPage, visitSpec } from "./views/visits";
 
@@ -748,18 +746,6 @@ if (invoicesCfg) {
       // A yes on the quote's page wins the deal it is for.
       afterDecide: async (c) => void (await winFromQuotes(dbOf(c), (c as unknown as C).var.user)),
       nav: INVOICE_TABS,
-      // Paid by month: this month and the eleven before, one row per currency ever paid in.
-      invoicesTop: async (c) => {
-        const db = dbOf(c);
-        const currencies = await db.sql<{ currency: string }>`select distinct currency from invoices where status = 'paid' and livemode is true order by 1`;
-        if (!currencies.length) return null;
-        const to = todayIn(cfg.time_zone);
-        const first = new Date(Date.UTC(Number(to.slice(0, 4)), Number(to.slice(5, 7)) - 12, 1)).toISOString().slice(0, 10);
-        const rows = await Promise.all(currencies.map(async ({ currency }) => ({
-          currency, months: await run<{ bucket: string; value: number }>(db, seriesQuery("invoices_paid", { from: first, to }, "month", cfg.time_zone, currency)),
-        })));
-        return <PaidByMonth rows={rows} />;
-      },
       // Beside an invoice: whose it is here, and its job.
       invoiceExtra: async (c, inv) => {
         const customer = await findMatch(dbOf(c), inv.email, inv.phone);

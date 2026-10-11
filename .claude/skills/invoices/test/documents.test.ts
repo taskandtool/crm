@@ -8,7 +8,7 @@ import { scratch, why, type Scratch } from "../../data/test/scratch";
 import { createTaxRate, percentToBp, taxRates } from "../../payments/tax";
 import { readLines } from "../lines";
 import { copyQuote, createQuote, decideQuote, expireQuote, markSent, quoteById, quotesFor, saveQuote, shownStatus } from "../quotes";
-import { createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, owed, saveInvoice } from "../invoices";
+import { createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoiceTotals, owed, saveInvoice } from "../invoices";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // The payments schema first: lines carry its tax_rates.
@@ -213,6 +213,28 @@ test("a draft invoice is edited until it goes to Stripe", (t) =>
     const bad = await createInvoice(s.db, { email: "nope", currency: "dollars", days_until_due: "400", lines: [] }, BY, "crm");
     assert.ok(!bad.ok);
     assert.deepEqual(Object.keys(bad.errors).sort(), ["currency", "days_until_due", "email", "lines"]);
+  }));
+
+test("totals: outstanding, past due and paid this month, live money in one currency", (t) =>
+  withDb(t, async (s) => {
+    const mk = async (currency: string, unit: string) => {
+      const r = await createInvoice(s.db, { ...ann, currency, lines: [{ description: "x", unit }] }, BY, "crm");
+      assert.ok(r.ok);
+      return r.value.id;
+    };
+    const late = await mk("usd", "100"), current = await mk("usd", "40"), euro = await mk("eur", "9"), test_ = await mk("usd", "500");
+    const paidNow = await mk("usd", "25"), paidBefore = await mk("usd", "60");
+    await s.db.sql`update invoices set status = 'open', livemode = true, due_date = '2026-10-01' where id = ${late}::bigint`;
+    await s.db.sql`update invoices set status = 'open', livemode = true, due_date = '2026-10-30' where id = any(${[current, euro]}::bigint[])`;
+    await s.db.sql`update invoices set status = 'open', livemode = false, due_date = '2026-10-01' where id = ${test_}::bigint`;
+    // Paid on 1 October in Chicago (05:30 UTC) counts in October; 30 September there does not.
+    await s.db.sql`update invoices set status = 'paid', livemode = true, paid_at = '2026-10-01T05:30:00Z' where id = ${paidNow}::bigint`;
+    await s.db.sql`update invoices set status = 'paid', livemode = true, paid_at = '2026-10-01T04:30:00Z' where id = ${paidBefore}::bigint`;
+    assert.deepEqual(await invoiceTotals(s.db, { today: "2026-10-11", timeZone: "America/Chicago", currency: "usd" }), {
+      open: { cents: "14000", count: 2 },
+      due: { cents: "10000", count: 1 },
+      paid: { cents: "2500" },
+    });
   }));
 
 test("owed: open invoices in live mode, per currency", (t) =>
