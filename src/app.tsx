@@ -40,7 +40,7 @@ import { CustomerPage } from "./views/customer";
 import { CustomersPage, customerSpec, filterParams, NewCustomerPage, Results } from "./views/customers";
 import { InboxPage, InboxResults, InboxRows } from "./views/inbox";
 import { Layout, WaitingView } from "./views/layout";
-import { Board, CLOSED_DAYS, DealPage, DealsPage, PER_COLUMN, type BoardData } from "./views/deals";
+import { Board, CLOSED_DAYS, DealPage, DealsPage, NewDealPage, PER_COLUMN, type BoardData } from "./views/deals";
 import { FollowUpsPage } from "./views/follow-ups";
 import { MergePage } from "./views/merge";
 import { StagesPage } from "./views/stages";
@@ -64,7 +64,7 @@ import { invoicesFor, owed } from "./invoices/invoices";
 import { run, seriesQuery, todayIn } from "./reports/sql";
 import { PaidByMonth } from "./views/money";
 import { jobFromQuote } from "./crm/quotes";
-import { CUSTOMER_VISITS, visitParams, VisitPage, VisitResults, VisitsPage, visitSpec } from "./views/visits";
+import { CUSTOMER_VISITS, NewVisitPage, visitParams, VisitPage, VisitResults, VisitsPage, visitSpec } from "./views/visits";
 
 type C = Context<AppEnv>;
 const PAGE = 50;
@@ -273,6 +273,13 @@ app.get("/customers/export.csv", async (c) => {
   return csvResponse(`customers-${day}.csv`, csvColumns(labels, cfg.fields), everyPage((after, size) => listPage(db, f, after, size)));
 });
 
+/** Who a form names: an email, a phone, and a name (else the email, else the phone); no name means none was given. */
+function personOf(body: Record<string, unknown>) {
+  const email = normalizeEmail(body.email);
+  const phone = clean(body.phone, 40);
+  return { email, phone, name: clean(body.name, 200) ?? email ?? (phoneKey(phone) ? phone : null) };
+}
+
 app.get("/customers/new", async (c) => {
   return c.html(<NewCustomerPage user={c.var.user} stages={await listStages(c.var.db, "customers")} flash={flashOf(c)} />);
 });
@@ -280,9 +287,7 @@ app.get("/customers/new", async (c) => {
 app.post("/customers", async (c) => {
   const db = c.var.db;
   const body = await c.req.parseBody();
-  const email = normalizeEmail(body.email);
-  const phone = clean(body.phone, 40);
-  const name = clean(body.name, 200) ?? email ?? (phoneKey(phone) ? phone : null);
+  const { name, email, phone } = personOf(body);
   if (!name) return back(c, "/customers/new", "name-needed");
   const stages = await listStages(db, "customers");
   const stage = stages.find((s) => s.key === str(body.stage)) ?? (await firstOpenStage(db, "customers"));
@@ -531,6 +536,27 @@ app.post("/customers/:id/visits", async (c) => {
   const r = await addVisit(c.var.db, id, visit, c.var.user);
   if (!r) return c.notFound();
   return back(c, `/visits/${r.id}`, invalid ? "invalid" : "visit-added");
+});
+
+app.get("/visits/new", async (c) => {
+  const db = c.var.db;
+  const [vo, f] = await Promise.all([visitOwners(db), facets(db)]);
+  return c.html(<NewVisitPage user={c.var.user} owners={[...new Set([c.var.user, ...vo, ...f.owners])]} flash={flashOf(c)} />);
+});
+
+// A new visit from the list: the person (matched by email or phone, or added, as a new deal does) and the visit.
+app.post("/visits", async (c) => {
+  const db = c.var.db;
+  const body = await c.req.parseBody();
+  const { visit, invalid } = readVisitForm(body);
+  if (!visit.title) return back(c, "/visits/new", "visit-title-needed");
+  const { name, email, phone } = personOf(body);
+  if (!name) return back(c, "/visits/new", "name-needed");
+  const status = await firstOpenStage(db, "customers");
+  if (!status) return back(c, "/stages", "last-open");
+  const who = await createCustomer(db, { name, email, phone, stage: status.key }, c.var.user);
+  const r = await addVisit(db, who.customer.id, visit, c.var.user);
+  return r ? back(c, `/visits/${r.id}`, invalid ? "invalid" : "visit-added") : back(c, "/visits", "gone");
 });
 
 app.get("/visits/:id", async (c) => {
@@ -870,16 +896,18 @@ app.get("/deals", async (c) => {
   return c.html(<DealsPage user={c.var.user} data={await boardData(c)} flash={flashOf(c)} />);
 });
 
+app.get("/deals/new", async (c) => {
+  return c.html(<NewDealPage user={c.var.user} stages={await listStages(c.var.db, "deals")} flash={flashOf(c)} />);
+});
+
 // New deal from the board: the person (matched by email or phone, or added) and their deal.
 app.post("/deals", async (c) => {
   const db = c.var.db;
   const body = await c.req.parseBody();
   const input = readDealForm(body);
-  if (!input.deal.title) return back(c, "/deals", "deal-title-needed");
-  const email = normalizeEmail(body.email);
-  const phone = clean(body.phone, 40);
-  const name = clean(body.name, 200) ?? email ?? (phoneKey(phone) ? phone : null);
-  if (!name) return back(c, "/deals", "name-needed");
+  if (!input.deal.title) return back(c, "/deals/new", "deal-title-needed");
+  const { name, email, phone } = personOf(body);
+  if (!name) return back(c, "/deals/new", "name-needed");
   const [status, stage] = await Promise.all([firstOpenStage(db, "customers"), dealStageOf(db, body.stage)]);
   if (!status || !stage) return back(c, "/stages", "last-open");
   const who = await createCustomer(db, { name, email, phone, stage: status.key }, c.var.user);

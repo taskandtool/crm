@@ -31,10 +31,7 @@ export function MergePage(p: {
     </li>
   );
   return (
-    <Layout title={`Merge into ${p.keep.name}`} user={p.user} section="customers">
-      <p class="mb-3 text-label">
-        <a href={`/customers/${p.keep.id}`}>Back to {p.keep.name}</a>
-      </p>
+    <Layout title={`Merge into ${p.keep.name}`} user={p.user} section="customers" back={{ href: `/customers/${p.keep.id}`, label: p.keep.name }}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       {p.preview ? (
         <section class="mb-6 rounded-card border border-line bg-surface p-4" aria-labelledby="merge-what">

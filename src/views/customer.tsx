@@ -21,7 +21,7 @@ import { NOTE_KINDS, NOTE_LABELS, type Note } from "../crm/notes";
 import type { Stage } from "../crm/stages";
 import type { Visit } from "../crm/visits";
 import { missingSentence, type Present } from "../crm/tables";
-import { money, nowIn } from "../crm/text";
+import { money } from "../crm/text";
 import { whereText, type Booking } from "../booking/book";
 import { firstText } from "./inbox";
 import { Layout } from "./layout";
@@ -259,7 +259,7 @@ function Activity({ c, notes, history, missing }: { c: Customer; notes: Note[]; 
           {/* Now, unless it happened earlier: the time is there when it is needed. */}
           <details class="text-label text-ink-2">
             <summary class="cursor-pointer">Earlier?</summary>
-            <input name="at" type="datetime-local" max={nowIn(timeZone)} aria-label="When it happened" class={controlClass + " mt-2"} />
+            <input name="at" type="datetime-local" aria-label="When it happened" class={controlClass + " mt-2"} />
           </details>
         </div>
       </form>

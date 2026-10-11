@@ -57,7 +57,7 @@ runs anywhere with Node 20 and a Postgres.
   check is marked paid there too. A customer's page shows what was
   quoted, what they owe now and what they paid.
 - **The deals board**: a column per stage with its count and total, drag
-  between them, or a select on each card without JavaScript.
+  between them, or a select on each card on a phone or without JavaScript.
 - **CSV import** of the list you keep today, matched by email then phone
   so nobody is added twice, with a dry run first.
 - **The AI's hands**: scripts to find, add, update, note, tag, merge,

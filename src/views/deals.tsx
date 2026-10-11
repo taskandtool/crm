@@ -10,16 +10,16 @@ import { StatusBadge, StatusForm } from "../admin/status";
 import { dealsCfg, invoicesCfg, ownerLabel, visitsCfg, vocab } from "../config";
 import type { Customer } from "../crm/customers";
 import type { Deal } from "../crm/deals";
-import type { FollowUp } from "../crm/follow-ups";
+import { dueOf, type FollowUp } from "../crm/follow-ups";
 import { KIND_LABELS, type Stage } from "../crm/stages";
-import { money } from "../crm/text";
+import { cash } from "../crm/text";
 import { amountText, type Visit } from "../crm/visits";
 import { QUOTE_OPTIONS, todayIn } from "../invoices/admin";
 import { shownStatus, type Quote } from "../invoices/quotes";
 import { formatMoney } from "../payments/money";
 import { FollowUpsSection } from "./follow-ups";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, DueMark, Field, linkButtonClass, MESSAGES, primaryClass, SaveOnChange, stageOptions, timeZone, Who } from "./ui";
+import { buttonClass, controlClass, dueDayText, DueMark, Field, linkButtonClass, MESSAGES, PersonFields, primaryClass, primaryLinkClass, RecordLine, SaveOnChange, stageOptions, timeZone } from "./ui";
 
 /** How many cards a column shows; how many days won and lost ones stay on the board. */
 export const PER_COLUMN = 100;
@@ -27,7 +27,7 @@ export const CLOSED_DAYS = 30;
 
 const one = dealsCfg.one.toLowerCase();
 const many = dealsCfg.many.toLowerCase();
-const worth = (d: Deal) => (d.shown_cents === null ? null : money(d.shown_cents, d.currency ?? dealsCfg.currency));
+const worth = (d: Deal) => (d.shown_cents === null ? null : cash(d.shown_cents, d.currency ?? dealsCfg.currency));
 
 export type BoardData = {
   stages: Stage[];
@@ -38,31 +38,28 @@ export type BoardData = {
 };
 
 export function DealsPage(p: { user: string; data: BoardData; flash: { code?: string | null; n?: string | null } }) {
-  const open = p.data.stages.filter((s) => s.kind === "open");
   return (
-    <Layout title={dealsCfg.many} user={p.user} section="deals" drag wide>
+    <Layout title={dealsCfg.many} user={p.user} section="deals" drag wide
+      actions={<a href="/deals/new" class={primaryLinkClass}>New {one}</a>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
-      <details class="mb-4 rounded-card border border-line bg-surface p-4">
-        <summary class="cursor-pointer text-label font-semibold text-ink-2">Add {one}</summary>
-        <form method="post" action="/deals" class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label={`${vocab.one} name`}>
-            <input name="name" maxlength={200} autocomplete="off" class={controlClass} />
-          </Field>
-          <Field label="Email">
-            <input name="email" type="email" maxlength={254} autocomplete="off" class={controlClass} />
-          </Field>
-          <Field label="Phone">
-            <input name="phone" type="tel" maxlength={40} autocomplete="off" class={controlClass} />
-          </Field>
-          <DealInputs stages={open} />
-          <div class="sm:col-span-2 lg:col-span-3">
-            <button class={primaryClass}>Add {one}</button>
-            <span class="ml-3 text-label text-ink-3">Matches a {vocab.one.toLowerCase()} already here by email or phone, or adds a new one.</span>
-          </div>
-        </form>
-      </details>
-      <p class="mb-3 text-label text-ink-3">Won and lost {many} stay on the board for {CLOSED_DAYS} days.</p>
       <Board data={p.data} />
+    </Layout>
+  );
+}
+
+/** A new deal from the board: the person (matched by email or phone, or added) and what is being won. */
+export function NewDealPage(p: { user: string; stages: Stage[]; flash: { code?: string | null; n?: string | null } }) {
+  return (
+    <Layout title={`New ${one}`} user={p.user} section="deals" back={{ href: "/deals", label: dealsCfg.many }}>
+      <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
+      <form method="post" action="/deals" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface p-4 sm:grid-cols-3">
+        <PersonFields />
+        <DealInputs stages={p.stages.filter((s) => s.kind === "open")} />
+        <div class="sm:col-span-3">
+          <button class={primaryClass}>Add {one}</button>
+          <span class="ml-3 text-label text-ink-3">Someone already here by email or phone gets it; anyone else is added.</span>
+        </div>
+      </form>
     </Layout>
   );
 }
@@ -74,7 +71,7 @@ function DealInputs({ stages }: { stages: Stage[] }) {
       <Field label={`${dealsCfg.one} name`}>
         <input name="title" required maxlength={200} placeholder="New furnace" class={controlClass} />
       </Field>
-      <Field label={`Value (${dealsCfg.currency})`} hint="Leave blank to use the latest quote's total.">
+      <Field label={`Value (${dealsCfg.currency})`} hint="Blank uses the quote's total.">
         <input name="value" inputmode="decimal" maxlength={20} class={controlClass} />
       </Field>
       <Field label="Stage">
@@ -94,7 +91,7 @@ export function Board({ data }: { data: BoardData }) {
   const options = stageOptions(stages);
   const column = (key: string, label: string, kind: Stage["kind"] | null, list: Deal[]) => {
     const t = key ? totals[key] : { count: strays.length, cents: "0", other: 0 };
-    const total = t && BigInt(t.cents) > 0n ? money(t.cents, dealsCfg.currency) : null;
+    const total = t && BigInt(t.cents) > 0n ? cash(t.cents, dealsCfg.currency) : null;
     return (
       <section data-stage={key} aria-label={`${label}, ${t?.count ?? 0}`} class="flex min-w-60 max-w-80 flex-1 basis-0 flex-col rounded-card bg-panel p-2">
         <h2 class="mb-2 px-1 text-label">
@@ -121,7 +118,7 @@ export function Board({ data }: { data: BoardData }) {
     <div id="pipeline">
       {!cards.length ? (
         <p class="mb-3 text-ink-2">
-          No {many} yet. Add one above, from a {vocab.one.toLowerCase()}'s page, or from the Inbox.
+          No {many} yet. Add one here, from a {vocab.one.toLowerCase()}'s page, or from the Inbox.
         </p>
       ) : null}
       <div class="flex gap-3 overflow-x-auto pb-3">
@@ -144,10 +141,11 @@ function Card({ d, options, stray, next, today, open }: { d: Deal; options: Retu
         {value ? ` · ${value}` : ""}
       </p>
       <p class="flex flex-wrap gap-x-2 text-label text-ink-3">
-        {open || stray ? <DueMark next={next} today={today} /> : d.closed_at ? <span>Closed <When at={d.closed_at} timeZone={timeZone} /></span> : null}
+        {open || stray ? <NextMark next={next} today={today} /> : d.closed_at ? <span>Closed <When at={d.closed_at} timeZone={timeZone} day /></span> : null}
         {d.owner ? <span class="truncate">{ownerLabel}: {d.owner}</span> : null}
       </p>
-      <div class="mt-2">
+      {/* Dragging moves a card on a wide screen; the select is for a phone, and for a browser without JavaScript. */}
+      <div class="mt-2 md:[.js_&]:hidden">
         <StatusForm
           action={`/deals/${d.id}/stage`}
           current={stray ? "" : d.stage}
@@ -159,6 +157,12 @@ function Card({ d, options, stray, next, today, open }: { d: Deal; options: Retu
       </div>
     </li>
   );
+}
+
+/** A card's next follow-up: Today and Overdue say what they are; a later day says it is the follow-up. */
+function NextMark({ next, today }: { next: { due_on: string; due_time: string | null } | undefined; today: string }) {
+  const later = !!next && dueOf(next, today) === "later";
+  return later ? <span>Follow-up <DueMark next={next} today={today} /></span> : <DueMark next={next} today={today} />;
 }
 
 /** One deal: its stage, worth, follow-ups, details, quotes and jobs. */
@@ -183,18 +187,20 @@ export function DealPage(p: {
   const closed = !!stage && stage.kind !== "open";
   const who = { email: d.customer_email, name: d.customer_name, phone: d.customer_phone, deal: d.id, line: d.title };
   return (
-    <Layout title={d.title} user={p.user} section="deals">
-      <p class="mb-3 text-label">
-        <a href="/deals">All {many}</a>
-      </p>
-      <p class="-mt-1 mb-4 text-ink-2">
-        For <a href={`/customers/${d.customer_id}`}>{d.customer_name}</a>
-      </p>
+    <Layout
+      title={d.title}
+      user={p.user}
+      section="deals"
+      back={{ href: "/deals", label: dealsCfg.many }}
+      sub={<>For <a href={`/customers/${d.customer_id}`}>{d.customer_name}</a></>}
+      actions={
+        <>
+          <SaveOnChange action={`${self}/stage`} current={d.stage} options={stageOptions(stages)} label="Stage" returnTo={self} />
+          {invoicesCfg && d.customer_email ? <a href={listUrl("/invoices/quotes/new", who)} class={linkButtonClass}>New quote</a> : null}
+        </>
+      }
+    >
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
-      <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <SaveOnChange action={`${self}/stage`} current={d.stage} options={stageOptions(stages)} label="Stage" returnTo={self} />
-        {invoicesCfg && d.customer_email ? <a href={listUrl("/invoices/quotes/new", who)} class={linkButtonClass}>New quote</a> : null}
-      </div>
       {d.archived_at ? (
         <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">
           Archived <When at={d.archived_at} timeZone={timeZone} />. Off the board; nothing is deleted.
@@ -223,31 +229,6 @@ export function DealPage(p: {
                 owners={p.owners} user={p.user} today={p.today} returnTo={self} prompt={!closed} />
             </Section>
           ) : null}
-          <Section title="Details">
-            <form method="post" action={self} class="grid gap-3 sm:grid-cols-2">
-              <Field label={`${dealsCfg.one} name`} class="sm:col-span-2">
-                <input name="title" value={d.title} required maxlength={200} class={controlClass} />
-              </Field>
-              <Field label={`Value (${(d.currency ?? dealsCfg.currency).toUpperCase()})`} hint="Leave blank to use the latest quote's total.">
-                <input name="value" inputmode="decimal" value={d.value_cents === null ? "" : amountText(d.value_cents, d.currency ?? dealsCfg.currency)} maxlength={20} class={controlClass} />
-              </Field>
-              <Field label="Expected close date">
-                <input name="expected_close" type="date" value={d.expected_close ?? ""} class={controlClass} />
-              </Field>
-              <Field label={ownerLabel}>
-                <input name="owner" list="owners" value={d.owner ?? ""} maxlength={200} class={controlClass} />
-                <datalist id="owners">
-                  {p.owners.map((o) => <option value={o} />)}
-                </datalist>
-              </Field>
-              <Field label="Notes" class="sm:col-span-2">
-                <textarea name="notes" rows={3} maxlength={10000} class={controlClass}>{d.notes ?? ""}</textarea>
-              </Field>
-              <div class="sm:col-span-2">
-                <button class={primaryClass}>Save</button>
-              </div>
-            </form>
-          </Section>
           {p.quotes && (p.quotes.length || !closed) ? (
             <Section title="Quotes">
               {p.quotes.length ? (
@@ -281,26 +262,65 @@ export function DealPage(p: {
         </div>
         <div class="flex flex-col gap-4">
           <Section title="About">
-            <FieldList
-              fields={[
-                { label: "Value", value: value ? `${value}${d.from_quote ? " (from the quote)" : ""}` : "Not set" },
-                { label: "In this stage since", value: <When at={d.stage_changed_at} timeZone={timeZone} /> },
-                ...(d.closed_at ? [{ label: "Closed", value: <When at={d.closed_at} timeZone={timeZone} /> }] : []),
-                { label: "Added", value: <Who at={d.created_at} by={d.created_by} /> },
-                { label: "Changed", value: <Who at={d.updated_at} by={d.updated_by} /> },
-              ]}
-            />
-          </Section>
-          <Section title="Archive">
-            <form method="post" action={`${self}/archive`} class="flex flex-col gap-2">
-              <input type="hidden" name="archived" value={d.archived_at ? "0" : "1"} />
-              <p class="text-label text-ink-3">{d.archived_at ? "Puts it back on the board." : "Takes it off the board. Nothing is deleted."}</p>
-              <button class={buttonClass + " self-start"}>{d.archived_at ? "Unarchive" : "Archive"}</button>
-            </form>
+            <div class="flex flex-col gap-3">
+              <FieldList
+                fields={[
+                  { label: "Value", value: value ? `${value}${d.from_quote ? " (from the quote)" : ""}` : "Not set" },
+                  ...(d.expected_close ? [{ label: "Expected close", value: dueDayText(d.expected_close, p.today) }] : []),
+                  ...(d.owner ? [{ label: ownerLabel, value: d.owner }] : []),
+                  { label: "In this stage since", value: <When at={d.stage_changed_at} timeZone={timeZone} day /> },
+                  ...(d.closed_at ? [{ label: "Closed", value: <When at={d.closed_at} timeZone={timeZone} day /> }] : []),
+                  ...(d.notes ? [{ label: "Notes", value: <span class="whitespace-pre-wrap">{d.notes}</span> }] : []),
+                ]}
+              />
+              <details>
+                <summary class={buttonClass + " inline-block cursor-pointer list-none"}>Edit</summary>
+                <div class="mt-3">
+                  <DealEdit d={d} owners={p.owners} />
+                </div>
+              </details>
+            </div>
           </Section>
         </div>
       </div>
+      <RecordLine added={d.created_at} addedBy={d.created_by} changed={d.updated_at} changedBy={d.updated_by}>
+        <form method="post" action={`${self}/archive`}>
+          <input type="hidden" name="archived" value={d.archived_at ? "0" : "1"} />
+          <button class="text-ink-2 underline" title={d.archived_at ? "Puts it back on the board." : "Takes it off the board. Nothing is deleted."}>
+            {d.archived_at ? "Unarchive" : "Archive"}
+          </button>
+        </form>
+      </RecordLine>
     </Layout>
+  );
+}
+
+/** The deal's own fields, behind Edit on its page. */
+function DealEdit({ d, owners }: { d: Deal; owners: string[] }) {
+  return (
+    <form method="post" action={`/deals/${d.id}`} class="grid gap-3">
+      <Field label={`${dealsCfg.one} name`}>
+        <input name="title" value={d.title} required maxlength={200} class={controlClass} />
+      </Field>
+      <Field label={`Value (${(d.currency ?? dealsCfg.currency).toUpperCase()})`} hint="Blank uses the quote's total.">
+        <input name="value" inputmode="decimal" value={d.value_cents === null ? "" : amountText(d.value_cents, d.currency ?? dealsCfg.currency)} maxlength={20} class={controlClass} />
+      </Field>
+      <Field label="Expected close date">
+        <input name="expected_close" type="date" value={d.expected_close ?? ""} class={controlClass} />
+      </Field>
+      <Field label={ownerLabel}>
+        <input name="owner" list="owners" value={d.owner ?? ""} maxlength={200} class={controlClass} />
+        <datalist id="owners">
+          {owners.map((o) => <option value={o} />)}
+        </datalist>
+      </Field>
+      <Field label="Notes">
+        <textarea name="notes" rows={3} maxlength={10000} class={controlClass}>{d.notes ?? ""}</textarea>
+      </Field>
+      <div>
+        <button class={primaryClass}>Save</button>
+      </div>
+    </form>
   );
 }
 
@@ -314,7 +334,7 @@ export function CustomerDeals({ c, deals, stages }: { c: Customer; deals: Deal[]
       <a href={`/deals/${d.id}`} class="font-semibold">{d.title}</a>
       <StatusBadge value={d.stage} options={options} />
       {worth(d) ? <span class="whitespace-nowrap">{worth(d)}</span> : null}
-      {d.closed_at ? <span class="text-label text-ink-3">closed <When at={d.closed_at} timeZone={timeZone} /></span> : null}
+      {d.closed_at ? <span class="text-label text-ink-3">closed <When at={d.closed_at} timeZone={timeZone} day /></span> : null}
     </li>
   );
   return (

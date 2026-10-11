@@ -56,6 +56,8 @@ export function Layout(props: {
         <link rel="stylesheet" href="/crm.css" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <script src="/vendor/htmx.min.js" defer></script>
+        {/* Before the first paint: a card's stage select, there for a browser without JavaScript, steps aside where cards drag. */}
+        {drag ? <script dangerouslySetInnerHTML={{ __html: 'document.documentElement.classList.add("js")' }}></script> : null}
         {drag ? <script src="/vendor/Sortable.min.js" defer></script> : null}
         <script src="/crm.js" defer></script>
       </head>

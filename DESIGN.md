@@ -13,14 +13,15 @@ carries meaning. `npm run check` enforces the parts that can be checked.
 | `--color-surface` | A card, a section, a row list, a panel that floats. |
 | `--color-panel` | A pipeline column, a flash, a hover, the current nav item. |
 | `--color-ink` / `ink-2` / `ink-3` | Text, secondary text, metadata. Every pair meets 4.5:1 on canvas and panel. |
-| `--color-accent` / `accent-ink` | The one action colour: Add, Save, a New badge, a won stage, the focus ring. |
+| `--color-accent` / `accent-ink` | The one action colour: a page's primary action, Save, the focus ring. A badge in it (New, a won stage) is outlined, never filled: a filled accent is a button. |
 | `--color-late` | An overdue follow-up, in its words ("Overdue"), never a colour alone. Nothing else is red. |
 | `--color-line` / `line-strong` | Hairlines; input, button and table edges. `line-strong` keeps 3:1 on every ground, the floor for a control's edge. |
 
 Change a value in `styles/theme.css` and keep its row here. The Tailwind
 default palette is off, so `bg-blue-500` does not exist; add a role.
 Badges (`src/admin/status.tsx`) use only these tokens: an open stage is
-strong, won is the accent, lost is muted.
+strong, won is the accent outline, lost is muted. An error (nothing was
+saved) is an alert set apart by weight and a heavy left edge, not by red.
 
 ## Type and space
 
@@ -31,6 +32,17 @@ buttons, `rounded-card` for cards and sections. Depth: `shadow-card` on a
 pipeline card, `shadow-lift` on something that floats.
 
 ## Composition
+
+- Every page is one frame: the list it belongs to above the title, the
+  title, then one line of who it is for (company, phone, email), with the
+  page's actions on the right. At most one action is primary.
+- A list page's primary action is **New** (New customer, New request, New
+  job), a page of its own. A record's page reads as values with **Edit**
+  for the form; who added it is one quiet line at its foot, beside Merge
+  and Archive.
+- Dates drop the year in this one and the time where the day is the point
+  (last contact, closed). Totals on the board and the Inbox are whole
+  units; quotes and invoices keep cents.
 
 - The Inbox is a list, not a table, so a row wraps on a phone: what it
   was and when, the person, then the one action that matters.

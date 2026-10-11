@@ -143,7 +143,7 @@ test("customers: create, open, edit, note, archive", async (t) => {
   const id = made.headers.get("location")!.match(/\/customers\/(\d+)/)![1];
   const again = await post("/customers", { name: "Q", email: "quinn@example.COM" });
   assert.equal(again.headers.get("location"), `/customers/${id}?saved=exists`);
-  assert.equal((await post("/customers", { name: "" })).headers.get("location"), "/customers?saved=name-needed");
+  assert.equal((await post("/customers", { name: "" })).headers.get("location"), "/customers/new?saved=name-needed");
 
   const list = await (await get("/customers?q=quinn")).text();
   assert.match(list, /Quinn Ray/);
@@ -198,7 +198,7 @@ test("deals: the board's columns and totals; a move answers htmx with the board 
   assert.match(page, /Sortable\.min\.js/);
   const contacted = page.split('<section data-stage="contacted"')[1].split("</section>")[0];
   assert.match(contacted, /New boiler/);
-  assert.match(contacted, /\$4,500\.00/, "the column's total");
+  assert.match(contacted, /\$4,500</, "the column's total, to the dollar");
   assert.match(contacted, /data-deal-id=/);
 
   const hx = await post(`/deals/${dealId}/stage`, { stage: "won", return: "/deals" }, { ...ME, origin: HOST, "hx-request": "true" });
@@ -233,7 +233,9 @@ test("deals: the board's columns and totals; a move answers htmx with the board 
   const [v] = await db.sql<{ title: string; amount_cents: string }>`select title, amount_cents::text from customer_visits where deal_id = ${dealId}::bigint`;
   assert.deepEqual(v, { title: "New boiler and flue", amount_cents: "520000" });
 
-  // New deal from the board for someone new: they are added as a lead.
+  // New deal from the board, on a page of its own, for someone new: they are added as a lead.
+  assert.match(await (await get("/deals/new")).text(), /<form method="post" action="\/deals"/);
+  assert.equal((await post("/deals", { title: "Heat pump" })).headers.get("location"), "/deals/new?saved=name-needed");
   const fresh = await post("/deals", { name: "Rae Kim", email: "rae@example.com", title: "Heat pump", value: "" });
   assert.match(fresh.headers.get("location")!, /^\/deals\/\d+\?saved=deal-added$/);
   const [rae] = await db.sql<{ stage: string }>`select stage from customers where email = 'rae@example.com'`;
@@ -340,7 +342,7 @@ test("a quote made for a deal: its value stands in, its page names the deal, and
   const qid = res.headers.get("location")!.match(/\/invoices\/quotes\/(\d+)/)![1];
   assert.match(await (await get(`/invoices/quotes/${qid}`)).text(), new RegExp(`For <a href="/deals/${did}">Kitchen remodel</a>; a yes wins the deal`));
   const board = await (await get("/deals")).text();
-  assert.match(board.split('<section data-stage="new"')[1].split("</section>")[0], /Kitchen remodel[\s\S]*\$8,000\.00/, "the quote's total stands in for a blank value");
+  assert.match(board.split('<section data-stage="new"')[1].split("</section>")[0], /Kitchen remodel[\s\S]*\$8,000</, "the quote's total stands in for a blank value");
 
   await post(`/invoices/quotes/${qid}/decide`, { answer: "accepted" });
   const [d] = await db.sql<{ stage: string; closed: boolean }>`select stage, closed_at is not null as closed from deals where id = ${did}::bigint`;
@@ -443,6 +445,18 @@ test("visits: add from the customer's page, the list, its page, status, CSV", as
 
   assert.equal((await get("/visits", { host: "crm.example" })).status, 404, "team only");
   assert.equal((await post(`/visits/${vid}/status`, { status: "planned" }, { ...ME, origin: "https://evil.example" })).status, 403);
+
+  // New from the list: someone already here by email gets it; anyone else is added.
+  assert.match(await (await get("/visits/new")).text(), /<form method="post" action="\/visits"/);
+  assert.equal((await post("/visits", { title: "Tune-up", name: "" })).headers.get("location"), "/visits/new?saved=name-needed");
+  assert.equal((await post("/visits", { title: "", name: "Val" })).headers.get("location"), "/visits/new?saved=visit-title-needed");
+  const theirs = (await post("/visits", { title: "Annual tune-up", email: "VAL@example.com" })).headers.get("location")!;
+  assert.match(theirs, /^\/visits\/\d+\?saved=visit-added$/);
+  const [same] = await db.sql<{ customer_id: string }>`select customer_id::text from customer_visits where id = ${theirs.match(/\/visits\/(\d+)/)![1]}::bigint`;
+  assert.equal(same.customer_id, cid, "matched by email, not added twice");
+  const fresh = (await post("/visits", { title: "Estimate", name: "Nia New", phone: "555 404 1111" })).headers.get("location")!;
+  const [made2] = await db.sql<{ name: string }>`select c.name from customer_visits v join customers c on c.id = v.customer_id where v.id = ${fresh.match(/\/visits\/(\d+)/)![1]}::bigint`;
+  assert.equal(made2.name, "Nia New");
 });
 
 test("bookings in the CRM: its own frame, a type and a person, Make it a job from a booking", async (t) => {
@@ -510,7 +524,7 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Make it a job o
   const job = await post(`/customers/${cid}/visits`, { title: "Water heater swap", status: "planned", amount: "1,200.00" });
   const vid = job.headers.get("location")!.match(/\/visits\/(\d+)/)![1];
   html = await (await get(`/visits/${vid}`)).text();
-  const quoteLink = /href="(\/invoices\/quotes\/new\?[^"]+)">Quote this visit</.exec(html)![1].replace(/&amp;/g, "&");
+  const quoteLink = /href="(\/invoices\/quotes\/new\?[^"]+)"[^>]*>Quote this visit</.exec(html)![1].replace(/&amp;/g, "&");
   html = await (await get(quoteLink)).text();
   assert.match(html, /<nav aria-label="CRM"/, "the CRM's own frame");
   assert.match(html, /<nav aria-label="Quotes and invoices"/);
@@ -562,7 +576,7 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Make it a job o
 
   // Invoice this job: the job's line on a new invoice; the quote's invoice from Make the invoice.
   html = await (await get(`/visits/${vid}`)).text();
-  assert.match(html, /href="\/invoices\/new\?[^"]*line=Water\+heater\+swap[^"]*">Invoice this visit</);
+  assert.match(html, /href="\/invoices\/new\?[^"]*line=Water\+heater\+swap[^"]*"[^>]*>Invoice this visit</);
   const inv = await post(`/invoices/quotes/${qid}/invoice`, {});
   const iid = inv.headers.get("location")!.match(/^\/invoices\/(\d+)\?saved=invoice-created$/)![1];
   html = await (await get(`/invoices/${iid}`)).text();

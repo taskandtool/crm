@@ -1,6 +1,6 @@
 // Small pieces the CRM's pages share: the primary button, the stage badge,
 // a follow-up's day and its mark, the flash messages, a field with its
-// label, a custom field's input, "when, by whom".
+// label, a custom field's input, the record's "added by" line.
 import type { Child } from "hono/jsx";
 import type { FlashMessages } from "../admin/flash";
 import { buttonClass, controlClass, type StatusOption } from "../admin/status";
@@ -100,6 +100,23 @@ export function SaveOnChange(p: { action: string; current: string; options: Stat
   );
 }
 
+/** Who a new deal or visit is for: matched by email or phone, or added. */
+export function PersonFields() {
+  return (
+    <>
+      <Field label={`${vocab.one} name`}>
+        <input name="name" maxlength={200} autocomplete="off" autofocus class={controlClass} />
+      </Field>
+      <Field label="Email">
+        <input name="email" type="email" maxlength={254} autocomplete="off" class={controlClass} />
+      </Field>
+      <Field label="Phone">
+        <input name="phone" type="tel" maxlength={40} autocomplete="off" class={controlClass} />
+      </Field>
+    </>
+  );
+}
+
 /** A custom field's input, named f_<key>, for a customer or a visit form. */
 export function CustomInput({ f, value }: { f: CustomField; value: unknown }) {
   const v = fieldText(value);
@@ -147,16 +164,6 @@ export function RecordLine({ added, addedBy, changed, changedBy, children }: { a
       </p>
       {children}
     </div>
-  );
-}
-
-/** When something was added or changed, and by whom. */
-export function Who({ at, by }: { at: Date | null; by: string | null }) {
-  return (
-    <>
-      <When at={at} timeZone={timeZone} />
-      {by ? <span class="text-ink-3"> by {by}</span> : null}
-    </>
   );
 }
 

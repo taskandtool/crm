@@ -6,7 +6,7 @@ import { FieldList, Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { DataTable, SearchBar, When, type TableSpec } from "../admin/list";
 import { listUrl } from "../admin/query";
-import { StatusBadge, StatusForm, type StatusOption } from "../admin/status";
+import { StatusBadge, type StatusOption } from "../admin/status";
 import { cfg, invoicesCfg, ownerLabel, visitsCfg } from "../config";
 import type { CustomField } from "../config-schema";
 import type { Customer } from "../crm/customers";
@@ -17,7 +17,7 @@ import { Layout } from "./layout";
 import { VisitMoney } from "./money";
 import type { Quote } from "../invoices/quotes";
 import type { Invoice } from "../invoices/invoices";
-import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, timeZone, Who } from "./ui";
+import { buttonClass, controlClass, CustomInput, Field, linkButtonClass, MESSAGES, PersonFields, primaryClass, primaryLinkClass, RecordLine, timeZone } from "./ui";
 
 /** How many a customer's page shows. */
 export const CUSTOMER_VISITS = 100;
@@ -62,7 +62,7 @@ function VisitFields({ r, owners, defaultOwner }: { r?: Visit; owners: string[];
       <Field label="What" class="sm:col-span-2">
         <input name="title" value={r?.title ?? ""} required maxlength={200} placeholder={`What the ${one} is for`} class={controlClass} />
       </Field>
-      <Field label="When" hint={`In ${timeZone}. Leave it empty if it is not scheduled yet.`}>
+      <Field label="When" hint="Blank if it is not scheduled yet.">
         <input name="at" type="datetime-local" value={at} class={controlClass} />
       </Field>
       <Field label="Status">
@@ -206,9 +206,9 @@ export function VisitResults(p: { filter: VisitFilter; rows: Visit[]; next: stri
               Nothing matches here. <a href={listUrl("/visits", { view: params.view })}>Clear the search and {ownerLabel.toLowerCase()}</a>
             </>
           ) : p.filter.view === "upcoming" ? (
-            `Nothing planned. Add a ${one} from a ${cfg.vocabulary.one.toLowerCase()}'s page.`
+            `Nothing planned.`
           ) : (
-            `No ${many} yet. Add one from a ${cfg.vocabulary.one.toLowerCase()}'s page.`
+            `No ${many} yet.`
           )
         }
       />
@@ -259,7 +259,8 @@ export function VisitsPage(p: {
 }) {
   const owners = [...new Set([p.user, ...p.owners])];
   return (
-    <Layout title={v.many} user={p.user} section="visits">
+    <Layout title={v.many} user={p.user} section="visits"
+      actions={<a href="/visits/new" class={primaryLinkClass}>New {one}</a>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <SearchBar
         action="/visits"
@@ -283,67 +284,91 @@ export function VisitsPage(p: {
   );
 }
 
-/** One visit: the whole form, its status on its own, who added and changed it. */
+/** A new one from the list: the person (matched by email or phone, or added) and the visit. */
+export function NewVisitPage(p: { user: string; owners: string[]; flash: { code?: string | null; n?: string | null } }) {
+  return (
+    <Layout title={`New ${one}`} user={p.user} section="visits" back={{ href: "/visits", label: v.many }}>
+      <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
+      <form method="post" action="/visits" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface p-4 sm:grid-cols-2">
+        <PersonFields />
+        <VisitFields owners={p.owners} defaultOwner={p.user} />
+        <div class="sm:col-span-2">
+          <button class={primaryClass}>Add {one}</button>
+          <span class="ml-3 text-label text-ink-3">Someone already here by email or phone gets it; anyone else is added.</span>
+        </div>
+      </form>
+    </Layout>
+  );
+}
+
+/** One visit: what, when and for whom at the top, its details with Edit, its quote and invoice. */
 export function VisitPage(p: {
   user: string; visit: Visit; owners: string[]; money: { quotes: Quote[]; invoices: Invoice[] } | null; flash: { code?: string | null; n?: string | null };
 }) {
   const r = p.visit;
   const self = `/visits/${r.id}`;
+  const doc = {
+    email: r.customer_email, name: r.customer_name, phone: r.customer_phone, visit: r.id, line: r.title,
+    unit: r.amount_cents === null ? null : amountText(r.amount_cents, r.currency ?? v.currency),
+    currency: r.amount_cents === null ? null : r.currency,
+  };
+  const custom = v.fields.map((f) => ({ label: f.label, value: fieldText(r.fields?.[f.key]) || null })).filter((f) => f.value);
   return (
-    <Layout title={r.title} user={p.user} section="visits">
-      <p class="mb-3 text-label">
-        <a href={`/customers/${r.customer_id}`}>{r.customer_name}</a>
-        <span class="text-ink-3"> · </span>
-        <a href="/visits">All {many}</a>
-      </p>
+    <Layout
+      title={r.title}
+      user={p.user}
+      section="visits"
+      back={{ href: "/visits", label: v.many }}
+      sub={
+        <p class="flex flex-wrap items-center gap-x-2">
+          <StatusBadge value={r.status} options={VISIT_OPTIONS} />
+          <a href={`/customers/${r.customer_id}`}>{r.customer_name}</a>
+          {r.customer_phone ? <><span aria-hidden="true">·</span><a href={`tel:${r.customer_phone.replace(/[^0-9+]/g, "")}`} class="whitespace-nowrap text-ink-2">{r.customer_phone}</a></> : null}
+        </p>
+      }
+      actions={
+        <>
+          {r.status === "planned" ? (
+            <form method="post" action={`${self}/status`}>
+              <input type="hidden" name="status" value="done" />
+              <input type="hidden" name="return" value={self} />
+              <button class={buttonClass}>Mark done</button>
+            </form>
+          ) : null}
+          {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", doc)} class={linkButtonClass}>Quote this {one}</a> : null}
+          {invoicesCfg ? <a href={listUrl("/invoices/new", doc)} class={linkButtonClass}>Invoice this {one}</a> : null}
+        </>
+      }
+    >
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
-      <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span class="flex items-center gap-2">
-          <span class="text-label text-ink-2" aria-hidden="true">
-            Status
-          </span>
-          <StatusForm action={`${self}/status`} current={r.status} options={VISIT_OPTIONS} returnTo={self} label="Status" />
-        </span>
-        {r.customer_phone ? <a href={`tel:${r.customer_phone.replace(/[^0-9+]/g, "")}`}>Call {r.customer_phone}</a> : null}
-        {invoicesCfg ? (
-          <a href={listUrl("/invoices/quotes/new", {
-            email: r.customer_email, name: r.customer_name, phone: r.customer_phone, visit: r.id, line: r.title,
-            unit: r.amount_cents === null ? null : amountText(r.amount_cents, r.currency ?? v.currency),
-            currency: r.amount_cents === null ? null : r.currency,
-          })}>Quote this {one}</a>
-        ) : null}
-        {invoicesCfg ? (
-          <a href={listUrl("/invoices/new", {
-            email: r.customer_email, name: r.customer_name, phone: r.customer_phone, visit: r.id, line: r.title,
-            unit: r.amount_cents === null ? null : amountText(r.amount_cents, r.currency ?? v.currency),
-            currency: r.amount_cents === null ? null : r.currency,
-          })}>Invoice this {one}</a>
-        ) : null}
-      </div>
       <div class="grid gap-4 md:grid-cols-3">
         <div class="min-w-0 md:col-span-2">
           <Section title="Details">
-            <form method="post" action={self} class="grid gap-3 sm:grid-cols-2">
-              <VisitFields r={r} owners={p.owners} />
-              <div class="sm:col-span-2">
-                <button class={primaryClass}>Save</button>
-              </div>
-            </form>
+            <div class="flex flex-col gap-3">
+              <FieldList
+                fields={[
+                  { label: "When", value: <WhenOf r={r} /> },
+                  ...(r.owner ? [{ label: ownerLabel, value: r.owner }] : []),
+                  ...(r.amount_cents !== null ? [{ label: "Amount", value: amountOf(r) }] : []),
+                  ...custom,
+                  ...(r.notes ? [{ label: "Notes", value: <span class="whitespace-pre-wrap">{r.notes}</span> }] : []),
+                ]}
+              />
+              <details>
+                <summary class={buttonClass + " inline-block cursor-pointer list-none"}>Edit</summary>
+                <form method="post" action={self} class="mt-3 grid gap-3 sm:grid-cols-2">
+                  <VisitFields r={r} owners={p.owners} />
+                  <div class="sm:col-span-2">
+                    <button class={primaryClass}>Save</button>
+                  </div>
+                </form>
+              </details>
+            </div>
           </Section>
         </div>
-        <div class="flex flex-col gap-4">
-          {p.money ? <VisitMoney {...p.money} /> : null}
-          <Section title="Record">
-            <FieldList
-              fields={[
-                { label: "Added", value: <Who at={r.created_at} by={r.created_by} /> },
-                { label: "Changed", value: <Who at={r.updated_at} by={r.updated_by} /> },
-              ]}
-            />
-            <p class="mt-3 text-label text-ink-3">Cancel rather than delete: a cancelled {one} stays on the record.</p>
-          </Section>
-        </div>
+        <div class="flex flex-col gap-4">{p.money ? <VisitMoney {...p.money} /> : null}</div>
       </div>
+      <RecordLine added={r.created_at} addedBy={r.created_by} changed={r.updated_at} changedBy={r.updated_by} />
     </Layout>
   );
 }

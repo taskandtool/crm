@@ -11,7 +11,7 @@ import type { Overview } from "../crm/overview";
 import { sourceOf, type InboxRow } from "../crm/inbox";
 import { cash, money } from "../crm/text";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, linkButtonClass, MESSAGES, primaryClass, timeZone } from "./ui";
+import { buttonClass, controlClass, linkButtonClass, MESSAGES, timeZone } from "./ui";
 
 const SUBMISSION: StatusOption[] = [
   { value: "new", label: "New", tone: "accent" },

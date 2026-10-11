@@ -11,7 +11,7 @@
 export type FlashMessages = Record<string, string | ((n: number) => string) | { error: string }>;
 
 /** A message that says something went wrong: an alert, not a confirmation. */
-export const alertClass = "mb-4 rounded-card border border-l-4 border-ink bg-surface px-4 py-2 text-copy font-semibold text-ink";
+export const alertClass = "rounded-card border border-l-4 border-ink bg-surface px-4 py-2 text-copy font-semibold text-ink";
 
 export function withFlash(path: string, code: string, n?: number): string {
   const u = new URL(path, "http://x");
@@ -27,7 +27,7 @@ export function Flash({ code, n, messages }: { code?: string | null; n?: string 
   const m = code && Object.hasOwn(messages, code) ? messages[code] : null;
   if (!m) return null;
   const count = /^\d{1,9}$/.test(n ?? "") ? Number(n) : 0;
-  if (typeof m === "object") return <p role="alert" class={alertClass}>{m.error}</p>;
+  if (typeof m === "object") return <p role="alert" class={"mb-4 " + alertClass}>{m.error}</p>;
   return (
     <p role="status" class="mb-4 rounded-card border border-line bg-panel px-4 py-2 text-copy text-ink">
       {typeof m === "function" ? m(count) : m}

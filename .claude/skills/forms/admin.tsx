@@ -752,7 +752,7 @@ function Editor(props: {
         <a href={listUrl(`${base}/submissions`, { form: form.key })}>See submissions</a>
       </p>
       {note ? (
-        <p role="alert" class={alertClass.replace("mb-4 ", "")}>
+        <p role="alert" class={alertClass}>
           {note}
         </p>
       ) : null}

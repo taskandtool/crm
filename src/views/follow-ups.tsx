@@ -88,9 +88,10 @@ function Empty({ children }: { children: Child }) {
 }
 
 /** One follow-up: when, what, for whom, and Done and Move. */
-export function FollowUpItem(p: { f: FollowUp; today: string; returnTo: string; showCustomer?: boolean; showOwner?: boolean }) {
+export function FollowUpItem(p: { f: FollowUp; today: string; returnTo: string; showCustomer?: boolean; showOwner?: boolean; /** The deal whose page this is: no link back to it. */ onDeal?: string | null }) {
   const { f, today } = p;
   const label = `${FOLLOW_UP_LABELS[f.kind]}: ${f.title}`;
+  const deal = f.deal_title && f.deal_id && f.deal_id !== p.onDeal;
   return (
     <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-4">
       <div class="min-w-0 flex-1">
@@ -101,18 +102,18 @@ export function FollowUpItem(p: { f: FollowUp; today: string; returnTo: string; 
           {p.showOwner && f.owner ? <span>{f.owner}</span> : null}
         </p>
         <p class="mt-1 break-words font-semibold">{f.title}</p>
-        {p.showCustomer || f.deal_title ? (
+        {p.showCustomer || deal ? (
           <p class="text-label text-ink-2">
             {p.showCustomer ? <a href={`/customers/${f.customer_id}`}>{f.customer_name}</a> : null}
             {p.showCustomer && f.kind === "call" && f.customer_phone ? <> · <a href={`tel:${f.customer_phone.replace(/[^0-9+]/g, "")}`}>{f.customer_phone}</a></> : null}
-            {f.deal_title && f.deal_id ? <>{p.showCustomer ? " · " : ""}<a href={`/deals/${f.deal_id}`}>{f.deal_title}</a></> : null}
+            {deal ? <>{p.showCustomer ? " · " : ""}<a href={`/deals/${f.deal_id}`}>{f.deal_title}</a></> : null}
           </p>
         ) : null}
       </div>
       <div class="flex flex-wrap items-start gap-2">
         <form method="post" action={`/follow-ups/${f.id}/done`}>
           <input type="hidden" name="return" value={p.returnTo} />
-          <button class={primaryClass} aria-label={`Mark done: ${label}`}>Mark done</button>
+          <button class={buttonClass} aria-label={`Mark done: ${label}`}>Mark done</button>
         </form>
         <details class="relative">
           <summary class={buttonClass + " cursor-pointer list-none"} aria-label={`More for ${label}`}>More</summary>
@@ -251,7 +252,7 @@ export function FollowUpsSection(p: {
         <ol class="flex flex-col gap-3">
           {p.open.map((f) => (
             <li class="border-l-2 border-line pl-3">
-              <FollowUpItem f={f} today={p.today} returnTo={p.returnTo} showOwner />
+              <FollowUpItem f={f} today={p.today} returnTo={p.returnTo} showOwner onDeal={p.dealId} />
             </li>
           ))}
         </ol>
