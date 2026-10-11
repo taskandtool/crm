@@ -100,20 +100,31 @@ export function TableRows<T extends { id: string | number | bigint }>(props: {
   );
 }
 
+/**
+ * As Stripe's lists: with a detail URL the whole row opens it. The first
+ * column's link is stretched over the row (rowLink), and anything else a row
+ * holds that can be clicked (a checkbox, a customer link, a status menu)
+ * sits above it (rowControls), so it still works.
+ */
+export const rowLink =
+  "font-semibold text-ink no-underline after:absolute after:inset-0 after:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent";
+export const rowControls =
+  "[&_a]:relative [&_a]:z-[1] [&_button]:relative [&_button]:z-[1] [&_input]:relative [&_input]:z-[1] [&_select]:relative [&_select]:z-[1] [&_summary]:relative [&_summary]:z-[1] [&_details]:relative [&_details]:z-[1]";
+
 /** One row. Also the htmx answer to a change made in it (target "closest tr"). */
 export function TableRow<T extends { id: string | number | bigint }>({ spec, row }: { spec: TableSpec<T>; row: T }) {
   const href = spec.href?.(row);
   return (
-    <tr id={`${spec.id}-row-${row.id}`} class="group hover:bg-canvas">
+    <tr id={`${spec.id}-row-${row.id}`} class={"group hover:bg-canvas" + (href ? " relative cursor-pointer" : "")}>
       {spec.select ? (
-        <td class={cell + " border-b border-line group-last:border-b-0"}>
+        <td class={cell + " border-b border-line group-last:border-b-0 " + rowControls}>
           <input type="checkbox" name="id" value={String(row.id)} form={spec.select.form} aria-label={`Select ${spec.select.label(row)}`} />
         </td>
       ) : null}
       {spec.columns.map((c, i) => (
-        <td class={cell + " border-b border-line group-last:border-b-0 " + (c.class ?? "")}>
+        <td class={cell + " border-b border-line group-last:border-b-0 " + (i === 0 && href ? "" : rowControls + " ") + (c.class ?? "")}>
           {i === 0 && href ? (
-            <a href={href} class="font-semibold text-ink no-underline underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+            <a href={href} class={rowLink}>
               {c.cell(row)}
             </a>
           ) : (

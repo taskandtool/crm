@@ -16,7 +16,7 @@ import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, everyPage, readCursor, type Cursor, type Keyed } from "../admin/keyset";
 import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
-import { DataTable, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
+import { DataTable, rowControls, rowLink, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { formIds, idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
 import { buttonClass, controlClass, fieldClass, pickStatus, primaryClass, StatusBadge, StatusForm, type StatusOption } from "../admin/status";
 import { checkFields, FIELD_TYPES, FORM_KEY, formKeyFrom, PHOTO_PATH, sitePath, type Errors, type Field, type Form } from "./fields";
@@ -183,17 +183,17 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
               </thead>
               <tbody>
                 {forms.map((f) => (
-                  <tr class="border-b border-line last:border-b-0 hover:bg-panel">
+                  <tr class="relative cursor-pointer border-b border-line last:border-b-0 hover:bg-canvas">
                     <td class="px-4 py-3">
-                      <a href={`${base}/form/${f.key}`} class="font-semibold">
+                      <a href={`${base}/form/${f.key}`} class={rowLink}>
                         {f.title}
                       </a>
                       {f.active ? null : <span class="ml-2"><StatusBadge value="off" options={FORM_STATES} /></span>}
                     </td>
-                    <td class="px-4 py-3">
+                    <td class={"px-4 py-3 " + rowControls}>
                       {f.new_count ? <a href={listUrl(subs, { form: f.key, status: "new" })} class="font-semibold">{f.new_count}</a> : <span class="text-ink-3">0</span>}
                     </td>
-                    <td class="px-4 py-3">
+                    <td class={"px-4 py-3 " + rowControls}>
                       {f.total ? <a href={listUrl(subs, { form: f.key })}>{f.total}</a> : <span class="text-ink-3">0</span>}
                     </td>
                     <td class="hidden px-4 py-3 text-ink-2 sm:table-cell">{f.last_at ? <When at={f.last_at} timeZone={opts.timeZone} /> : "None yet"}</td>
