@@ -1,11 +1,11 @@
 // Quotes and invoices where the team already looks: a customer's page (what
-// was quoted, what is owed now, what was paid), a job's page (its quote and
-// invoice), and the top of the invoices list (what was paid, by month).
+// was quoted, what is owed now, what was paid) and a job's page (its quote and
+// invoice). An overdue one says Past due, as on the invoices page.
 import { Section } from "../admin/detail";
 import { StatusBadge } from "../admin/status";
 import { listUrl } from "../admin/query";
 import type { Customer } from "../crm/customers";
-import { INVOICE_OPTIONS, QUOTE_OPTIONS, todayIn } from "../invoices/admin";
+import { QUOTE_OPTIONS, SHOWN_INVOICE, todayIn } from "../invoices/admin";
 import { dayText } from "../invoices/document";
 import type { Invoice } from "../invoices/invoices";
 import { shownStatus, type Quote } from "../invoices/quotes";
@@ -29,7 +29,8 @@ function Docs({ quotes, invoices }: { quotes: Quote[]; invoices: Invoice[] }) {
       {invoices.map((i) => (
         <li class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <a href={`/invoices/${i.id}`}>{i.number ? `Invoice ${i.number}` : "Draft invoice"}</a>
-          <StatusBadge value={i.status} options={INVOICE_OPTIONS} />
+          {/* Past due as the invoices page counts it: open, its day gone, and its quote (if any) accepted. */}
+          <StatusBadge value={i.status === "open" && i.due_date && i.due_date < today && (!i.quote_id || quotes.find((q) => q.id === i.quote_id)?.status === "accepted") ? "due" : i.status} options={SHOWN_INVOICE} />
           <span class="whitespace-nowrap">{formatMoney(i.total_cents, i.currency)}</span>
           {i.status === "open" && i.due_date ? <span class="text-label text-ink-3">due {dayText(i.due_date)}</span> : null}
           {i.livemode === false ? <span class="text-label text-ink-3">test mode</span> : null}

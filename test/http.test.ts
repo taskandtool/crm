@@ -611,6 +611,11 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Make it a job o
   html = await (await get(`/customers/${cid}`)).text();
   assert.match(html, /Owes \$1,200\.00 on an open invoice\./);
   assert.match(html, /Invoice ACME-0042<\/a>[\s\S]*?due January 31, 2099/);
+  assert.doesNotMatch(html, />Past due</, "not yet due");
+  assert.match(html, /<h3[^>]*>[A-Z][a-z]+( \d{4})?<\/h3>/, "the timeline under month headings");
+  await db.sql`update invoices set due_date = '2000-01-31' where id = ${iid}::bigint`;
+  assert.match(await (await get(`/customers/${cid}`)).text(), /Invoice ACME-0042<\/a>[\s\S]*?>Past due</, "overdue, as the invoices page says it");
+  await db.sql`update invoices set due_date = '2099-01-31' where id = ${iid}::bigint`;
   html = await (await get(`/visits/${vid}`)).text();
   assert.match(html, /<h2[^>]*>Quote and invoice<\/h2>[\s\S]*Invoice ACME-0042/);
   html = await (await get("/invoices")).text();

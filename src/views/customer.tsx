@@ -5,6 +5,7 @@
 // values, Edit for the form), their deals, quotes and invoices, possible
 // duplicates, Merge and Archive. Empty sections are left out. Plain forms
 // throughout: every change is a POST answered with a 303 back here.
+import type { Child } from "hono/jsx";
 import { JsonData, Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
@@ -258,17 +259,44 @@ function Activity({ c, notes, history, missing }: { c: Customer; notes: Note[]; 
       {missing && (c.email || c.phone) ? <p class="text-label text-ink-3">{missing}</p> : null}
       {entries.length ? (
         <>
-          <ol class="flex flex-col gap-3">{entries.slice(0, RECENT).map((e) => <li class="border-l-2 border-line pl-3">{row(e)}</li>)}</ol>
+          <Months entries={entries.slice(0, RECENT)} row={row} />
           {entries.length > RECENT ? (
             <details>
               <summary class="cursor-pointer text-label text-ink-2">Show {entries.length - RECENT} older</summary>
-              <ol class="mt-3 flex flex-col gap-3">{entries.slice(RECENT).map((e) => <li class="border-l-2 border-line pl-3">{row(e)}</li>)}</ol>
+              <div class="mt-3"><Months entries={entries.slice(RECENT)} row={row} /></div>
             </details>
           ) : null}
         </>
       ) : (
         <p class="text-ink-3">No activity yet.</p>
       )}
+    </div>
+  );
+}
+
+/** "October", or "August 2025" outside this year: the month an entry happened in, in the business's zone. */
+function monthOf(at: Date): string {
+  const year = (d: Date) => new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric" }).format(d);
+  return new Intl.DateTimeFormat("en-US", { timeZone, month: "long", year: year(at) === year(new Date()) ? undefined : "numeric" }).format(at);
+}
+
+/** The timeline under month headings, as HubSpot's activity is: newest month first. */
+function Months({ entries, row }: { entries: Entry[]; row: (e: Entry) => Child }) {
+  const months: [string, Entry[]][] = [];
+  for (const e of entries) {
+    const m = monthOf(e.at);
+    const last = months[months.length - 1];
+    if (last && last[0] === m) last[1].push(e);
+    else months.push([m, [e]]);
+  }
+  return (
+    <div class="flex flex-col gap-4">
+      {months.map(([m, list]) => (
+        <section aria-label={m}>
+          <h3 class="mb-2 text-label font-semibold text-ink-3">{m}</h3>
+          <ol class="flex flex-col gap-3">{list.map((e) => <li class="border-l-2 border-line pl-3">{row(e)}</li>)}</ol>
+        </section>
+      ))}
     </div>
   );
 }

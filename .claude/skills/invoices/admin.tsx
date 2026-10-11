@@ -88,8 +88,8 @@ export const INVOICE_OPTIONS: StatusOption[] = INVOICE_STATUSES.map((s) => ({
   label: INVOICE_STATUS_LABELS[s],
   tone: s === "paid" ? "accent" : s === "open" ? "strong" : s === "draft" ? "neutral" : "muted",
 }));
-/** An open invoice past its due date shows as Past due, as the list's filter names it. */
-const SHOWN_INVOICE: StatusOption[] = [...INVOICE_OPTIONS, { value: "due", label: "Past due", tone: "strong" }];
+/** An open invoice past its due date shows as Past due ("due"), as the list's filter names it. */
+export const SHOWN_INVOICE: StatusOption[] = [...INVOICE_OPTIONS, { value: "due", label: "Past due", tone: "strong" }];
 
 /** What is owed, how much of it is late, and what came in this month: each a link to the invoices behind it. */
 function Totals({ totals, currency, base }: { totals: Awaited<ReturnType<typeof invoiceTotals>>; currency: string; base: string }) {
