@@ -199,7 +199,15 @@ test("deals: the board's columns and totals; a move answers htmx with the board 
   const dealId = made.headers.get("location")!.match(/\/deals\/(\d+)/)![1];
   assert.match((await post(`/customers/${pat.id}/deals`, { title: "", value: "1" })).headers.get("location")!, /saved=deal-title-needed/);
 
+  // Its page, as Pipedrive's: the open stages as a bar (this one current), Won and Lost to close it.
+  const open = await (await get(`/deals/${dealId}`)).text();
+  assert.match(open, /<nav aria-label="Stage"[\s\S]*aria-current="step"[^>]*>Contacted</);
+  assert.match(open, /name="stage" value="won"[\s\S]*?>Won<\/button>/);
+  assert.match(open, /name="stage" value="lost"[\s\S]*?name="lost_reason"[\s\S]*?>Mark lost<\/button>/);
+  assert.doesNotMatch(open, />Reopen</);
+
   const page = await (await get("/deals")).text();
+  assert.match(page, /\d+ open · \$/, "the open pipeline under the title");
   for (const label of ["New", "Contacted", "Quote sent", "Won", "Lost"]) assert.match(page, new RegExp(`<section data-stage="[a-z]+" aria-label="${label}, \\d+"`));
   assert.match(page, /Sortable\.min\.js/);
   const contacted = page.split('<section data-stage="contacted"')[1].split("</section>")[0];
@@ -220,6 +228,9 @@ test("deals: the board's columns and totals; a move answers htmx with the board 
   assert.equal((await post(`/deals/${dealId}/stage`, { status: "lost", lost_reason: "Price", return: `/deals/${dealId}` })).headers.get("location"), `/deals/${dealId}?saved=deal-saved`);
   const [d] = await db.sql<{ lost_reason: string; closed: boolean }>`select lost_reason, closed_at is not null as closed from deals where id = ${dealId}::bigint`;
   assert.deepEqual(d, { lost_reason: "Price", closed: true });
+  const closedPage = await (await get(`/deals/${dealId}`)).text();
+  assert.match(closedPage, /name="stage" value="new"[\s\S]*?>Reopen<\/button>/, "a closed one can be reopened, to the first open stage");
+  assert.doesNotMatch(closedPage, /<nav aria-label="Stage"/);
   assert.equal((await getCustomer(db, pat.id))!.stage, "customer", "losing a later deal does not undo who they are");
   const bad = await post(`/deals/${dealId}/stage`, { stage: "nope", return: "/deals" });
   assert.equal(bad.headers.get("location"), "/deals?saved=pick-stage");

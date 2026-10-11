@@ -2,6 +2,7 @@
 // its deals are worth; drag a card, or use its select), one deal's page, and
 // the deals section of a customer's page. Plain forms; a card's select posts
 // through htmx and the server answers with the whole board.
+import type { Child } from "hono/jsx";
 import { Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
@@ -19,7 +20,7 @@ import { shownStatus, type Quote } from "../invoices/quotes";
 import { formatMoney } from "../payments/money";
 import { FollowUpsSection } from "./follow-ups";
 import { Layout } from "./layout";
-import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, PersonFields, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, stageOptions, timeZone } from "./ui";
+import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, PersonFields, primaryClass, ReadThenEdit, RecordLine, stageOptions, timeZone } from "./ui";
 
 /** How many cards a column shows; how many days won and lost ones stay on the board. */
 export const PER_COLUMN = 100;
@@ -40,11 +41,20 @@ export type BoardData = {
 export function DealsPage(p: { user: string; data: BoardData; flash: { code?: string | null; n?: string | null } }) {
   return (
     <Layout title={dealsCfg.many} user={p.user} section="deals" drag wide
+      sub={<OpenTotal data={p.data} />}
       actions={<a href="/deals/new" class={primaryClass}>New {one}</a>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <Board data={p.data} />
     </Layout>
   );
+}
+
+/** The open pipeline in a line under the title, as Pipedrive heads its board: "8 open · $41,100". */
+function OpenTotal({ data }: { data: BoardData }) {
+  const open = data.stages.filter((s) => s.kind === "open").map((s) => data.totals[s.key]).filter(Boolean);
+  const count = open.reduce((n, t) => n + t.count, 0);
+  const cents = open.reduce((n, t) => n + BigInt(t.cents), 0n);
+  return <p>{count} open{cents > 0n ? ` · ${cash(cents.toString(), dealsCfg.currency)}` : ""}</p>;
 }
 
 /** A new deal from the board: the person (matched by email or phone, or added) and what is being won. */
@@ -186,21 +196,56 @@ export function DealPage(p: {
   // A won or lost deal shows what happened; nothing on it asks for a next step.
   const closed = !!stage && stage.kind !== "open";
   const who = { email: d.customer_email, name: d.customer_name, phone: d.customer_phone, deal: d.id, line: d.title };
+  const wonStage = p.stages.find((s) => s.kind === "won");
+  const lostStage = p.stages.find((s) => s.kind === "lost");
+  const firstOpen = p.stages.find((s) => s.kind === "open");
+  const move = (key: string, label: string, cls: string, extra?: Child) => (
+    <form method="post" action={`${self}/stage`}>
+      <input type="hidden" name="stage" value={key} />
+      <input type="hidden" name="return" value={self} />
+      {extra}
+      <button class={cls}>{label}</button>
+    </form>
+  );
   return (
     <Layout
       title={d.title}
       user={p.user}
       section="deals"
       back={{ href: "/deals", label: dealsCfg.many }}
-      sub={<>For <a href={`/customers/${d.customer_id}`}>{d.customer_name}</a></>}
+      sub={
+        <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {closed && stage ? <StatusBadge value={stage.key} options={stageOptions(stages)} /> : null}
+          <span>For <a href={`/customers/${d.customer_id}`}>{d.customer_name}</a>{value ? ` · ${value}` : ""}</span>
+        </p>
+      }
+      // As Pipedrive's deal page: Won and Lost (with its reason) while it is open; Reopen once it is not.
       actions={
         <>
-          <SaveOnChange action={`${self}/stage`} current={d.stage} options={stageOptions(stages)} label="Stage" returnTo={self} />
-          {invoicesCfg && d.customer_email ? <a href={listUrl("/invoices/quotes/new", who)} class={buttonClass}>New quote</a> : null}
+          {invoicesCfg && d.customer_email && !closed ? <a href={listUrl("/invoices/quotes/new", who)} class={buttonClass}>New quote</a> : null}
+          {!closed && wonStage ? move(wonStage.key, "Won", primaryClass) : null}
+          {!closed && lostStage ? (
+            <details class="relative max-sm:open:basis-full">
+              {/* On a phone it opens in place under the buttons; on a wide screen it floats under its own. */}
+              <summary class={buttonClass + " cursor-pointer list-none"}>Lost</summary>
+              <div class="mt-2 rounded-card border border-line bg-surface p-3 shadow-lift sm:absolute sm:right-0 sm:z-10 sm:w-72">
+                {move(lostStage.key, "Mark lost", buttonClass + " mt-3", (
+                  <Field label="Why was it lost?">
+                    <input name="lost_reason" list="lost-reasons" maxlength={200} autocomplete="off" class={controlClass} />
+                  </Field>
+                ))}
+              </div>
+            </details>
+          ) : null}
+          {closed && firstOpen ? move(firstOpen.key, "Reopen", buttonClass) : null}
         </>
       }
     >
+      <datalist id="lost-reasons">
+        {dealsCfg.lost_reasons.map((r) => <option value={r} />)}
+      </datalist>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
+      {!closed ? <StageBar stages={p.stages.filter((s) => s.kind === "open")} current={d.stage} self={self} /> : null}
       {d.archived_at ? (
         <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">
           Archived <When at={d.archived_at} timeZone={timeZone} />. Off the board; nothing is deleted.
@@ -215,9 +260,6 @@ export function DealPage(p: {
                 <input type="hidden" name="return" value={self} />
                 <label class="flex min-w-48 flex-1 flex-col">
                   <input name="lost_reason" aria-label="Lost reason" list="lost-reasons" value={d.lost_reason ?? ""} maxlength={200} class={controlClass} />
-                  <datalist id="lost-reasons">
-                    {dealsCfg.lost_reasons.map((r) => <option value={r} />)}
-                  </datalist>
                 </label>
                 <button class={buttonClass}>Save</button>
               </form>
@@ -286,6 +328,29 @@ export function DealPage(p: {
         </form>
       </RecordLine>
     </Layout>
+  );
+}
+
+/**
+ * Where an open deal is, as Pipedrive draws it: its open stages left to right,
+ * the stages behind it and the current one filled, each a button that moves it there.
+ */
+function StageBar({ stages, current, self }: { stages: Stage[]; current: string; self: string }) {
+  const at = stages.findIndex((s) => s.key === current);
+  return (
+    <nav aria-label="Stage" class="mb-4 flex overflow-hidden rounded-control border border-line bg-surface shadow-card">
+      {stages.map((s, i) => (
+        <form method="post" action={`${self}/stage`} class="min-w-0 flex-1 border-r border-line last:border-r-0">
+          <input type="hidden" name="stage" value={s.key} />
+          <input type="hidden" name="return" value={self} />
+          <button aria-current={i === at ? "step" : undefined} title={i === at ? `Now: ${s.label}` : `Move to ${s.label}`}
+            class={"w-full truncate px-2 py-2 text-label font-semibold " +
+              (i === at ? "bg-accent text-accent-ink" : i < at ? "bg-accent/10 text-accent hover:bg-accent/20" : "text-ink-2 hover:bg-canvas")}>
+            {s.label}
+          </button>
+        </form>
+      ))}
+    </nav>
   );
 }
 
