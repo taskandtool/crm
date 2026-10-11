@@ -3,11 +3,19 @@
 // somewhere first), restore, add. Plain forms; each answers with a 303 back
 // here and a flash.
 import { Flash } from "../admin/flash";
+import { StatusBadge, type StatusOption } from "../admin/status";
 import { dealsCfg, vocab } from "../config";
 import { KIND_LABELS, type Pipeline, type StageWithCount } from "../crm/stages";
 import { STAGE_KINDS } from "../config-schema";
 import { Layout } from "./layout";
 import { buttonClass, controlClass, Field, MESSAGES, primaryClass } from "./ui";
+
+/** A kind as a badge, toned as a closed request's stage is on its page (ui.tsx stageOptions). */
+const KIND_OPTIONS: StatusOption[] = [
+  { value: "open", label: KIND_LABELS.open, tone: "strong" },
+  { value: "won", label: KIND_LABELS.won, tone: "accent" },
+  { value: "lost", label: KIND_LABELS.lost, tone: "muted" },
+];
 
 export function StagesPage(p: { user: string; deals: StageWithCount[]; statuses: StageWithCount[]; flash: { code?: string | null; n?: string | null } }) {
   return (
@@ -40,45 +48,47 @@ function StageList(p: { pipeline: Pipeline; heading: string; intro: string; stag
   const count = (n: number) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
   const id = `${p.pipeline}-list`;
   return (
-    <section class="mb-8" aria-labelledby={id}>
+    <section class="mb-10" aria-labelledby={id}>
       <h2 id={id} class="mb-1 text-copy font-semibold">{p.heading}</h2>
       <p class="mb-4 max-w-2xl text-ink-2">{p.intro}</p>
-      <ol class="flex flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
+      {/* As HubSpot's deal stages and Linear's labels: a quiet list, each row's changes behind its own Edit. */}
+      <ol class="flex flex-col rounded-card border border-line bg-surface shadow-card">
         {active.map((s, i) => (
-          <li class="flex flex-col gap-3 border-b border-line px-4 py-3 last:border-b-0 lg:flex-row lg:items-end">
-            <form method="post" action={`${base}/${s.key}`} class="flex flex-1 flex-wrap items-end gap-3">
-              <Field label="Name" class="min-w-48 flex-1" quiet={i > 0}>
-                <input name="label" value={s.label} required maxlength={60} class={controlClass} />
-              </Field>
-              <Field label="Counts as" quiet={i > 0}>
-                <select name="kind" class={controlClass}>
-                  {STAGE_KINDS.map((k) => (
-                    <option value={k} selected={k === s.kind}>
-                      {KIND_LABELS[k]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <button class={buttonClass}>Save</button>
-              <span class="min-w-20 pb-1 text-label text-ink-3">{count(s.count)}</span>
-            </form>
-            <div class="flex flex-wrap items-end gap-2">
-              <form method="post" action={`${base}/${s.key}/move`}>
-                <input type="hidden" name="dir" value="up" />
-                <button class={buttonClass} disabled={i === 0} aria-label={`Move ${s.label} earlier`}>
-                  Earlier
-                </button>
-              </form>
-              <form method="post" action={`${base}/${s.key}/move`}>
-                <input type="hidden" name="dir" value="down" />
-                <button class={buttonClass} disabled={i === active.length - 1} aria-label={`Move ${s.label} later`}>
-                  Later
-                </button>
-              </form>
-              <details class="relative">
-                <summary class={buttonClass + " cursor-pointer list-none"}>Archive</summary>
-                {/* Floats over the rows below rather than pushing this one apart. */}
-                <form method="post" action={`${base}/${s.key}/archive`} class="absolute right-0 z-10 mt-2 flex w-64 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-card border border-line bg-surface p-3 shadow-lift">
+          <li class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-3 last:border-b-0">
+            <span class="w-5 text-right text-label tabular-nums text-ink-3" aria-hidden="true">{i + 1}</span>
+            <span class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+              <span class="font-semibold">{s.label}</span>
+              <StatusBadge value={s.kind} options={KIND_OPTIONS} />
+            </span>
+            <span class="text-right text-label text-ink-3 sm:w-28">{count(s.count)}</span>
+            <details class="relative max-sm:open:basis-full">
+              <summary class={buttonClass + " cursor-pointer list-none"} aria-label={`Edit ${s.label}`}>Edit</summary>
+              {/* Floats over the rows below on a wide screen; opens in place on a phone. */}
+              <div class="mt-2 flex flex-col gap-4 rounded-card border border-line bg-surface p-3 shadow-lift sm:absolute sm:right-0 sm:z-10 sm:w-72">
+                <form method="post" action={`${base}/${s.key}`} class="flex flex-col gap-3">
+                  <Field label="Name">
+                    <input name="label" value={s.label} required maxlength={60} class={controlClass} />
+                  </Field>
+                  <Field label="Counts as">
+                    <select name="kind" class={controlClass}>
+                      {STAGE_KINDS.map((k) => (
+                        <option value={k} selected={k === s.kind}>
+                          {KIND_LABELS[k]}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <button class={primaryClass + " self-start"}>Save</button>
+                </form>
+                <form method="post" action={`${base}/${s.key}/move`} class="flex gap-2 border-t border-line pt-3">
+                  <button name="dir" value="up" class={buttonClass} disabled={i === 0} aria-label={`Move ${s.label} up`}>
+                    Move up
+                  </button>
+                  <button name="dir" value="down" class={buttonClass} disabled={i === active.length - 1} aria-label={`Move ${s.label} down`}>
+                    Move down
+                  </button>
+                </form>
+                <form method="post" action={`${base}/${s.key}/archive`} class="flex flex-col gap-3 border-t border-line pt-3">
                   {s.count > 0 ? (
                     <Field label={`Move its ${count(s.count)} to`}>
                       <select name="move_to" required class={controlClass}>
@@ -90,19 +100,17 @@ function StageList(p: { pipeline: Pipeline; heading: string; intro: string; stag
                           ))}
                       </select>
                     </Field>
-                  ) : (
-                    <p class="text-label text-ink-3">Nothing is in this {thing}.</p>
-                  )}
+                  ) : null}
                   <button class={buttonClass + " self-start"}>Archive {s.label}</button>
                 </form>
-              </details>
-            </div>
+              </div>
+            </details>
           </li>
         ))}
       </ol>
 
-      <form method="post" action={base} aria-label={`Add a ${thing}`} class="mt-3 flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface shadow-card p-4">
-        <Field label={`New ${thing}`} class="min-w-48 flex-1">
+      <form method="post" action={base} aria-label={`Add a ${thing}`} class="mt-3 flex flex-wrap items-end gap-3">
+        <Field label={`New ${thing}`} class="min-w-48 flex-1 sm:max-w-sm">
           <input name="label" required maxlength={60} class={controlClass} />
         </Field>
         <Field label="Counts as">
@@ -112,7 +120,7 @@ function StageList(p: { pipeline: Pipeline; heading: string; intro: string; stag
             ))}
           </select>
         </Field>
-        <button class={primaryClass}>Add</button>
+        <button class={buttonClass}>Add</button>
       </form>
 
       {archived.length ? (
