@@ -260,7 +260,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 
   const editor = async (c: Ctx, p: { title: string; action: string; values: FormValues; errors: Errors; current: string }, status = 200) => {
     const rates = await taxRates(getDb(c));
-    return framed(c, p.current, p.title, <DocForm kind="quote" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.title === "New quote" ? "Create quote" : "Save"} />, status);
+    return framed(c, p.current, p.title, <DocForm kind="quote" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === qbase ? "Create quote" : "Save"} />, status);
   };
 
   // Prefilled from the query: a customer's page or a job hands over who, and the first line.
@@ -574,7 +574,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 
   const invoiceEditor = async (c: Ctx, p: { title: string; action: string; values: FormValues; errors: Errors; current: string }, status = 200) => {
     const rates = await taxRates(getDb(c));
-    return framed(c, base, p.title, <DocForm kind="invoice" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.title === "New invoice" ? "Create invoice" : "Save"} />, status);
+    return framed(c, base, p.title, <DocForm kind="invoice" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === base ? "Create invoice" : "Save"} />, status);
   };
 
   // Blank, or prefilled from the query: a customer's page or a job hands over who, and the first line.
@@ -855,7 +855,7 @@ export function Lines({ qt, rates }: { qt: { currency: string; subtotal_cents: s
 
 const BLANK_ROWS = 3;
 
-/** A quote or invoice, new or being edited; `submit` says which (Create quote, or Save). */
+/** A quote or invoice, new or being edited; `submit` says which: Create quote when it posts to the list (a new one), Save when to its own page. */
 function DocForm({ kind, action, v, errors, rates, cancel, submit }: { kind: "quote" | "invoice"; action: string; v: FormValues; errors: Errors; rates: TaxRate[]; cancel: string; submit: string }) {
   const err = (k: string) => (errors[k] ? <span class="text-ink" id={`err-${k.replace(/\./g, "-")}`}>{errors[k]}</span> : null);
   const offered = rates.filter((r) => r.active || v.lines.some((l) => l.tax_rate_id === r.id));

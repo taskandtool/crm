@@ -305,15 +305,16 @@ function personOf(body: Record<string, unknown>) {
 
 /**
  * Who a new task, job or request is for (CustomerPicker): the customer
- * picked, or someone new, matched by email or phone or added as a lead.
- * A flash code when neither works.
+ * picked (or the record it was merged into since the page loaded), or
+ * someone new, matched by email or phone or added as a lead. A flash code
+ * when neither works.
  */
 async function customerFor(c: C, body: Record<string, unknown>): Promise<{ id: string } | { error: "name-needed" | "gone" | "last-open" }> {
   const db = c.var.db;
   const picked = idParam(str(body.customer));
   if (picked) {
     const found = await getCustomer(db, picked);
-    return found ? { id: found.id } : { error: "gone" };
+    return found ? { id: found.merged_into ?? found.id } : { error: "gone" };
   }
   const { name, email, phone } = personOf(body);
   if (!name) return { error: "name-needed" };
@@ -684,6 +685,7 @@ if (showBooking) {
         afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain: new URL(cfg.booking_page ?? c.req.url).host })),
       Frame: frameIn("schedule"),
       nav: SCHEDULE_TABS,
+      navLabel: "Schedule",
       // The jobs on the same week, among the bookings: one Schedule, as Jobber's.
       more: visitsCfg ? jobsOnCalendar : undefined,
       calendarActions: visitsCfg ? (

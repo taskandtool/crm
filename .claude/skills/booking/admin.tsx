@@ -42,6 +42,8 @@ export type BookingAdminOptions = {
   /** This app's slug, stored on the types and people it creates. */
   source: string;
   nav?: NavItem[];
+  /** What the row of section links is called to a screen reader: the CRM's "Schedule". */
+  navLabel?: string;
   pageSize?: number;
   /**
    * The app's own page frame (the CRM's layout and nav), instead of
@@ -83,7 +85,7 @@ export type { Frame, Head } from "../admin/layout";
 
 /** The page, in the app's frame or AdminLayout: SectionPage. */
 function framed(c: Context<{ Variables: TeamVars }>, opts: BookingAdminOptions, links: NavItem[], current: string, head: Head, body: Child, status = 200) {
-  return c.html(<SectionPage Frame={opts.Frame} css={opts.css} user={c.get("user")} label="Booking" links={links} current={current} head={head}>{body}</SectionPage>, status as 200);
+  return c.html(<SectionPage Frame={opts.Frame} css={opts.css} user={c.get("user")} label={opts.navLabel ?? "Booking"} links={links} current={current} head={head}>{body}</SectionPage>, status as 200);
 }
 
 export const BOOKING_STATUSES: StatusOption[] = [

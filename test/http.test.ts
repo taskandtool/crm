@@ -302,6 +302,11 @@ test("tasks: added, listed for today, the nav's count, done onto the timeline, m
   const added = await db.sql<{ title: string; email: string | null; name: string }>`
     select t.title, c.email::text as email, c.name from follow_ups t join customers c on c.id = t.customer_id where t.title in ('Send the brochure', 'Call Gus') order by t.title`;
   assert.deepEqual(added, [{ title: "Call Gus", email: null, name: "Gus New" }, { title: "Send the brochure", email: "fay@example.com", name: "Fay Lo" }]);
+  // Picked from a page loaded before a merge: it goes to the record they were merged into.
+  const [gus] = await db.sql<{ id: string }>`update customers set merged_into = ${id}::bigint, archived_at = now() where name = 'Gus New' returning id::text as id`;
+  await post("/tasks", { customer: gus.id, title: "After the merge", on: today });
+  const [merged] = await db.sql<{ customer_id: string }>`select customer_id::text as customer_id from follow_ups where title = 'After the merge'`;
+  assert.equal(merged.customer_id, id);
   assert.match(await (await get("/tasks?view=upcoming")).text(), /New task/, "the empty state offers New task");
 });
 
@@ -508,7 +513,7 @@ test("bookings in the CRM: its own frame, a type and a person, Make it a job fro
   let html = await (await get("/bookings/types")).text();
   assert.match(html, /<nav aria-label="CRM"/, "the CRM's own frame");
   assert.match(html, /<a href="\/bookings\/calendar" aria-current="page"[^>]*>Schedule<\/a>/);
-  assert.match(html, /<nav aria-label="Booking"[\s\S]*>Calendar<[\s\S]*>Visits<[\s\S]*>Bookings<[\s\S]*>Services</, "Schedule's tabs");
+  assert.match(html, /<nav aria-label="Schedule"[\s\S]*>Calendar<[\s\S]*>Visits<[\s\S]*>Bookings<[\s\S]*>Services</, "Schedule's tabs");
   assert.equal((await get("/bookings/types", { host: "crm.example" })).status, 404, "team only");
 
   const person = await post("/bookings/people", { name: "Rae", email: "rae@team.example", time_zone: "America/Chicago", active: "1" });
