@@ -66,7 +66,18 @@ export type BookingAdminOptions = {
   onBooked?: (c: Context<{ Variables: TeamVars }>, e: BookingNotice) => void | Promise<void>;
   /** More on a booking's page, beside its status: the CRM's customer and "Make it a job". */
   extra?: (c: Context<{ Variables: TeamVars }>, b: Booking) => Child | Promise<Child>;
+  /**
+   * The app's own things on the team's days, shown on the Calendar among the
+   * bookings (the CRM's jobs), as Jobber's Schedule shows visits beside
+   * assessments. `person` is the one picked, or null for everyone.
+   */
+  more?: (c: Context<{ Variables: TeamVars }>, range: { from: string; to: string }, person: { name: string; email: string | null } | null) => Promise<CalendarItem[]>;
+  /** The Calendar's buttons, in place of New booking (the CRM adds New job). */
+  calendarActions?: Child;
 };
+
+/** One of the app's own things on the Calendar: when, who and what, and where it opens. */
+export type CalendarItem = { starts_at: Date; ends_at: Date | null; href: string; name: string; what: string; badge?: Child; note?: string | null };
 
 export type { Frame, Head } from "../admin/layout";
 
@@ -201,7 +212,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
         {after ? <p class="mb-3 text-label"><a href={self}>Back to the start</a></p> : null}
         <DataTable spec={spec} caption={f.when === "past" ? "Past bookings, latest first" : "Upcoming bookings, soonest first"} rows={page} next={next} more={more}
           empty={f.q || f.resource || f.type || f.status ? <NoMatches clear={listUrl(base, { when: params.when })} /> : f.when === "past" ? "No past bookings yet." : (
-            <EmptyState title="No upcoming bookings." action={<a href={`${base}/new`} class={primaryClass}>Book for someone</a>}>
+            <EmptyState title="No upcoming bookings." action={<a href={`${base}/new`} class={primaryClass}>New booking</a>}>
               Times people book on your booking page, and the ones the team books for them, show here.
             </EmptyState>
           )} />
@@ -209,7 +220,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     );
     if (isPartial(c)) return c.html(results);
     const [people, types] = await Promise.all([allPeople(getDb(c)), allTypes(getDb(c))]);
-    return framed(c, opts, links, base, { title: "Bookings", actions: <a href={`${base}/new`} class={primaryClass}>Book for someone</a> }, (
+    return framed(c, opts, links, base, { title: "Bookings", actions: <a href={`${base}/new`} class={primaryClass}>New booking</a> }, (
       <>
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
         <SearchBar action={base} target="#results" q={f.q} placeholder="Name or email" filters={[
@@ -250,11 +261,13 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
       where t.starts_at < ${to}::timestamptz and t.ends_at > ${from}::timestamptz
         and (${person}::bigint is null or t.resource_id = ${person}::bigint)
       order by t.starts_at`;
+    const picked = person ? people.find((p) => p.id === person) : null;
+    const more = opts.more ? await opts.more(c, { from, to }, picked ? { name: picked.name, email: picked.email ?? null } : null) : [];
     const self = (week: string) => listUrl(`${base}/calendar`, { week, person });
     const time = (t: Date) => formatTime(new Date(t), zone);
     const thisWeek = addDays(today, -((weekdayOf(today) + 6) % 7));
     const arrow = buttonClass + " px-2";
-    return framed(c, opts, links, `${base}/calendar`, { title: "Calendar", actions: <a href={`${base}/new`} class={primaryClass}>Book for someone</a> }, (
+    return framed(c, opts, links, `${base}/calendar`, { title: "Calendar", actions: opts.calendarActions ?? <a href={`${base}/new`} class={primaryClass}>New booking</a> }, (
       <>
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div class="flex flex-wrap items-center gap-2">
@@ -278,14 +291,41 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
         <ol class="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface shadow-card">
           {days.map((day) => {
             const b = dayBounds(day, zone);
-            const mine = rows.filter((r) => new Date(r.starts_at) < b.end && new Date(r.ends_at) > b.start);
+            const on = (s: Date, e: Date | null) => new Date(s) < b.end && (e ? new Date(e) > b.start : new Date(s) >= b.start);
+            const mine = rows.filter((r) => on(r.starts_at, r.ends_at));
+            const theirs = more.filter((m) => on(m.starts_at, m.ends_at));
             const away = off.filter((t) => new Date(t.starts_at) < b.end && new Date(t.ends_at) > b.start);
+            // Bookings and the app's own things, in one line by when they start.
+            const items: [Date, Child][] = [
+              ...mine.map((r): [Date, Child] => [new Date(r.starts_at), (
+                <li class="flex flex-wrap gap-x-4">
+                  <span class="w-36 shrink-0 whitespace-nowrap text-ink-2">{time(r.starts_at)} – {time(r.ends_at)}</span>
+                  <span class="min-w-0">
+                    <a href={`${base}/${r.id}`} class="font-semibold no-underline hover:underline">{r.name}</a>
+                    <span class="text-ink-2"> · {r.type_name} with {r.host}</span>
+                    {r.status !== "confirmed" ? <> <StatusBadge value={r.status} options={BOOKING_STATUSES} /></> : null}
+                    <span class="block break-words text-label text-ink-3">{whereText(r, { link: true })}</span>
+                  </span>
+                </li>
+              )]),
+              ...theirs.map((m): [Date, Child] => [new Date(m.starts_at), (
+                <li class="flex flex-wrap gap-x-4">
+                  <span class="w-36 shrink-0 whitespace-nowrap text-ink-2">{time(m.starts_at)}{m.ends_at ? ` – ${time(m.ends_at)}` : ""}</span>
+                  <span class="min-w-0">
+                    <a href={m.href} class="font-semibold no-underline hover:underline">{m.name}</a>
+                    <span class="text-ink-2"> · {m.what}</span>
+                    {m.badge ? <> {m.badge}</> : null}
+                    {m.note ? <span class="block break-words text-label text-ink-3">{m.note}</span> : null}
+                  </span>
+                </li>
+              )]),
+            ].sort((x, y) => x[0].getTime() - y[0].getTime());
             return (
               <li class={"flex flex-col gap-2 px-4 py-3 sm:flex-row sm:gap-6 " + (day === today ? "bg-accent/5" : "")}>
                 <h3 class={"w-36 shrink-0 text-label " + (day === today ? "font-semibold text-accent" : "font-semibold text-ink-2")}>
                   {formatShortDate(day)}{day === today ? " · Today" : ""}
                 </h3>
-                {mine.length || away.length ? (
+                {items.length || away.length ? (
                   <ul class="flex min-w-0 flex-1 flex-col gap-2">
                     {away.map((t) => {
                       // Off all day, or from and to the times that fall on this day.
@@ -294,19 +334,9 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
                       const span = allDay ? "all day" : `${s0 > b.start ? time(s0) : "until"}${s0 > b.start ? " to " : " "}${e0 < b.end ? time(e0) : "the end of the day"}`;
                       return <li class="text-label text-ink-2">{t.name} is off, {span}{t.note ? ` (${t.note})` : ""}</li>;
                     })}
-                    {mine.map((r) => (
-                      <li class="flex flex-wrap gap-x-4">
-                        <span class="w-36 shrink-0 whitespace-nowrap text-ink-2">{time(r.starts_at)} – {time(r.ends_at)}</span>
-                        <span class="min-w-0">
-                          <a href={`${base}/${r.id}`} class="font-semibold no-underline hover:underline">{r.name}</a>
-                          <span class="text-ink-2"> · {r.type_name} with {r.host}</span>
-                          {r.status !== "confirmed" ? <> <StatusBadge value={r.status} options={BOOKING_STATUSES} /></> : null}
-                          <span class="block break-words text-label text-ink-3">{whereText(r, { link: true })}</span>
-                        </span>
-                      </li>
-                    ))}
+                    {items.map(([, node]) => node)}
                   </ul>
-                ) : <p class="text-label text-ink-3">Nothing booked</p>}
+                ) : <p class="text-label text-ink-3">{opts.more ? "Nothing scheduled" : "Nothing booked"}</p>}
               </li>
             );
           })}
@@ -327,7 +357,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
   app.get("/new", async (c) => {
     const w = forWhom(c);
     const types = await bookableTypes(getDb(c));
-    return framed(c, opts, links, base, { title: w.name ? `Book a time for ${w.name}` : "Book for someone", back: { href: base, label: "Bookings" } }, (
+    return framed(c, opts, links, base, { title: w.name ? `Book a time for ${w.name}` : "New booking", back: { href: base, label: "Bookings" } }, (
       <>
         {types.length ? (
           <>
@@ -874,7 +904,7 @@ export function typeRoutes(getDb: GetDb, opts: BookingAdminOptions) {
       actions: (
         <>
           {publicBase && t.active ? <a href={`${publicBase}/${t.slug}`} target="_blank" rel="noopener" class={buttonClass}>View booking page</a> : null}
-          {t.active ? <a href={`${bookingBase}/new/${t.id}`} class={buttonClass}>Book for someone</a> : null}
+          {t.active ? <a href={`${bookingBase}/new/${t.id}`} class={buttonClass}>New booking</a> : null}
         </>
       ),
     }, (

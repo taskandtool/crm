@@ -19,8 +19,8 @@ Set it up by asking what people book, how long it takes, where it
 happens and who does it; add the people first, then the types, and tick
 who takes each. A type nobody takes stays off `/book`.
 
-The Schedule shows the week by person. Book for someone books a caller
-in, as does "Book a time" on a customer's page, which carries their
+Schedule's Calendar shows the week, bookings and jobs together, by person.
+New booking books a caller in, as does "Book a time" on a customer's page, which carries their
 details.
 
 **Messages.** A booking the team makes sends its confirmation, and the

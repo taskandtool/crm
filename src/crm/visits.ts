@@ -155,6 +155,22 @@ export async function setVisitStatus(db: Db, id: string, status: VisitStatus, us
   return rows.length ? getVisit(db, id) : null;
 }
 
+/**
+ * The ones with a time in [from, to), not cancelled, for the Calendar:
+ * everyone's, or the one person's (a job's owner is free text, so by their
+ * name or email). A job made from a booking still on the calendar is left
+ * out, so the visit shows once. Only with booking on: it reads `bookings`.
+ */
+export function visitsBetween(db: Db, from: string, to: string, person: { name: string; email: string | null } | null) {
+  return db.sql<{ id: string; title: string; status: VisitStatus; starts_at: Date; owner: string | null; customer_name: string }>`
+    select v.id::text as id, v.title, v.status, v.starts_at, v.owner::text as owner, c.name as customer_name
+    from customer_visits v join customers c on c.id = v.customer_id
+    where v.status <> 'cancelled' and v.starts_at >= ${from}::timestamptz and v.starts_at < ${to}::timestamptz
+      and (${person?.name ?? null}::text is null or v.owner = ${person?.name ?? null}::citext or v.owner = ${person?.email ?? null}::citext)
+      and not exists (select 1 from bookings b where b.id = v.booking_id and b.status <> 'cancelled')
+    order by v.starts_at, v.id`;
+}
+
 export async function getVisit(db: Db, id: string): Promise<Visit | null> {
   if (!/^\d{1,18}$/.test(id)) return null;
   const [v] = await db.sql<Visit>`

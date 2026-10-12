@@ -425,7 +425,8 @@ test("visits: add from the customer's page, the list, its page, status, CSV", as
   const cid = made.headers.get("location")!.match(/\/customers\/(\d+)/)![1];
   const page = await (await get(`/customers/${cid}`)).text();
   assert.match(page, /<h2[^>]*>Visits<\/h2>/);
-  assert.match(page, /<a href="\/visits"[^>]*>Visits<\/a>/, "in the nav");
+  assert.match(page, /<a href="\/bookings\/calendar"[^>]*>Schedule<\/a>/, "under Schedule in the nav");
+  assert.match(await (await get("/visits")).text(), /<nav aria-label="Schedule"[\s\S]*<a href="\/visits" aria-current="page"[^>]*>Visits<\/a>/, "a tab of Schedule");
   assert.match(page, /<form method="post" action="\/customers\/\d+\/visits" aria-label="Add a visit"/);
 
   assert.equal((await post(`/customers/${cid}/visits`, { title: " " })).headers.get("location"), `/customers/${cid}?saved=visit-title-needed`);
@@ -496,8 +497,8 @@ test("bookings in the CRM: its own frame, a type and a person, Make it a job fro
   if (skip) return t.skip(skip);
   let html = await (await get("/bookings/types")).text();
   assert.match(html, /<nav aria-label="CRM"/, "the CRM's own frame");
-  assert.match(html, /<a href="\/bookings" aria-current="page"[^>]*>Bookings<\/a>/);
-  assert.match(html, /<nav aria-label="Booking"/);
+  assert.match(html, /<a href="\/bookings\/calendar" aria-current="page"[^>]*>Schedule<\/a>/);
+  assert.match(html, /<nav aria-label="Booking"[\s\S]*>Calendar<[\s\S]*>Visits<[\s\S]*>Bookings<[\s\S]*>Services</, "Schedule's tabs");
   assert.equal((await get("/bookings/types", { host: "crm.example" })).status, 404, "team only");
 
   const person = await post("/bookings/people", { name: "Rae", email: "rae@team.example", time_zone: "America/Chicago", active: "1" });
@@ -527,12 +528,19 @@ test("bookings in the CRM: its own frame, a type and a person, Make it a job fro
   assert.match(visitUrl, /^\/visits\/\d+\?saved=visit-added$/);
   html = await (await get(visitUrl)).text();
   assert.match(html, /<h1[^>]*>Estimate visit<\/h1>/);
+  // The Calendar shows the job beside its booking, one Schedule.
+  const [{ week }] = await db.sql<{ week: string }>`select to_char(starts_at at time zone 'UTC', 'YYYY-MM-DD') as week from bookings where id = ${b.id}::bigint`;
+  const cal = await (await get(`/bookings/calendar?week=${week}`)).text();
+  assert.match(cal, /Lee Wong<\/a><span class="text-ink-2"> · Estimate visit with Rae/, "the booking on the Calendar");
+  assert.doesNotMatch(cal, /Visit: Estimate visit/, "its job made from it is the same visit: shown once");
+  await post("/visits", { name: "Mo Job", email: "mo@example.com", title: "Fix the boiler", at: `${week}T15:00` });
+  assert.match(await (await get(`/bookings/calendar?week=${week}`)).text(), /Mo Job<\/a><span class="text-ink-2"> · Visit: Fix the boiler/, "a job of its own is on the Calendar");
   assert.match(html, />Lee Wong<\/a>/);
   assert.doesNotMatch(await (await get("/visits")).text(), /Lee Wong, with Rae/, "made into a job, it leaves the list");
   assert.match(await (await get(`/bookings/${b.id}`)).text(), /The visit<\/a>/);
   assert.equal((await post(`/bookings/999999/job`, {})).status, 404);
 
-  // From the customer's page, Book a time carries who they are into Book for someone.
+  // From the customer's page, Book a time carries who they are into New booking.
   const lee = (await db.sql<{ id: string }>`select id::text as id from customers where email = 'lee@example.com'`)[0].id;
   html = await (await get(`/customers/${lee}`)).text();
   const bookLink = /href="(\/bookings\/new\?[^"]+)"[^>]*>Book a time</.exec(html)![1].replace(/&amp;/g, "&");
@@ -541,7 +549,7 @@ test("bookings in the CRM: its own frame, a type and a person, Make it a job fro
   assert.match(html, /<h1[^>]*>Book a time for Lee Wong<\/h1>/);
   assert.match(html, /Estimate visit/);
   html = await (await get("/bookings/calendar")).text();
-  assert.match(html, /<a href="\/bookings" aria-current="page"[^>]*>Bookings<\/a>/, "inside the CRM's frame");
+  assert.match(html, /<a href="\/bookings\/calendar" aria-current="page"[^>]*>Schedule<\/a>/, "inside the CRM's frame");
   assert.match(html, /Times are in UTC/, "the CRM's zone");
 });
 

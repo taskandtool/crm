@@ -31,7 +31,7 @@ import { overview } from "./crm/overview";
 import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
 import { addNote, listNotes, pickNoteKind } from "./crm/notes";
 import { phoneKey } from "./crm/phone";
-import { addVisit, bookingsWithoutJob, customerVisits, dealVisits, getVisit, visitFromBooking, visitFromDeal, parseAmount, pickVisitStatus, saveVisit, setVisitStatus, visitCsvColumns, visitOwners, visitsPage, type Visit, type VisitFilter, type VisitInput } from "./crm/visits";
+import { addVisit, bookingsWithoutJob, customerVisits, dealVisits, getVisit, visitFromBooking, visitFromDeal, parseAmount, pickVisitStatus, saveVisit, setVisitStatus, visitCsvColumns, visitOwners, visitsBetween, visitsPage, type Visit, type VisitFilter, type VisitInput } from "./crm/visits";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, pickKind, pickPipeline, restoreStage, stagesWithCounts, type Pipeline, type StageResult } from "./crm/stages";
 import { missingSentence } from "./crm/tables";
 import { clean, nowIn, parseTags, slugify, wallTime } from "./crm/text";
@@ -39,20 +39,20 @@ import type { AppEnv } from "./runtime";
 import { CustomerPage } from "./views/customer";
 import { CustomersPage, customerSpec, filterParams, NewCustomerPage, Results } from "./views/customers";
 import { InboxPage, InboxResults, InboxRows } from "./views/inbox";
-import { Layout, WaitingView, type Section as NavSection } from "./views/layout";
+import { Layout, SCHEDULE_TABS, WaitingView, type Section as NavSection } from "./views/layout";
 import type { Frame } from "./admin/layout";
 import { Board, CLOSED_DAYS, DealPage, DealsPage, NewDealPage, PER_COLUMN, type BoardData } from "./views/deals";
 import { NewTaskPage, TasksPage } from "./views/tasks";
 import { MergePage } from "./views/merge";
 import { StagesPage } from "./views/stages";
-import { bookingAdmin } from "./booking/admin";
+import { bookingAdmin, type BookingAdminOptions } from "./booking/admin";
 import { confirmFormBooking } from "./booking/confirm";
 import { emailSend, emailSender, notifyBooking } from "./booking/notify";
 import { envOf } from "./data/env";
 import { afterResponse } from "./data/send";
 import { Section } from "./admin/detail";
 import type { Db } from "./data/db";
-import { buttonClass } from "./views/ui";
+import { buttonClass, primaryClass } from "./views/ui";
 import { invoicesAdmin } from "./invoices/admin";
 import { formsAdmin } from "./forms/admin";
 import { completePaidSubmission } from "./forms/store";
@@ -63,7 +63,8 @@ import { stripeWebhook } from "./payments/webhook";
 import { quoteById, quotesFor } from "./invoices/quotes";
 import { invoicesFor, owed } from "./invoices/invoices";
 import { jobFromQuote } from "./crm/quotes";
-import { CUSTOMER_VISITS, NewVisitPage, visitParams, VisitPage, VisitResults, VisitsPage, visitSpec } from "./views/visits";
+import { CUSTOMER_VISITS, NewVisitPage, VISIT_OPTIONS, visitParams, VisitPage, VisitResults, VisitsPage, visitSpec } from "./views/visits";
+import { StatusBadge } from "./admin/status";
 
 type C = Context<AppEnv>;
 
@@ -645,6 +646,14 @@ app.post("/bookings/:id/job", async (c) => {
 /** The request's database, set by the middleware above, for the booking skill's routes. */
 const dbOf = (c: Context): Db => (c as unknown as C).var.db;
 
+/** The jobs in the Calendar's week (the one person's, when one is picked), as calendar items. */
+const jobsOnCalendar: BookingAdminOptions["more"] = async (c, range, person) =>
+  (await visitsBetween(dbOf(c), range.from, range.to, person)).map((j) => ({
+    starts_at: j.starts_at, ends_at: null, href: `/visits/${j.id}`, name: j.customer_name,
+    what: `${visitsCfg?.one ?? "Job"}: ${j.title}${j.owner ? ` with ${j.owner}` : ""}`,
+    badge: j.status === "done" ? <StatusBadge value="done" options={VISIT_OPTIONS} /> : undefined,
+  }));
+
 if (showBooking) {
   app.route(
     "/bookings",
@@ -657,7 +666,16 @@ if (showBooking) {
       // The confirmation of a booking the team made, through the owner's sender (none: nothing is sent).
       onBooked: (c, e) =>
         afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain: new URL(cfg.booking_page ?? c.req.url).host })),
-      Frame: frameIn("bookings"),
+      Frame: frameIn("schedule"),
+      nav: SCHEDULE_TABS,
+      // The jobs on the same week, among the bookings: one Schedule, as Jobber's.
+      more: visitsCfg ? jobsOnCalendar : undefined,
+      calendarActions: visitsCfg ? (
+        <>
+          <a href="/bookings/new" class={buttonClass}>New booking</a>
+          <a href="/visits/new" class={primaryClass}>New {visitsCfg.one.toLowerCase()}</a>
+        </>
+      ) : undefined,
       // Beside a booking: whose it is here, and its job.
       extra: async (c, b) => {
         const db = dbOf(c);

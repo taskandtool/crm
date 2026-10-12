@@ -2,9 +2,30 @@
 // and who is signed in, then the page. Scripts are the vendored htmx and
 // crm.js on every page, and SortableJS only where something drags.
 import type { Child } from "hono/jsx";
+import { SectionTabs } from "../admin/layout";
 import { dealsCfg, invoicesCfg, showBooking, visitsCfg, vocab } from "../config";
 
-export type Section = "inbox" | "tasks" | "deals" | "customers" | "visits" | "bookings" | "forms" | "invoices" | "stages";
+export type Section = "inbox" | "tasks" | "deals" | "customers" | "schedule" | "forms" | "invoices" | "stages";
+
+/**
+ * Schedule, as Jobber's and Housecall Pro's: one place for the team's days.
+ * The Calendar (bookings and jobs together) first, then each list, then what
+ * can be booked and who takes it. Only the parts this CRM has.
+ */
+export const SCHEDULE_TABS = [
+  ...(showBooking ? [{ href: "/bookings/calendar", label: "Calendar" }] : []),
+  ...(visitsCfg ? [{ href: "/visits", label: visitsCfg.many }] : []),
+  ...(showBooking ? [
+    { href: "/bookings", label: "Bookings" },
+    { href: "/bookings/types", label: "Services" },
+    { href: "/bookings/people", label: "Team" },
+  ] : []),
+];
+
+/** The Schedule's tabs on a page of its own (the jobs list); the booking pages draw theirs. */
+export function ScheduleTabs({ current }: { current: string }) {
+  return SCHEDULE_TABS.length > 1 ? <SectionTabs label="Schedule" links={SCHEDULE_TABS} current={current} /> : null;
+}
 
 export function Layout(props: {
   title: string;
@@ -21,14 +42,15 @@ export function Layout(props: {
   children?: Child;
 }) {
   const { title, user, section, drag, wide, back, sub, actions, children } = props;
-  // The daily work; Forms and Stages are set up once and sit to the right, quieter.
+  // The daily work, in the order it happens (as Jobber's menu runs: clients,
+  // requests, the schedule, invoices); Forms and Stages are set up once and
+  // sit to the right, quieter.
   const nav: { href: string; label: string; section: Section }[] = [
     { href: "/", label: "Inbox", section: "inbox" },
     { href: "/tasks", label: "Tasks", section: "tasks" },
-    { href: "/deals", label: dealsCfg.many, section: "deals" },
     { href: "/customers", label: vocab.many, section: "customers" },
-    ...(visitsCfg ? [{ href: "/visits", label: visitsCfg.many, section: "visits" as const }] : []),
-    ...(showBooking ? [{ href: "/bookings", label: "Bookings", section: "bookings" as const }] : []),
+    { href: "/deals", label: dealsCfg.many, section: "deals" },
+    ...(SCHEDULE_TABS.length ? [{ href: SCHEDULE_TABS[0].href, label: "Schedule", section: "schedule" as const }] : []),
     ...(invoicesCfg ? [{ href: "/invoices", label: "Invoices", section: "invoices" as const }] : []),
   ];
   const setup: { href: string; label: string; section: Section }[] = [

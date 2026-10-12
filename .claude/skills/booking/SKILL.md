@@ -93,7 +93,7 @@ bookings and payments".
 | `hours.ts` | The editor's writes: types and their hosts, people, weekly hours, time off, calendars |
 | `confirm.ts` | `confirmFormBooking`: a form's booking confirmed once, on the form completing |
 | `public.tsx` | `bookingPages`: what can be booked, a time, confirm, the manage page and .ics; `onBooked`, `afterBook` |
-| `admin.tsx` | `bookingAdmin`: Bookings (reschedule, cancel, completed, no-show), Schedule, Services (types and who takes them), Team (each person's hours, time off, calendars), Book for someone |
+| `admin.tsx` | `bookingAdmin`: Bookings (reschedule, cancel, completed, no-show), Calendar (with the app's own things through `more`), Services (types and who takes them), Team (each person's hours, time off, calendars), New booking |
 | `ics.ts` | RFC 5545 invite builder |
 | `notify.ts` | The words (`bookingMessage`), `notifyBooking`, `emailSend` and the `Send` type |
 | `reminders.ts` | `sendReminders`: claims and sends the reminders due now |

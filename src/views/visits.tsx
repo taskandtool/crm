@@ -13,7 +13,7 @@ import type { Customer } from "../crm/customers";
 import { fieldText } from "../crm/fields";
 import { money, nowIn } from "../crm/text";
 import { amountText, VISIT_STATUS_LABELS, VISIT_STATUSES, type OpenBooking, type Visit, type VisitFilter } from "../crm/visits";
-import { Layout } from "./layout";
+import { Layout, ScheduleTabs } from "./layout";
 import { VisitMoney } from "./money";
 import type { Quote } from "../invoices/quotes";
 import type { Invoice } from "../invoices/invoices";
@@ -262,8 +262,9 @@ export function VisitsPage(p: {
 }) {
   const owners = [...new Set([p.user, ...p.owners])];
   return (
-    <Layout title={v.many} user={p.user} section="visits"
+    <Layout title={v.many} user={p.user} section="schedule"
       actions={<a href="/visits/new" class={primaryClass}>New {one}</a>}>
+      <ScheduleTabs current="/visits" />
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <nav aria-label="Which" class="mb-3 flex flex-wrap gap-1 text-label">
         {VIEWS.map((v) => (
@@ -299,7 +300,7 @@ export function VisitsPage(p: {
 /** A new one from the list: the person (matched by email or phone, or added) and the visit. */
 export function NewVisitPage(p: { user: string; owners: string[]; flash: { code?: string | null; n?: string | null } }) {
   return (
-    <Layout title={`New ${one}`} user={p.user} section="visits" back={{ href: "/visits", label: v.many }}>
+    <Layout title={`New ${one}`} user={p.user} section="schedule" back={{ href: "/visits", label: v.many }}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <form method="post" action="/visits" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface shadow-card p-4 sm:grid-cols-2">
         <PersonFields pairs />
@@ -331,7 +332,7 @@ export function VisitPage(p: {
     <Layout
       title={r.title}
       user={p.user}
-      section="visits"
+      section="schedule"
       back={{ href: "/visits", label: v.many }}
       sub={
         <p class="flex flex-wrap items-center gap-x-2">

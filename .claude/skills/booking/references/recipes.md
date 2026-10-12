@@ -26,10 +26,11 @@ who takes it. A type no active person takes is left off `/book`.
 
 **The team's side in another app (the CRM).** Mount `bookingAdmin(getDb,
 { base: "/bookings", css, source: "crm", Frame, extra, timeZone,
-manageBase, onBooked })` on its private routes: the list of bookings, the
-Schedule (a week of bookings and time off, by person), Reschedule (another
+manageBase, onBooked, more })` on its private routes: the list of bookings, the
+Calendar (a week of bookings and time off, by person, with the app's own
+things from `more`), Reschedule (another
 open time, with the same person or another who takes it) and Cancel, each told
-to the booker through `onBooked`, Book for someone
+to the booker through `onBooked`, New booking
 (`/new`, which takes `name`, `email`, `phone` and `address` in its link so
 a team member starting from a customer types nothing twice), Services (the
 types and who takes each) and Team (each person's hours, time off and
