@@ -767,7 +767,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       <>
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
         <p class="mb-4 max-w-prose text-ink-2">
-          A rate never changes once it is on a quote or an invoice. For a new percent, add a rate and stop offering the old one.
+          A rate never changes once it is on a quote or an invoice. For a new percent, add a rate and archive the old one.
         </p>
         {rates.length ? (
           <ul class="mb-6 flex flex-col gap-2">
