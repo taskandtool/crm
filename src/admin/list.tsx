@@ -106,6 +106,27 @@ export function EmptyCard(props: { title: string; children?: Child; action?: Chi
   );
 }
 
+/**
+ * What a section needs before it can do its job (Stripe for invoices, email
+ * for quotes), and the words to ask the AI for it, with a button that copies
+ * them. Sits above the section's own content, which still works for drafts.
+ */
+export function SetupNeeded({ title, children, ask }: { title: string; children: Child; ask: string }) {
+  return (
+    <div role="status" class="mb-4 rounded-card border border-line-strong bg-surface p-4 shadow-card">
+      <p class="font-semibold text-ink">{title}</p>
+      <p class="mt-1 max-w-prose text-ink-2">{children}</p>
+      <div class="mt-3 flex flex-wrap items-center gap-2">
+        <span class="text-label text-ink-2">Ask the AI in this app's chat:</span>
+        <q class="rounded-control bg-panel px-2 py-1 text-label text-ink">{ask}</q>
+        <button type="button" class={buttonClass} onclick={`navigator.clipboard.writeText(${JSON.stringify(ask)}).then(() => { this.textContent = "Copied" })`}>
+          Copy
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** A search or filter that found nothing: say so, and offer the way back. */
 export function NoMatches({ clear }: { clear: string }) {
   return <EmptyState title="Nothing matches these filters." action={<a href={clear} class={buttonClass}>Clear filters</a>} />;

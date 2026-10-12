@@ -79,7 +79,7 @@ permissions) and registering the webhook (its URL and events):
 | File | What |
 |---|---|
 | `schema.sql` | `payments`, `stripe_events`, `tax_rates`, additive |
-| `stripe.ts` | `stripeFrom(env)`: the caller, gateway or bound key; `StripeError` |
+| `stripe.ts` | `stripeFrom(env)`: the caller, gateway or bound key; `StripeError`; `stripeConnected(env)`: whether Stripe answers here |
 | `checkout.ts` | `startCheckout`: the pending row, then Checkout (one amount, or `lines`) |
 | `form-step.tsx` | `paymentStep(getDb, stripeOf, { source })`: a form's payment step |
 | `webhook.ts` | `stripeWebhook(getDb, { secret?, path?, more?, afterPaid? })`, `planEvent`, `applyEvent` |

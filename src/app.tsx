@@ -765,7 +765,6 @@ const INVOICE_TABS = [
   { href: "/invoices/quotes", label: "Quotes" },
   { href: "/invoices", label: "Invoices" },
   { href: "/invoices/payments", label: "Payments" },
-  { href: "/invoices/tax-rates", label: "Tax rates" },
 ];
 
 if (invoicesCfg) {

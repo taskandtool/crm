@@ -82,6 +82,31 @@ export function stripeFrom(env: Env, fetchImpl: typeof fetch = fetch, slug = "st
   };
 }
 
+let reach: { slug: string; at: number; ok: boolean } | null = null;
+
+/**
+ * Whether this app reaches the owner's Stripe: a key bound here, or a Stripe
+ * connection through the gateway. Stripe is asked (a balance read, the
+ * cheapest call) and the answer kept a few minutes, a no only half a
+ * minute, so a page shows the change soon after the owner connects. null
+ * when Stripe could not be asked (a network error): a page should not then
+ * claim Stripe is missing.
+ */
+export async function stripeConnected(env: Env, fetchImpl: typeof fetch = fetch, slug = "stripe"): Promise<boolean | null> {
+  if (reach && reach.slug === slug && Date.now() - reach.at < (reach.ok ? 300_000 : 30_000)) return reach.ok;
+  let ok: boolean;
+  try {
+    await stripeFrom(env, fetchImpl, slug)("GET", "/v1/balance");
+    ok = true;
+  } catch (e) {
+    if (!(e instanceof StripeError) && !(e instanceof Error && e.message.startsWith("No Stripe here"))) return null;
+    if (e instanceof StripeError && !e.refusal && e.status !== 401 && e.status !== 403) return null;
+    ok = false;
+  }
+  reach = { slug, at: Date.now(), ok };
+  return ok;
+}
+
 /**
  * Stripe's form encoding: nested objects and arrays become bracketed keys,
  * `metadata[ref_type]=booking`, `line_items[0][price_data][currency]=usd`.

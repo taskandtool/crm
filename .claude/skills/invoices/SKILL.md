@@ -66,9 +66,10 @@ revenue work as for any payment.
   expired; numbers `Q-0001`.
 - `invoices.ts`: create, save (a draft not yet in Stripe), from an accepted
   quote (once), discard, `owed(db, email)`.
-- `document.tsx`: a quote as HTML (the preview, and the PDF through
-  `reports/print.ts` where a browser exists) and as an email that stands
-  without the PDF; `sendQuote`.
+- `document.tsx`: a quote or an invoice as HTML on one sheet (the
+  previews, and a quote's PDF through `reports/print.ts` where a browser
+  exists), a quote as an email that stands without the PDF; `sendQuote`.
+  An invoice's preview is ours; Stripe sends it in its own layout.
 - `stripe.ts`: `sendInvoice` (customer, tax rates, invoice, items,
   finalize, send; safe to repeat), `payLinkForQuote`, `markPaidOutOfBand`,
   `voidInvoice`, `markUncollectible`.
@@ -79,5 +80,8 @@ revenue work as for any payment.
   business, Frame?, send?, print?, stripe?, quoteExtra?, invoiceExtra?,
   afterDecide?, afterSend? })`, the team's pages, the invoices list opening on
   what is outstanding, past due and paid this month (`invoiceTotals`); every
-  change is a POST from a page that says what will happen.
+  change is a POST from a page that says what will happen. Tax is one choice
+  per document, no tax by default (lines keep their own rate; "Different on
+  each line" keeps a per-line one). Until Stripe (or, for quotes, email) is
+  connected, the pages say so with the words to ask for it, and hold Send.
 - `test/`: against a scratch database, Stripe faked, events out of order.

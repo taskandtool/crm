@@ -1,4 +1,4 @@
-// A quote as the customer sees it: a standalone HTML document (the preview,
+// A quote or an invoice as the customer sees it: a standalone HTML document (the preview,
 // and what reports/print.ts turns into the PDF) and the email that carries
 // it. Both read the stored lines and totals; nothing is recomputed here but
 // the per-rate tax summary, which adds stored line taxes.
@@ -10,6 +10,7 @@ import type { Email, Sent } from "../data/send";
 import { formatMoney } from "../payments/money";
 import { percentText, type TaxRate } from "../payments/tax";
 import type { SavedLine } from "./lines";
+import type { Invoice } from "./invoices";
 import { markSent, type Quote } from "./quotes";
 
 /** The business's name, and its zone: the quote's date is the day it is there. */
@@ -65,50 +66,102 @@ export function quoteMessage(qt: Quote & { lines: SavedLine[] }, rates: TaxRate[
 const STYLE = `
   @page { margin: 18mm 16mm; }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: rgb(20 20 20); background: white; }
-  main { max-width: 760px; margin: 0 auto; padding: 24px; }
-  header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 32px; }
-  h1 { font-size: 24px; margin: 0; }
-  .muted { color: rgb(90 90 90); }
-  .to { margin-bottom: 24px; white-space: pre-line; }
+  body { margin: 0; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: rgb(24 24 27); background: rgb(244 244 245); }
+  main { max-width: 800px; margin: 24px auto; padding: 40px; background: white; border: 1px solid rgb(228 228 231); border-radius: 12px; }
+  .note { max-width: 800px; margin: 24px auto 0; padding: 10px 14px; border-radius: 8px; background: rgb(239 246 255); color: rgb(30 64 175); font-size: 13px; }
+  header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; padding-bottom: 24px; border-bottom: 1px solid rgb(228 228 231); }
+  .biz { font-size: 20px; font-weight: 700; margin: 0; }
+  .kind { text-align: right; }
+  .kind .label { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: rgb(113 113 122); }
+  .kind .number { font-size: 20px; font-weight: 700; }
+  .parties { display: flex; justify-content: space-between; gap: 24px; padding: 24px 0; }
+  .parties h2 { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: rgb(113 113 122); margin: 0 0 6px; }
+  .to { white-space: pre-line; }
+  dl { display: grid; grid-template-columns: auto auto; gap: 4px 16px; margin: 0; text-align: right; }
+  dt { color: rgb(113 113 122); }
+  dd { margin: 0; font-weight: 500; }
+  .due { font-size: 18px; font-weight: 700; }
   table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; font-weight: 600; border-bottom: 1px solid rgb(120 120 120); padding: 6px 4px; }
-  td { padding: 6px 4px; border-bottom: 1px solid rgb(220 220 220); vertical-align: top; }
+  th { text-align: left; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: rgb(113 113 122); background: rgb(250 250 250); border-bottom: 1px solid rgb(228 228 231); padding: 8px; }
+  td { padding: 10px 8px; border-bottom: 1px solid rgb(228 228 231); vertical-align: top; }
   .num { text-align: right; white-space: nowrap; }
-  .totals { margin-left: auto; width: 320px; margin-top: 12px; }
-  .totals td { border: 0; padding: 3px 4px; }
-  .total td { font-weight: 700; border-top: 1px solid rgb(120 120 120); padding-top: 6px; }
+  .totals { margin-left: auto; width: 300px; margin-top: 16px; }
+  .totals td { border: 0; padding: 4px 8px; }
+  .total td { font-size: 16px; font-weight: 700; border-top: 1px solid rgb(161 161 170); padding-top: 8px; }
+  .pay { margin-top: 24px; text-align: right; }
+  .pay a, .pay span { display: inline-block; padding: 10px 18px; border-radius: 8px; background: rgb(37 99 235); color: white; font-weight: 600; text-decoration: none; }
+  .pay span { opacity: .55; }
   .text { white-space: pre-wrap; margin-top: 24px; }
+  .muted { color: rgb(113 113 122); }
+  @media print { body { background: white; } main { border: 0; margin: 0; padding: 0; } .note { display: none; } }
+  @media (max-width: 600px) { main { margin: 0; padding: 20px; border-radius: 0; } header, .parties { flex-direction: column; } .kind, dl { text-align: left; } .totals { width: 100%; } }
 `;
 
-export function QuoteDocument({ qt, rates, o, payUrl }: { qt: Quote & { lines: SavedLine[] }; rates: TaxRate[]; o: DocOptions; payUrl?: string | null }) {
-  const m = (c: string | number) => formatMoney(c, qt.currency, o.locale);
-  const taxes = taxSummary(qt.lines, rates);
-  const to = [qt.name, qt.email, qt.phone, qt.address].filter(Boolean).join("\n");
+type Paper = {
+  kind: "Quote" | "Invoice";
+  number: string | null;
+  to: string;
+  facts: [string, string][];
+  /** The figure the customer looks for: the total, or what is due. */
+  headline: [string, string];
+  currency: string;
+  lines: SavedLine[];
+  subtotal: string | number;
+  total: string | number;
+  rates: TaxRate[];
+  o: DocOptions;
+  /** A Pay button: its link, or the words for one Stripe adds on sending. */
+  pay?: { href: string | null; text: string };
+  notes?: string | null;
+  terms?: string | null;
+  /** Above the paper on screen, never printed: what this preview is. */
+  note?: string;
+};
+
+/**
+ * A quote or an invoice on one sheet, as Stripe's and Jobber's lay theirs
+ * out: who it is from and what it is, who it is for beside its dates and
+ * the amount, the lines, the totals (tax only when there is some), a Pay
+ * button, then the message and terms.
+ */
+function Paper(p: Paper) {
+  const m = (c: string | number) => formatMoney(c, p.currency, p.o.locale);
+  const taxes = taxSummary(p.lines, p.rates);
+  const name = `${p.kind}${p.number ? ` ${p.number}` : ""}`;
   return (
     <html lang="en">
       <head>
         <meta charset="utf-8" />
-        <title>{o.business ? `Quote ${qt.number}, ${o.business}` : `Quote ${qt.number}`}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>{p.o.business ? `${name}, ${p.o.business}` : name}</title>
         <style dangerouslySetInnerHTML={{ __html: STYLE }} />
       </head>
       <body>
+        {p.note ? <p class="note">{p.note}</p> : null}
         <main>
           <header>
-            <div>{o.business ? <h1>{o.business}</h1> : null}</div>
-            <div class="num">
-              <h1>Quote {qt.number}</h1>
-              <div class="muted">{dayText(new Intl.DateTimeFormat("en-CA", { timeZone: o.timeZone ?? "UTC" }).format(qt.sent_at ?? qt.created_at), o.locale)}</div>
-              {qt.valid_until ? <div class="muted">Valid until {dayText(qt.valid_until, o.locale)}</div> : null}
+            <p class="biz">{p.o.business || " "}</p>
+            <div class="kind">
+              <div class="label">{p.kind}</div>
+              <div class="number">{p.number ?? "Draft"}</div>
             </div>
           </header>
-          <div class="to">{to}</div>
+          <section class="parties">
+            <div>
+              <h2>{p.kind === "Invoice" ? "Bill to" : "For"}</h2>
+              <div class="to">{p.to}</div>
+            </div>
+            <dl>
+              {p.facts.map(([k, v]) => <><dt>{k}</dt><dd>{v}</dd></>)}
+              <dt>{p.headline[0]}</dt><dd class="due">{p.headline[1]}</dd>
+            </dl>
+          </section>
           <table>
             <thead>
-              <tr><th>Description</th><th class="num">Quantity</th><th class="num">Price</th><th class="num">Amount</th></tr>
+              <tr><th>Description</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Amount</th></tr>
             </thead>
             <tbody>
-              {qt.lines.map((l) => (
+              {p.lines.map((l) => (
                 <tr>
                   <td>{l.description}</td>
                   <td class="num">{l.quantity}</td>
@@ -120,25 +173,61 @@ export function QuoteDocument({ qt, rates, o, payUrl }: { qt: Quote & { lines: S
           </table>
           <table class="totals">
             <tbody>
-              {taxes.length ? <tr><td>Subtotal</td><td class="num">{m(qt.subtotal_cents)}</td></tr> : null}
+              {taxes.length ? <tr><td>Subtotal</td><td class="num">{m(p.subtotal)}</td></tr> : null}
               {taxes.map((t) => (
                 <tr><td>{t.label}{t.inclusive ? " (included)" : ""}</td><td class="num">{m(t.cents)}</td></tr>
               ))}
-              <tr class="total"><td>Total</td><td class="num">{m(qt.total_cents)}</td></tr>
+              <tr class="total"><td>Total</td><td class="num">{m(p.total)}</td></tr>
             </tbody>
           </table>
-          {payUrl ? <p class="text"><a href={payUrl}>Accept and pay online</a></p> : null}
-          {qt.notes ? <div class="text">{qt.notes}</div> : null}
-          {qt.terms ? <div class="text muted">{qt.terms}</div> : null}
+          {p.pay ? <p class="pay">{p.pay.href ? <a href={p.pay.href}>{p.pay.text}</a> : <span>{p.pay.text}</span>}</p> : null}
+          {p.notes ? <div class="text">{p.notes}</div> : null}
+          {p.terms ? <div class="text muted">{p.terms}</div> : null}
         </main>
       </body>
     </html>
   );
 }
 
+const today = (o: DocOptions, at: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: o.timeZone ?? "UTC" }).format(at);
+
+export function QuoteDocument({ qt, rates, o, payUrl }: { qt: Quote & { lines: SavedLine[] }; rates: TaxRate[]; o: DocOptions; payUrl?: string | null }) {
+  return (
+    <Paper kind="Quote" number={qt.number} to={[qt.name, qt.email, qt.phone, qt.address].filter(Boolean).join("\n")}
+      facts={[["Date", dayText(today(o, qt.sent_at ?? qt.created_at), o.locale)], ...(qt.valid_until ? [["Valid until", dayText(qt.valid_until, o.locale)] as [string, string]] : [])]}
+      headline={["Total", formatMoney(qt.total_cents, qt.currency, o.locale)]}
+      currency={qt.currency} lines={qt.lines} subtotal={qt.subtotal_cents} total={qt.total_cents} rates={rates} o={o}
+      pay={payUrl ? { href: payUrl, text: "Accept and pay online" } : undefined} notes={qt.notes} terms={qt.terms} />
+  );
+}
+
+/**
+ * An invoice as its customer will read it. A draft is a preview: Stripe makes
+ * and emails the real one in its own layout (the owner's Stripe branding),
+ * with these lines, totals and message and its own Pay button.
+ */
+export function InvoiceDocument({ inv, rates, o }: { inv: Invoice & { lines: SavedLine[] }; rates: TaxRate[]; o: DocOptions }) {
+  const sent = inv.sent_at ?? null;
+  const day = today(o, sent ?? new Date());
+  const due = inv.due_date ?? new Date(Date.parse(day + "T00:00:00Z") + inv.days_until_due * 86_400_000).toISOString().slice(0, 10);
+  const paid = inv.status === "paid";
+  return (
+    <Paper kind="Invoice" number={inv.number} to={[inv.name, inv.email, inv.phone, inv.address].filter(Boolean).join("\n")}
+      facts={[["Date", dayText(day, o.locale)], ["Due", dayText(due, o.locale)]]}
+      headline={paid ? ["Paid", formatMoney(inv.total_cents, inv.currency, o.locale)] : ["Amount due", formatMoney(inv.total_cents, inv.currency, o.locale)]}
+      currency={inv.currency} lines={inv.lines} subtotal={inv.subtotal_cents} total={inv.total_cents} rates={rates} o={o}
+      pay={paid ? undefined : { href: inv.hosted_url, text: "Pay online" }} notes={inv.notes}
+      note={sent ? undefined : "A preview. Stripe emails the invoice in its own layout, with your Stripe branding: these lines, totals and message, and a Pay online button that opens its payment page."} />
+  );
+}
+
 /** The whole document as text, for the preview route and the printer. */
 export const quoteHtml = (qt: Quote & { lines: SavedLine[] }, rates: TaxRate[], o: DocOptions, payUrl?: string | null): string =>
   "<!doctype html>" + (<QuoteDocument qt={qt} rates={rates} o={o} payUrl={payUrl} />).toString();
+
+/** An invoice's preview as text. */
+export const invoiceHtml = (inv: Invoice & { lines: SavedLine[] }, rates: TaxRate[], o: DocOptions): string =>
+  "<!doctype html>" + (<InvoiceDocument inv={inv} rates={rates} o={o} />).toString();
 
 export type SendQuote = {
   /** Delivers the email; never throws (data/send.ts's sendEmail). */

@@ -20,15 +20,15 @@ import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, readCursor } from "../admin/keyset";
 import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
-import { DataTable, EmptyState, NoMatches, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
+import { DataTable, EmptyState, NoMatches, SearchBar, SetupNeeded, TableRows, When, type TableSpec } from "../admin/list";
 import { idParam, isPartial, listUrl, str } from "../admin/query";
 import { buttonClass, controlClass, fieldClass, primaryClass, StatusBadge, type StatusOption } from "../admin/status";
 import type { GetDb } from "../data/db";
 import { envOf } from "../data/env";
-import { sendEmail, type Email, type Sent } from "../data/send";
+import { senderOf, sendEmail, type Email, type Sent } from "../data/send";
 import { formatMoney } from "../payments/money";
-import { stripeFrom, type Stripe } from "../payments/stripe";
-import { dayText, quoteHtml, quoteMessage, sendQuote, taxSummary } from "./document";
+import { stripeConnected, stripeFrom, type Stripe } from "../payments/stripe";
+import { dayText, invoiceHtml, quoteHtml, quoteMessage, sendQuote, taxSummary } from "./document";
 import { createTaxRate, percentText, setTaxRateActive, taxRates, type TaxRate } from "../payments/tax";
 import { amountInput, type Errors, type SavedLine } from "./lines";
 import {
@@ -160,16 +160,28 @@ export function todayIn(zone: string, now = new Date()): string {
 
 const addDays = (day: string, n: number) => new Date(Date.parse(day + "T00:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
 
-/** The form's repeated line fields as rows, by index. */
+/**
+ * The form's repeated line fields as rows, by index. Tax is one choice for
+ * the whole document (`tax`, as Jobber's): it goes on every line that has
+ * something on it. "mixed" keeps each line's own (one the AI made per line).
+ */
 function formLines(body: Record<string, unknown>): { description: string; quantity: string; unit: string; tax_rate_id: string }[] {
   const all = (k: string) => {
     const v = body[k];
     return Array.isArray(v) ? v.map(str) : v === undefined ? [] : [str(v)];
   };
   const d = all("description"), q = all("quantity"), u = all("unit"), t = all("tax_rate_id");
+  const tax = str(body.tax);
   return Array.from({ length: Math.min(Math.max(d.length, q.length, u.length), 200) }, (_, i) => ({
-    description: d[i] ?? "", quantity: q[i] ?? "", unit: u[i] ?? "", tax_rate_id: t[i] ?? "",
+    description: d[i] ?? "", quantity: q[i] ?? "", unit: u[i] ?? "",
+    tax_rate_id: tax === "mixed" ? (t[i] ?? "") : (d[i] ?? "").trim() || (u[i] ?? "").trim() ? tax : "",
   }));
+}
+
+/** The one tax a document's lines share: "" for none, a rate's id, or "mixed" when the lines differ. */
+function docTax(lines: { tax_rate_id: string }[]): string {
+  const ids = new Set(lines.map((l) => l.tax_rate_id));
+  return ids.size > 1 ? "mixed" : ([...ids][0] ?? "");
 }
 
 type FormValues = {
@@ -196,7 +208,6 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   const links = opts.nav ?? [
     { href: qbase, label: "Quotes" },
     { href: base, label: "Invoices" },
-    { href: `${base}/tax-rates`, label: "Tax rates" },
   ];
   const stripeOf = opts.stripe ?? ((c: Ctx) => stripeFrom(envOf(c)));
   const doc = { business: opts.business, timeZone: opts.timeZone };
@@ -209,6 +220,21 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     c.html(<SectionPage Frame={opts.Frame} css={opts.css} user={c.get("user")} label="Quotes and invoices" links={links} current={current}
       head={typeof head === "string" ? { title: head } : head}>{body}</SectionPage>, status as 200);
   const back = (c: Ctx, path: string, code: string) => c.redirect(withFlash(path, code), 303);
+  // What sending needs: the owner's Stripe for invoices (and a quote's Pay button), their email for quotes.
+  // A caller passed in (a test, another app) counts as there; null (Stripe not reachable just now) is not a no.
+  const stripeReady = async (c: Ctx) => (opts.stripe ? true : (await stripeConnected(envOf(c))) !== false);
+  const emailReady = (c: Ctx) => !!opts.send || typeof senderOf(envOf(c)) !== "string";
+  const needStripe = (
+    <SetupNeeded title="Connect Stripe to send invoices" ask="Connect my Stripe account so I can send invoices.">
+      Invoices are made in your own Stripe account, which emails them with a Pay button and tells this app when they are paid.
+      You can write drafts now; sending waits for Stripe.
+    </SetupNeeded>
+  );
+  const needEmail = (
+    <SetupNeeded title="Connect your email to send quotes" ask="Connect my email so I can send quotes.">
+      Quotes go out from your own email address. You can write and preview them now, or send the text yourself and mark them sent.
+    </SetupNeeded>
+  );
   const money = (cents: string | number, currency: string) => formatMoney(cents, currency);
 
   // ---- quotes --------------------------------------------------------------
@@ -251,6 +277,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     return framed(c, qbase, { title: "Quotes", actions: <a href={`${qbase}/new`} class={primaryClass}>New quote</a> }, (
       <>
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
+        {emailReady(c) ? null : needEmail}
         <SearchBar action={qbase} target="#results" q={q} placeholder="Number, name or email"
           filters={[{ name: "status", label: "Status", options: QUOTE_OPTIONS, value: status, any: "Any status" }]} />
         {results}
@@ -260,7 +287,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 
   const editor = async (c: Ctx, p: { title: string; action: string; values: FormValues; errors: Errors; current: string }, status = 200) => {
     const rates = await taxRates(getDb(c));
-    return framed(c, p.current, p.title, <DocForm kind="quote" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === qbase ? "Create quote" : "Save"} />, status);
+    return framed(c, p.current, p.title, <DocForm kind="quote" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === qbase ? "Create quote" : "Save"} taxPage={`${base}/tax-rates`} />, status);
   };
 
   // Prefilled from the query: a customer's page or a job hands over who, and the first line.
@@ -410,9 +437,11 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const payUrl = (await invoicesFor(getDb(c), { quoteId: qt.id })).find((i) => i.status === "open" && i.hosted_url)?.hosted_url ?? null;
     const msg = quoteMessage(qt, await taxRates(getDb(c)), doc, payUrl);
     const problem = c.req.query("problem");
+    const [canEmail, canPay] = [emailReady(c), await stripeReady(c)];
     return framed(c, qbase, { title: `Send quote ${qt.number}`, back: { href: self, label: `Quote ${qt.number}` } }, (
       <>
         {problem ? <p role="alert" class={"mb-4 " + alertClass}>{problem}</p> : null}
+        {canEmail ? null : needEmail}
         <Section title="The email">
           <FieldList fields={[
             { label: "To", value: <span class="break-all">{qt.email}</span> },
@@ -421,13 +450,18 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             { label: "Attached", value: opts.print ? `Quote ${qt.number}.pdf, where this server can print it; the lines are in the email either way` : "Nothing: the lines are in the email" },
           ]} />
           <pre class="mt-3 whitespace-pre-wrap break-words rounded-card border border-line bg-canvas p-3 font-body text-copy">{msg.text}</pre>
-          <form method="post" action={`${self}/send`} class="mt-3 flex flex-col gap-3">
-            <label class="flex items-start gap-2">
-              <input type="checkbox" name="pay" value="1" class="mt-1" checked={!!payUrl} />
-              <span>Add a Pay button: Stripe makes the invoice for these lines, the email links to its payment page, and paying it accepts the quote.</span>
-            </label>
-            <div><button class={primaryClass}>Send to {qt.email}</button></div>
-          </form>
+          <a href={`${self}/document`} target="_blank" class={buttonClass + " mt-3"}>Preview the quote</a>
+          {canEmail ? (
+            <form method="post" action={`${self}/send`} class="mt-3 flex flex-col gap-3">
+              {canPay ? (
+                <label class="flex items-start gap-2">
+                  <input type="checkbox" name="pay" value="1" class="mt-1" checked={!!payUrl} />
+                  <span>Add a Pay button: Stripe makes the invoice for these lines, the email links to its payment page, and paying it accepts the quote.</span>
+                </label>
+              ) : null}
+              <div><button class={primaryClass}>Send to {qt.email}</button></div>
+            </form>
+          ) : null}
         </Section>
         <Section title="Sent it yourself?" class="mt-4">
           <p class="mb-2 text-label text-ink-3">If you emailed this text from your own mail, mark the quote sent.</p>
@@ -564,6 +598,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     return framed(c, base, { title: "Invoices", actions: <a href={`${base}/new`} class={primaryClass}>New invoice</a> }, (
       <>
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
+        {(await stripeReady(c)) ? null : needStripe}
         {totals ? <Totals totals={totals} currency={currency} base={base} /> : null}
         <SearchBar action={base} target="#results" q={q} placeholder="Number, name or email"
           filters={[{ name: "status", label: "Status", options: [...INVOICE_OPTIONS, { value: "due", label: "Past due" }], value: params.status, any: "Any status" }]} />
@@ -574,7 +609,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 
   const invoiceEditor = async (c: Ctx, p: { title: string; action: string; values: FormValues; errors: Errors; current: string }, status = 200) => {
     const rates = await taxRates(getDb(c));
-    return framed(c, base, p.title, <DocForm kind="invoice" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === base ? "Create invoice" : "Save"} />, status);
+    return framed(c, base, p.title, <DocForm kind="invoice" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === base ? "Create invoice" : "Save"} taxPage={`${base}/tax-rates`} />, status);
   };
 
   // Blank, or prefilled from the query: a customer's page or a job hands over who, and the first line.
@@ -600,6 +635,13 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     return id ? invoiceById(getDb(c), id) : null;
   };
 
+  // The invoice as its customer will read it (InvoiceDocument): a preview until Stripe sends it.
+  app.get("/:id{[0-9]+}/document", async (c) => {
+    const inv = await loadInvoice(c);
+    if (!inv) return c.notFound();
+    return c.html(invoiceHtml(inv, await taxRates(getDb(c)), doc));
+  });
+
   app.get("/:id{[0-9]+}", async (c) => {
     const inv = await loadInvoice(c);
     if (!inv) return c.notFound();
@@ -623,6 +665,8 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       actions: (
         <>
           {draft ? <a href={`${self}/edit`} class={buttonClass}>Edit</a> : null}
+          {/* Before Stripe has it, our preview; after, Stripe's own PDF below. */}
+          {!inv.pdf_url ? <a href={`${self}/document`} target="_blank" class={buttonClass}>Preview</a> : null}
           {inv.status === "draft" || (inv.status === "open" && !inv.sent_at) ? <a href={`${self}/send`} class={primaryClass}>Send invoice</a> : null}
           {inv.hosted_url && inv.status !== "void" ? <a href={inv.hosted_url} target="_blank" rel="noopener" class={buttonClass}>Payment page</a> : null}
           {inv.pdf_url ? <a href={inv.pdf_url} target="_blank" rel="noopener" class={buttonClass}>PDF</a> : null}
@@ -733,13 +777,16 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       const self = `${base}/${inv.id}`;
       if (!act.allowed(inv)) return back(c, self, "not-now");
       const problem = c.req.query("problem");
+      const ready = await stripeReady(c);
       return framed(c, base, { title: `${act.title}: ${inv.number ? `invoice ${inv.number}` : "draft invoice"}`, back: { href: self, label: inv.number ? `Invoice ${inv.number}` : "Draft invoice" } }, (
         <>
           {problem ? <p role="alert" class={"mb-4 " + alertClass}>{problem}</p> : null}
+          {ready ? null : needStripe}
           <Section title="What happens" class="max-w-2xl">
             <p class="mb-4 max-w-prose">{act.say(inv)}</p>
             <form method="post" action={`${self}/${act.path}`} class="flex items-center gap-4">
-              <button class={primaryClass}>{act.button}</button>
+              {ready ? <button class={primaryClass}>{act.button}</button> : null}
+              {act.path === "send" ? <a href={`${self}/document`} target="_blank" class={buttonClass}>Preview the invoice</a> : null}
               <a href={self} class="text-label text-ink-2">Cancel</a>
             </form>
           </Section>
@@ -751,6 +798,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       if (!inv) return c.notFound();
       const self = `${base}/${inv.id}`;
       if (!act.allowed(inv)) return back(c, self, "not-now");
+      if (!(await stripeReady(c))) return c.redirect(`${self}/${act.path}`, 303);
       const r = await act.run(c, inv);
       if (!r.ok) return c.redirect(listUrl(`${self}/${act.path}`, { problem: r.message }), 303);
       if (act.path === "send") await sent(c, { kind: "invoice", id: inv.id, email: inv.email });
@@ -763,19 +811,22 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   const ratesPage = async (c: Ctx, errors: Errors = {}, status = 200) => {
     const rates = await taxRates(getDb(c));
     const self = `${base}/tax-rates`;
-    return framed(c, self, "Tax rates", (
+    // A setting, as Jobber and Stripe keep tax rates: reached from a quote's or invoice's Tax choice, not a tab.
+    return framed(c, self, { title: "Tax rates", back: { href: base, label: "Invoices" } }, (
       <>
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
         <p class="mb-4 max-w-prose text-ink-2">
-          A rate never changes once it is on a quote or an invoice. For a new percent, add a rate and archive the old one.
+          Quotes and invoices have no tax unless you choose one under their line items. Add the rates you charge here.
+          A rate stays as it is once used; to change a percent, add a new rate and archive the old one.
         </p>
         {rates.length ? (
           <ul class="mb-6 flex flex-col gap-2">
             {rates.map((r) => (
               <li class="flex flex-wrap items-center justify-between gap-2 rounded-card border border-line bg-surface px-3 py-2">
                 <span>
-                  {r.name}, {percentText(r.percent_bp)}{r.inclusive ? ", included in prices" : ""}
-                  {r.active ? null : <span class="text-ink-3"> (not offered)</span>}
+                  <span class="font-semibold">{r.name}</span> {percentText(r.percent_bp)}
+                  <span class="text-label text-ink-2">{r.inclusive ? " · already in your prices" : " · added on top of your prices"}</span>
+                  {r.active ? null : <span class="text-label text-ink-3"> · Archived</span>}
                 </span>
                 <form method="post" action={`${self}/${r.id}/active`}>
                   <input type="hidden" name="active" value={r.active ? "0" : "1"} />
@@ -791,7 +842,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
               {errors.name ? <span class="text-ink">{errors.name}</span> : null}</label>
             <label class={fieldClass}>Percent<input name="percent" required inputmode="decimal" placeholder="8.25" class={controlClass} />
               {errors.percent ? <span class="text-ink">{errors.percent}</span> : null}</label>
-            <label class="flex min-h-9 items-center gap-2 self-end text-ink-2"><input type="checkbox" name="inclusive" class="size-4" /> Included in prices</label>
+            <label class="flex min-h-9 items-center gap-2 self-end text-ink-2"><input type="checkbox" name="inclusive" class="size-4" /> My prices already include it</label>
             <div class="sm:col-span-3"><button class={primaryClass}>Add tax rate</button></div>
           </form>
         </Section>
@@ -856,11 +907,14 @@ export function Lines({ qt, rates }: { qt: { currency: string; subtotal_cents: s
 const BLANK_ROWS = 3;
 
 /** A quote or invoice, new or being edited; `submit` says which: Create quote when it posts to the list (a new one), Save when to its own page. */
-function DocForm({ kind, action, v, errors, rates, cancel, submit }: { kind: "quote" | "invoice"; action: string; v: FormValues; errors: Errors; rates: TaxRate[]; cancel: string; submit: string }) {
+function DocForm({ kind, action, v, errors, rates, cancel, submit, taxPage }: { kind: "quote" | "invoice"; action: string; v: FormValues; errors: Errors; rates: TaxRate[]; cancel: string; submit: string; taxPage: string }) {
   const err = (k: string) => (errors[k] ? <span class="text-ink" id={`err-${k.replace(/\./g, "-")}`}>{errors[k]}</span> : null);
   const offered = rates.filter((r) => r.active || v.lines.some((l) => l.tax_rate_id === r.id));
   const rows = [...v.lines, ...Array.from({ length: Math.max(BLANK_ROWS, 5 - v.lines.length) }, () => ({ description: "", quantity: "", unit: "", tax_rate_id: "" }))];
   const problems = Object.keys(errors).length;
+  const tax = docTax(v.lines.filter((l) => l.description || l.unit));
+  const mixed = tax === "mixed";
+  const taxError = Object.entries(errors).find(([k]) => k.endsWith(".tax_rate_id"))?.[1];
   return (
     <form method="post" action={action} class="flex flex-col gap-4">
       {problems ? <p role="alert" class={alertClass}>Fix what is marked below. Nothing was saved.</p> : null}
@@ -885,18 +939,25 @@ function DocForm({ kind, action, v, errors, rates, cancel, submit }: { kind: "qu
             return (
             <fieldset class={"grid gap-2 sm:grid-cols-12 " + (i ? "border-t border-line pt-3 sm:border-0 sm:pt-0" : "")}>
               <legend class="sr-only">Line {i + 1}</legend>
-              <label class={fieldClass + " sm:col-span-6"}>{name("Description")}<input name="description" value={l.description} maxlength={500} class={controlClass} />{err(`lines.${i}.description`)}</label>
+              <label class={fieldClass + " sm:col-span-8"}>{name("Description")}<input name="description" value={l.description} maxlength={500} class={controlClass} />{err(`lines.${i}.description`)}</label>
               <label class={fieldClass + " sm:col-span-2"}>{name("Qty")}<input name="quantity" value={l.quantity} placeholder="1" inputmode="decimal" class={controlClass} />{err(`lines.${i}.quantity`)}</label>
               <label class={fieldClass + " sm:col-span-2"}>{name("Price")}<input name="unit" value={l.unit} inputmode="decimal" class={controlClass} />{err(`lines.${i}.unit`)}</label>
-              <label class={fieldClass + " sm:col-span-2"}>{name("Tax")}
-                <select name="tax_rate_id" class={controlClass}>
-                  <option value="">None</option>
-                  {offered.map((r) => <option value={r.id} selected={r.id === l.tax_rate_id}>{r.name} {percentText(r.percent_bp)}</option>)}
-                </select>{err(`lines.${i}.tax_rate_id`)}
-              </label>
+              {mixed ? <input type="hidden" name="tax_rate_id" value={l.tax_rate_id} /> : null}
             </fieldset>
             );
           })}
+        </div>
+        {/* One tax for the whole document, none unless chosen; rates are kept on their own page. */}
+        <div class="mt-4 flex flex-wrap items-end gap-3 border-t border-line pt-4">
+          <label class={fieldClass}>Tax
+            <select name="tax" class={controlClass}>
+              <option value="">No tax</option>
+              {offered.map((r) => <option value={r.id} selected={r.id === tax}>{r.name} ({percentText(r.percent_bp)})</option>)}
+              {mixed ? <option value="mixed" selected>Different on each line</option> : null}
+            </select>
+          </label>
+          <a href={taxPage} class="pb-2 text-label text-ink-2">Manage tax rates</a>
+          {taxError ? <span class="w-full text-label font-semibold text-ink">{taxError}</span> : null}
         </div>
       </Section>
       <Section title={kind === "quote" ? "Terms" : "Payment"}>

@@ -57,7 +57,7 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     // A bad price: the form again with the row marked, nothing saved.
     res = await app.request(...post("/invoices/quotes", {
       email: "ann@example.com", name: "Ann Lee", currency: "usd", valid_until: "2026-11-30", visit_id: "12", notes: "", terms: "",
-      description: ["Fence repair", "Haul away", ""], quantity: ["", "", ""], unit: ["450.00", "12,50", ""], tax_rate_id: [rate.value.id, "", ""],
+      description: ["Fence repair", "Haul away", ""], quantity: ["", "", ""], unit: ["450.00", "12,50", ""], tax: "mixed", tax_rate_id: [rate.value.id, "", ""],
     }));
     assert.equal(res.status, 422);
     html = await res.text();
@@ -67,7 +67,7 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
 
     res = await app.request(...post("/invoices/quotes", {
       email: "ann@example.com", name: "Ann Lee", currency: "usd", valid_until: "2026-11-30", visit_id: "12", deal_id: "5", notes: "Gate included.", terms: "",
-      description: ["Fence repair", "Haul away", ""], quantity: ["", "", ""], unit: ["450.00", "12.50", ""], tax_rate_id: [rate.value.id, "", ""],
+      description: ["Fence repair", "Haul away", ""], quantity: ["", "", ""], unit: ["450.00", "12.50", ""], tax: "mixed", tax_rate_id: [rate.value.id, "", ""],
     }));
     assert.equal(res.status, 303);
     const at = res.headers.get("location")!;
@@ -83,6 +83,20 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     assert.match(html, /\$507\.50/);
     assert.match(html, /Sales tax 10%/);
 
+    // Lines taxed differently (the AI's per-line tax) show as such, and stay so when saved.
+    html = await (await app.request(...get(`/invoices/quotes/${id}/edit`))).text();
+    assert.match(html, /<option value="mixed" selected="">Different on each line<\/option>/);
+
+    // One tax for the whole quote goes on every line that has something on it, none by default.
+    res = await app.request(...post(`/invoices/quotes/${id}`, {
+      email: "ann@example.com", name: "Ann Lee", currency: "usd", valid_until: "2026-11-30", visit_id: "12", deal_id: "5", notes: "", terms: "",
+      description: ["Fence repair", "Haul away", ""], quantity: ["", "", ""], unit: ["450.00", "12.50", ""], tax: rate.value.id,
+    }));
+    assert.equal(res.status, 303);
+    assert.deepEqual((await quoteById(s.db, id))!.lines.map((l) => l.tax_rate_id), [rate.value.id, rate.value.id]);
+    html = await (await app.request(...get(`/invoices/quotes/${id}/edit`))).text();
+    assert.match(html, new RegExp(`<option value="${rate.value.id}" selected="">Sales tax \\(10%\\)</option>`));
+
     // Edit while a draft.
     res = await app.request(...post(`/invoices/quotes/${id}`, {
       email: "ann@example.com", name: "Ann Lee", currency: "usd", valid_until: "2026-11-30", visit_id: "12", deal_id: "5", notes: "Gate included.", terms: "Net 30.",
@@ -95,7 +109,8 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     html = await (await app.request(...get(`/invoices/quotes/${id}/document`))).text();
     assert.match(html, /^<!doctype html>/);
     assert.match(html, /Acme Fencing/);
-    assert.match(html, /Valid until November 30, 2026/);
+    assert.match(html, /Valid until<\/dt><dd>November 30, 2026/);
+    assert.doesNotMatch(html, /Subtotal/, "no tax: no subtotal or tax lines");
 
     // The send page shows exactly what goes; it sends nothing.
     html = await (await app.request(...get(`/invoices/quotes/${id}/send`))).text();
@@ -160,7 +175,39 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     res = await app.request(...post("/invoices/tax-rates", { name: "VAT", percent: "20", inclusive: "on" }));
     assert.equal(res.status, 303);
     html = await (await app.request(...get("/invoices/tax-rates"))).text();
-    assert.match(html, /VAT, 20%, included in prices/);
+    assert.match(html, /<span class="font-semibold">VAT<\/span> 20%<span[^>]*> · already in your prices<\/span>/);
+  } finally {
+    await s.drop();
+  }
+});
+
+test("before Stripe and email are connected: the pages say what to ask for, hold Send, and still preview", async (t) => {
+  const s = await scratch();
+  if (!s) return t.skip(why);
+  try {
+    await applySchema(s.db, schema);
+    const app = new Hono();
+    // No `stripe` and no `send`: the owner's own, which this runtime does not have.
+    app.route("/invoices", invoicesAdmin(() => s.db, { base: "/invoices", css: "/site.css", source: "crm", timeZone: "America/Denver", business: "Acme Fencing" }));
+
+    assert.match(await (await app.request(...get("/invoices"))).text(), /Connect Stripe to send invoices[\s\S]*Connect my Stripe account so I can send invoices\./);
+    assert.match(await (await app.request(...get("/invoices/quotes"))).text(), /Connect your email to send quotes/);
+
+    const res = await app.request(...post("/invoices", { email: "ann@example.com", name: "Ann Lee", currency: "usd", days_until_due: "14", notes: "Thanks!", description: ["Fence repair"], quantity: ["2"], unit: ["450.00"] }));
+    assert.equal(res.status, 303, "a draft is made without Stripe");
+    const id = /\/invoices\/(\d+)\?saved=invoice-created/.exec(res.headers.get("location")!)![1];
+
+    const send = await (await app.request(...get(`/invoices/${id}/send`))).text();
+    assert.match(send, /Connect Stripe to send invoices/);
+    assert.doesNotMatch(send, /<button[^>]*>Send invoice<\/button>/, "no Send until Stripe is there");
+    assert.match(send, /href="\/invoices\/\d+\/document"[^>]*>Preview the invoice</);
+    assert.equal((await app.request(...post(`/invoices/${id}/send`, {}))).headers.get("location"), `/invoices/${id}/send`, "a send posted anyway goes back to the page");
+
+    const doc = await (await app.request(...get(`/invoices/${id}/document`))).text();
+    assert.match(doc, /A preview\. Stripe emails the invoice/);
+    assert.match(doc, /Bill to[\s\S]*Ann Lee/);
+    assert.match(doc, /Amount due<\/dt><dd class="due">\$900\.00/);
+    assert.match(doc, /Thanks!/);
   } finally {
     await s.drop();
   }
