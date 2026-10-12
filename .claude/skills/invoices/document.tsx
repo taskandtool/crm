@@ -211,12 +211,14 @@ export function InvoiceDocument({ inv, rates, o }: { inv: Invoice & { lines: Sav
   const day = today(o, sent ?? new Date());
   const due = inv.due_date ?? new Date(Date.parse(day + "T00:00:00Z") + inv.days_until_due * 86_400_000).toISOString().slice(0, 10);
   const paid = inv.status === "paid";
+  // Only one that can still be paid shows what is due and a Pay button; a void or written-off one shows its total.
+  const payable = inv.status === "draft" || inv.status === "open";
   return (
     <Paper kind="Invoice" number={inv.number} to={[inv.name, inv.email, inv.phone, inv.address].filter(Boolean).join("\n")}
       facts={[["Date", dayText(day, o.locale)], ["Due", dayText(due, o.locale)]]}
-      headline={paid ? ["Paid", formatMoney(inv.total_cents, inv.currency, o.locale)] : ["Amount due", formatMoney(inv.total_cents, inv.currency, o.locale)]}
+      headline={[paid ? "Paid" : payable ? "Amount due" : "Total", formatMoney(inv.total_cents, inv.currency, o.locale)]}
       currency={inv.currency} lines={inv.lines} subtotal={inv.subtotal_cents} total={inv.total_cents} rates={rates} o={o}
-      pay={paid ? undefined : { href: inv.hosted_url, text: "Pay online" }} notes={inv.notes}
+      pay={payable ? { href: inv.hosted_url, text: "Pay online" } : undefined} notes={inv.notes}
       note={sent ? undefined : "A preview. Stripe emails the invoice in its own layout, with your Stripe branding: these lines, totals and message, and a Pay online button that opens its payment page."} />
   );
 }

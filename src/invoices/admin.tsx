@@ -227,12 +227,13 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   const needStripe = (
     <SetupNeeded title="Connect Stripe to send invoices" ask="Connect my Stripe account so I can send invoices.">
       Invoices are made in your own Stripe account, which emails them with a Pay button and tells this app when they are paid.
-      You can write drafts now; sending waits for Stripe.
+      Make sure Stripe is connected to this app in Task & Tool, on the app's Connections tab. You can write drafts now; sending waits for Stripe.
     </SetupNeeded>
   );
   const needEmail = (
     <SetupNeeded title="Connect your email to send quotes" ask="Connect my email so I can send quotes.">
-      Quotes go out from your own email address. You can write and preview them now, or send the text yourself and mark them sent.
+      Quotes go out from your own email address. Make sure an email sender is connected to this app in Task & Tool, on the app's Connections tab.
+      You can write and preview quotes now, or send the text yourself and mark them sent.
     </SetupNeeded>
   );
   const money = (cents: string | number, currency: string) => formatMoney(cents, currency);

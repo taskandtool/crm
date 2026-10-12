@@ -89,14 +89,15 @@ let reach: { slug: string; at: number; ok: boolean } | null = null;
  * connection through the gateway. Stripe is asked (a balance read, the
  * cheapest call) and the answer kept a few minutes, a no only half a
  * minute, so a page shows the change soon after the owner connects. null
- * when Stripe could not be asked (a network error): a page should not then
- * claim Stripe is missing.
+ * when Stripe could not be asked (a network error, or no answer in 3
+ * seconds): a page should not then claim Stripe is missing, nor wait on it.
  */
 export async function stripeConnected(env: Env, fetchImpl: typeof fetch = fetch, slug = "stripe"): Promise<boolean | null> {
   if (reach && reach.slug === slug && Date.now() - reach.at < (reach.ok ? 300_000 : 30_000)) return reach.ok;
   let ok: boolean;
   try {
-    await stripeFrom(env, fetchImpl, slug)("GET", "/v1/balance");
+    const quick: typeof fetch = (url, init) => fetchImpl(url, { ...init, signal: AbortSignal.timeout(3000) });
+    await stripeFrom(env, quick, slug)("GET", "/v1/balance");
     ok = true;
   } catch (e) {
     if (!(e instanceof StripeError) && !(e instanceof Error && e.message.startsWith("No Stripe here"))) return null;
