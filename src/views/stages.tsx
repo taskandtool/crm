@@ -120,7 +120,7 @@ function StageList(p: { pipeline: Pipeline; heading: string; intro: string; stag
             ))}
           </select>
         </Field>
-        <button class={buttonClass}>Add</button>
+        <button class={buttonClass}>Add {thing}</button>
       </form>
 
       {archived.length ? (

@@ -129,13 +129,13 @@ const CSV: CsvColumn<Payment>[] = [
   { label: "Paid (UTC)", value: (p) => p.paid_at },
   { label: "Email", value: (p) => p.email },
   { label: "Name", value: (p) => p.name },
-  { label: "Kind", value: (p) => p.kind },
+  { label: "Type", value: (p) => p.kind },
   { label: "Status", value: (p) => p.status },
   { label: "Currency", value: (p) => p.currency },
   // Major units for a spreadsheet; the minor-unit integer stays in the database.
   { label: "Amount", value: (p) => major(paid(p), p.currency) },
   { label: "Refunded", value: (p) => major(p.refunded_cents, p.currency) },
-  { label: "For", value: (p) => p.ref_type },
+  { label: "Paid for", value: (p) => p.ref_type },
   { label: "Ref", value: (p) => p.ref_id },
   { label: "Description", value: (p) => p.description },
   { label: "Test mode", value: (p) => (p.livemode === false ? "yes" : "") },
@@ -183,8 +183,8 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
     columns: [
       { label: "Date", cell: (p) => <When at={p.created_at} timeZone={tz} /> },
       { label: "Email", cell: (p) => p.email ?? "Not given" },
-      { label: "For", cell: (p) => (p.ref_type ? `${p.ref_type} ${p.ref_id ?? ""}` : ""), class: "hidden md:table-cell" },
-      { label: "Kind", cell: (p) => KINDS.find((k) => k.value === p.kind)?.label ?? p.kind, class: "hidden sm:table-cell" },
+      { label: "Paid for", cell: (p) => (p.ref_type ? `${p.ref_type} ${p.ref_id ?? ""}` : ""), class: "hidden md:table-cell" },
+      { label: "Type", cell: (p) => KINDS.find((k) => k.value === p.kind)?.label ?? p.kind, class: "hidden sm:table-cell" },
       { label: "Amount", cell: (p) => formatMoney(paid(p), p.currency), class: "text-right tabular-nums" },
       { label: "Status", cell: (p) => <Status p={p} /> },
     ],
@@ -240,7 +240,7 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
           placeholder="Email or name"
           filters={[
             { name: "status", label: "Status", options: STATUSES, value: f.status, any: "Any status" },
-            { name: "kind", label: "Kind", options: KINDS, value: f.kind, any: "Any kind" },
+            { name: "kind", label: "Type", options: KINDS, value: f.kind, any: "Any type" },
           ]}
         />
         {results}
@@ -277,9 +277,9 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
                 { label: "Status", value: <Status p={p} /> },
                 { label: "Amount", value: formatMoney(paid(p), p.currency) },
                 { label: "Refunded", value: Number(p.refunded_cents) ? formatMoney(p.refunded_cents, p.currency) : null },
-                { label: "Kind", value: KINDS.find((k) => k.value === p.kind)?.label ?? p.kind },
+                { label: "Type", value: KINDS.find((k) => k.value === p.kind)?.label ?? p.kind },
                 {
-                  label: "For",
+                  label: "Paid for",
                   value: p.ref_type ? <a href={listUrl(base, { ref_type: p.ref_type, ref_id: p.ref_id })}>{`${p.ref_type} ${p.ref_id ?? ""}`}</a> : null,
                 },
                 { label: "Email", value: p.email },

@@ -259,8 +259,8 @@ test("the pages: a GET asks, the POST sends; Mark paid waits for Stripe; from a 
     assert.equal(res.status, 303);
     const id = /\/invoices\/(\d+)\?saved=invoice-created/.exec(res.headers.get("location")!)![1];
     let html = await (await get(`/invoices/${id}`)).text();
-    assert.match(html, /Send with Stripe/);
-    assert.match(html, /Discard this draft/);
+    assert.match(html, /Send invoice/);
+    assert.match(html, /Delete draft/);
 
     html = await (await get(`/invoices/${id}/send`)).text();
     assert.match(html, /emails it to ann@example\.com: \$90\.00, due 14 days after it is sent/);

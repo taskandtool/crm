@@ -89,10 +89,10 @@ export function InboxPage(p: InboxProps) {
           <form method="get" action="/" hx-get="/" hx-target="#results" hx-swap="outerHTML" hx-push-url="true" class="flex items-center gap-2">
             {p.all ? <input type="hidden" name="view" value="all" /> : null}
             <label>
-              <span class="sr-only">From</span>
+              <span class="sr-only">Source</span>
               <select name="form" hx-get="/" hx-trigger="change" hx-include="closest form" class={controlClass}>
-                <option value="">Everything that came in</option>
-                {p.forms.map((f) => <option value={f.key} selected={f.key === p.form}>Only {f.title}</option>)}
+                <option value="">All sources</option>
+                {p.forms.map((f) => <option value={f.key} selected={f.key === p.form}>{f.title}</option>)}
               </select>
             </label>
             <noscript><button class={buttonClass}>Apply</button></noscript>

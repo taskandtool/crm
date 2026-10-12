@@ -1,5 +1,5 @@
-// The CRM's only client script: drag on the deal board, and a card that
-// opens on a click. Everything else is plain forms and htmx attributes.
+// The CRM's only client script: drag on the deal board, a card that opens
+// on a click, and the current tab kept in view on a narrow screen. Everything else is plain forms and htmx attributes.
 // A drop posts the same stage change the card's own select makes, and the
 // server's answer (the whole pipeline) replaces the board, so a drop that
 // fails leaves nothing pretending it worked. Without this file, or without
@@ -47,6 +47,18 @@
     var link = card.querySelector("a[href]");
     if (link) link.click();
   });
+  // On a phone the nav and a section's tabs scroll sideways; start each with
+  // its current tab in view, as GitHub's and Gmail's do, not cut off at the edge.
+  function showCurrent() {
+    document.querySelectorAll("nav [aria-current=page]").forEach(function (a) {
+      var row = a.parentElement;
+      while (row && row !== document.body && row.scrollWidth <= row.clientWidth) row = row.parentElement;
+      if (!row || row === document.body) return;
+      var at = a.getBoundingClientRect(), box = row.getBoundingClientRect();
+      row.scrollLeft += at.left + at.width / 2 - (box.left + box.width / 2);
+    });
+  }
+  document.addEventListener("DOMContentLoaded", showCurrent);
   document.addEventListener("DOMContentLoaded", wire);
   document.addEventListener("htmx:afterSettle", wire);
 })();

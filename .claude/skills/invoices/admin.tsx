@@ -218,11 +218,11 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     href: (r) => `${qbase}/${r.id}`,
     columns: [
       { label: "Quote", cell: (r) => r.number },
-      { label: "For", cell: (r) => r.name ?? r.email },
+      { label: "Customer", cell: (r) => r.name ?? r.email },
       { label: "Email", cell: (r) => r.email, class: "hidden md:table-cell" },
       { label: "Total", cell: (r) => money(r.total_cents, r.currency), class: "text-right" },
       { label: "Status", cell: (r) => <StatusBadge value={shownStatus(r, todayIn(opts.timeZone))} options={QUOTE_OPTIONS} /> },
-      { label: "Made", cell: (r) => <When at={r.created_at} timeZone={opts.timeZone} />, class: "hidden sm:table-cell" },
+      { label: "Created", cell: (r) => <When at={r.created_at} timeZone={opts.timeZone} />, class: "hidden sm:table-cell" },
     ],
   };
 
@@ -260,7 +260,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 
   const editor = async (c: Ctx, p: { title: string; action: string; values: FormValues; errors: Errors; current: string }, status = 200) => {
     const rates = await taxRates(getDb(c));
-    return framed(c, p.current, p.title, <DocForm kind="quote" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} />, status);
+    return framed(c, p.current, p.title, <DocForm kind="quote" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.title === "New quote" ? "Create quote" : "Save"} />, status);
   };
 
   // Prefilled from the query: a customer's page or a job hands over who, and the first line.
@@ -320,7 +320,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
         {c.req.query("problem") ? <p role="alert" class={"mb-4 " + alertClass}>{c.req.query("problem")}</p> : null}
         <div class="grid gap-4 md:grid-cols-3">
           <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
-            <Section title="Lines">
+            <Section title="Line items">
               <Lines qt={qt} rates={rates} />
             </Section>
             {qt.notes || qt.terms ? (
@@ -352,7 +352,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             ) : null}
             <Section title="Details">
               <FieldList fields={[
-                { label: "For", value: <>{qt.name ? <>{qt.name}<br /></> : null}<span class="break-all">{qt.email}</span>{qt.phone ? <><br />{qt.phone}</> : null}</> },
+                { label: "Customer", value: <>{qt.name ? <>{qt.name}<br /></> : null}<span class="break-all">{qt.email}</span>{qt.phone ? <><br />{qt.phone}</> : null}</> },
                 { label: "Address", value: qt.address },
                 { label: "Valid until", value: qt.valid_until ? dayText(qt.valid_until) : null },
                 { label: "Sent", value: qt.sent_at ? <When at={qt.sent_at} timeZone={opts.timeZone} /> : null },
@@ -528,7 +528,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     href: (r) => `${base}/${r.id}`,
     columns: [
       { label: "Invoice", cell: (r) => r.number ?? `Draft ${r.id}` },
-      { label: "For", cell: (r) => r.name ?? r.email },
+      { label: "Customer", cell: (r) => r.name ?? r.email },
       { label: "Total", cell: (r) => money(r.total_cents, r.currency), class: "text-right" },
       { label: "Status", cell: (r) => <><StatusBadge value={r.past_due ? "due" : r.status} options={SHOWN_INVOICE} />{r.livemode === false ? <span class="ml-1 text-label text-ink-3">test</span> : null}</> },
       // When it was paid once it is; when it is due while it is open; nothing for a draft or a void.
@@ -574,7 +574,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 
   const invoiceEditor = async (c: Ctx, p: { title: string; action: string; values: FormValues; errors: Errors; current: string }, status = 200) => {
     const rates = await taxRates(getDb(c));
-    return framed(c, base, p.title, <DocForm kind="invoice" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} />, status);
+    return framed(c, base, p.title, <DocForm kind="invoice" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.title === "New invoice" ? "Create invoice" : "Save"} />, status);
   };
 
   // Blank, or prefilled from the query: a customer's page or a job hands over who, and the first line.
@@ -623,7 +623,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       actions: (
         <>
           {draft ? <a href={`${self}/edit`} class={buttonClass}>Edit</a> : null}
-          {inv.status === "draft" || (inv.status === "open" && !inv.sent_at) ? <a href={`${self}/send`} class={primaryClass}>Send with Stripe</a> : null}
+          {inv.status === "draft" || (inv.status === "open" && !inv.sent_at) ? <a href={`${self}/send`} class={primaryClass}>Send invoice</a> : null}
           {inv.hosted_url && inv.status !== "void" ? <a href={inv.hosted_url} target="_blank" rel="noopener" class={buttonClass}>Payment page</a> : null}
           {inv.pdf_url ? <a href={inv.pdf_url} target="_blank" rel="noopener" class={buttonClass}>PDF</a> : null}
           {inv.status === "open" || inv.status === "uncollectible" ? <a href={`${self}/paid`} class={buttonClass}>Mark paid</a> : null}
@@ -639,10 +639,10 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
         ) : null}
         <div class="grid gap-4 md:grid-cols-3">
           <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
-            <Section title="Lines">
+            <Section title="Line items">
               <Lines qt={inv} rates={rates} />
             </Section>
-            {inv.notes ? <Section title="Note on the invoice"><p class="whitespace-pre-wrap break-words">{inv.notes}</p></Section> : null}
+            {inv.notes ? <Section title="Message to the customer"><p class="whitespace-pre-wrap break-words">{inv.notes}</p></Section> : null}
           </div>
           <div class="flex flex-col gap-4">
             <Section title="Details">
@@ -659,7 +659,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
         </div>
         <RecordFoot made={inv.created_at} by={inv.created_by} timeZone={opts.timeZone}>
           {draft ? (
-            <form method="post" action={`${self}/discard`}><button class={footLink}>Discard this draft</button></form>
+            <form method="post" action={`${self}/discard`}><button class={footLink}>Delete draft</button></form>
           ) : null}
           {inv.status === "open" ? <a href={`${self}/uncollectible`} class={footLink}>Write off</a> : null}
           {inv.status === "open" || inv.status === "uncollectible" ? <a href={`${self}/void`} class={footLink}>Void</a> : null}
@@ -702,7 +702,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     run: (c: Ctx, i: Invoice) => Promise<{ ok: true } | { ok: false; message: string }>; done: string };
   const acts: Act[] = [
     {
-      path: "send", title: "Send with Stripe", button: "Send with Stripe", done: "invoice-sent",
+      path: "send", title: "Send invoice", button: "Send invoice", done: "invoice-sent",
       allowed: (i) => i.status === "draft" || (i.status === "open" && !i.sent_at),
       say: (i) => `Stripe makes this invoice in your Stripe account and emails it to ${i.email}: ${money(i.total_cents, i.currency)}, due ${i.days_until_due} days after it is sent. They pay on Stripe's page. After this the invoice no longer changes here.`,
       run: async (c, i) => sendInvoice(getDb(c), stripeOf(c), i.id, c.get("user")),
@@ -779,7 +779,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
                 </span>
                 <form method="post" action={`${self}/${r.id}/active`}>
                   <input type="hidden" name="active" value={r.active ? "0" : "1"} />
-                  <button class={buttonClass}>{r.active ? "Stop offering" : "Offer again"}</button>
+                  <button class={buttonClass}>{r.active ? "Archive" : "Restore"}</button>
                 </form>
               </li>
             ))}
@@ -792,7 +792,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             <label class={fieldClass}>Percent<input name="percent" required inputmode="decimal" placeholder="8.25" class={controlClass} />
               {errors.percent ? <span class="text-ink">{errors.percent}</span> : null}</label>
             <label class="flex min-h-9 items-center gap-2 self-end text-ink-2"><input type="checkbox" name="inclusive" class="size-4" /> Included in prices</label>
-            <div class="sm:col-span-3"><button class={primaryClass}>Add</button></div>
+            <div class="sm:col-span-3"><button class={primaryClass}>Add tax rate</button></div>
           </form>
         </Section>
       </>
@@ -855,7 +855,8 @@ export function Lines({ qt, rates }: { qt: { currency: string; subtotal_cents: s
 
 const BLANK_ROWS = 3;
 
-function DocForm({ kind, action, v, errors, rates, cancel }: { kind: "quote" | "invoice"; action: string; v: FormValues; errors: Errors; rates: TaxRate[]; cancel: string }) {
+/** A quote or invoice, new or being edited; `submit` says which (Create quote, or Save). */
+function DocForm({ kind, action, v, errors, rates, cancel, submit }: { kind: "quote" | "invoice"; action: string; v: FormValues; errors: Errors; rates: TaxRate[]; cancel: string; submit: string }) {
   const err = (k: string) => (errors[k] ? <span class="text-ink" id={`err-${k.replace(/\./g, "-")}`}>{errors[k]}</span> : null);
   const offered = rates.filter((r) => r.active || v.lines.some((l) => l.tax_rate_id === r.id));
   const rows = [...v.lines, ...Array.from({ length: Math.max(BLANK_ROWS, 5 - v.lines.length) }, () => ({ description: "", quantity: "", unit: "", tax_rate_id: "" }))];
@@ -866,7 +867,7 @@ function DocForm({ kind, action, v, errors, rates, cancel }: { kind: "quote" | "
       {errors.status ? <p role="alert" class={alertClass}>{errors.status}</p> : null}
       <input type="hidden" name="visit_id" value={v.visit_id} />
       {kind === "quote" ? <input type="hidden" name="deal_id" value={v.deal_id} /> : null}
-      <Section title="Who it is for">
+      <Section title="Customer">
         <div class="grid gap-3 sm:grid-cols-2">
           <label class={fieldClass}>Email<input name="email" type="email" required value={v.email} maxlength={254} class={controlClass} />{err("email")}</label>
           <label class={fieldClass}>Name<input name="name" value={v.name} maxlength={200} class={controlClass} />{err("name")}</label>
@@ -874,7 +875,7 @@ function DocForm({ kind, action, v, errors, rates, cancel }: { kind: "quote" | "
           <label class={fieldClass}>Address<input name="address" value={v.address} maxlength={500} autocomplete="off" class={controlClass} />{err("address")}</label>
         </div>
       </Section>
-      <Section title="Lines">
+      <Section title="Line items">
         <p class="mb-3 text-label text-ink-3">Blank rows are left out. Save to get more rows.</p>
         {err("lines")}
         <div class="flex flex-col gap-3">
@@ -906,14 +907,14 @@ function DocForm({ kind, action, v, errors, rates, cancel }: { kind: "quote" | "
           ) : (
             <label class={fieldClass}>Days to pay<input name="days_until_due" inputmode="numeric" value={v.days_until_due} class={controlClass} />{err("days_until_due")}</label>
           )}
-          <label class={fieldClass + " sm:col-span-2"}>{kind === "quote" ? "Notes for them" : "Note on the invoice"}<textarea name="notes" rows={3} maxlength={5000} class={controlClass}>{v.notes}</textarea>{err("notes")}</label>
+          <label class={fieldClass + " sm:col-span-2"}>Message to the customer<textarea name="notes" rows={3} maxlength={5000} class={controlClass}>{v.notes}</textarea>{err("notes")}</label>
           {kind === "quote" ? (
             <label class={fieldClass + " sm:col-span-2"}>Terms<textarea name="terms" rows={2} maxlength={5000} class={controlClass}>{v.terms}</textarea>{err("terms")}</label>
           ) : null}
         </div>
       </Section>
       <div class="flex flex-wrap items-center gap-3">
-        <button class={primaryClass}>Save</button>
+        <button class={primaryClass}>{submit}</button>
         <a href={cancel} class="text-label text-ink-2">Cancel</a>
       </div>
     </form>

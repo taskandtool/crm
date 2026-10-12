@@ -303,6 +303,25 @@ function personOf(body: Record<string, unknown>) {
   return { email, phone, name: clean(body.name, 200) ?? email ?? (phoneKey(phone) ? phone : null) };
 }
 
+/**
+ * Who a new task, job or request is for (CustomerPicker): the customer
+ * picked, or someone new, matched by email or phone or added as a lead.
+ * A flash code when neither works.
+ */
+async function customerFor(c: C, body: Record<string, unknown>): Promise<{ id: string } | { error: "name-needed" | "gone" | "last-open" }> {
+  const db = c.var.db;
+  const picked = idParam(str(body.customer));
+  if (picked) {
+    const found = await getCustomer(db, picked);
+    return found ? { id: found.id } : { error: "gone" };
+  }
+  const { name, email, phone } = personOf(body);
+  if (!name) return { error: "name-needed" };
+  const status = await firstOpenStage(db, "customers");
+  if (!status) return { error: "last-open" };
+  return { id: (await createCustomer(db, { name, email, phone, stage: status.key }, c.var.user)).customer.id };
+}
+
 app.get("/customers/new", async (c) => {
   return c.html(<NewCustomerPage user={c.var.user} stages={await listStages(c.var.db, "customers")} flash={flashOf(c)} />);
 });
@@ -564,22 +583,19 @@ app.post("/customers/:id/visits", async (c) => {
 
 app.get("/visits/new", async (c) => {
   const db = c.var.db;
-  const [vo, f] = await Promise.all([visitOwners(db), facets(db)]);
-  return c.html(<NewVisitPage user={c.var.user} owners={[...new Set([c.var.user, ...vo, ...f.owners])]} flash={flashOf(c)} />);
+  const [vo, f, customers] = await Promise.all([visitOwners(db), facets(db), customerChoices(db)]);
+  return c.html(<NewVisitPage user={c.var.user} owners={[...new Set([c.var.user, ...vo, ...f.owners])]} customers={customers} flash={flashOf(c)} />);
 });
 
-// A new visit from the list: the person (matched by email or phone, or added, as a new deal does) and the visit.
+// A new visit from the list: the customer picked, or someone new (as a new deal), and the visit.
 app.post("/visits", async (c) => {
   const db = c.var.db;
   const body = await c.req.parseBody();
   const { visit, invalid } = readVisitForm(body);
   if (!visit.title) return back(c, "/visits/new", "visit-title-needed");
-  const { name, email, phone } = personOf(body);
-  if (!name) return back(c, "/visits/new", "name-needed");
-  const status = await firstOpenStage(db, "customers");
-  if (!status) return back(c, "/stages", "last-open");
-  const who = await createCustomer(db, { name, email, phone, stage: status.key }, c.var.user);
-  const r = await addVisit(db, who.customer.id, visit, c.var.user);
+  const who = await customerFor(c, body);
+  if ("error" in who) return back(c, who.error === "last-open" ? "/stages" : "/visits/new", who.error);
+  const r = await addVisit(db, who.id, visit, c.var.user);
   return r ? back(c, `/visits/${r.id}`, invalid ? "invalid" : "visit-added") : back(c, "/visits", "gone");
 });
 
@@ -844,20 +860,9 @@ app.post("/tasks", async (c) => {
   const title = clean(body.title, 200);
   const on = readDay(body.on);
   if (!title || !on) return back(c, "/tasks/new", "task-needs");
-  const picked = idParam(str(body.customer));
-  let customerId: string;
-  if (picked) {
-    const found = await getCustomer(db, picked);
-    if (!found) return back(c, "/tasks/new", "gone");
-    customerId = found.id;
-  } else {
-    const { name, email, phone } = personOf(body);
-    if (!name) return back(c, "/tasks/new", "name-needed");
-    const status = await firstOpenStage(db, "customers");
-    if (!status) return back(c, "/stages", "last-open");
-    customerId = (await createCustomer(db, { name, email, phone, stage: status.key }, c.var.user)).customer.id;
-  }
-  const t = await addTask(db, customerId, {
+  const who = await customerFor(c, body);
+  if ("error" in who) return back(c, who.error === "last-open" ? "/stages" : "/tasks/new", who.error);
+  const t = await addTask(db, who.id, {
     kind: pickTaskKind(body.kind) ?? "call", title, due_on: on, due_time: readTime(body.at), owner: clean(body.owner, 200) ?? c.var.user, deal_id: null,
   }, c.var.user);
   return t ? back(c, "/tasks", "task-added") : back(c, "/tasks/new", "gone");
@@ -940,21 +945,21 @@ app.get("/deals", async (c) => {
 });
 
 app.get("/deals/new", async (c) => {
-  return c.html(<NewDealPage user={c.var.user} stages={await listStages(c.var.db, "deals")} flash={flashOf(c)} />);
+  const [stages, customers] = await Promise.all([listStages(c.var.db, "deals"), customerChoices(c.var.db)]);
+  return c.html(<NewDealPage user={c.var.user} stages={stages} customers={customers} flash={flashOf(c)} />);
 });
 
-// New deal from the board: the person (matched by email or phone, or added) and their deal.
+// New deal from the board: the customer picked, or someone new, and their deal.
 app.post("/deals", async (c) => {
   const db = c.var.db;
   const body = await c.req.parseBody();
   const input = readDealForm(body);
   if (!input.deal.title) return back(c, "/deals/new", "deal-title-needed");
-  const { name, email, phone } = personOf(body);
-  if (!name) return back(c, "/deals/new", "name-needed");
-  const [status, stage] = await Promise.all([firstOpenStage(db, "customers"), dealStageOf(db, body.stage)]);
-  if (!status || !stage) return back(c, "/stages", "last-open");
-  const who = await createCustomer(db, { name, email, phone, stage: status.key }, c.var.user);
-  const deal = await createDeal(db, who.customer.id, { ...input.deal, owner: input.deal.owner ?? c.var.user }, stage, c.var.user);
+  const stage = await dealStageOf(db, body.stage);
+  if (!stage) return back(c, "/stages", "last-open");
+  const who = await customerFor(c, body);
+  if ("error" in who) return back(c, who.error === "last-open" ? "/stages" : "/deals/new", who.error);
+  const deal = await createDeal(db, who.id, { ...input.deal, owner: input.deal.owner ?? c.var.user }, stage, c.var.user);
   return deal ? back(c, `/deals/${deal.id}`, input.invalid ? "invalid" : "deal-added") : back(c, "/deals", "gone");
 });
 

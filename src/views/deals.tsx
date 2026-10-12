@@ -20,7 +20,7 @@ import { shownStatus, type Quote } from "../invoices/quotes";
 import { formatMoney } from "../payments/money";
 import { TasksSection } from "./tasks";
 import { Layout } from "./layout";
-import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, PersonFields, primaryClass, ReadThenEdit, RecordLine, stageOptions, timeZone } from "./ui";
+import { AddToggle, buttonClass, controlClass, dueDayText, CustomerPicker, DueMark, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, stageOptions, timeZone } from "./ui";
 
 /** How many cards a column shows; how many days won and lost ones stay on the board. */
 export const PER_COLUMN = 100;
@@ -58,16 +58,15 @@ function OpenTotal({ data }: { data: BoardData }) {
 }
 
 /** A new deal from the board: the person (matched by email or phone, or added) and what is being won. */
-export function NewDealPage(p: { user: string; stages: Stage[]; flash: { code?: string | null; n?: string | null } }) {
+export function NewDealPage(p: { user: string; stages: Stage[]; customers: { id: string; name: string; email: string | null }[]; flash: { code?: string | null; n?: string | null } }) {
   return (
     <Layout title={`New ${one}`} user={p.user} section="deals" back={{ href: "/deals", label: dealsCfg.many }}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <form method="post" action="/deals" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface shadow-card p-4 sm:grid-cols-3">
-        <PersonFields />
+        <CustomerPicker customers={p.customers} />
         <DealInputs stages={p.stages.filter((s) => s.kind === "open")} />
         <div class="sm:col-span-3">
-          <button class={primaryClass}>Add {one}</button>
-          <span class="ml-3 text-label text-ink-3">Someone already here by email or phone gets it; anyone else is added.</span>
+          <button class={primaryClass}>Create {one}</button>
         </div>
       </form>
     </Layout>
@@ -78,7 +77,7 @@ export function NewDealPage(p: { user: string; stages: Stage[]; flash: { code?: 
 function DealInputs({ stages }: { stages: Stage[] }) {
   return (
     <>
-      <Field label={`${dealsCfg.one} name`}>
+      <Field label="Title">
         <input name="title" required maxlength={200} placeholder="New furnace" class={controlClass} />
       </Field>
       <Field label={`Value (${dealsCfg.currency})`} hint="Blank uses the quote's total.">
@@ -303,7 +302,7 @@ export function DealPage(p: {
           ) : null}
         </div>
         <div class="flex flex-col gap-4">
-          <Section title="About">
+          <Section title="Details">
             <ReadThenEdit
               fields={[
                 { label: "Value", value: value ? `${value}${d.from_quote ? " (from the quote)" : ""}` : "Not set" },
@@ -358,7 +357,7 @@ function StageBar({ stages, current, self }: { stages: Stage[]; current: string;
 function DealEdit({ d, owners }: { d: Deal; owners: string[] }) {
   return (
     <form method="post" action={`/deals/${d.id}`} class="grid gap-3">
-      <Field label={`${dealsCfg.one} name`}>
+      <Field label="Title">
         <input name="title" value={d.title} required maxlength={200} class={controlClass} />
       </Field>
       <Field label={`Value (${(d.currency ?? dealsCfg.currency).toUpperCase()})`} hint="Blank uses the quote's total.">
@@ -410,7 +409,7 @@ export function CustomerDeals({ c, deals, stages }: { c: Customer; deals: Deal[]
         <form method="post" action={`/customers/${c.id}/deals`} class="grid gap-3">
           <DealInputs stages={stages.filter((s) => s.kind === "open")} />
           <div>
-            <button class={primaryClass}>Add {one}</button>
+            <button class={buttonClass}>Add {one}</button>
           </div>
         </form>
       </AddToggle>

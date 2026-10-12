@@ -166,7 +166,7 @@ export function NewCustomerPage({ user, stages, flash }: { user: string; stages:
           </datalist>
         </Field>
         <div class="sm:col-span-2">
-          <button class={primaryClass}>Add {vocab.one.toLowerCase()}</button>
+          <button class={primaryClass}>Create {vocab.one.toLowerCase()}</button>
           <span class="ml-3 text-label text-ink-3">A name, email or phone is enough. Someone already here opens their record.</span>
         </div>
       </form>

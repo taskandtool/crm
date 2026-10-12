@@ -127,6 +127,28 @@ export function AddToggle({ label, open, children }: { label: string; open?: boo
   );
 }
 
+/**
+ * Who a new task, job or request is for, as Jobber's "Select a client": a
+ * customer already here, or "Someone new", which opens their name, email and
+ * phone (matched by email or phone, or added). Spans the whole form's grid.
+ */
+export function CustomerPicker({ customers }: { customers: { id: string; name: string; email: string | null }[] }) {
+  return (
+    <>
+      <Field label={vocab.one} class="col-span-full">
+        <select name="customer" required autofocus class={controlClass + " w-full min-w-0"}>
+          {customers.length ? <option value="">Choose a {vocab.one.toLowerCase()}</option> : null}
+          {customers.map((c) => <option value={c.id}>{c.email ? `${c.name} (${c.email})` : c.name}</option>)}
+          <option value="new" selected={!customers.length}>Someone new</option>
+        </select>
+      </Field>
+      <div class="col-span-full hidden gap-3 sm:grid-cols-2 [form:has(option[value=new]:checked)_&]:grid">
+        <PersonFields pairs />
+      </div>
+    </>
+  );
+}
+
 /** Who a new deal or visit is for: matched by email or phone, or added. In a two-column form the name takes a row, so email and phone pair up. */
 export function PersonFields({ pairs }: { pairs?: boolean }) {
   return (

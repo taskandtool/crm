@@ -102,7 +102,7 @@ export function CustomerPage(p: {
           ) : null}
         </div>
         <div class="flex min-w-0 flex-col gap-4">
-          <Section title="About">
+          <Section title="Details">
             <About c={c} owners={p.owners} />
           </Section>
           <Section title={dealsCfg.many}>
@@ -248,7 +248,7 @@ function Activity({ c, notes, history, missing }: { c: Customer; notes: Note[]; 
               <option value={k}>{NOTE_LABELS[k]}</option>
             ))}
           </select>
-          <button class={primaryClass}>Add</button>
+          <button class={buttonClass}>Log activity</button>
           {/* Now, unless it happened earlier: the time is there when it is needed. */}
           <details class="text-label text-ink-2">
             <summary class="cursor-pointer list-none underline decoration-line-strong underline-offset-2 hover:decoration-current">Another time</summary>

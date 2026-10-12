@@ -9,7 +9,7 @@ import { listUrl } from "../admin/query";
 import { dealsCfg, vocab } from "../config";
 import { addDays, TASK_KINDS, TASK_LABELS, UPCOMING_DAYS, type Task, type TaskView } from "../crm/tasks";
 import { Layout } from "./layout";
-import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, PersonFields, primaryClass, timeText, timeZone } from "./ui";
+import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, CustomerPicker, primaryClass, timeText, timeZone } from "./ui";
 
 export type TasksProps = {
   user: string;
@@ -76,20 +76,10 @@ export function NewTaskPage(p: { user: string; owners: string[]; today: string; 
     <Layout title="New task" user={p.user} section="tasks" back={{ href: "/tasks", label: "Tasks" }}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <form method="post" action="/tasks" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface p-4 shadow-card sm:grid-cols-2">
-        {/* As HubSpot's Create task: pick who it is for; "Someone new" opens their name, email and phone. */}
-        <Field label={vocab.one} class="sm:col-span-2">
-          <select name="customer" required autofocus class={controlClass + " w-full min-w-0"}>
-            {p.customers.length ? <option value="">Choose a {vocab.one.toLowerCase()}</option> : null}
-            {p.customers.map((c) => <option value={c.id}>{c.email ? `${c.name} (${c.email})` : c.name}</option>)}
-            <option value="new" selected={!p.customers.length}>Someone new</option>
-          </select>
-        </Field>
-        <div class="hidden gap-3 sm:col-span-2 sm:grid-cols-2 [form:has(option[value=new]:checked)_&]:grid">
-          <PersonFields pairs />
-        </div>
+        <CustomerPicker customers={p.customers} />
         <TaskFields owners={p.owners} user={p.user} today={p.today} deals={[]} />
         <div class="sm:col-span-2">
-          <button class={primaryClass}>Add task</button>
+          <button class={primaryClass}>Create task</button>
         </div>
       </form>
     </Layout>
@@ -198,7 +188,7 @@ export function TaskForm(p: {
       <input type="hidden" name="return" value={p.returnTo} />
       <TaskFields {...p} />
       <div class="sm:col-span-2">
-        <button class={primaryClass}>Add task</button>
+        <button class={buttonClass}>Add task</button>
       </div>
     </form>
   );

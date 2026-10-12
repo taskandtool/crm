@@ -17,7 +17,7 @@ import { Layout, ScheduleTabs } from "./layout";
 import { VisitMoney } from "./money";
 import type { Quote } from "../invoices/quotes";
 import type { Invoice } from "../invoices/invoices";
-import { AddToggle, buttonClass, controlClass, CustomInput, Field, MESSAGES, PersonFields, primaryClass, ReadThenEdit, RecordLine, timeZone } from "./ui";
+import { AddToggle, buttonClass, controlClass, CustomInput, CustomerPicker, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, timeZone } from "./ui";
 
 /** How many a customer's page shows. */
 export const CUSTOMER_VISITS = 100;
@@ -59,21 +59,24 @@ function VisitFields({ r, owners, defaultOwner }: { r?: Visit; owners: string[];
   const at = r?.starts_at ? nowIn(timeZone, new Date(r.starts_at)) : "";
   return (
     <>
-      <Field label="What" class="sm:col-span-2">
+      <Field label="Title" class="sm:col-span-2">
         <input name="title" value={r?.title ?? ""} required maxlength={200} placeholder={`What the ${one} is for`} class={controlClass} />
       </Field>
       <Field label="When" hint="Blank if it is not scheduled yet.">
         <input name="at" type="datetime-local" value={at} class={controlClass} />
       </Field>
-      <Field label="Status">
-        <select name="status" class={controlClass}>
-          {VISIT_STATUSES.map((s) => (
-            <option value={s} selected={s === (r?.status ?? "planned")}>
-              {VISIT_STATUS_LABELS[s]}
-            </option>
-          ))}
-        </select>
-      </Field>
+      {/* A new one is planned, as Jobber's new job is; the status is changed on its page (Mark done) or in Edit. */}
+      {r ? (
+        <Field label="Status">
+          <select name="status" class={controlClass}>
+            {VISIT_STATUSES.map((s) => (
+              <option value={s} selected={s === r.status}>
+                {VISIT_STATUS_LABELS[s]}
+              </option>
+            ))}
+          </select>
+        </Field>
+      ) : null}
       <Field label={ownerLabel}>
         <input name="owner" list="visit-owners" value={r ? (r.owner ?? "") : (defaultOwner ?? "")} maxlength={200} class={controlClass} />
         <datalist id="visit-owners">
@@ -130,7 +133,7 @@ export function CustomerVisits({ c, visits, owners }: { c: Customer; visits: Vis
         <form method="post" action={`/customers/${c.id}/visits`} aria-label={`Add a ${one}`} class="grid gap-3 sm:grid-cols-2">
           <VisitFields owners={owners} defaultOwner={c.owner} />
           <div class="sm:col-span-2">
-            <button class={primaryClass}>Add {one}</button>
+            <button class={buttonClass}>Add {one}</button>
           </div>
         </form>
       </AddToggle>
@@ -161,7 +164,7 @@ export function visitSpec(): TableSpec<Visit> {
         ),
       },
       {
-        label: "What",
+        label: v.one,
         cell: (r) => (
           <>
             {r.title}
@@ -298,16 +301,15 @@ export function VisitsPage(p: {
 }
 
 /** A new one from the list: the person (matched by email or phone, or added) and the visit. */
-export function NewVisitPage(p: { user: string; owners: string[]; flash: { code?: string | null; n?: string | null } }) {
+export function NewVisitPage(p: { user: string; owners: string[]; customers: { id: string; name: string; email: string | null }[]; flash: { code?: string | null; n?: string | null } }) {
   return (
     <Layout title={`New ${one}`} user={p.user} section="schedule" back={{ href: "/visits", label: v.many }}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <form method="post" action="/visits" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface shadow-card p-4 sm:grid-cols-2">
-        <PersonFields pairs />
+        <CustomerPicker customers={p.customers} />
         <VisitFields owners={p.owners} defaultOwner={p.user} />
         <div class="sm:col-span-2">
-          <button class={primaryClass}>Add {one}</button>
-          <span class="ml-3 text-label text-ink-3">Someone already here by email or phone gets it; anyone else is added.</span>
+          <button class={primaryClass}>Create {one}</button>
         </div>
       </form>
     </Layout>

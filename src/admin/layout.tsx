@@ -15,13 +15,18 @@ export type Head = { title: string; back?: { href: string; label: string }; sub?
 /** An app's own page frame (the CRM's layout), given each page's head. */
 export type Frame = (p: Head & { user: string; children: Child }) => Child;
 
-/** A section's pages as tabs, the current one underlined. */
+/**
+ * A section's pages as tabs, the current one underlined. One line that
+ * scrolls sideways on a narrow screen, as GitHub's and Stripe's do, never a
+ * second row. The line under them is an inset shadow, so the scrolling
+ * row cannot clip it and the current tab's underline sits on top.
+ */
 export function SectionTabs({ label, links, current }: { label: string; links: NavItem[]; current: string }) {
   return (
-    <nav aria-label={label} class="mb-4 flex flex-wrap gap-1 border-b border-line text-label">
+    <nav aria-label={label} class="mb-4 flex gap-1 overflow-x-auto text-label shadow-[inset_0_-1px_0_var(--color-line)] [scrollbar-width:none]">
       {links.map((n) => (
         <a href={n.href} aria-current={current === n.href ? "page" : undefined}
-          class={"-mb-px border-b-2 px-3 py-2 no-underline " + (current === n.href ? "border-accent font-semibold text-ink" : "border-transparent text-ink-2 hover:border-line-strong hover:text-ink")}>
+          class={"shrink-0 whitespace-nowrap border-b-2 px-3 py-2 no-underline " + (current === n.href ? "border-accent font-semibold text-ink" : "border-transparent text-ink-2 hover:border-line-strong hover:text-ink")}>
           {n.label}
         </a>
       ))}

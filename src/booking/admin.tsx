@@ -192,7 +192,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     href: (r) => `${base}/${r.id}`,
     columns: [
       { label: "When", cell: (r) => <When at={r.starts_at} timeZone={opts.timeZone ?? r.time_zone} /> },
-      { label: "Name", cell: (r) => <>{r.name}<span class="block break-all text-label text-ink-2">{r.email}</span></> },
+      { label: "Customer", cell: (r) => <>{r.name}<span class="block break-all text-label text-ink-2">{r.email}</span></> },
       { label: "Service", cell: (r) => r.type_name, class: "hidden sm:table-cell" },
       { label: "With", cell: (r) => r.resource_name, class: "hidden md:table-cell" },
       { label: "Status", cell: (r) => <StatusBadge value={r.status} options={BOOKING_STATUSES} /> },
@@ -889,7 +889,7 @@ export function typeRoutes(getDb: GetDb, opts: BookingAdminOptions) {
   const newPage = (c: Team, values: Record<string, unknown> = {}, errors: Errors = {}) =>
     layout(c, { title: "New service", back: { href: base, label: "Services" } }, (
       <div class="max-w-3xl rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
-        <TypeForm action={base} t={values} errors={errors} submit="Add service" publicBase={publicBase} />
+        <TypeForm action={base} t={values} errors={errors} submit="Create service" publicBase={publicBase} />
       </div>
     ), Object.keys(errors).length ? 422 : 200);
 
@@ -1006,7 +1006,7 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
     const d = getDb(c);
     const all = await allPeople(d);
     const [hours, cals] = await Promise.all([Promise.all(all.map((r) => weeklyHours(d, r.id))), calendarsOn ? calendars(d) : []]);
-    return layout(c, { title: "Team", actions: <a href={`${base}/new`} class={primaryClass}>Add person</a> }, (
+    return layout(c, { title: "Team", actions: <a href={`${base}/new`} class={primaryClass}>Add team member</a> }, (
       <>
         <Flash code={c.req.query("saved")} messages={MESSAGES} />
         {all.length ? (
@@ -1037,9 +1037,9 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
 
   const newPage = async (c: Team, values: Record<string, unknown> = {}, errors: Errors = {}) => {
     const all = await allPeople(getDb(c));
-    return layout(c, { title: "Add person", back: { href: base, label: "Team" } }, (
+    return layout(c, { title: "Add team member", back: { href: base, label: "Team" } }, (
       <div class="max-w-3xl rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
-        <PersonForm action={base} r={values} errors={errors} submit="Add person" zone={opts.timeZone ?? all[0]?.time_zone ?? "UTC"} />
+        <PersonForm action={base} r={values} errors={errors} submit="Add team member" zone={opts.timeZone ?? all[0]?.time_zone ?? "UTC"} />
       </div>
     ), Object.keys(errors).length ? 422 : 200);
   };

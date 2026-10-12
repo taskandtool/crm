@@ -160,10 +160,10 @@ test("customers: create, open, edit, note, archive", async (t) => {
   const detail = await (await get(`/customers/${id}?saved=added`)).text();
   assert.match(detail, /Quinn Ray/);
   assert.match(detail, /Customer added\./);
-  // A record page: tasks, then one Activity timeline with its note box, then About beside them;
+  // A record page: tasks, then one Activity timeline with its note box, then Details beside them;
   // details are values with Edit, not an open form; nothing empty shows.
   assert.ok(detail.indexOf(">Tasks</h2>") < detail.indexOf(">Activity</h2>"));
-  assert.ok(detail.indexOf(">Activity</h2>") < detail.indexOf(">About</h2>"));
+  assert.ok(detail.indexOf(">Activity</h2>") < detail.indexOf(">Details</h2>"));
   assert.match(detail, /<form method="post" action="\/customers\/\d+\/notes" aria-label="Log activity"/);
   assert.match(detail, /<summary[^>]*><span[^>]*>Edit<\/span>/);
   assert.doesNotMatch(detail, /Quotes and invoices/, "no quotes or invoices yet, so no section");
@@ -427,6 +427,16 @@ test("visits: add from the customer's page, the list, its page, status, CSV", as
   assert.match(page, /<h2[^>]*>Visits<\/h2>/);
   assert.match(page, /<a href="\/bookings\/calendar"[^>]*>Schedule<\/a>/, "under Schedule in the nav");
   assert.match(await (await get("/visits")).text(), /<nav aria-label="Schedule"[\s\S]*<a href="\/visits" aria-current="page"[^>]*>Visits<\/a>/, "a tab of Schedule");
+  // New visit and New deal for a customer picked from the list: theirs, nobody added.
+  const [{ n: people }] = await db.sql<{ n: number }>`select count(*)::int as n from customers`;
+  assert.match(await (await get("/visits/new")).text(), /<option value="\d+">Val Visit \(val@example\.com\)<\/option>/);
+  assert.match((await post("/visits", { customer: cid, title: "Picked job" })).headers.get("location")!, /^\/visits\/\d+\?saved=visit-added$/);
+  assert.match((await post("/deals", { customer: cid, title: "Picked deal" })).headers.get("location")!, /^\/deals\/\d+\?saved=deal-added$/);
+  const picked = await db.sql<{ n: number }>`
+    select (select count(*) from customers)::int as n
+    where exists (select 1 from customer_visits where title = 'Picked job' and customer_id = ${cid}::bigint)
+      and exists (select 1 from deals where title = 'Picked deal' and customer_id = ${cid}::bigint)`;
+  assert.deepEqual(picked, [{ n: people }], "both on the picked customer, nobody new");
   assert.match(page, /<form method="post" action="\/customers\/\d+\/visits" aria-label="Add a visit"/);
 
   assert.equal((await post(`/customers/${cid}/visits`, { title: " " })).headers.get("location"), `/customers/${cid}?saved=visit-title-needed`);
@@ -688,7 +698,7 @@ test("forms in the CRM: submissions by form, an order with its payment, the Inbo
   html = await (await get("/?form=order")).text();
   assert.match(html, /Olive Order/);
   assert.doesNotMatch(html, /Pat Doe/);
-  assert.match(html, /<option value="order" selected="">Only Cookie order<\/option>/);
+  assert.match(html, /<option value="order" selected="">Cookie order<\/option>/);
   assert.match(await (await get("/?view=all")).text(), /Pat Doe/, "everything, unfiltered");
 
   assert.equal((await get("/forms/submissions", { host: "crm.example" })).status, 404, "team only");
