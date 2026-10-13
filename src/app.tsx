@@ -32,7 +32,7 @@ import { overview } from "./crm/overview";
 import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
 import { addNote, listNotes, pickNoteKind, wallTime } from "./customers/notes";
 import { phoneKey } from "./crm/phone";
-import { addEvent, customerEvents, eventCsvColumns, eventsPage, getEvent, saveEvent, startWall, touchFor, type Event, type EventFilter, type EventInput } from "./crm/events";
+import { addEvent, customerEvents, eventCsvColumns, eventsPage, getEvent, inviteDomain, saveEvent, startWall, tellBooker, touchFor, type Event, type EventFilter, type EventInput } from "./crm/events";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, pickKind, pickPipeline, restoreStage, stagesWithCounts, type Pipeline, type StageResult } from "./crm/stages";
 import { missingSentence } from "./crm/tables";
 import { clean, parseAmount, parseTags, slugify } from "./crm/text";
@@ -632,7 +632,9 @@ app.post("/events/:id", async (c) => {
   const form = readEventForm(await c.req.parseBody(), current);
   if (!form) return back(c, self, "event-incomplete");
   const r = await saveEvent(db, current.id, { ...form.event, unset: form.unset }, c.var.user);
-  return r ? back(c, self, form.invalid ? "invalid" : "saved") : back(c, "/events", "gone");
+  if (!r) return back(c, "/events", "gone");
+  afterResponse(c, tellBooker(db, envOf(c), current, r));
+  return back(c, self, form.invalid ? "invalid" : "saved");
 });
 
 // ---- the booking pages ----------------------------------------------------------
@@ -662,8 +664,7 @@ if (eventsCfg) {
       base: "/schedule",
       manageBase: cfg.booking_page,
       // Booked, moved or cancelled here tells an online booker, through the owner's sender (none: nothing is sent).
-      onBooked: (c, e) =>
-        afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain: new URL(cfg.booking_page ?? c.req.url).host })),
+      onBooked: (c, e) => afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain: inviteDomain })),
       returnTo: (b) => ({ href: `/events/${b.id}`, label: one }),
       afterStatus: (c, b) => touchFor(dbOf(c), b.id, (c as unknown as C).var.user),
       scheduleActions: <a href="/events/new" class={primaryClass}>New {one.toLowerCase()}</a>,

@@ -13,7 +13,8 @@
 // returns the same `Sent`. The reminder job (reminders-job.ts) takes one too.
 import { setting, type Env } from "../data/env";
 import { sendEmail, senderOf, type Sent } from "../data/send";
-import { whereText, type Booking, type BookingType, type Resource } from "./book";
+import type { Db } from "../data/db";
+import { resourceById, toBooking, typeById, whereText, type Booking, type BookingType, type Resource } from "./book";
 import { icsContentType, invite, type IcsMethod } from "./ics";
 import { formatSlot, isValidZone } from "./slots";
 
@@ -102,6 +103,19 @@ export type BookingNotice = {
   host: Resource;
   manageUrl: string | null;
 };
+
+/**
+ * A move or a cancel made away from the booking pages (an app's own form, a
+ * script), as their onBooked is told of it. Null without a service and a
+ * person: there is nothing to tell a booker about.
+ */
+export async function noticeFor(db: Db, bookingId: string, event: "rescheduled" | "cancelled"): Promise<BookingNotice | null> {
+  const [raw] = await db.sql`select * from bookings where id = ${bookingId}::bigint`;
+  if (!raw) return null;
+  const booking = toBooking(raw);
+  const [type, host] = await Promise.all([typeById(db, booking.type_id), resourceById(db, booking.resource_id)]);
+  return type && host ? { event, booking, type, host, manageUrl: null } : null;
+}
 
 /**
  * Tell the booker about a booking, a move or a cancel, with the calendar

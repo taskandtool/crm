@@ -6,6 +6,9 @@
 import type { Db } from "../data/db";
 import type { Customer } from "./customers";
 import { phoneKey } from "./phone";
+import { phoneKeyOf, spliced } from "./sql";
+
+const { sql } = spliced({ phone_key: phoneKeyOf("s.phone") });
 import { BOOKING_PAGE } from "../forms/store";
 import { present as presentTables, type Present } from "./tables";
 
@@ -25,13 +28,13 @@ export async function everythingFrom(db: Db, c: Pick<Customer, "email" | "phone"
   if (!emails.length && !key) return { items: [], present: p };
   const jobs: Promise<HistoryItem[]>[] = [];
   if (p.submissions) {
-    jobs.push(db.sql<HistoryItem>`
+    jobs.push(sql(db)<HistoryItem>`
       select 'submission' as kind, s.id::text as id, s.created_at as at, s.form_key, null::text as form_title, s.status, s.data, s.page
       from submissions s
       where s.status <> 'spam' and s.form_key <> ${BOOKING_PAGE.key}
         and (s.email = any(${emails}::citext[])
              or ((${email}::citext is null or s.email is null) and ${key}::text is not null
-                 and right(regexp_replace(regexp_replace(s.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10) = ${key}))
+                 and {phone_key} = ${key}))
       order by s.created_at desc, s.id desc limit ${limit}`);
   }
   if (p.payments && emails.length) {

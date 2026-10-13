@@ -14,7 +14,7 @@ the project database reads the same rows: the Website's `/book` pages
 take bookings, the CRM sets types, hosts and hours and lists the bookings
 by email.
 
-Version: 0.5.1 (taskandtool/skills)
+Version: 0.5.2 (taskandtool/skills)
 
 ## The rules
 
@@ -80,7 +80,9 @@ A form's `booking` step (`bookingStep(getDb, { source })` in
 `form-step.tsx`) books the person the questions named; the booking names
 the submission (`submission_id`), the payment step charges the type's
 `price_cents`, and the booking is confirmed when the form is complete
-(`confirm.ts`). The time is held for 45 minutes (`hold_until`).
+(`confirm.ts`). The time is held for 45 minutes (`hold_until`): until the
+form is complete the booking is the visitor's, so it keeps its time but is
+on no team list (the Schedule, an app's events) except its submission.
 `releaseLapsedHolds` runs before times are listed or taken. It cancels a
 held booking only when the form is not complete and either no payment was
 started or its checkout expired; the form then sends the person back to
@@ -100,7 +102,7 @@ bookings and payments".
 | `public.tsx` | `bookingPages`: what can be booked, a time, confirm, the manage page and .ics; `onBooked`, `afterBook` |
 | `admin.tsx` | `bookingAdmin`: the Schedule (a week, by person), Book for someone, a booking's reschedule, cancel, completed and no-show; `typeRoutes`: Services (what each is, who takes it); `peopleRoutes`: Team (each person's hours, time off, calendars) |
 | `ics.ts` | RFC 5545 invite builder |
-| `notify.ts` | The words (`bookingMessage`), `notifyBooking`, `emailSend` and the `Send` type |
+| `notify.ts` | The words (`bookingMessage`), `notifyBooking`, `emailSend`, the `Send` type, and `noticeFor` (a move or cancel made away from the booking pages, to tell the booker of) |
 | `reminders.ts` | `sendReminders`: claims and sends the reminders due now |
 | `reminders-job.ts` | The reminder job's command (machine only) |
 | `sync.ts` | The calendar sync job (machine only) |

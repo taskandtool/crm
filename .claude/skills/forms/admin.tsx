@@ -536,7 +536,8 @@ async function paymentOf(db: Db, id: string): Promise<Payment | null> {
 }
 
 function BookingCard({ b, held, timeZone, at }: { b: BookingRow; held: boolean; timeZone: string; at?: (id: string) => string }) {
-  const upcoming = b.status === "confirmed" && new Date(b.starts_at) > new Date();
+  // Held, it is still theirs to finish paying for: nothing to move or cancel yet.
+  const upcoming = !held && b.status === "confirmed" && new Date(b.starts_at) > new Date();
   const base = at?.(b.id);
   return (
     <Section title="Booking">

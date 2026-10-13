@@ -323,7 +323,7 @@ export function EventPage(p: {
           {started && r.status === "confirmed" ? <StatusButton id={r.id} status="no_show" label="No-show" /> : null}
           {/* One of a service, with someone taking it: another of their open times, the booker told. */}
           {r.status === "confirmed" && !started && r.type_id && r.resource_id ? <a href={`/schedule/${r.id}/reschedule`} class={buttonClass}>Reschedule</a> : null}
-          {r.status === "confirmed" ? <StatusButton id={r.id} status="cancelled" label="Cancel" ask={`Cancel this ${one}?${r.source !== "crm" && r.email ? " They are told." : ""}`} /> : null}
+          {r.status === "confirmed" ? <StatusButton id={r.id} status="cancelled" label="Cancel" ask={`Cancel this ${one}?${r.type_id && r.resource_id && r.email ? " They are told." : ""}`} /> : null}
         </>
       }
     >

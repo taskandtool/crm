@@ -248,7 +248,16 @@ test("invoices.mjs bill and migrate.mjs, against a scratch database", { skip: !p
     e = sh("events.mjs", "done", later);
     assert.equal(e.status, 1);
     assert.match(e.stderr, /has not started yet/);
-    assert.match(sh("events.mjs", "cancel", later).stdout, /^events cancel: event #\d+ confirmed -> cancelled/);
+    const cancelled = sh("events.mjs", "cancel", later).stdout;
+    assert.match(cancelled, /^events cancel: event #\d+ confirmed -> cancelled/);
+    assert.doesNotMatch(cancelled, /booker/, "no service and no one taking it: nobody to tell");
+    // An online booking's cancel from chat tells the booker as the page does; here, with no sender, it says so.
+    const { rows: [online] } = await db.query(`
+      with t as (insert into booking_types (slug, name) values ('chat-cancel', 'Estimate') returning id),
+           r as (insert into resources (name, time_zone) values ('Rae', 'UTC') returning id)
+      insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, location_kind, source)
+      select t.id, r.id, '2099-06-01 10:00Z', '2099-06-01 11:00Z', 'Bo', 'bo@example.com', 'phone', 'website' from t, r returning id::text as id`);
+    assert.match(sh("events.mjs", "cancel", online.id).stdout, /The booker was not told: /);
     assert.match(sh("events.mjs", "cancel", later).stdout, /already cancelled; left alone/);
     let r = sh("invoices.mjs", "bill", "ann@example.com");
     assert.equal(r.status, 1, "nothing finished to bill");

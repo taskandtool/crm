@@ -19,6 +19,10 @@ import { cleanPhone } from "./phone";
 import { BOOKING_PAGE } from "../forms/store";
 import { clean } from "./text";
 import { present as presentTables, type Present } from "./tables";
+import { byEmail, isCustomer, spliced } from "./sql";
+
+// Who each row is: the one rule (sql.ts), by email, else by phone.
+const { sql } = spliced({ sub_is: isCustomer("s"), sub_email: byEmail("s"), booking_is: isCustomer("b"), booking_email: byEmail("b"), pay_email: byEmail("p") });
 
 export type InboxKind = "submission" | "booking" | "payment";
 const RANK: Record<InboxKind, number> = { submission: 0, booking: 1, payment: 2 };
@@ -101,17 +105,15 @@ export async function inboxPage(
   const jobs: Promise<InboxRow[]>[] = [];
   if (p.submissions) {
     jobs.push(
-      db.sql<SubmissionRow>`
+      sql(db)<SubmissionRow>`
         select 'submission' as kind, s.id::text as id, s.created_at, s.form_key, s.name, s.email::text as email, s.phone, s.status, s.data,
                to_char(s.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k,
                m.id::text as customer_id, m.name as customer_name, m.archived_at as customer_archived_at
         from submissions s
         left join lateral (
           select c.id, c.name, c.archived_at from customers c
-          where (s.email is not null and (c.email = s.email or c.other_emails @> array[lower(s.email::text)]))
-             or ((c.email is null or s.email is null) and length(regexp_replace(regexp_replace(coalesce(s.phone, ''), '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g')) >= 7
-                 and right(regexp_replace(regexp_replace(c.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10) = right(regexp_replace(regexp_replace(s.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10))
-          order by (s.email is not null and (c.email = s.email or c.other_emails @> array[lower(s.email::text)])) desc, c.archived_at nulls first, c.id
+          where {sub_is}
+          order by {sub_email} desc, c.archived_at nulls first, c.id
           limit 1) m on true
         where s.status <> 'spam'
           and s.form_key <> ${BOOKING_PAGE.key}
@@ -128,7 +130,7 @@ export async function inboxPage(
   }
   if (ib.bookings !== false && !form) {
     jobs.push(
-      db.sql<BookingRow>`
+      sql(db)<BookingRow>`
         select 'booking' as kind, b.id::text as id, b.created_at, b.starts_at, b.ends_at, b.name, b.email::text as email, b.phone, b.status,
                r.name as resource_name, t.name as type_name,
                exists (select 1 from inbox_done d where d.kind = 'booking' and d.ref_id = b.id) as handled,
@@ -139,12 +141,11 @@ export async function inboxPage(
         left join booking_types t on t.id = b.type_id
         left join lateral (
           select c.id, c.name, c.archived_at from customers c
-          where (b.email is not null and (c.email = b.email or c.other_emails @> array[lower(b.email::text)]))
-             or ((c.email is null or b.email is null) and length(regexp_replace(regexp_replace(coalesce(b.phone, ''), '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g')) >= 7
-                 and right(regexp_replace(regexp_replace(c.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10) = right(regexp_replace(regexp_replace(b.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10))
-          order by (b.email is not null and (c.email = b.email or c.other_emails @> array[lower(b.email::text)])) desc, c.archived_at nulls first, c.id
+          where {booking_is}
+          order by {booking_email} desc, c.archived_at nulls first, c.id
           limit 1) m on true
         where coalesce(b.source, '') <> 'crm' -- one the team put on the schedule is not news
+          and b.hold_until is null -- nor one held for a form still being paid
           and (${since}::timestamptz is null or b.created_at >= ${since}::timestamptz)
           and (not ${unmatched}::boolean or m.id is null)
           and (not ${todo}::boolean or (m.id is null and b.status <> 'cancelled'
@@ -157,7 +158,7 @@ export async function inboxPage(
   if (p.payments && ib.payments !== false && !form) {
     // Money that actually moved: a checkout nobody finished is not news.
     jobs.push(
-      db.sql<PaymentRow>`
+      sql(db)<PaymentRow>`
         select 'payment' as kind, p.id::text as id, p.created_at, p.name, p.email::text as email, null::text as phone, p.status,
                p.amount_cents::text as amount_cents, p.currency, p.kind as pay_kind, p.description, p.livemode,
                exists (select 1 from inbox_done d where d.kind = 'payment' and d.ref_id = p.id) as handled,
@@ -166,7 +167,7 @@ export async function inboxPage(
         from payments p
         left join lateral (
           select c.id, c.name, c.archived_at from customers c
-          where p.email is not null and (c.email = p.email or c.other_emails @> array[lower(p.email::text)])
+          where {pay_email}
           order by c.archived_at nulls first, c.id
           limit 1) m on true
         where p.status in ('paid', 'refunded', 'partially_refunded')

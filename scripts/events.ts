@@ -4,10 +4,12 @@
 import { cut } from "../src/admin/keyset";
 import { allPeople, allTypes } from "../src/booking/hours";
 import { cfg, eventsCfg, ownerLabel } from "../src/config";
-import { addEvent, customerEvents, eventsPage, getEvent, LENGTHS, minutesOf, saveEvent, setEventStatus, startWall, type Event, type EventInput } from "../src/crm/events";
+import { addEvent, customerEvents, eventsPage, getEvent, LENGTHS, minutesOf, saveEvent, setEventStatus, startWall, tellBooker, type Event, type EventInput } from "../src/crm/events";
 import { amountText, clean, parseAmount, relativeWall } from "../src/crm/text";
 import { wallTime } from "../src/customers/notes";
+import { machineEnv } from "../src/data/cli.mjs";
 import type { Db } from "../src/data/db";
+import type { Sent } from "../src/data/send";
 import { done, fieldFlags, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, resolveCustomer, usage, who, withDb } from "./lib";
 
 const OFF = 'the schedule is off: crm.config.json has "events": false (or none). Turn it on with { "one": "Event", "many": "Events", "fields": [] }.';
@@ -22,6 +24,8 @@ const HELP = ((ev) => !ev ? OFF : `events.mjs <command> [...] [--json] [--as <em
   update <id> [--what w] [--at ...] [--length m] [--service s] [--host h] [--where w] [--amount a] [--notes n] [--field key=value]...
                                        "" clears a value
   done <id> | no-show <id> | cancel <id>   completed and no-show only once it has started
+
+A new time, person or a cancel tells the booker of one with a service and a person, as the page does.
 
 <who> is a customer's id, email or phone. --at also takes "next friday 9:30", "tomorrow 2pm"; it is in the business's zone
 (${cfg.time_zone}). --length is minutes (default 60). --host is a Team member (${ownerLabel}) by name or email; --service a
@@ -49,6 +53,8 @@ const ev = eventsCfg;
 const one = ev.one.toLowerCase();
 const json = has(a, "json");
 const show = (id: string) => `node scripts/events.mjs show ${id}`;
+/** What the booker heard of a move or a cancel, as the page's Reschedule and Cancel would have told them. */
+const told = (s: Sent | null) => (!s ? [] : [s.status === "sent" ? "The booker was told." : `The booker was not told: ${s.status === "none" ? s.why : s.error}.`]);
 
 function atFlag(current: string | null): string | null {
   if (!has(a, "at")) return current;
@@ -171,7 +177,7 @@ await withDb(async (db) => {
         notes: has(a, "notes") ? clean(flag(a, "notes"), 10_000) : r.notes, fields: fr.set,
       };
       const saved = (await saveEvent(db, r.id, { ...input, unset: fr.unset }, user)) ?? fail(`${at}: no ${one} ${r.id}`, "node scripts/events.mjs list --all");
-      return result(saved, `updated ${fmt(saved)}`, { next: show(r.id) });
+      return result(saved, `updated ${fmt(saved)}`, { lines: told(await tellBooker(db, machineEnv(), r, saved)), next: show(r.id) });
     }
 
     case "done":
@@ -184,7 +190,7 @@ await withDb(async (db) => {
       if (!changed) {
         fail(r.status === "cancelled" ? `${at}: ${one} #${r.id} is cancelled, and stays so` : `${at}: ${one} #${r.id} has not started yet; it is marked ${status === "completed" ? "done" : "a no-show"} once it has`, show(r.id));
       }
-      return result(changed, `${one} #${r.id} ${r.status} -> ${status}`, { lines: [fmt(changed)], next: show(r.id) });
+      return result(changed, `${one} #${r.id} ${r.status} -> ${status}`, { lines: [fmt(changed), ...told(await tellBooker(db, machineEnv(), r, changed))], next: show(r.id) });
     }
   }
 });

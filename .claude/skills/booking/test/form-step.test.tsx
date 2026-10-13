@@ -7,6 +7,7 @@ import { makeStamp } from "../../data/spam";
 import { scratch, why, type Scratch } from "../../data/test/scratch";
 import type { Field } from "../../forms/fields";
 import { formsAdmin } from "../../forms/admin";
+import { bookingAdmin } from "../admin";
 import { formRoutes } from "../../forms/routes";
 import { completePaidSubmission, seedForm } from "../../forms/store";
 import { paymentStep } from "../../payments/form-step";
@@ -107,6 +108,16 @@ test("a paid intake: questions, a time held inside the form, the price charged, 
     assert.equal(b.email, "ann@example.com");
     assert.equal(b.status, "confirmed");
     assert.ok(b.hold_until && new Date(b.hold_until) > new Date(), "held while the payment follows");
+    // Held, it is the visitor's until paid: not on the Schedule, and its submission shows it held with nothing to move or cancel.
+    const team = new Hono();
+    const sections = { schedule: "/admin/schedule", services: "/admin/services", team: "/admin/team" };
+    team.route("/admin/schedule", bookingAdmin(() => s.db, { base: "/admin/schedule", css: "/x.css", source: "website", timeZone: "UTC", sections }));
+    team.route("/admin/submissions", formsAdmin(() => s.db, { base: "/admin/submissions", css: "/x.css", timeZone: "UTC", links: { booking: (id) => `/admin/schedule/${id}` } }));
+    const asTeam = async (path: string) => (await team.request(path, { headers: { "x-tasktool-user": BY } })).text();
+    assert.doesNotMatch(await asTeam(`/admin/schedule?week=${start.slice(0, 10)}`), /Ann Lee/);
+    const held = await asTeam(`/admin/submissions/${sub.id}`);
+    assert.match(held, /Held until it is paid/);
+    assert.doesNotMatch(held, /\/reschedule"/);
     assert.deepEqual(Object.values(sub.data._charges).map((c: any) => [c.unit_cents, c.currency]), [[12000, "usd"]]);
 
     // Taken: someone else is offered the time no more.

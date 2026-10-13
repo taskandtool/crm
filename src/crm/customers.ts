@@ -8,9 +8,9 @@ import { readCursor, type Cursor, type Keyed } from "../admin/keyset";
 import { likePattern } from "../admin/query";
 import { sameAs } from "./people";
 import { cleanPhone, phoneKey } from "./phone";
-import { NOTHING_PLANNED, spliced } from "./sql";
+import { NOTHING_PLANNED, phoneKeyOf, spliced } from "./sql";
 
-const { sql: planned } = spliced({ nothing_planned: NOTHING_PLANNED });
+const texts = spliced({ nothing_planned: NOTHING_PLANNED, phone_key: phoneKeyOf("c.phone"), phone_key_or_none: phoneKeyOf("coalesce(c.phone, '')") });
 
 export type Customer = Keyed & {
   id: string;
@@ -84,7 +84,7 @@ export function listPage(db: Db, f: ListFilter, after: Cursor | null, size: numb
   // nothing but phone punctuation also matches the stored digits.
   const digits = f.q && /^[\d\s()+.-]+$/.test(f.q) ? f.q.replace(/\D/g, "") : "";
   const digitPat = digits.length >= 4 ? `%${digits}%` : null;
-  return planned(db)<Customer>`
+  return texts.sql(db)<Customer>`
     select c.*, to_char(coalesce(c.last_contact_at, c.created_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k
     from customers c
     where (${pat}::text is null or c.name ilike ${pat} or c.email::text ilike ${pat} or c.phone ilike ${pat} or c.company ilike ${pat}
@@ -124,13 +124,13 @@ export async function findMatch(db: Db, emailIn: unknown, phoneIn: unknown): Pro
   const email = normalizeEmail(emailIn);
   const key = phoneKey(phoneIn);
   if (!email && !key) return null;
-  const [c] = await db.sql<Customer>`
+  const [c] = await texts.sql(db)<Customer>`
     select * from (
       select c.*, c.updated_at::text as k, 0 as rank from customers c
       where ${email}::citext is not null and (c.email = ${email}::citext or c.other_emails @> array[${email}::text])
       union all
       select c.*, c.updated_at::text as k, 1 as rank from customers c
-      where ${key}::text is not null and right(regexp_replace(regexp_replace(c.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10) = ${key}
+      where ${key}::text is not null and {phone_key} = ${key}
         and (c.email is null or ${email}::citext is null)
     ) m
     order by rank, archived_at nulls first, id::bigint
@@ -178,7 +178,7 @@ export async function createCustomer(
   const bare = !email && !key && opts.bareName ? input.name.trim() : null;
   const locks = [email && `email:${email}`, key && `phone:${key}`, bare && `name:${bare.toLowerCase()}`].filter((l): l is string => !!l);
   const statements: Query[] = locks.map((l) => q`select pg_advisory_xact_lock(hashtext(${"crm.customer." + l}::text))`);
-  statements.push(q`
+  statements.push(texts.q`
     with m as (
       select id from (
         select c.id, c.archived_at, 0 as rank from customers c
@@ -186,12 +186,12 @@ export async function createCustomer(
         union all
         select c.id, c.archived_at, 1 as rank from customers c
         where ${key}::text is not null
-          and right(regexp_replace(regexp_replace(c.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10) = ${key}
+          and {phone_key} = ${key}
           and (c.email is null or ${email}::citext is null)
         union all
         select c.id, c.archived_at, 2 as rank from customers c
         where ${bare}::text is not null and c.email is null and lower(c.name) = lower(${bare}::text)
-          and length(regexp_replace(regexp_replace(coalesce(c.phone, ''), '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g')) < 7
+          and length({phone_key_or_none}) < 7
       ) x
       order by rank, archived_at nulls first, id
       limit 1),

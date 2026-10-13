@@ -13,7 +13,9 @@ member, or nobody yet), where, a status (scheduled, then completed,
 no-show or cancelled; never deleted), an amount, notes, and the config's
 `events.fields`. The CRM adds `customer_id`, `amount_cents`, `currency`
 and `fields` to the table; an online booking has no `customer_id` and
-belongs to the customer its email belongs to.
+belongs to the customer its email belongs to (else its phone, where one
+side has no email). One held for a form still being paid is not an event
+until it is paid.
 
 `node scripts/events.mjs add <who> "<what>" --at "friday 9:30" --host Dana`
 puts one on the schedule (`--help` for the rest); `done`, `no-show` and
@@ -39,9 +41,9 @@ where and who does it: add the people first, then the services.
 
 **Messages.** An online booker gets a confirmation, and the reminder job
 reminds them a day and an hour before (only for a booking of a service,
-with someone taking it, to someone with an email). Reschedule and Cancel
-on an event's page tell them; a time typed into its details, or
-`events.mjs cancel`, does not, so move or cancel an online booking there. All go through the owner's email sender, which needs
+with someone taking it, to someone with an email). A move or a cancel
+tells them too, from wherever it is made: the event's page or
+`events.mjs` (which says whether they were told). All go through the owner's email sender, which needs
 Resend or Postmark granted to this app (if
 `python3 ~/tools/taskandtool.py list-connections` shows neither, ask with
 `python3 ~/tools/taskandtool.py request-connection resend --why "send booking confirmations and reminders"`),

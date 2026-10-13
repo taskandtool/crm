@@ -1,7 +1,7 @@
 // What a submission led to: its booking (bookings.submission_id) and its
 // payment (payments.ref_type 'submission'), read for showing beside it.
-// Forms writes neither table and needs neither: a project without them
-// shows nothing more. Edge-safe.
+// Forms writes neither table, and a project without them shows nothing
+// more. Edge-safe.
 //
 //   const linked = await linkedTo(db, rows.map((r) => r.id));
 //   linked.get(id)?.payment?.label   // "Paid $116.00", "Awaiting payment", "Not paid"

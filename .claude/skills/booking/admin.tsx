@@ -31,7 +31,7 @@ import {
 import { decimals } from "../payments/money";
 import { addDays, dayBounds, durationText, formatShortDate, formatSlot, formatTime, localDate, weekdayOf, zoneName } from "./slots";
 import { chip, chipOn, DayAndTimes, upcoming } from "./public";
-import type { BookingNotice } from "./notify";
+import { noticeFor, type BookingNotice } from "./notify";
 
 export type BookingAdminOptions = {
   base: string;
@@ -133,12 +133,13 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     const days = [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(monday, i));
     const from = dayBounds(days[0], zone).start.toISOString();
     const to = dayBounds(days[6], zone).end.toISOString();
-    // A booking the team scheduled may have no service (its title says what) and nobody yet.
+    // A booking the team scheduled may have no service (its title says what) and nobody yet. One held
+    // for a form still being paid is not the business's yet: its time is kept, but it is not here.
     const rows = await d.sql<{ id: string; submission_id: string | null; starts_at: Date; ends_at: Date; name: string; status: string; what: string | null; booked: boolean; host: string | null; location_kind: Booking["location_kind"]; location: string | null }>`
       select b.id::text as id, b.submission_id::text as submission_id, b.starts_at, b.ends_at, b.name, b.status, coalesce(b.title, t.name) as what,
              t.id is not null as booked, r.name as host, b.location_kind, b.location
       from bookings b left join booking_types t on t.id = b.type_id left join resources r on r.id = b.resource_id
-      where b.status <> 'cancelled' and b.starts_at < ${to}::timestamptz and b.ends_at > ${from}::timestamptz
+      where b.status <> 'cancelled' and b.hold_until is null and b.starts_at < ${to}::timestamptz and b.ends_at > ${from}::timestamptz
         and (${person}::bigint is null or b.resource_id = ${person}::bigint)
       order by b.starts_at, b.id`;
     const off = await d.sql<{ name: string; starts_at: Date; ends_at: Date; note: string | null }>`
@@ -476,9 +477,9 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     const changed = status === "confirmed" ? null : await setStatus(getDb(c), id, status as Exclude<Booking["status"], "confirmed">, c.get("user"));
     // A cancel the team makes is told to the booker, as one they make themselves is.
     if (changed && status === "cancelled" && opts.onBooked) {
-      const [type, host] = await Promise.all([typeById(getDb(c), changed.type_id), resourceById(getDb(c), changed.resource_id)]);
       try {
-        if (type && host) await opts.onBooked(c, { event: "cancelled", booking: changed, type, host, manageUrl: null });
+        const notice = await noticeFor(getDb(c), id, "cancelled");
+        if (notice) await opts.onBooked(c, notice);
       } catch (err) {
         console.error("booking: onBooked failed:", err);
       }

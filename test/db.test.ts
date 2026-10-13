@@ -632,6 +632,36 @@ test("an online booking is an event of the customer its email belongs to; added 
   assert.ok((await customerEvents(db, added!.customer.id)).some((e) => e.id === b.id));
 });
 
+test("an online booking with no email is the event of the customer its phone belongs to, as in the Inbox", async (t) => {
+  if (skip) return t.skip(skip);
+  const { customer } = await createCustomer(db, { name: "Cal Phone", email: null, phone: "(555) 404-7070", stage: "new" }, ME);
+  const [b] = await db.sql<{ id: string }>`
+    insert into bookings (starts_at, ends_at, name, phone, location_kind, source)
+    values (now() + interval '4 days', now() + interval '4 days 1 hour', 'Cal', '555 404 7070 x2', 'phone', 'website') returning id::text as id`;
+  assert.equal((await getEvent(db, b.id))!.customer_id, customer.id);
+  assert.ok((await customerEvents(db, customer.id)).some((e) => e.id === b.id));
+  const row = (await inboxPage(db, { inbox: INBOX }, null, 200)).rows.find((r) => r.kind === "booking" && r.id === b.id);
+  assert.equal(row?.customer_id, customer.id, "the Inbox and the event agree");
+});
+
+test("a booking held for a form still being paid is no one's event: not listed, not planned, not news", async (t) => {
+  if (skip) return t.skip(skip);
+  const { customer } = await createCustomer(db, { name: "Hal Held", email: "held@example.com", stage: "new" }, ME);
+  await db.sql`update customers set last_contact_at = now() - interval '30 days' where id = ${customer.id}::bigint`;
+  const [b] = await db.sql<{ id: string }>`
+    insert into bookings (starts_at, ends_at, name, email, location_kind, source, hold_until)
+    values (now() + interval '5 days', now() + interval '5 days 1 hour', 'Hal Held', 'held@example.com', 'phone', 'website', now() + interval '40 minutes')
+    returning id::text as id`;
+  assert.equal(await getEvent(db, b.id), null);
+  assert.ok(!(await customerEvents(db, customer.id)).some((e) => e.id === b.id));
+  assert.ok(!(await eventsPage(db, { view: "upcoming", host: null, q: null }, null, 500)).some((e) => e.id === b.id));
+  assert.ok((await nothingPlanned(db, null, 500)).some((c) => c.id === customer.id), "a held time is not something planned");
+  assert.ok(!(await inboxPage(db, { inbox: INBOX }, null, 200)).rows.some((r) => r.kind === "booking" && r.id === b.id));
+  // Paid: the hold ends and it is theirs.
+  await db.sql`update bookings set hold_until = null where id = ${b.id}::bigint`;
+  assert.equal((await getEvent(db, b.id))!.customer_id, customer.id);
+});
+
 test("an old CRM's visits move into bookings once, with the quotes and invoices that named them", async (t) => {
   if (skip) return t.skip(skip);
   const { customer } = await createCustomer(db, { name: "Old Timer", email: "old@example.com", stage: "new", address: "1 Elm St" }, ME);

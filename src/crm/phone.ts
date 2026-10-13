@@ -4,13 +4,9 @@
 // zero or punctuation. An extension at the end ("x12", "ext. 12", "#12") is
 // not part of the number: left in, its digits would push the real ones out
 // of the last ten. Under seven digits is not a phone number worth matching
-// on. The same expression is in SQL (schema.sql's customers_phone_match
-// index, and every query that matches by phone):
-//
-//   right(regexp_replace(regexp_replace(phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10)
-//
-// (POSIX classes rather than \s and \d: a backslash in a tagged template's
-// text does not survive to the SQL.)
+// on. The same expression is in SQL once, sql.ts's phoneKeyOf, which every
+// query that matches by phone uses (and the customers skill's
+// customers_phone_match index is on).
 //
 // Phone matching is the fallback after email, and only between records where
 // one side has no email: two people with different emails who share a

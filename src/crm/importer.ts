@@ -18,6 +18,9 @@ import type { CustomField } from "../config-schema";
 import type { Customer } from "./customers";
 import { readFields } from "./fields";
 import { latestActivity } from "./history";
+import { phoneKeyOf, spliced } from "./sql";
+
+const { sql } = spliced({ phone_key: phoneKeyOf("c.phone"), phone_key_or_none: phoneKeyOf("coalesce(c.phone, '')") });
 import { parseDate } from "./csv-read";
 import { cleanPhone, phoneKey } from "./phone";
 import { resolveStage, type Stage } from "./stages";
@@ -145,11 +148,11 @@ export async function runImport(db: Db, plan: Plan, opts: ImportOptions): Promis
   const keys = [...new Set(plan.records.map((r) => phoneKey(r.phone)).filter((k): k is string => !!k))];
   const names = [...new Set(plan.records.filter((r) => !r.email && !phoneKey(r.phone) && r.name).map((r) => r.name!.toLowerCase()))];
   const known = emails.length || keys.length || names.length
-    ? await db.sql<Customer>`
+    ? await sql(db)<Customer>`
         select c.* from customers c
         where c.email = any(${emails}::citext[]) or c.other_emails && ${emails.map((e) => e.toLowerCase())}::text[]
-           or right(regexp_replace(regexp_replace(c.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10) = any(${keys}::text[])
-           or (c.email is null and length(regexp_replace(regexp_replace(coalesce(c.phone, ''), '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g')) < 7 and lower(c.name) = any(${names}::text[]))
+           or {phone_key} = any(${keys}::text[])
+           or (c.email is null and length({phone_key_or_none}) < 7 and lower(c.name) = any(${names}::text[]))
         order by c.archived_at nulls first, c.id`
     : [];
 

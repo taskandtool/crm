@@ -9,9 +9,13 @@ import type { Cursor, Keyed } from "../admin/keyset";
 import type { CsvColumn } from "../admin/csv";
 import { likePattern } from "../admin/query";
 import { setStatus, type Booking } from "../booking/book";
+import { emailSend, noticeFor, notifyBooking } from "../booking/notify";
+import { cfg } from "../config";
+import type { Env } from "../data/env";
+import type { Sent } from "../data/send";
 import type { CustomField } from "../config-schema";
 import type { Db } from "../data/db";
-import { EVENT_OF, spliced } from "./sql";
+import { byEmail, EVENT_OF, spliced } from "./sql";
 import { fieldText } from "./fields";
 import { wallTime } from "../customers/notes";
 import { amountText, nowIn } from "./text";
@@ -72,6 +76,21 @@ export type EventFilter = { view: EventView; host: string | null; q: string | nu
 /** How long one can be, in minutes. */
 export const LENGTHS = [15, 30, 45, 60, 90, 120, 180, 240, 480];
 
+/** The domain in a calendar invite's UID: the Website's, so a move or cancel sent here updates the invite it sent. Fixed for the life of the app. */
+export const inviteDomain = cfg.booking_page ? new URL(cfg.booking_page).host : "localhost";
+
+/**
+ * Tell the booker of a move or a cancel made here (the event's form, a
+ * script), as the booking pages' own routes do: notify.ts says nothing
+ * without a service, a person, an email or a sender. A past one is not news.
+ */
+export async function tellBooker(db: Db, env: Env, before: Event, after: Event): Promise<Sent | null> {
+  const moved = +new Date(before.starts_at) !== +new Date(after.starts_at) || +new Date(before.ends_at) !== +new Date(after.ends_at) || before.resource_id !== after.resource_id;
+  const event = after.status === "cancelled" && before.status !== "cancelled" ? "cancelled" : after.status === "confirmed" && moved && new Date(after.starts_at) > new Date() ? "rescheduled" : null;
+  const notice = event ? await noticeFor(db, after.id, event) : null;
+  return notice ? notifyBooking(emailSend(env), notice, { domain: inviteDomain }) : null;
+}
+
 /** How long it runs, in minutes. */
 export const minutesOf = (e: Pick<Event, "starts_at" | "ends_at">) => Math.round((new Date(e.ends_at).getTime() - new Date(e.starts_at).getTime()) / 60_000);
 
@@ -86,14 +105,14 @@ const SELECT = `b.id::text as id, coalesce(b.title, t.name, 'Untitled') as what,
   b.location_kind, b.location, b.answers, b.notes, b.amount_cents::text as amount_cents, b.currency, b.fields, b.source,
   b.created_at, b.updated_at, b.updated_by::text as updated_by, c.id::text as customer_id, c.name as customer_name,
   to_char(b.starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k`;
-const FROM = `from bookings b
+// A booking held for a form still being paid is no one's event yet (EVENT_OF).
+const FROM = `from (select * from bookings where hold_until is null) b
   left join booking_types t on t.id = b.type_id
   left join resources r on r.id = b.resource_id
   left join lateral (
     select c.id, c.name from customers c
-    where c.id = b.customer_id
-       or ${EVENT_OF}
-    order by c.id = b.customer_id desc nulls last, c.archived_at nulls first, c.id
+    where ${EVENT_OF}
+    order by c.id = b.customer_id desc nulls last, ${byEmail("b")} desc, c.archived_at nulls first, c.id
     limit 1) c on true`;
 
 const { sql, q: qOf } = spliced({ select: SELECT, from: FROM, event_of: EVENT_OF });
