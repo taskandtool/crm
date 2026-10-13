@@ -446,10 +446,10 @@ app.post("/customers/:id/tasks", async (c) => {
   const title = clean(body.title, 200);
   const on = readDay(body.on);
   if (!title || !on) return back(c, ret, "task-needs");
-  const f = await addTask(c.var.db, id, {
+  const task = await addTask(c.var.db, id, {
     kind: pickTaskKind(body.kind) ?? "call", title, due_on: on, due_time: readTime(body.at), owner: clean(body.owner, 200), deal_id: clean(body.deal, 20),
   }, c.var.user);
-  return f ? back(c, ret, "task-added") : c.notFound();
+  return task ? back(c, ret, "task-added") : c.notFound();
 });
 
 app.post("/customers/:id/notes", async (c) => {

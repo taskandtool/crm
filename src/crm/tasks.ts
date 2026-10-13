@@ -98,11 +98,11 @@ export function relativeDay(v: unknown, today: string): string | null {
 }
 
 
-const SELECT = `f.id::text as id, f.customer_id::text as customer_id, f.deal_id::text as deal_id, f.kind, f.title,
-  to_char(f.due_on, 'YYYY-MM-DD') as due_on, to_char(f.due_time, 'HH24:MI') as due_time, f.owner::text as owner,
-  f.done_at, f.done_by::text as done_by, f.created_by::text as created_by, f.created_at,
+const SELECT = `t.id::text as id, t.customer_id::text as customer_id, t.deal_id::text as deal_id, t.kind, t.title,
+  to_char(t.due_on, 'YYYY-MM-DD') as due_on, to_char(t.due_time, 'HH24:MI') as due_time, t.owner::text as owner,
+  t.done_at, t.done_by::text as done_by, t.created_by::text as created_by, t.created_at,
   c.name as customer_name, c.phone as customer_phone, c.email::text as customer_email, d.title as deal_title`;
-const FROM = `from follow_ups f join customers c on c.id = f.customer_id left join deals d on d.id = f.deal_id`;
+const FROM = `from follow_ups t join customers c on c.id = t.customer_id left join deals d on d.id = t.deal_id`;
 
 // SELECT and FROM are fixed texts of this file, spliced into each statement's
 // text; values stay parameters.
@@ -114,21 +114,21 @@ const sql = <T extends Record<string, any>>(db: Db) => (strings: TemplateStrings
 
 export async function getTask(db: Db, id: string): Promise<Task | null> {
   if (!ID.test(id)) return null;
-  const [f] = await sql<Task>(db)`select {select} {from} where f.id = ${id}::bigint`;
-  return f ?? null;
+  const [task] = await sql<Task>(db)`select {select} {from} where t.id = ${id}::bigint`;
+  return task ?? null;
 }
 
 /**
  * Add one for a customer. A deal named must be theirs, or it is left off.
  * Null when the customer does not exist.
  */
-export async function addTask(db: Db, customerId: string, f: TaskInput, user: string): Promise<Task | null> {
+export async function addTask(db: Db, customerId: string, input: TaskInput, user: string): Promise<Task | null> {
   if (!ID.test(customerId)) return null;
-  const deal = f.deal_id && ID.test(f.deal_id) ? f.deal_id : null;
+  const deal = input.deal_id && ID.test(input.deal_id) ? input.deal_id : null;
   const [made] = await db.sql<{ id: string }>`
     insert into follow_ups (customer_id, deal_id, kind, title, due_on, due_time, owner, created_by, updated_by)
     select c.id, (select d.id from deals d where d.id = ${deal}::bigint and d.customer_id = c.id),
-           ${f.kind}, ${f.title}, ${f.due_on}::date, ${f.due_time}::time, ${f.owner}::citext, ${user}, ${user}
+           ${input.kind}, ${input.title}, ${input.due_on}::date, ${input.due_time}::time, ${input.owner}::citext, ${user}, ${user}
     from customers c where c.id = ${customerId}::bigint
     returning id::text as id`;
   return made ? getTask(db, made.id) : null;
@@ -160,8 +160,8 @@ export async function doneTask(db: Db, id: string, outcome: string | null, user:
       where c.id = (select customer_id from follow_ups where id = ${id}::bigint)
         and c.last_contact_at is distinct from greatest(c.last_contact_at, (select max(n.happened_at) from customer_notes n where n.customer_id = c.id and n.kind <> 'note'))`,
   ]);
-  const f = await getTask(db, id);
-  return f ? { task: f, already: done.length === 0 } : null;
+  const task = await getTask(db, id);
+  return task ? { task, already: done.length === 0 } : null;
 }
 
 /** Move an open one to another day (and time, when given; null for any time). False when it is done or missing. */
@@ -186,23 +186,23 @@ export async function listTasks(db: Db, view: TaskView, today: string, owner: st
   const until = addDays(today, UPCOMING_DAYS);
   return sql<Task>(db)`
     select {select} {from}
-    where f.done_at is null and c.archived_at is null
-      and (${owner}::text is null or f.owner = ${owner}::citext)
+    where t.done_at is null and c.archived_at is null
+      and (${owner}::text is null or t.owner = ${owner}::citext)
       and case ${view}::text
-            when 'today' then f.due_on <= ${today}::date
-            else f.due_on > ${today}::date and f.due_on <= ${until}::date end
-    order by f.due_on, f.due_time nulls last, f.id
+            when 'today' then t.due_on <= ${today}::date
+            else t.due_on > ${today}::date and t.due_on <= ${until}::date end
+    order by t.due_on, t.due_time nulls last, t.id
     limit ${limit + 1}`;
 }
 
 /** How many are overdue and due today: everyone's, or one person's. */
 export async function taskCounts(db: Db, today: string, owner: string | null): Promise<{ overdue: number; today: number }> {
   const [r] = await db.sql<{ overdue: number; today: number }>`
-    select count(*) filter (where f.due_on < ${today}::date)::int as overdue,
-           count(*) filter (where f.due_on = ${today}::date)::int as today
-    from follow_ups f join customers c on c.id = f.customer_id
-    where f.done_at is null and c.archived_at is null and f.due_on <= ${today}::date
-      and (${owner}::text is null or f.owner = ${owner}::citext)`;
+    select count(*) filter (where t.due_on < ${today}::date)::int as overdue,
+           count(*) filter (where t.due_on = ${today}::date)::int as today
+    from follow_ups t join customers c on c.id = t.customer_id
+    where t.done_at is null and c.archived_at is null and t.due_on <= ${today}::date
+      and (${owner}::text is null or t.owner = ${owner}::citext)`;
   return r;
 }
 
@@ -210,8 +210,8 @@ export async function taskCounts(db: Db, today: string, owner: string | null): P
 export async function customerTasks(db: Db, customerId: string): Promise<{ open: Task[]; done: Task[] }> {
   if (!ID.test(customerId)) return { open: [], done: [] };
   const [open, done] = await Promise.all([
-    sql<Task>(db)`select {select} {from} where f.customer_id = ${customerId}::bigint and f.done_at is null order by f.due_on, f.due_time nulls last, f.id`,
-    sql<Task>(db)`select {select} {from} where f.customer_id = ${customerId}::bigint and f.done_at is not null order by f.done_at desc, f.id desc limit 5`,
+    sql<Task>(db)`select {select} {from} where t.customer_id = ${customerId}::bigint and t.done_at is null order by t.due_on, t.due_time nulls last, t.id`,
+    sql<Task>(db)`select {select} {from} where t.customer_id = ${customerId}::bigint and t.done_at is not null order by t.done_at desc, t.id desc limit 5`,
   ]);
   return { open, done };
 }
@@ -280,7 +280,7 @@ export async function nothingPlanned(db: Db, owner: string | null, limit = 100, 
     where c.archived_at is null
       and (exists (select 1 from pipeline_stages s where s.key = c.stage and s.kind = 'open')
            or exists (select 1 from deals d join deal_stages s on s.key = d.stage where d.customer_id = c.id and d.archived_at is null and s.kind = 'open'))
-      and not exists (select 1 from follow_ups f where f.customer_id = c.id and f.done_at is null)
+      and not exists (select 1 from follow_ups t where t.customer_id = c.id and t.done_at is null)
       and not exists (select 1 from customer_visits v where v.customer_id = c.id and v.status = 'planned' and v.starts_at >= now())
       and (${owner}::text is null or c.owner = ${owner}::citext
            or exists (select 1 from deals d join deal_stages s on s.key = d.stage

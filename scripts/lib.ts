@@ -5,7 +5,9 @@
 // fresh project too.
 import type pg from "pg";
 import { cfg, invoicesCfg, seeds, showBooking } from "../src/config";
-import { fail, flag, localTime, machineEnv, misused, parseArgs, type Args } from "../src/data/cli.mjs";
+import { fail, flag, flags, localTime, machineEnv, misused, parseArgs, type Args } from "../src/data/cli.mjs";
+import type { CustomField } from "../src/config-schema";
+import { readFields, type FieldRead } from "../src/crm/fields";
 import type { Db } from "../src/data/db";
 import { fromPool } from "../src/data/pg";
 import { databaseUrl } from "../src/db/client";
@@ -58,6 +60,21 @@ export async function withDb<T>(fn: (db: Db, pool: pg.Pool) => Promise<T>, opts:
 const unreachable = (e: { code?: string }) => !!e.code && /^(ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|EPIPE)/.test(e.code);
 
 /** "customers list" as the command that runs it: "node scripts/customers.mjs list". */
+/** `--field key=value`, repeatable, read as `defs` declare them: a key they lack, or a value they refuse, is a usage error. */
+export function fieldFlags(a: Args, defs: CustomField[], at: string, noun: string): FieldRead {
+  const help = `${run(script)} --help`;
+  const input: Record<string, string> = {};
+  for (const kv of flags(a, "field")) {
+    const i = kv.indexOf("=");
+    const k = i > 0 ? kv.slice(0, i).trim() : "";
+    if (!defs.some((f) => f.key === k)) misused(`${at}: --field ${kv}: no ${noun} ${k}; declared: ${defs.map((f) => f.key).join(", ") || "none"}`, help);
+    input[k] = kv.slice(i + 1);
+  }
+  const r = readFields(defs, input);
+  if (r.errors.length) misused(`${at}: ${r.errors.join("; ")}`, help);
+  return r;
+}
+
 export const run = (at: string) => at.replace(/^(\S+)/, "node scripts/$1.mjs");
 
 /** Who acted: --as, else CRM_USER, else "AI". */

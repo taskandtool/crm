@@ -5,7 +5,7 @@
 import type { Child } from "hono/jsx";
 import { Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
-import { When } from "../admin/list";
+import { rowClick, When } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { StatusBadge, StatusForm } from "../admin/status";
 import { dealsCfg, invoicesCfg, ownerLabel, visitsCfg, vocab } from "../config";
@@ -140,7 +140,7 @@ export function Board({ data }: { data: BoardData }) {
 function Card({ d, options, stray, next, today, open }: { d: Deal; options: ReturnType<typeof stageOptions>; stray: boolean; next: { due_on: string; due_time: string | null } | undefined; today: string; open: boolean }) {
   const value = worth(d);
   return (
-    <li data-deal-id={d.id} class="cursor-pointer rounded-card border border-line bg-surface px-3 py-2 shadow-card hover:border-line-strong">
+    <li data-deal-id={d.id} {...rowClick(`/deals/${d.id}`)} class="cursor-pointer rounded-card border border-line bg-surface px-3 py-2 shadow-card hover:border-line-strong">
       <a href={`/deals/${d.id}`} class="font-semibold no-underline">
         {d.title}
       </a>

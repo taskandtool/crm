@@ -2,13 +2,12 @@
 // pages. `node scripts/visits.mjs --help`.
 import { cut } from "../src/admin/keyset";
 import { cfg, visitsCfg } from "../src/config";
-import { readFields } from "../src/crm/fields";
 import { clean, nowIn, relativeWall, wallTime } from "../src/crm/text";
 import {
   addVisit, amountText, customerVisits, getVisit, parseAmount, pickVisitStatus, saveVisit, setVisitStatus, visitsPage,
   VISIT_STATUSES, type Visit, type VisitInput,
 } from "../src/crm/visits";
-import { done, fail, flag, flags, has, limitOf, local, misused, noMore, out, parseArgs, resolveCustomer, usage, who, withDb } from "./lib";
+import { done, fieldFlags, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, resolveCustomer, usage, who, withDb } from "./lib";
 
 const OFF = 'visits are off: crm.config.json has "visits": false (or none). Turn them on with { "one": "Job", "many": "Jobs", "fields": [] }.';
 const HELP = ((v) => !v ? OFF : `visits.mjs <command> [...] [--json] [--as <email>]      ${v.many} in this CRM
@@ -49,18 +48,6 @@ const one = v.one.toLowerCase();
 const json = has(a, "json");
 const show = (id: string) => `node scripts/visits.mjs show ${id}`;
 
-function fieldFlags() {
-  const input: Record<string, string> = {};
-  for (const kv of flags(a, "field")) {
-    const i = kv.indexOf("=");
-    const k = i > 0 ? kv.slice(0, i).trim() : "";
-    if (!v.fields.some((f) => f.key === k)) misused(`${at}: --field ${kv}: no ${one} field ${k}; declared: ${v.fields.map((f) => f.key).join(", ") || "none"}`, "node scripts/visits.mjs --help");
-    input[k] = kv.slice(i + 1);
-  }
-  const r = readFields(v.fields, input);
-  if (r.errors.length) misused(`${at}: ${r.errors.join("; ")}`, "node scripts/visits.mjs --help");
-  return r;
-}
 
 function atFlag(current: string | null): string | null {
   if (!has(a, "at")) return current;
@@ -127,7 +114,7 @@ await withDb(async (db) => {
       const c = await resolveCustomer(db, rest[0], at);
       const title = clean(rest.slice(1).join(" "), 200) ?? misused(`${at}: it needs what it is`, `node scripts/visits.mjs add ${rest[0]} "Annual tune-up"`);
       const status = pickVisitStatus(flag(a, "status") ?? "planned") ?? misused(`${at}: --status must be one of ${VISIT_STATUSES.join(", ")}`, `node scripts/visits.mjs add ${rest[0]} "${title}" --status planned`);
-      const fr = fieldFlags();
+      const fr = fieldFlags(a, v.fields, at, `${one} field`);
       const input: VisitInput = {
         title, status, at: atFlag(null), timeZone: cfg.time_zone, owner: clean(flag(a, "owner"), 200) ?? c.owner,
         amount_cents: amountFlag(null), currency: v.currency, notes: clean(flag(a, "notes"), 10_000), fields: fr.set,
@@ -138,7 +125,7 @@ await withDb(async (db) => {
 
     case "update": {
       const r = await visitOr(db, rest[0]);
-      const fr = fieldFlags();
+      const fr = fieldFlags(a, v.fields, at, `${one} field`);
       if (!["what", "at", "owner", "amount", "notes", "field"].some((k) => has(a, k))) misused(`${at}: nothing to change; name a flag such as --amount`, "node scripts/visits.mjs --help");
       const current = r.starts_at ? wallTime(nowIn(cfg.time_zone, new Date(r.starts_at))) : null;
       const amount = amountFlag(r.amount_cents === null ? null : Number(r.amount_cents));

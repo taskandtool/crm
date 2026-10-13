@@ -141,7 +141,8 @@ test("no sender is recorded and not retried; a failure is reported and not retri
 const JOB = join(dirname(fileURLToPath(import.meta.url)), "..", "reminders-job.ts");
 /** The job's command, with only the environment named (no sender, no database unless given). */
 const job = (args: string[], env: Record<string, string> = {}) =>
-  spawnSync(process.execPath, ["--import", "tsx", JOB, ...args], { encoding: "utf8", env: { PATH: process.env.PATH ?? "", ...env } });
+  // USER too: a local database address may name no user, and Postgres then takes the login's.
+  spawnSync(process.execPath, ["--import", "tsx", JOB, ...args], { encoding: "utf8", env: { PATH: process.env.PATH ?? "", USER: process.env.USER ?? "", ...env } });
 
 test("the job's command: --help, bad options and no database say what to do", () => {
   const help = job(["--help"]);

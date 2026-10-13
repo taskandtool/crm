@@ -755,7 +755,8 @@ test("production's per-request pool stays open until a long CSV has streamed", a
   assert.equal(r.status, 200);
   const lines = (await r.text()).trim().split("\r\n");
   assert.equal(lines.length, 1 + 1203, "every page of the export arrived");
-  await new Promise((ok) => setTimeout(ok, 50));
+  // The close runs just after the last chunk; wait for it, up to a second.
+  for (let i = 0; !closed && i < 100; i++) await new Promise((ok) => setTimeout(ok, 10));
   assert.ok(closed, "the pool is closed once the body is sent");
   await db.sql`delete from customers where email like 'bulk%@example.com'`;
 });

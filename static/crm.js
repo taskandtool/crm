@@ -1,5 +1,5 @@
-// The CRM's only client script: drag on the deal board, a card that opens
-// on a click, and the current tab kept in view on a narrow screen. Everything else is plain forms and htmx attributes.
+// The CRM's only client script: drag on the deal board, and the current tab
+// kept in view on a narrow screen. Everything else is plain forms and htmx attributes.
 // A drop posts the same stage change the card's own select makes, and the
 // server's answer (the whole pipeline) replaces the board, so a drop that
 // fails leaves nothing pretending it worked. Without this file, or without
@@ -39,14 +39,6 @@
       });
     });
   }
-  // A click anywhere on a card opens the deal, as its title does; the card's
-  // stage select keeps its own click.
-  document.addEventListener("click", function (e) {
-    var card = e.target.closest && e.target.closest("#pipeline [data-deal-id]");
-    if (!card || e.target.closest("a, button, input, select, label, form")) return;
-    var link = card.querySelector("a[href]");
-    if (link) link.click();
-  });
   // On a phone the nav and a section's tabs scroll sideways; start each with
   // its current tab in view, as GitHub's and Gmail's do, not cut off at the edge.
   function showCurrent() {

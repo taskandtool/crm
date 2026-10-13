@@ -47,9 +47,9 @@ export function TasksPage(p: TasksProps) {
             <section aria-label={heading}>
               <h2 class={"mb-2 text-label font-semibold " + (heading === "Overdue" ? "text-late" : "text-ink-2")}>{heading}</h2>
               <ol class="flex flex-col rounded-card border border-line bg-surface shadow-card">
-                {rows.map((f) => (
+                {rows.map((task) => (
                   <li class="border-b border-line px-4 py-3 last:border-b-0">
-                    <TaskItem f={f} today={p.today} returnTo={self} showCustomer showOwner={!p.mine} grouped />
+                    <TaskItem task={task} today={p.today} returnTo={self} showCustomer showOwner={!p.mine} grouped />
                   </li>
                 ))}
               </ol>
@@ -88,11 +88,11 @@ export function NewTaskPage(p: { user: string; owners: string[]; today: string; 
 /** The rows under their headings, in the order they came: Overdue, Today, then each day. */
 function groups(rows: Task[], today: string): [string, Task[]][] {
   const out: [string, Task[]][] = [];
-  for (const f of rows) {
-    const heading = f.due_on < today ? "Overdue" : dueDayText(f.due_on, today);
+  for (const task of rows) {
+    const heading = task.due_on < today ? "Overdue" : dueDayText(task.due_on, today);
     const last = out[out.length - 1];
-    if (last && last[0] === heading) last[1].push(f);
-    else out.push([heading, [f]]);
+    if (last && last[0] === heading) last[1].push(task);
+    else out.push([heading, [task]]);
   }
   return out;
 }
@@ -103,16 +103,16 @@ function groups(rows: Task[], today: string): [string, Task[]][] {
  * `grouped` is in a list headed by its day, so only an overdue one says its date.
  */
 export function TaskItem(p: {
-  f: Task; today: string; returnTo: string; showCustomer?: boolean; showOwner?: boolean; grouped?: boolean;
+  task: Task; today: string; returnTo: string; showCustomer?: boolean; showOwner?: boolean; grouped?: boolean;
   /** The deal whose page this is: no link back to it. */ onDeal?: string | null;
 }) {
-  const { f, today } = p;
-  const label = `${TASK_LABELS[f.kind]}: ${f.title}`;
-  const deal = f.deal_title && f.deal_id && f.deal_id !== p.onDeal;
-  const overdue = f.due_on < today;
+  const { task, today } = p;
+  const label = `${TASK_LABELS[task.kind]}: ${task.title}`;
+  const deal = task.deal_title && task.deal_id && task.deal_id !== p.onDeal;
+  const overdue = task.due_on < today;
   return (
     <div class="flex items-start gap-3">
-      <form method="post" action={`/tasks/${f.id}/done`} class="pt-0.5">
+      <form method="post" action={`/tasks/${task.id}/done`} class="pt-0.5">
         <input type="hidden" name="return" value={p.returnTo} />
         <button aria-label={`Mark done: ${label}`} title="Mark done"
           class="flex size-5 items-center justify-center rounded-full border-2 border-line-strong text-transparent hover:border-accent hover:bg-accent/10 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
@@ -120,19 +120,19 @@ export function TaskItem(p: {
         </button>
       </form>
       <div class="min-w-0 flex-1">
-        <p class="break-words font-semibold">{f.title}</p>
+        <p class="break-words font-semibold">{task.title}</p>
         <p class="mt-0.5 flex flex-wrap items-center gap-x-2 text-label text-ink-3">
           {/* Under a day's heading only the time is new; under Overdue, which day it was. */}
-          {!p.grouped ? <DueMark next={f} today={today} /> : overdue ? <span class="font-semibold text-late">{dueDayText(f.due_on, today)}</span> : f.due_time ? <span>{timeText(f.due_time)}</span> : null}
-          {overdue && f.due_time ? <span>{timeText(f.due_time)}</span> : null}
-          <span>{TASK_LABELS[f.kind]}</span>
-          {p.showOwner && f.owner ? <span>{f.owner}</span> : null}
+          {!p.grouped ? <DueMark next={task} today={today} /> : overdue ? <span class="font-semibold text-late">{dueDayText(task.due_on, today)}</span> : task.due_time ? <span>{timeText(task.due_time)}</span> : null}
+          {overdue && task.due_time ? <span>{timeText(task.due_time)}</span> : null}
+          <span>{TASK_LABELS[task.kind]}</span>
+          {p.showOwner && task.owner ? <span>{task.owner}</span> : null}
         </p>
         {p.showCustomer || deal ? (
           <p class="mt-0.5 text-label text-ink-2">
-            {p.showCustomer ? <a href={`/customers/${f.customer_id}`}>{f.customer_name}</a> : null}
-            {p.showCustomer && f.kind === "call" && f.customer_phone ? <> · <a href={telHref(f.customer_phone)}>{f.customer_phone}</a></> : null}
-            {deal ? <>{p.showCustomer ? " · " : ""}<a href={`/deals/${f.deal_id}`}>{f.deal_title}</a></> : null}
+            {p.showCustomer ? <a href={`/customers/${task.customer_id}`}>{task.customer_name}</a> : null}
+            {p.showCustomer && task.kind === "call" && task.customer_phone ? <> · <a href={telHref(task.customer_phone)}>{task.customer_phone}</a></> : null}
+            {deal ? <>{p.showCustomer ? " · " : ""}<a href={`/deals/${task.deal_id}`}>{task.deal_title}</a></> : null}
           </p>
         ) : null}
       </div>
@@ -141,7 +141,7 @@ export function TaskItem(p: {
         <div class="absolute right-0 z-10 mt-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-card border border-line bg-surface p-3 shadow-lift">
           <div class="flex flex-wrap gap-2">
             {[["Tomorrow", addDays(today, 1)], ["Next week", addDays(today, 7)]].map(([text, day]) => (
-              <form method="post" action={`/tasks/${f.id}/move`}>
+              <form method="post" action={`/tasks/${task.id}/move`}>
                 <input type="hidden" name="return" value={p.returnTo} />
                 <input type="hidden" name="on" value={day} />
                 <button class={buttonClass}>{text}</button>
@@ -149,13 +149,13 @@ export function TaskItem(p: {
             ))}
           </div>
           {/* A day and a time side by side, then the button: they fit the menu's width. */}
-          <form method="post" action={`/tasks/${f.id}/move`} class="grid grid-cols-2 gap-2">
+          <form method="post" action={`/tasks/${task.id}/move`} class="grid grid-cols-2 gap-2">
             <input type="hidden" name="return" value={p.returnTo} />
-            <input name="on" type="date" required value={f.due_on} aria-label="Day" class={controlClass + " min-w-0"} />
-            <input name="at" type="time" value={f.due_time ?? ""} aria-label="Time, or blank for any time" class={controlClass + " min-w-0"} />
+            <input name="on" type="date" required value={task.due_on} aria-label="Day" class={controlClass + " min-w-0"} />
+            <input name="at" type="time" value={task.due_time ?? ""} aria-label="Time, or blank for any time" class={controlClass + " min-w-0"} />
             <button class={buttonClass + " col-span-2"}>Reschedule</button>
           </form>
-          <form method="post" action={`/tasks/${f.id}/done`} class="flex flex-col gap-2 border-t border-line pt-3">
+          <form method="post" action={`/tasks/${task.id}/done`} class="flex flex-col gap-2 border-t border-line pt-3">
             <input type="hidden" name="return" value={p.returnTo} />
             <Field label="Or mark it done, with what came of it">
               <textarea name="outcome" rows={2} maxlength={10000} class={controlClass}></textarea>
@@ -247,9 +247,9 @@ export function TasksSection(p: {
     <div class="flex flex-col gap-4">
       {p.open.length ? (
         <ol class="flex flex-col gap-3">
-          {p.open.map((f) => (
+          {p.open.map((task) => (
             <li class="border-l-2 border-line pl-3">
-              <TaskItem f={f} today={p.today} returnTo={p.returnTo} showOwner onDeal={p.dealId} />
+              <TaskItem task={task} today={p.today} returnTo={p.returnTo} showOwner onDeal={p.dealId} />
             </li>
           ))}
         </ol>
@@ -263,10 +263,10 @@ export function TasksSection(p: {
         <details>
           <summary class="cursor-pointer text-label text-ink-2">Completed</summary>
           <ul class="mt-2 flex flex-col gap-1 text-label text-ink-2">
-            {p.done.map((f) => (
+            {p.done.map((task) => (
               <li>
-                {TASK_LABELS[f.kind]}: {f.title}
-                <span class="text-ink-3"> · <When at={f.done_at} timeZone={timeZone} />{f.done_by ? ` by ${f.done_by}` : ""}</span>
+                {TASK_LABELS[task.kind]}: {task.title}
+                <span class="text-ink-3"> · <When at={task.done_at} timeZone={timeZone} />{task.done_by ? ` by ${task.done_by}` : ""}</span>
               </li>
             ))}
           </ul>

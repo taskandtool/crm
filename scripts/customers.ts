@@ -8,7 +8,6 @@ import { cut } from "../src/admin/keyset";
 import {
   createCustomer, listPage, patchCustomer, retag, setArchived, setStage, NO_FILTER, type Details,
 } from "../src/crm/customers";
-import { readFields } from "../src/crm/fields";
 import { everythingFrom } from "../src/crm/history";
 import { addNote, listNotes, pickNoteKind, NOTE_KINDS } from "../src/crm/notes";
 import { phoneKey } from "../src/crm/phone";
@@ -17,7 +16,7 @@ import { firstOpenStage, listStages, resolveStage } from "../src/crm/stages";
 import { clean, parseTags, relativeWall, wallTime } from "../src/crm/text";
 import { formatMoney } from "../src/payments/money";
 import { normalizeEmail } from "../src/data/email";
-import { done, fail, flag, flags, fmtCustomer, has, limitOf, local, misused, noMore, out, parseArgs, resolveCustomer, usage, who, withDb } from "./lib";
+import { done, fieldFlags, fail, flag, flags, fmtCustomer, has, limitOf, local, misused, noMore, out, parseArgs, resolveCustomer, usage, who, withDb } from "./lib";
 
 const HELP = `customers.mjs <command> [...] [--json] [--as <email>]
 
@@ -62,18 +61,6 @@ if (cmd === "merge" && rest.length < 2) misused(`${at}: name the record to keep,
 const json = has(a, "json");
 const show = (id: string) => `node scripts/customers.mjs show ${id}`;
 
-function fieldFlags(): ReturnType<typeof readFields> {
-  const input: Record<string, string> = {};
-  for (const kv of flags(a, "field")) {
-    const i = kv.indexOf("=");
-    const k = i > 0 ? kv.slice(0, i).trim() : "";
-    if (!cfg.fields.some((f) => f.key === k)) misused(`${at}: --field ${kv}: no custom field ${k}; declared: ${cfg.fields.map((f) => f.key).join(", ") || "none"}`, "node scripts/customers.mjs --help");
-    input[k] = kv.slice(i + 1);
-  }
-  const r = readFields(cfg.fields, input);
-  if (r.errors.length) misused(`${at}: ${r.errors.join("; ")}`, "node scripts/customers.mjs --help");
-  return r;
-}
 
 await withDb(async (db) => {
   const stages = await listStages(db, "customers", { archived: true });
@@ -139,7 +126,7 @@ await withDb(async (db) => {
       if (!name && !email && !phoneKey(phone)) misused(`${at}: it needs a name, an --email or a --phone`, 'node scripts/customers.mjs add "Ann Lee" --email ann@example.com');
       const stageArg = flag(a, "status");
       const st = (stageArg ? resolveStage(active, stageArg) : await firstOpenStage(db, "customers")) ?? misused(`${at}: no status ${stageArg ?? ""}; statuses: ${stageList}`, "node scripts/stages.mjs list --statuses");
-      const fr = fieldFlags();
+      const fr = fieldFlags(a, cfg.fields, at, "custom field");
       const r = await createCustomer(
         db,
         {
@@ -175,7 +162,7 @@ await withDb(async (db) => {
         } else if (k === "name") patch.name = clean(v, 200) ?? misused(`${at}: --name cannot be empty`, `node scripts/customers.mjs update ${c.id} --name "Ann Lee"`);
         else patch[k] = clean(v, k === "notes" ? 10_000 : 500);
       }
-      const fr = fieldFlags();
+      const fr = fieldFlags(a, cfg.fields, at, "custom field");
       if (!Object.keys(patch).length && !Object.keys(fr.set).length && !fr.unset.length) misused(`${at}: nothing to change; name a flag such as --phone`, "node scripts/customers.mjs --help");
       patch.fields = fr.set;
       patch.unset = fr.unset;

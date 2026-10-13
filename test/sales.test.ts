@@ -137,7 +137,7 @@ test("a quote accepted after the deal last moved wins it, once, whichever way th
 test("tasks: due and upcoming, mine and everyone's, done once (even twice at once), moved; nothing planned", async (t) => {
   if (skip) return t.skip(skip);
   const today = "2026-10-08";
-  const { customer } = await createCustomer(db, { name: "Fol Low", email: "follow@example.com", stage: "lead" }, ME);
+  const { customer } = await createCustomer(db, { name: "Tess Kay", email: "tess@example.com", stage: "lead" }, ME);
   assert.ok((await nothingPlanned(db, null, 500)).some((u) => u.id === customer.id));
   const other = await createCustomer(db, { name: "Not Theirs", email: "else@example.com", stage: "lead" }, ME);
   const theirDeal = (await createDeal(db, other.customer.id, deal("Not theirs"), "new", ME))!;
