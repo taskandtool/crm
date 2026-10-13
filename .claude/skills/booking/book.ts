@@ -62,13 +62,19 @@ export type BookingType = {
 
 export type Booking = {
   id: string;
-  type_id: string;
-  resource_id: string;
+  /** The service; null for one the team scheduled without one. */
+  type_id: string | null;
+  /** Who takes it; null while nobody is assigned. */
+  resource_id: string | null;
   starts_at: Date;
   ends_at: Date;
+  /** What it is, when the service does not say. */
+  title: string | null;
   name: string;
-  email: string;
+  /** Null for a customer the team scheduled who has no email. */
+  email: string | null;
   phone: string | null;
+  notes: string | null;
   location_kind: LocationKind;
   location: string | null;
   booker_time_zone: string | null;
@@ -83,15 +89,20 @@ export type Booking = {
   updated_at: Date;
 };
 
-/** One line for where it happens, for the booker. A meeting link is shown only to the person who booked. */
-export function whereText(b: Pick<Booking, "location_kind" | "location">, opts: { link?: boolean } = {}): string {
+/**
+ * One line for where it happens. For the booker by default ("We will call you
+ * on ..."); `team` says it the way the team reads it on their own pages ("Phone
+ * call: ...", the address alone, as a calendar's location). A meeting link is
+ * shown only with `link`.
+ */
+export function whereText(b: Pick<Booking, "location_kind" | "location">, opts: { link?: boolean; team?: boolean } = {}): string {
   switch (b.location_kind) {
     case "their_place":
-      return b.location ? `At ${b.location}` : "At your address";
+      return b.location ? (opts.team ? b.location : `At ${b.location}`) : opts.team ? "At their address" : "At your address";
     case "our_place":
-      return b.location ? `At ${b.location}` : "At our place";
+      return b.location ? (opts.team ? b.location : `At ${b.location}`) : "At our place";
     case "phone":
-      return b.location ? `We will call you on ${b.location}` : "By phone";
+      return opts.team ? (b.location ? `Phone call: ${b.location}` : "Phone call") : b.location ? `We will call you on ${b.location}` : "By phone";
     case "video":
       return opts.link && b.location ? `Video call: ${b.location}` : "Video call";
   }
@@ -130,8 +141,9 @@ export function toType(r: Record<string, any>): BookingType {
 /** A bookings row as read by `select *`, without the token hash. */
 export function toBooking(r: Record<string, any>): Booking {
   return {
-    id: String(r.id), type_id: String(r.type_id), resource_id: String(r.resource_id), starts_at: asDate(r.starts_at), ends_at: asDate(r.ends_at),
-    name: r.name, email: r.email, phone: r.phone ?? null, location_kind: r.location_kind, location: r.location ?? null,
+    id: String(r.id), type_id: r.type_id == null ? null : String(r.type_id), resource_id: r.resource_id == null ? null : String(r.resource_id),
+    starts_at: asDate(r.starts_at), ends_at: asDate(r.ends_at), title: r.title ?? null,
+    name: r.name, email: r.email ?? null, phone: r.phone ?? null, notes: r.notes ?? null, location_kind: r.location_kind, location: r.location ?? null,
     booker_time_zone: r.booker_time_zone ?? null, status: r.status,
     answers: (typeof r.answers === "string" ? JSON.parse(r.answers) : r.answers) ?? {}, sequence: Number(r.sequence), source: r.source ?? null,
     external_event_id: r.external_event_id ?? null, cancelled_at: r.cancelled_at ? asDate(r.cancelled_at) : null,
@@ -139,14 +151,14 @@ export function toBooking(r: Record<string, any>): Booking {
   };
 }
 
-export async function resourceById(db: Db, id: string): Promise<Resource | null> {
-  if (!/^\d{1,18}$/.test(id)) return null;
+export async function resourceById(db: Db, id: string | null): Promise<Resource | null> {
+  if (!id || !/^\d{1,18}$/.test(id)) return null;
   const [r] = await db.sql`select * from resources where id = ${id}::bigint`;
   return r ? toResource(r) : null;
 }
 
-export async function typeById(db: Db, id: string): Promise<BookingType | null> {
-  if (!/^\d{1,18}$/.test(id)) return null;
+export async function typeById(db: Db, id: string | null): Promise<BookingType | null> {
+  if (!id || !/^\d{1,18}$/.test(id)) return null;
   const [r] = await db.sql`select * from booking_types where id = ${id}::bigint`;
   return r ? toType(r) : null;
 }
@@ -269,6 +281,8 @@ export type BookInput = {
   phone?: string | null;
   /** Required at their place: where the work or the visit is. */
   address?: string | null;
+  /** The team booking by phone may not have the address yet: at their place, it may be left blank. */
+  addressOptional?: boolean;
   bookerTimeZone?: string | null;
   answers?: Record<string, unknown>;
   /** The app's slug, e.g. "website". */
@@ -287,7 +301,7 @@ export type BookResult =
 
 /** The booker's details, checked for where the type happens. */
 export function checkBooker(
-  input: { name?: unknown; email?: unknown; phone?: unknown; address?: unknown },
+  input: { name?: unknown; email?: unknown; phone?: unknown; address?: unknown; addressOptional?: boolean },
   kind: LocationKind = "our_place",
 ): Record<string, string> {
   const errors: Record<string, string> = {};
@@ -300,7 +314,7 @@ export function checkBooker(
   else if (kind === "phone" && !/\d{3}/.test(phone)) errors.phone = "Enter the number we should call.";
   const address = typeof input.address === "string" ? input.address.trim() : "";
   if (address.length > 500) errors.address = "Use 500 characters or fewer.";
-  else if (kind === "their_place" && !address) errors.address = "Enter the address where we should come.";
+  else if (kind === "their_place" && !address && !input.addressOptional) errors.address = "Enter the address where we should come.";
   return errors;
 }
 
@@ -458,8 +472,9 @@ export async function rescheduleById(db: Db, id: string, newStart: Date, by: str
 async function moveBooking(db: Db, b: Booking, newStart: Date, by: string | null, now: Date, hostId?: string | null): Promise<ChangeResult> {
   const host = hostId || b.resource_id;
   if (b.status !== "confirmed" || b.starts_at <= now) return { ok: false, reason: "closed" };
+  // Only a booking of a service with someone taking it has open times to move to.
   const type = await typeById(db, b.type_id);
-  if (!type) return { ok: false, reason: "not_found" };
+  if (!type || !host) return { ok: false, reason: "not_found" };
   const slot = await openSlotAt(db, type, newStart, now, { hosts: [host], exceptBooking: b.id });
   if (!slot) return { ok: false, reason: "taken" };
 

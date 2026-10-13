@@ -13,7 +13,7 @@ import { teamOnly } from "./admin/guard";
 import { cut, everyPage } from "./admin/keyset";
 import { TableRows } from "./admin/list";
 import { idParam, isPartial, listUrl, localPath, str } from "./admin/query";
-import { cfg, dealsCfg, invoicesCfg, newLeadTask, showBooking, visitsCfg, KEY } from "./config";
+import { cfg, dealsCfg, eventsCfg, invoicesCfg, newLeadTask, ownerLabel, showBooking, KEY } from "./config";
 import { normalizeEmail } from "./data/email";
 import {
   createCustomer, customerChoices, facets, findMatch, getCustomer, listPage, readListCursor, saveDetails, sentTo, setArchived, setStage,
@@ -22,7 +22,7 @@ import {
 import { csvColumns } from "./crm/columns";
 import { postedFields, readFields } from "./crm/fields";
 import { everythingFrom } from "./crm/history";
-import { addFromInbox, formChoices, inboxPage, markDone, readInboxCursor, type InboxKind } from "./crm/inbox";
+import { addFromInbox, formChoices, inboxPage, markDone, markHandled, readInboxCursor, type InboxKind } from "./crm/inbox";
 import { board, createDeal, customerDeals, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
 import {
   addTask, customerTasks, doneTask, taskCounts, getTask, inPlay, listTasks, moveTask, nextTasks,
@@ -30,12 +30,13 @@ import {
 } from "./crm/tasks";
 import { overview } from "./crm/overview";
 import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
-import { addNote, listNotes, pickNoteKind } from "./crm/notes";
+import { addNote, listNotes, pickNoteKind, wallTime } from "./customers/notes";
 import { phoneKey } from "./crm/phone";
-import { addVisit, bookingsWithoutJob, customerVisits, dealVisits, getVisit, visitFromBooking, visitFromDeal, parseAmount, pickVisitStatus, saveVisit, setVisitStatus, visitCsvColumns, visitOwners, visitsBetween, visitsPage, type Visit, type VisitFilter, type VisitInput } from "./crm/visits";
+import { addEvent, customerEvents, eventCsvColumns, eventsPage, getEvent, saveEvent, touchFor, type Event, type EventFilter, type EventInput } from "./crm/events";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, pickKind, pickPipeline, restoreStage, stagesWithCounts, type Pipeline, type StageResult } from "./crm/stages";
 import { missingSentence } from "./crm/tables";
-import { clean, nowIn, parseTags, slugify, wallTime } from "./crm/text";
+import { clean, nowIn, parseAmount, parseTags, slugify } from "./crm/text";
+
 import type { AppEnv } from "./runtime";
 import { CustomerPage } from "./views/customer";
 import { CustomersPage, customerSpec, filterParams, NewCustomerPage, Results } from "./views/customers";
@@ -46,26 +47,25 @@ import { Board, CLOSED_DAYS, DealPage, DealsPage, NewDealPage, PER_COLUMN, type 
 import { NewTaskPage, TasksPage } from "./views/tasks";
 import { MergePage } from "./views/merge";
 import { StagesPage } from "./views/stages";
-import { bookingAdmin, type BookingAdminOptions } from "./booking/admin";
+import { bookingAdmin, BOOKING_STATUSES, peopleRoutes, typeRoutes } from "./booking/admin";
+import { allPeople, allTypes } from "./booking/hours";
 import { confirmFormBooking } from "./booking/confirm";
 import { emailSend, emailSender, notifyBooking } from "./booking/notify";
 import { envOf } from "./data/env";
 import { afterResponse } from "./data/send";
-import { Section } from "./admin/detail";
 import type { Db } from "./data/db";
-import { buttonClass, primaryClass } from "./views/ui";
+import { primaryClass } from "./views/ui";
 import { invoicesAdmin } from "./invoices/admin";
-import { formsAdmin } from "./forms/admin";
+import { formEditor, formsAdmin } from "./forms/admin";
 import { completePaidSubmission } from "./forms/store";
 import { paymentsAdmin } from "./payments/admin";
 import { invoiceEvents } from "./invoices/webhook";
 import { todayIn as todayInZone } from "./reports/sql";
 import { stripeWebhook } from "./payments/webhook";
-import { quoteById, quotesFor } from "./invoices/quotes";
+import { quotesFor } from "./invoices/quotes";
 import { invoicesFor, owed } from "./invoices/invoices";
-import { jobFromQuote } from "./crm/quotes";
-import { CUSTOMER_VISITS, JobFromBooking, NewVisitPage, VISIT_OPTIONS, visitParams, VisitPage, VisitResults, VisitsPage, visitSpec } from "./views/visits";
-import { StatusBadge } from "./admin/status";
+import { loadTeam } from "./crm/people";
+import { CUSTOMER_EVENTS, EventPage, eventParams, EventResults, EventsPage, eventSpec, NewEventPage, type Choices } from "./views/events";
 
 type C = Context<AppEnv>;
 
@@ -135,6 +135,7 @@ app.use("*", async (c, next) => {
   if (!opened.db) return c.html(<WaitingView state={opened.state} error={opened.error} />, 503);
   c.set("db", opened.db);
   try {
+    await loadTeam(opened.db);
     await next();
   } finally {
     if (opened.close) closeAfter(c, opened.close);
@@ -185,7 +186,7 @@ app.get("/", async (c) => {
   const self = listUrl("/", filter);
   const more = (cur: string) => listUrl("/", { ...filter, after: cur });
   if (isPartial(c) && after) return c.html(<InboxRows rows={rows} next={next} more={more} self={self} />);
-  const missing = missingSentence(present, { bookings: cfg.inbox.bookings !== false, payments: cfg.inbox.payments !== false });
+  const missing = missingSentence(present, { payments: cfg.inbox.payments !== false });
   // The filter box (htmx): everything under it.
   if (isPartial(c)) return c.html(<InboxResults rows={rows} next={next} more={more} self={self} all={all} form={form} paged={false} missing={missing} />);
   return c.html(
@@ -252,7 +253,9 @@ app.get("/inbox/count", async (c) => {
 app.post("/inbox/done", async (c) => {
   const body = await c.req.parseBody();
   const ret = localPath(str(body.return), "", "/");
-  return back(c, ret, (await markDone(c.var.db, str(body.id), c.var.user)) ? "done" : "gone");
+  const kind = str(body.kind);
+  const done = kind === "booking" || kind === "payment" ? (await markHandled(c.var.db, kind, str(body.id), c.var.user)) !== "missing" : await markDone(c.var.db, str(body.id), c.var.user);
+  return back(c, ret, done ? "done" : "gone");
 });
 
 // ---- customers ------------------------------------------------------------
@@ -338,7 +341,7 @@ app.post("/customers", async (c) => {
   if (!stage) return back(c, "/stages", "last-open");
   const r = await createCustomer(
     db,
-    { name, email, phone, company: clean(body.company, 200), stage: stage.key, source: clean(body.source, 100) },
+    { name, email, phone, company: clean(body.company, 200), address: clean(body.address, 500), stage: stage.key, source: clean(body.source, 100) },
     c.var.user,
   );
   return back(c, `/customers/${r.customer.id}`, r.created ? "added" : "exists");
@@ -367,15 +370,16 @@ app.get("/customers/:id", async (c) => {
   if (!customer) return c.notFound();
   // A record merged into another opens that one.
   if (customer.merged_into) return c.redirect(`/customers/${customer.merged_into}`, 302);
-  const [stages, notes, visits, history, f, money, deals, dealStages, tasks] = await Promise.all([
-    listStages(db, "customers"), listNotes(db, customer.id), visitsCfg ? customerVisits(db, customer.id, CUSTOMER_VISITS) : [], everythingFrom(db, customer), facets(db),
+  const [stages, notes, events, choices, history, f, money, deals, dealStages, tasks] = await Promise.all([
+    listStages(db, "customers"), listNotes(db, customer.id), eventsCfg ? customerEvents(db, customer.id, CUSTOMER_EVENTS) : [],
+    eventsCfg ? choicesOf(db) : { team: [], services: [] }, everythingFrom(db, customer), facets(db),
     invoicesCfg ? moneyFor(db, customer) : null,
     customerDeals(db, customer.id), listStages(db, "deals"), customerTasks(db, customer.id),
   ]);
   const duplicates = customer.archived_at ? [] : await possibleDuplicates(db, customer);
   const owners = [...new Set([c.var.user, ...f.owners])];
   return c.html(
-    <CustomerPage user={c.var.user} customer={customer} stages={stages} notes={notes} visits={visits} history={history.items} present={history.present} owners={owners}
+    <CustomerPage user={c.var.user} customer={customer} stages={stages} notes={notes} events={events} choices={choices} history={history.items} present={history.present} owners={owners}
       deals={deals} dealStages={dealStages} tasks={tasks} today={today()}
       money={money} duplicates={duplicates} flash={flashOf(c)} />,
   );
@@ -501,258 +505,208 @@ app.post("/customers/:id/archive", async (c) => {
   return r ? back(c, `/customers/${id}`, archive ? "archived" : "unarchived") : c.notFound();
 });
 
-// ---- jobs, visits, appointments or events ---------------------------------
-// crm.config.json's `visits` names them; with it off these paths are 404.
+// ---- the schedule: its events --------------------------------------------------
+// crm.config.json's `events` names them; with it off these paths are 404.
+// Each is a booking (the booking skill's table), whoever made it.
 
-app.use("/visits/*", async (c, next) => (visitsCfg ? next() : c.notFound()));
-app.use("/visits", async (c, next) => (visitsCfg ? next() : c.notFound()));
-app.use("/customers/:id/visits", async (c, next) => (visitsCfg ? next() : c.notFound()));
+app.use("/events/*", async (c, next) => (eventsCfg ? next() : c.notFound()));
+app.use("/events", async (c, next) => (eventsCfg ? next() : c.notFound()));
+app.use("/customers/:id/events", async (c, next) => (eventsCfg ? next() : c.notFound()));
 
-/** The visit form, read the way the customer form is: a bad amount or field is left as it was and flagged. */
-function readVisitForm(body: Record<string, unknown>, current?: Visit) {
-  const v = visitsCfg!;
+/** What the event forms choose from: the Team, and the Services with online booking on. */
+const choicesOf = async (db: Db): Promise<Choices> => {
+  const [team, services] = await Promise.all([allPeople(db), showBooking ? allTypes(db) : []]);
+  return { team, services };
+};
+
+/**
+ * The event form, read the way the customer form is: a bad amount or field is
+ * left as it was and flagged. Null when it names neither a title nor a
+ * service, or no time.
+ */
+function readEventForm(body: Record<string, unknown>, current?: Event): { event: EventInput; unset: string[]; invalid: boolean } | null {
+  const ev = eventsCfg!;
   let invalid = false;
   const at = str(body.at).trim();
-  let wall = at ? wallTime(at) : null;
-  if (at && !wall) {
-    invalid = true;
-    wall = current?.starts_at ? wallTime(nowIn(cfg.time_zone, new Date(current.starts_at))) : null;
-  }
-  let amount = parseAmount(body.amount, v.currency);
+  const wall = (at ? wallTime(at) : null) ?? (current ? wallTime(nowIn(cfg.time_zone, new Date(current.starts_at))) : null);
+  if (at && !wallTime(at)) invalid = true;
+  const title = clean(body.title, 200);
+  // A form with no Service choice (no services offered) leaves the one it has.
+  const type = "type" in body ? idParam(str(body.type)) : current?.type_id ?? null;
+  if (!wall || (!title && !type)) return null;
+  const minutes = Number(str(body.minutes));
+  let amount = parseAmount(body.amount, ev.currency);
   if (amount === "invalid") {
     invalid = true;
     amount = current?.amount_cents == null ? null : Number(current.amount_cents);
   }
-  const fr = readFields(v.fields, postedFields(v.fields, body));
+  const fr = readFields(ev.fields, postedFields(ev.fields, body));
   if (fr.errors.length) invalid = true;
-  const visit: VisitInput = {
-    title: clean(body.title, 200) ?? "",
-    status: pickVisitStatus(body.status) ?? "planned",
-    at: wall,
-    timeZone: cfg.time_zone,
-    owner: clean(body.owner, 200),
-    amount_cents: amount,
-    currency: (amount !== null && current?.currency) || v.currency,
-    notes: clean(body.notes, 10_000),
-    fields: fr.set,
+  return {
+    event: {
+      title, type_id: type, at: wall, timeZone: cfg.time_zone,
+      minutes: Number.isInteger(minutes) && minutes >= 5 && minutes <= 1440 ? minutes : 60,
+      resource_id: idParam(str(body.host)), location: clean(body.location, 500),
+      amount_cents: amount, currency: (amount !== null && current?.currency) || ev.currency,
+      notes: clean(body.notes, 10_000), fields: fr.set,
+    },
+    unset: fr.unset,
+    invalid,
   };
-  return { visit, unset: fr.unset, invalid };
 }
 
-function readVisitFilter(c: C): VisitFilter {
+function readEventFilter(c: C): EventFilter {
   const view = c.req.query("view");
-  const known = view === "done" || view === "all" || (view === "invoice" && !!invoicesCfg);
-  return { view: known ? (view as VisitFilter["view"]) : "upcoming", owner: clean(c.req.query("owner"), 200), q: clean(c.req.query("q"), 100) };
+  return { view: view === "past" || view === "all" ? view : "upcoming", host: idParam(c.req.query("host") ?? ""), q: clean(c.req.query("q"), 100) };
 }
 
-app.get("/visits", async (c) => {
+app.get("/events", async (c) => {
   const db = c.var.db;
-  const f = readVisitFilter(c);
+  const f = readEventFilter(c);
   const after = readListCursor(c.req.query("after"));
-  const { page, next } = cut(await visitsPage(db, f, after, PAGE), PAGE);
+  const { page, next } = cut(await eventsPage(db, f, after, PAGE), PAGE);
   if (isPartial(c) && after) {
-    const more = (cur: string) => listUrl("/visits", { ...visitParams(f), after: cur });
-    return c.html(<TableRows spec={visitSpec()} rows={page} next={next} more={more} />);
+    const more = (cur: string) => listUrl("/events", { ...eventParams(f), after: cur });
+    return c.html(<TableRows spec={eventSpec()} rows={page} next={next} more={more} />);
   }
-  if (isPartial(c)) return c.html(<VisitResults filter={f} rows={page} next={next} paged={!!after} />);
-  const [owners, booked] = await Promise.all([visitOwners(db), showBooking ? bookingsWithoutJob(db) : []]);
-  return c.html(<VisitsPage user={c.var.user} owners={owners} booked={booked} filter={f} rows={page} next={next} paged={!!after} flash={flashOf(c)} />);
+  if (isPartial(c)) return c.html(<EventResults filter={f} rows={page} next={next} paged={!!after} />);
+  return c.html(<EventsPage user={c.var.user} team={await allPeople(db)} filter={f} rows={page} next={next} paged={!!after} flash={flashOf(c)} />);
 });
 
-app.get("/visits/export.csv", async (c) => {
+app.get("/events/export.csv", async (c) => {
   const db = c.var.db;
-  const f = readVisitFilter(c);
-  const v = visitsCfg!;
+  const f = readEventFilter(c);
+  const ev = eventsCfg!;
   const day = new Date().toISOString().slice(0, 10);
-  const columns = visitCsvColumns(v.fields, cfg.time_zone, cfg.owner_label ?? "Owner", v.currency);
-  return csvResponse(`${slugify(v.many)}-${day}.csv`, columns, everyPage((after, size) => visitsPage(db, f, after, size)));
+  const label = (s: string) => BOOKING_STATUSES.find((o) => o.value === s)?.label ?? s;
+  const columns = eventCsvColumns(ev.fields, cfg.time_zone, ownerLabel, ev.currency, label);
+  return csvResponse(`${slugify(ev.many)}-${day}.csv`, columns, everyPage((after, size) => eventsPage(db, f, after, size)));
 });
 
-app.post("/customers/:id/visits", async (c) => {
-  const id = idParam(c.req.param("id"));
-  if (!id) return c.notFound();
-  const self = `/customers/${id}`;
-  const { visit, invalid } = readVisitForm(await c.req.parseBody());
-  if (!visit.title) return back(c, self, "visit-title-needed");
-  const r = await addVisit(c.var.db, id, visit, c.var.user);
-  if (!r) return c.notFound();
-  return back(c, `/visits/${r.id}`, invalid ? "invalid" : "visit-added");
-});
-
-app.get("/visits/new", async (c) => {
+app.post("/customers/:id/events", async (c) => {
   const db = c.var.db;
-  const [vo, f, customers] = await Promise.all([visitOwners(db), facets(db), customerChoices(db)]);
-  return c.html(<NewVisitPage user={c.var.user} owners={[...new Set([c.var.user, ...vo, ...f.owners])]} customers={customers} flash={flashOf(c)} />);
+  const id = idParam(c.req.param("id"));
+  const customer = id ? await getCustomer(db, id) : null;
+  if (!customer) return c.notFound();
+  const form = readEventForm(await c.req.parseBody());
+  if (!form) return back(c, `/customers/${customer.id}`, "event-incomplete");
+  const r = await addEvent(db, customer, form.event, c.var.user);
+  return r ? back(c, `/events/${r.id}`, form.invalid ? "invalid" : "event-added") : c.notFound();
 });
 
-// A new visit from the list: the customer picked, or someone new (as a new deal), and the visit.
-app.post("/visits", async (c) => {
+app.get("/events/new", async (c) => {
+  const db = c.var.db;
+  const [choices, customers] = await Promise.all([choicesOf(db), customerChoices(db)]);
+  return c.html(<NewEventPage user={c.var.user} choices={choices} customers={customers} flash={flashOf(c)} />);
+});
+
+// A new one from the list: the customer picked, or someone new, and the event.
+app.post("/events", async (c) => {
   const db = c.var.db;
   const body = await c.req.parseBody();
-  const { visit, invalid } = readVisitForm(body);
-  if (!visit.title) return back(c, "/visits/new", "visit-title-needed");
+  const form = readEventForm(body);
+  if (!form) return back(c, "/events/new", "event-incomplete");
   const who = await customerFor(c, body);
-  if ("error" in who) return back(c, who.error === "last-open" ? "/stages" : "/visits/new", who.error);
-  const r = await addVisit(db, who.id, visit, c.var.user);
-  return r ? back(c, `/visits/${r.id}`, invalid ? "invalid" : "visit-added") : back(c, "/visits", "gone");
+  if ("error" in who) return back(c, who.error === "last-open" ? "/stages" : "/events/new", who.error);
+  const customer = await getCustomer(db, who.id);
+  const r = customer ? await addEvent(db, customer, form.event, c.var.user) : null;
+  return r ? back(c, `/events/${r.id}`, form.invalid ? "invalid" : "event-added") : back(c, "/events", "gone");
 });
 
-app.get("/visits/:id", async (c) => {
+app.get("/events/:id", async (c) => {
   const db = c.var.db;
   const id = idParam(c.req.param("id"));
-  const visit = id ? await getVisit(db, id) : null;
-  if (!visit) return c.notFound();
-  const [vo, f, money] = await Promise.all([
-    visitOwners(db), facets(db), invoicesCfg ? Promise.all([quotesFor(db, { visitId: visit.id }), invoicesFor(db, { visitId: visit.id })]) : null,
+  const event = id ? await getEvent(db, id) : null;
+  if (!event) return c.notFound();
+  const [choices, money] = await Promise.all([
+    choicesOf(db), invoicesCfg ? Promise.all([quotesFor(db, { visitId: event.id }), invoicesFor(db, { visitId: event.id })]) : null,
   ]);
-  const owners = [...new Set([c.var.user, ...vo, ...f.owners])];
-  return c.html(<VisitPage user={c.var.user} visit={visit} owners={owners} money={money ? { quotes: money[0], invoices: money[1] } : null} flash={flashOf(c)} />);
+  return c.html(<EventPage user={c.var.user} event={event} choices={choices} money={money ? { quotes: money[0], invoices: money[1] } : null} flash={flashOf(c)} />);
 });
 
-app.post("/visits/:id", async (c) => {
+app.post("/events/:id", async (c) => {
   const db = c.var.db;
   const id = idParam(c.req.param("id"));
-  const current = id ? await getVisit(db, id) : null;
+  const current = id ? await getEvent(db, id) : null;
   if (!current) return c.notFound();
-  const self = `/visits/${current.id}`;
-  const { visit, unset, invalid } = readVisitForm(await c.req.parseBody(), current);
-  if (!visit.title) visit.title = current.title;
-  const r = await saveVisit(db, current.id, { ...visit, unset }, c.var.user);
-  if (!r) return back(c, "/visits", "gone");
-  return back(c, self, invalid ? "invalid" : "saved");
+  const self = `/events/${current.id}`;
+  const form = readEventForm(await c.req.parseBody(), current);
+  if (!form) return back(c, self, "event-incomplete");
+  const r = await saveEvent(db, current.id, { ...form.event, unset: form.unset }, c.var.user);
+  return r ? back(c, self, form.invalid ? "invalid" : "saved") : back(c, "/events", "gone");
 });
 
-app.post("/visits/:id/status", async (c) => {
-  const id = idParam(c.req.param("id"));
-  if (!id) return c.notFound();
-  const body = await c.req.parseBody();
-  const ret = localPath(str(body.return), "", `/visits/${id}`);
-  const status = pickVisitStatus(body.status);
-  if (!status) return back(c, ret, "pick-status");
-  const r = await setVisitStatus(c.var.db, id, status, c.var.user);
-  return r ? back(c, ret, "visit-status") : c.notFound();
-});
+// ---- the booking pages ----------------------------------------------------------
+// The booking skill's team side, in the CRM's frame: the week's Schedule, the
+// Services customers book (with online booking on) and the Team's hours, time
+// off and calendars. Every link to one booking opens its event page. The
+// Website's /book pages read the same tables.
 
-// ---- bookings ---------------------------------------------------------------
-// The team's side of the booking skill, in the CRM's own frame: every
-// booking, what can be booked and who takes it, each person's hours, time
-// off and calendars. The Website's /book pages read the same tables.
-
-/** Create job: the customer (matched, or added, as from the Inbox), then the job. */
-app.post("/bookings/:id/job", async (c) => {
-  if (!showBooking || !visitsCfg) return c.notFound();
-  const db = c.var.db;
-  const id = idParam(c.req.param("id"));
-  if (!id) return c.notFound();
-  const body = await c.req.parseBody();
-  let customerId = idParam(str(body.customer));
-  if (!customerId || !(await getCustomer(db, customerId))) {
-    const stage = await firstOpenStage(db, "customers");
-    if (!stage) return back(c, "/stages", "last-open");
-    const r = await addFromInbox(db, "booking", id, stage.key, c.var.user, cfg.fields);
-    if (!r) return c.notFound();
-    customerId = r.customer.id;
-  }
-  const v = await visitFromBooking(db, id, customerId, c.var.user);
-  return v ? back(c, `/visits/${v.id}`, "visit-added") : c.notFound();
-});
-
-/** The request's database, set by the middleware above, for the booking skill's routes. */
+/** The request's database, set by the middleware above, for the skills' routes. */
 const dbOf = (c: Context): Db => (c as unknown as C).var.db;
 
-/** The jobs in the Calendar's week (the one person's, when one is picked), as calendar items. */
-const jobsOnCalendar: BookingAdminOptions["more"] = async (c, range, person) =>
-  (await visitsBetween(dbOf(c), range.from, range.to, person)).map((j) => ({
-    starts_at: j.starts_at, ends_at: null, href: `/visits/${j.id}`, name: j.customer_name,
-    what: `${visitsCfg?.one ?? "Job"}: ${j.title}${j.owner ? ` with ${j.owner}` : ""}`,
-    badge: j.status === "done" ? <StatusBadge value="done" options={VISIT_OPTIONS} /> : undefined,
-  }));
-
-if (showBooking) {
-  app.route(
-    "/bookings",
-    bookingAdmin(dbOf, {
-      base: "/bookings",
-      css: "/crm.css",
-      source: "crm",
-      timeZone: cfg.time_zone,
-      manageBase: cfg.booking_page,
-      // The confirmation of a booking the team made, through the owner's sender (none: nothing is sent).
-      onBooked: (c, e) =>
-        afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain: new URL(cfg.booking_page ?? c.req.url).host })),
-      Frame: frameIn("schedule"),
-      nav: SCHEDULE_TABS,
-      navLabel: "Schedule",
-      // The jobs on the same week, among the bookings: one Schedule, as Jobber's.
-      more: visitsCfg ? jobsOnCalendar : undefined,
-      calendarActions: visitsCfg ? (
-        <>
-          <a href="/bookings/new" class={buttonClass}>New booking</a>
-          <a href="/visits/new" class={primaryClass}>New {visitsCfg.one.toLowerCase()}</a>
-        </>
-      ) : undefined,
-      // Beside a booking: whose it is here, and its job.
-      extra: async (c, b) => {
-        const db = dbOf(c);
-        const [customer, visit] = await Promise.all([findMatch(db, b.email, b.phone), db.sql<{ id: string }>`select id::text as id from customer_visits where booking_id = ${b.id}::bigint`]);
-        return (
-          <Section title={cfg.vocabulary.one}>
-            {customer ? <p class="mb-3"><a href={`/customers/${customer.id}`}>{customer.name}</a></p> : <p class="mb-3 text-ink-2">Not a {cfg.vocabulary.one.toLowerCase()} yet.</p>}
-            {visitsCfg ? (
-              visit[0] ? (
-                <p><a href={`/visits/${visit[0].id}`}>The {visitsCfg.one.toLowerCase()}</a></p>
-              ) : (
-                <JobFromBooking bookingId={b.id} customerId={customer?.id} />
-              )
-            ) : null}
-          </Section>
-        );
-      },
-    }),
-  );
-}
-
-// ---- forms ---------------------------------------------------------------------
-// The forms skill's pages in the CRM's frame: every form's submissions,
-// filtered by form ("orders" is the order form), each with the booking and
-// payment it led to, the ones nobody finished, and the form editor. The
-// Website takes the submissions; both read the same tables.
-
-app.route(
-  "/forms",
-  formsAdmin(dbOf, {
-    base: "/forms",
+if (eventsCfg) {
+  const one = eventsCfg.one;
+  const team = {
     css: "/crm.css",
     source: "crm",
     timeZone: cfg.time_zone,
-    nav: [
-      { href: "/forms", label: "Forms" },
-      { href: "/forms/submissions", label: "Submissions" },
-    ],
+    sections: { schedule: "/schedule", services: "/services", team: "/team" },
+    Frame: frameIn("schedule"),
+    nav: SCHEDULE_TABS,
+    currency: (invoicesCfg?.currency ?? eventsCfg.currency).toLowerCase(),
+  };
+  app.route(
+    "/schedule",
+    bookingAdmin(dbOf, {
+      ...team,
+      base: "/schedule",
+      manageBase: cfg.booking_page,
+      // A cancel tells an online booker, through the owner's sender (none: nothing is sent).
+      onBooked: (c, e) =>
+        afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain: new URL(cfg.booking_page ?? c.req.url).host })),
+      returnTo: (b) => ({ href: `/events/${b.id}`, label: one }),
+      afterStatus: (c, b) => touchFor(dbOf(c), b.id, (c as unknown as C).var.user),
+      scheduleActions: <a href="/events/new" class={primaryClass}>New {eventsCfg.one.toLowerCase()}</a>,
+    }),
+  );
+  app.route("/services", typeRoutes(dbOf, { ...team, base: "/services" }));
+  app.route("/team", peopleRoutes(dbOf, { ...team, base: "/team" }));
+}
+
+// ---- forms ---------------------------------------------------------------------
+// The forms skill's pages in the CRM's frame: the forms and their editor, and
+// every submission (the Inbox's own list, by form: "orders" is the order
+// form), each with the booking and payment it led to. The Website shows the
+// same submissions; both read the same tables.
+
+const FORM_TABS = [
+  { href: "/forms", label: "Forms" },
+  { href: "/forms/submissions", label: "Submissions" },
+];
+app.route(
+  "/forms/submissions",
+  formsAdmin(dbOf, {
+    base: "/forms/submissions",
+    css: "/crm.css",
+    timeZone: cfg.time_zone,
+    nav: FORM_TABS,
     links: {
-      ...(showBooking ? { booking: (id: string) => `/bookings/${id}` } : {}),
+      ...(eventsCfg ? { booking: (id: string) => `/schedule/${id}` } : {}),
       ...(invoicesCfg ? { payment: (id: string) => `/invoices/payments/${id}` } : {}),
     },
     Frame: frameIn("forms"),
   }),
+);
+app.route(
+  "/forms",
+  formEditor(dbOf, { base: "/forms", css: "/crm.css", timeZone: cfg.time_zone, source: "crm", submissions: "/forms/submissions", nav: FORM_TABS, Frame: frameIn("forms") }),
 );
 
 // ---- quotes and invoices ------------------------------------------------------
 // The invoices skill's pages in the CRM's frame. A quote leaves through the
 // owner's own sender, with a PDF where this runtime can print one (dev); an
 // invoice through the owner's Stripe account, which emails it.
-
-/** Create job: an accepted quote's customer (matched, or added), then its job. */
-app.post("/invoices/quotes/:id/job", async (c) => {
-  if (!invoicesCfg || !visitsCfg) return c.notFound();
-  const id = idParam(c.req.param("id"));
-  const qt = id ? await quoteById(c.var.db, id) : null;
-  if (!qt) return c.notFound();
-  if (qt.status !== "accepted") return back(c, `/invoices/quotes/${qt.id}`, "not-now");
-  const r = await jobFromQuote(c.var.db, qt, c.var.user);
-  if (!r) return back(c, "/stages", "last-open");
-  return back(c, `/visits/${r.visitId}`, "visit-added");
-});
 
 /** The Invoices section's tabs: the invoices skill's pages and the payments skill's, one set. */
 const INVOICE_TABS = [
@@ -792,27 +746,23 @@ if (invoicesCfg) {
       // A yes on the quote's page wins the deal it is for.
       afterDecide: async (c) => void (await winFromQuotes(dbOf(c), (c as unknown as C).var.user)),
       nav: INVOICE_TABS,
-      // In a quote's or an invoice's Details, as Stripe and Jobber: the customer's name opens their
-      // record, then the request it is for and its job (or Create job once the quote is accepted).
+      // In a quote's or an invoice's Details: the customer's name opens their record, then the
+      // request and the event it is for.
       links: async (c, linked) => {
         const db = dbOf(c);
         const doc = linked.kind === "quote" ? linked.quote : linked.invoice;
         const quote = linked.kind === "quote" ? linked.quote : null;
-        const [customer, deal, visit] = await Promise.all([
+        const [customer, deal, event] = await Promise.all([
           findMatch(db, doc.email, doc.phone),
           quote?.deal_id ? getDeal(db, quote.deal_id) : null,
-          visitsCfg && doc.visit_id ? getVisit(db, doc.visit_id) : null,
+          eventsCfg && doc.visit_id ? getEvent(db, doc.visit_id) : null,
         ]);
         const more: { label: string; value: Child }[] = [];
         if (deal) {
           const hint = quote && quote.status !== "accepted" ? <span class="block text-label text-ink-3">A yes wins the {dealsCfg.one.toLowerCase()}.</span> : null;
           more.push({ label: dealsCfg.one, value: <><a href={`/deals/${deal.id}`}>{deal.title}</a>{hint}</> });
         }
-        if (visitsCfg && visit) more.push({ label: visitsCfg.one, value: <a href={`/visits/${visit.id}`}>{visit.title}</a> });
-        else if (visitsCfg && quote?.status === "accepted") {
-          const adds = customer ? null : <span class="mt-1 block text-label text-ink-3">Not a {cfg.vocabulary.one.toLowerCase()} yet; this adds them.</span>;
-          more.push({ label: visitsCfg.one, value: <form method="post" action={`/invoices/quotes/${quote.id}/job`}><button class={buttonClass}>Create {visitsCfg.one.toLowerCase()}</button>{adds}</form> });
-        }
+        if (eventsCfg && event) more.push({ label: eventsCfg.one, value: <a href={`/events/${event.id}`}>{event.what}</a> });
         return { customer: customer ? `/customers/${customer.id}` : null, more };
       },
     }),
@@ -953,17 +903,16 @@ app.get("/deals/:id", async (c) => {
   const id = idParam(c.req.param("id"));
   const deal = id ? await getDeal(db, id) : null;
   if (!deal) return c.notFound();
-  const [stages, tasks, deals, f, quotes, jobs] = await Promise.all([
+  const [stages, tasks, deals, f, quotes] = await Promise.all([
     listStages(db, "deals"),
     customerTasks(db, deal.customer_id),
     customerDeals(db, deal.customer_id),
     facets(db),
     invoicesCfg ? quotesFor(db, { dealId: deal.id }) : null,
-    visitsCfg ? dealVisits(db, deal.id) : [],
   ]);
   return c.html(
     <DealPage user={c.var.user} deal={deal} stages={stages} tasks={tasks} openDeals={deals.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title }))}
-      quotes={quotes} jobs={jobs} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} flash={flashOf(c)} />,
+      quotes={quotes} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} flash={flashOf(c)} />,
   );
 });
 
@@ -1001,14 +950,6 @@ app.post("/deals/:id/archive", async (c) => {
   if (!id) return c.notFound();
   const archive = str((await c.req.parseBody()).archived) === "1";
   return (await setDealArchived(c.var.db, id, archive, c.var.user)) ? back(c, `/deals/${id}`, archive ? "deal-archived" : "deal-unarchived") : c.notFound();
-});
-
-// Create job: a won deal's planned job, once.
-app.post("/deals/:id/job", async (c) => {
-  if (!visitsCfg) return c.notFound();
-  const id = idParam(c.req.param("id"));
-  const r = id ? await visitFromDeal(c.var.db, id, c.var.user) : null;
-  return r ? back(c, `/visits/${r.visit.id}`, "visit-added") : c.notFound();
 });
 
 // ---- stages ---------------------------------------------------------------

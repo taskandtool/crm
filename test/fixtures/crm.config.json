@@ -33,9 +33,9 @@
     "bookings": true,
     "payments": true
   },
-  "visits": {
-    "one": "Visit",
-    "many": "Visits",
+  "events": {
+    "one": "Event",
+    "many": "Events",
     "fields": [],
     "currency": "USD"
   },

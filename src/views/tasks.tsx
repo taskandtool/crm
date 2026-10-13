@@ -10,6 +10,7 @@ import { dealsCfg, vocab } from "../config";
 import { addDays, TASK_KINDS, TASK_LABELS, UPCOMING_DAYS, type Task, type TaskView } from "../crm/tasks";
 import { Layout } from "./layout";
 import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, CustomerPicker, primaryClass, telHref, timeText, timeZone, ViewLink } from "./ui";
+import { ownerSuggestions, personName } from "../crm/people";
 
 export type TasksProps = {
   user: string;
@@ -126,7 +127,7 @@ export function TaskItem(p: {
           {!p.grouped ? <DueMark next={task} today={today} /> : overdue ? <span class="font-semibold text-late">{dueDayText(task.due_on, today)}</span> : task.due_time ? <span>{timeText(task.due_time)}</span> : null}
           {overdue && task.due_time ? <span>{timeText(task.due_time)}</span> : null}
           <span>{TASK_LABELS[task.kind]}</span>
-          {p.showOwner && task.owner ? <span>{task.owner}</span> : null}
+          {p.showOwner && task.owner ? <span>{personName(task.owner)}</span> : null}
         </p>
         {p.showCustomer || deal ? (
           <p class="mt-0.5 text-label text-ink-2">
@@ -211,9 +212,9 @@ function TaskFields(p: { deals: { id: string; title: string }[]; dealId?: string
         <input name="at" type="time" class={controlClass} />
       </Field>
       <Field label="Assigned to">
-        <input name="owner" list="task-owners" value={p.user} maxlength={200} class={controlClass} />
+        <input name="owner" list="task-owners" value={personName(p.user)} maxlength={200} class={controlClass} />
         <datalist id="task-owners">
-          {p.owners.map((o) => <option value={o} />)}
+          {ownerSuggestions(p.owners).map((o) => <option value={o} />)}
         </datalist>
       </Field>
       {p.deals.length ? (

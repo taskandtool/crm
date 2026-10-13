@@ -1,4 +1,5 @@
 // Small input helpers shared by the routes and the scripts.
+import { amountInput } from "../invoices/lines";
 import { decimals } from "../payments/money";
 
 /** Trimmed text up to `max` characters, or null when empty. */
@@ -34,21 +35,6 @@ export function slugify(label: string): string {
     .slice(0, 36)
     .replace(/-+$/, "");
   return s || "stage";
-}
-
-/**
- * "2026-10-02T14:30" or "2026-10-02 14:30[:00]": a wall time, or null. Only
- * a real calendar time: "2026-02-30 10:00" or "25:00" is null here, not an
- * error from Postgres.
- */
-export function wallTime(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const m = v.trim().match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
-  if (!m) return null;
-  const [y, mo, d, h, mi, sec = "00"] = m.slice(1);
-  const t = new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +sec));
-  const same = t.getUTCFullYear() === +y && t.getUTCMonth() === +mo - 1 && t.getUTCDate() === +d && t.getUTCHours() === +h && t.getUTCMinutes() === +mi && t.getUTCSeconds() === +sec;
-  return same ? `${y}-${mo}-${d} ${h}:${mi}:${sec}` : null;
 }
 
 const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -118,3 +104,21 @@ export function cash(cents: number | string, currency: string, locale = "en-US")
   }
 }
 
+/**
+ * "1,245.50" or "$90" as minor units of `currency`: null for an empty box,
+ * "invalid" for anything that is not a plain amount of zero or more (a
+ * comma is read as a thousands separator, never as a decimal point).
+ */
+export function parseAmount(v: unknown, currency: string): number | null | "invalid" {
+  const s = typeof v === "string" ? v.trim().replace(/^\p{Sc}\s*/u, "").replace(/[, ]/g, "") : typeof v === "number" ? String(v) : "";
+  if (!s) return null;
+  const d = decimals(currency);
+  const m = s.match(d ? new RegExp(`^(\\d{1,12})(?:\\.(\\d{1,${d}}))?$`) : /^(\d{1,12})$/);
+  if (!m) return "invalid";
+  return Number(m[1]) * 10 ** d + Number((m[2] ?? "").padEnd(d, "0") || 0);
+}
+
+/** Minor units as a plain amount for an input or a CSV cell: 124550 USD is "1245.50". */
+export function amountText(cents: string | number | null, currency: string): string {
+  return cents === null || cents === "" ? "" : amountInput(cents, currency);
+}

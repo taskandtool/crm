@@ -5,7 +5,9 @@
 // Each reminder is claimed by a row in booking_reminders before it is
 // sent, so two runs never send one twice and a failed send is not retried
 // into a flood. The rules:
-// - Only confirmed bookings still to come.
+// - Only confirmed bookings still to come, of a service, with someone taking
+//   it, for a booker with an email (an event the team scheduled without these
+//   is the team's own to keep).
 // - Not when the booking was made after the reminder's time: someone who
 //   books an hour ahead was just sent the confirmation.
 // - Only the nearest reminder that is due: a job that was down for a day
@@ -31,7 +33,7 @@ export async function sendReminders(db: Db, send: Send, opts: { now?: Date; befo
     const [claimed] = await db.transaction([
       q`insert into booking_reminders (booking_id, before_min, starts_at)
         select b.id, ${min}::int, b.starts_at from bookings b
-        where b.status = 'confirmed'
+        where b.status = 'confirmed' and b.email is not null and b.type_id is not null and b.resource_id is not null
           and b.starts_at > ${now}::timestamptz
           and b.starts_at - ${min}::int * interval '1 minute' <= ${now}::timestamptz
           and b.starts_at - ${shorter}::int * interval '1 minute' > ${now}::timestamptz
@@ -69,7 +71,7 @@ async function remind(db: Db, send: Send, bookingId: string) {
   const booking = toBooking(row.booking), type = toType(row.type), host = toResource(row.host);
   const { subject, text } = bookingMessage("reminder", { booking, type, host });
   try {
-    return await send({ to: booking.email, subject, text, replyTo: host.email });
+    return await send({ to: booking.email!, subject, text, replyTo: host.email });
   } catch (e) {
     return { status: "failed" as const, via: "send", error: e instanceof Error ? e.message : String(e) };
   }

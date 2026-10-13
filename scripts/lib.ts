@@ -4,7 +4,7 @@
 // service runs, skipped while crm_setup says it is current), so it works on a
 // fresh project too.
 import type pg from "pg";
-import { cfg, invoicesCfg, seeds, showBooking } from "../src/config";
+import { cfg, invoicesCfg, seeds } from "../src/config";
 import { fail, flag, flags, localTime, machineEnv, misused, parseArgs, type Args } from "../src/data/cli.mjs";
 import type { CustomField } from "../src/config-schema";
 import { readFields, type FieldRead } from "../src/crm/fields";
@@ -38,7 +38,7 @@ export async function withDb<T>(fn: (db: Db, pool: pg.Pool) => Promise<T>, opts:
   const db = fromPool(pool);
   try {
     try {
-      await setupOnce(db, seeds, { booking: showBooking, invoices: !!invoicesCfg }, opts.force);
+      await setupOnce(db, seeds, { invoices: !!invoicesCfg }, opts.force);
     } catch (e) {
       const err = e as Error & { code?: string };
       return fail(`${at}: ${unreachable(err) ? `cannot reach the database (${err.code})` : `the database could not be set up: ${err.message}`}`, "node scripts/migrate.mjs");

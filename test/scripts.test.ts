@@ -29,7 +29,7 @@ for (const script of scripts) {
 }
 
 const READ: Record<string, string[]> = {
-  "customers.mjs": ["list"], "visits.mjs": ["list"], "stages.mjs": ["list"], "inbox.mjs": ["list"], "forms.mjs": ["list"],
+  "customers.mjs": ["list"], "events.mjs": ["list"], "stages.mjs": ["list"], "inbox.mjs": ["list"], "forms.mjs": ["list"],
   "quotes.mjs": ["list"], "invoices.mjs": ["list"], "import.mjs": ["file.csv"], "export.mjs": [], "migrate.mjs": [],
   "deals.mjs": ["list"], "tasks.mjs": ["list"],
 };
@@ -93,10 +93,6 @@ test("deals.mjs, tasks.mjs and customers merge, end to end", { skip: !process.en
     r = sh("customers.mjs", "show", "ann@example.com");
     assert.match(r.stdout, /\[Customer\]/, "a won deal made her a customer");
     assert.match(r.stdout, /  deals:\n {4}#\d+ New furnace \[Won\] \$6,500\.00/);
-    r = sh("deals.mjs", "job", deal);
-    assert.match(r.stdout, /^deals job: visit #\d+ New furnace for Ann Lee\n/);
-    r = sh("deals.mjs", "job", deal);
-    assert.match(r.stdout, /^deals job: already made: visit #\d+/);
 
     r = sh("tasks.mjs", "add", "ann@example.com", "Call about the install", "--on", "2099-03-04", "--at", "9:30", "--deal", deal);
     assert.equal(r.status, 0, r.stderr);
@@ -232,27 +228,38 @@ test("invoices.mjs bill and migrate.mjs, against a scratch database", { skip: !p
   const env = { ...process.env, DATABASE_URL: url.toString(), PHOENIX_URL: "", MACHINE_TOKEN: "", STRIPE_API_KEY: "" };
   const sh = (script: string, ...args: string[]) => spawnSync("node", [`scripts/${script}`, ...args], { encoding: "utf8", env, timeout: 60_000 });
   const db = new pg.Client({ connectionString: url.toString() });
-  const visit = (email: string, title: string, amount?: string) => {
-    const r = sh("visits.mjs", "add", email, title, "--at", "2026-10-01 09:30", "--json");
+  const event = (email: string, title: string, amount?: string) => {
+    const r = sh("events.mjs", "add", email, title, "--at", "2026-10-01 09:30", "--json");
     assert.equal(r.status, 0, r.stderr);
     const id = JSON.parse(r.stdout).id;
-    if (amount) assert.equal(sh("visits.mjs", "update", id, "--amount", amount).status, 0);
-    assert.equal(sh("visits.mjs", "done", id).status, 0);
+    if (amount) assert.equal(sh("events.mjs", "update", id, "--amount", amount).status, 0);
+    const done = sh("events.mjs", "done", id);
+    assert.equal(done.status, 0, done.stderr);
     return id;
   };
   try {
     assert.equal(sh("customers.mjs", "add", "Ann Lee", "--email", "ann@example.com").status, 0);
     await db.connect();
+    // events.mjs: the Team by name, nothing marked before it starts, a cancel once.
+    let e = sh("events.mjs", "add", "ann@example.com", "Site visit", "--at", "2099-05-01 10:00", "--host", "Nobody");
+    assert.equal(e.status, 1);
+    assert.match(e.stderr, /nobody on the Team is Nobody/);
+    const later = JSON.parse(sh("events.mjs", "add", "ann@example.com", "Site visit", "--at", "2099-05-01 10:00", "--json").stdout).id;
+    e = sh("events.mjs", "done", later);
+    assert.equal(e.status, 1);
+    assert.match(e.stderr, /has not started yet/);
+    assert.match(sh("events.mjs", "cancel", later).stdout, /^events cancel: event #\d+ confirmed -> cancelled/);
+    assert.match(sh("events.mjs", "cancel", later).stdout, /already cancelled; left alone/);
     let r = sh("invoices.mjs", "bill", "ann@example.com");
     assert.equal(r.status, 1, "nothing finished to bill");
-    assert.match(r.stderr, /no finished visit with an amount/);
+    assert.match(r.stderr, /no finished event with an amount/);
 
-    visit("ann@example.com", "Free check", "0");
-    const job = visit("ann@example.com", "Boiler service", "245.00");
+    event("ann@example.com", "Free check", "0");
+    const job = event("ann@example.com", "Boiler service", "245.00");
     r = sh("invoices.mjs", "bill", "ann@example.com");
-    assert.equal(r.status, 0, r.stderr + " (a $0 visit is not a second candidate)");
+    assert.equal(r.status, 0, r.stderr + " (a $0 event is not a second candidate)");
     assert.match(r.stdout, /^invoices bill: drafted invoice #\d+ to Ann Lee <ann@example\.com>: Boiler service, \$245\.00/);
-    assert.match(r.stdout, new RegExp(`If the owner asked for it: node scripts/invoices\\.mjs bill ann@example\\.com --job ${job} --confirm$`, "m"));
+    assert.match(r.stdout, new RegExp(`If the owner asked for it: node scripts/invoices\\.mjs bill ann@example\\.com --event ${job} --confirm$`, "m"));
     r = sh("invoices.mjs", "bill", "ann@example.com");
     assert.match(r.stdout, /^invoices bill: took the draft invoice #\d+/, "a second call takes the same draft");
     assert.equal(JSON.parse(sh("invoices.mjs", "list", "--customer", "ann@example.com", "--json").stdout).length, 1);
@@ -262,14 +269,14 @@ test("invoices.mjs bill and migrate.mjs, against a scratch database", { skip: !p
     assert.match(r.stderr, /Try: python3 ~\/tools\/taskandtool\.py request-connection stripe/);
     assert.doesNotMatch(r.stderr, /\n\s+at /, "no stack trace");
 
-    visit("ann@example.com", "Radiator bleed", "80.00");
+    event("ann@example.com", "Radiator bleed", "80.00");
     r = sh("invoices.mjs", "bill", "ann@example.com");
     assert.equal(r.status, 2, "two to choose from is a misuse");
     assert.match(r.stderr, /ask the owner which/);
-    assert.match(r.stderr, /Try: node scripts\/invoices\.mjs bill ann@example\.com --job <id>$/m, "names no job the owner did not choose");
+    assert.match(r.stderr, /Try: node scripts\/invoices\.mjs bill ann@example\.com --event <id>$/m, "names no job the owner did not choose");
     assert.doesNotMatch(r.stderr, /--confirm/, "a hint never sends");
 
-    // As if the Boiler service invoice had just gone through Stripe: a retry without --job bills nothing else.
+    // As if the Boiler service invoice had just gone through Stripe: a retry without --event bills nothing else.
     await db.query(`update invoices set status = 'open', sent_at = now(), stripe_invoice_id = 'in_test' where visit_id = $1`, [job]);
     r = sh("invoices.mjs", "bill", "ann@example.com", "--confirm");
     assert.equal(r.status, 0, r.stderr);

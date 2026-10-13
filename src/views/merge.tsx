@@ -2,7 +2,7 @@
 // see what will move, then merge. The record on this page is the one kept.
 import { Flash } from "../admin/flash";
 import { listUrl } from "../admin/query";
-import { dealsCfg, visitsCfg, vocab } from "../config";
+import { dealsCfg, eventsCfg, vocab } from "../config";
 import type { Customer } from "../crm/customers";
 import type { MergePreview } from "../crm/merge";
 import { Layout } from "./layout";
@@ -40,9 +40,9 @@ export function MergePage(p: {
           </h2>
           <p class="mb-3 text-ink-2">{who(p.preview.other) || "No email or phone"}</p>
           <ul class="mb-3 flex list-disc flex-col gap-1 pl-5">
-            <li>{p.preview.moves.notes} notes, {p.preview.moves.deals} {dealsCfg.many.toLowerCase()}, {p.preview.moves.tasks} tasks{visitsCfg ? `, ${p.preview.moves.visits} ${visitsCfg.many.toLowerCase()}` : ""} move here.</li>
+            <li>{p.preview.moves.notes} notes, {p.preview.moves.deals} {dealsCfg.many.toLowerCase()}, {p.preview.moves.tasks} tasks{eventsCfg ? `, ${p.preview.moves.events} ${eventsCfg.many.toLowerCase()}` : ""} move here.</li>
             {p.preview.fills.length ? <li>{p.keep.name} gains: {p.preview.fills.join(", ")}.</li> : null}
-            <li>What they sent, booked, paid and were quoted under either address shows here.</li>
+            <li>What they sent, paid and were quoted under either address shows here.</li>
             <li>{p.preview.other.name}'s record is archived and opens this one. A merge is not undone.</li>
           </ul>
           <form method="post" action={self} class="flex flex-wrap gap-2">

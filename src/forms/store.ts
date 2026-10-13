@@ -27,7 +27,7 @@ export function toForm(row: Record<string, any>): Form {
 
 /**
  * Create a form if no row has its key yet. Never overwrites: once the row
- * exists it is the owner's, edited in /admin/forms. Run from setup.
+ * exists it is the owner's, changed through the forms command. Run from setup.
  */
 export async function seedForm(db: Db, form: { key: string; title: string; fields: Field[] } & Partial<Form>, source: string): Promise<void> {
   await db.sql`
@@ -184,6 +184,13 @@ export async function submissionById(db: Db, id: string) {
     ? { id: row.id as string, name: row.name ?? null, email: row.email ?? null, phone: row.phone ?? null, data: (row.data ?? {}) as Record<string, unknown>, page: (row.page ?? null) as string | null }
     : null;
 }
+
+/**
+ * The submissions a booking page makes (the Website's business.tsx): no form
+ * row, so the name is here. The CRM shows the booking itself, so it leaves
+ * these out of its Inbox and timeline.
+ */
+export const BOOKING_PAGE = { key: "book", title: "Booking" };
 
 /** The contact form the Website starts with; the key the old `leads` rows move to. */
 export const CONTACT_FORM: { key: string; title: string; fields: Field[]; submit_label: string } = {

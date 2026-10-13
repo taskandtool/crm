@@ -16,7 +16,7 @@ import { StripeError, type Stripe } from "../stripe";
 import { createTaxRate } from "../tax";
 import { stripeWebhook } from "../webhook";
 
-const schemas = ["../schema.sql", "../../forms/schema.sql"].map((p) => readFileSync(new URL(p, import.meta.url), "utf8"));
+const schemas = ["../schema.sql", "../../forms/schema.sql", "../../customers/schema.sql"].map((p) => readFileSync(new URL(p, import.meta.url), "utf8"));
 const SECRET = "whsec_form_step";
 const HOST = "https://bakery.example";
 
@@ -64,7 +64,7 @@ function site(s: Scratch, stripe: Stripe) {
   app.route("/", formRoutes(() => s.db, { source: "website", page, steps: { payment: paymentStep(() => s.db, () => stripe, { source: "website" }) } }));
   app.route("/", stripeWebhook(() => s.db, { secret: () => SECRET }));
   app.get("/order", async (c) => c.html(String(await embedForm(c, s.db, "order"))));
-  app.route("/admin/forms", formsAdmin(() => s.db, { base: "/admin/forms", css: "/x.css", timeZone: "UTC", source: "website", links: { payment: (id) => `/admin/payments/${id}` } }));
+  app.route("/admin/submissions", formsAdmin(() => s.db, { base: "/admin/submissions", css: "/x.css", timeZone: "UTC", links: { payment: (id) => `/admin/payments/${id}` } }));
   return app;
 }
 const send = (app: Hono, path: string, fields: Record<string, string>) =>
@@ -152,12 +152,12 @@ test("an order: two kinds of cookies and delivery, taxed, paid through Checkout 
 
     // The team sees the order with its payment, on the list and its page.
     const team = { headers: { "x-tasktool-user": "owner@example.com", host: "bakery.example" } };
-    html = await (await app.request(HOST + "/admin/forms/submissions?form=order", team)).text();
+    html = await (await app.request(HOST + "/admin/submissions?form=order", team)).text();
     assert.match(html, /Paid \$136\.40 \(test\)/);
-    html = await (await app.request(HOST + `/admin/forms/submissions/${sub.id}`, team)).text();
+    html = await (await app.request(HOST + `/admin/submissions/${sub.id}`, team)).text();
     assert.match(html, /2 x Chocolate chip, a dozen/);
     assert.match(html, /\$126\.00/);
-    assert.match(html, new RegExp(`href="/admin/payments/${pay.id}"`));
+    assert.match(html, new RegExp(`href="/admin/payments/${pay.id}/refund"`), "a paid order offers its refund");
   }));
 
 test("a form with nothing to pay carries on without Stripe", (t) =>

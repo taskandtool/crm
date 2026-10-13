@@ -3,26 +3,25 @@
 // crm.js on every page, and SortableJS only where something drags.
 import type { Child } from "hono/jsx";
 import { SectionTabs } from "../admin/layout";
-import { dealsCfg, invoicesCfg, showBooking, visitsCfg, vocab } from "../config";
+import { dealsCfg, eventsCfg, invoicesCfg, showBooking, vocab } from "../config";
 
-export type Section = "inbox" | "tasks" | "deals" | "customers" | "schedule" | "forms" | "invoices" | "stages";
+export type Section = "inbox" | "tasks" | "deals" | "customers" | "schedule" | "forms" | "invoices";
 
 /**
  * Schedule, as Jobber's and Housecall Pro's: one place for the team's days.
  * The Calendar (bookings and jobs together) first, then each list, then what
  * can be booked and who takes it. Only the parts this CRM has.
  */
-export const SCHEDULE_TABS = [
-  ...(showBooking ? [{ href: "/bookings/calendar", label: "Calendar" }] : []),
-  ...(visitsCfg ? [{ href: "/visits", label: visitsCfg.many }] : []),
-  ...(showBooking ? [
-    { href: "/bookings", label: "Bookings" },
-    { href: "/bookings/types", label: "Services" },
-    { href: "/bookings/people", label: "Team" },
-  ] : []),
-];
+export const SCHEDULE_TABS = eventsCfg
+  ? [
+      { href: "/schedule", label: "Calendar" },
+      { href: "/events", label: eventsCfg.many },
+      ...(showBooking ? [{ href: "/services", label: "Services" }] : []),
+      { href: "/team", label: "Team" },
+    ]
+  : [];
 
-/** The Schedule's tabs on a page of its own (the jobs list); the booking pages draw theirs. */
+/** The Schedule's tabs on a page of its own (the events list); the booking pages draw theirs. */
 export function ScheduleTabs({ current }: { current: string }) {
   return SCHEDULE_TABS.length > 1 ? <SectionTabs label="Schedule" links={SCHEDULE_TABS} current={current} /> : null;
 }
@@ -43,8 +42,8 @@ export function Layout(props: {
 }) {
   const { title, user, section, drag, wide, back, sub, actions, children } = props;
   // The daily work, in the order it happens (as Jobber's menu runs: clients,
-  // requests, the schedule, invoices); Forms and Stages are set up once and
-  // sit to the right, quieter.
+  // requests, the schedule, invoices); Forms sit to the right, quieter. The
+  // stages are edited from the board they shape, as Pipedrive's Edit pipeline.
   const nav: { href: string; label: string; section: Section }[] = [
     { href: "/", label: "Inbox", section: "inbox" },
     { href: "/tasks", label: "Tasks", section: "tasks" },
@@ -55,7 +54,6 @@ export function Layout(props: {
   ];
   const setup: { href: string; label: string; section: Section }[] = [
     { href: "/forms", label: "Forms", section: "forms" },
-    { href: "/stages", label: "Stages", section: "stages" },
   ];
   const link = (n: { href: string; label: string; section: Section }, quiet = false) => (
     <a

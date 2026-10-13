@@ -1,13 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hono } from "hono";
-import { BulkForm } from "../bulk";
 import { Activity, FieldList, JsonData } from "../detail";
 import { Flash, withFlash } from "../flash";
 import { AdminLayout } from "../layout";
 import { DataTable, SearchBar, TableRows, When, type TableSpec } from "../list";
 import { formIds, likePattern, listUrl, localPath } from "../query";
-import { pickStatus, StatusBadge, StatusForm, type StatusOption } from "../status";
+import { pickStatus, StatusBadge, type StatusOption } from "../status";
 
 const HOSTILE = `<script>alert(1)</script>`;
 
@@ -72,26 +71,14 @@ test("the private nav marks the current page", async () => {
 
 const STATUSES: StatusOption[] = [{ value: "new", label: "New", tone: "accent" }, { value: "done", label: "Done" }];
 
-test("a status form posts with its return path, and an inline one swaps its row", async () => {
-  const plain = await render(StatusForm({ action: "/admin/1/status", current: "done", options: STATUSES, returnTo: "/admin/1", label: "Status" }));
-  assert.match(plain, /<form method="post" action="\/admin\/1\/status"/);
-  assert.ok(plain.includes('name="return" value="/admin/1"'));
-  assert.match(plain, /<option value="done" selected="">/);
-  assert.ok(!plain.includes("hx-post") && !plain.includes("noscript"));
-  const inline = await render(StatusForm({ action: "/admin/1/status", current: "new", options: STATUSES, returnTo: "/admin", label: "Status of Ann", swap: "closest tr" }));
-  assert.ok(inline.includes('hx-post="/admin/1/status"') && inline.includes('hx-target="closest tr"'));
-  assert.ok(inline.includes("<noscript><button"));
-  assert.ok(inline.includes('aria-label="Status of Ann"'));
+test("a status is one of its options, and its badge uses only the theme's tokens", async () => {
   assert.equal(pickStatus("done", STATUSES), "done");
   assert.equal(pickStatus("deleted", STATUSES), null);
   const badge = await render(StatusBadge({ value: "new", options: STATUSES }));
   assert.ok(badge.includes("text-accent") && !/#[0-9a-f]{3,6}\b/i.test(badge));
 });
 
-test("the bulk form carries its id and return path", async () => {
-  const html = await render(BulkForm({ id: "bulk", action: "/admin/bulk", returnTo: "/admin?status=new" }));
-  assert.match(html, /<form id="bulk" method="post" action="\/admin\/bulk"/);
-  assert.ok(html.includes('name="return" value="/admin?status=new"'));
+test("a bulk post's ids are digits, once each", async () => {
   assert.deepEqual(formIds(["3", "3", "x", "4; drop", "5"]), ["3", "5"]);
   assert.deepEqual(formIds("9"), ["9"]);
   assert.deepEqual(formIds(undefined), []);

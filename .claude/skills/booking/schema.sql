@@ -190,3 +190,17 @@ comment on column bookings.hold_until is 'Held for the rest of its form until th
 -- (confirm.ts), once, by whichever app gets there first with a sender.
 alter table bookings add column if not exists confirmation_sent_at timestamptz;
 comment on column bookings.confirmation_sent_at is 'When the confirmation of a booking made in a form was sent, on the form completing. Null for a booking made any other way: its page confirms it at once.';
+
+-- One appointment record for every app: a booking made on the booking page,
+-- and one the team puts on the schedule themselves (the CRM's events), which
+-- may have no service, nobody assigned yet, or a customer with no email.
+-- title names one with no service; notes are the team's, beside the booker's
+-- answers.
+alter table bookings alter column type_id drop not null;
+alter table bookings alter column resource_id drop not null;
+alter table bookings alter column email drop not null;
+alter table bookings add column if not exists title text;
+alter table bookings add column if not exists notes text;
+comment on column bookings.type_id is 'The service booked; null for one the team scheduled without one (title names it).';
+comment on column bookings.title is 'What it is, when the service does not say (or there is none).';
+comment on column bookings.notes is 'The team''s notes. The booker''s own words are in answers.';

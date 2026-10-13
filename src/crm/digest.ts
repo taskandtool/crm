@@ -6,8 +6,9 @@
 //
 // Each person's email is claimed in follow_up_digests (email, day) before it
 // is sent, so a job run every hour sends it once a day, and a failed send is
-// recorded, not retried into a flood. Only owners written as an email
-// address get one; a task whose owner is a name has nobody to mail.
+// recorded, not retried into a flood. An owner written as an email gets one,
+// and so does a team member written by name (their email from the team list);
+// any other name has nobody to mail.
 import { q, type Db } from "../data/db";
 import type { Send } from "../booking/notify";
 import { todayIn } from "../reports/sql";
@@ -27,13 +28,18 @@ export async function sendDigests(db: Db, send: Send, opts: { timeZone: string; 
   const run: DigestRun = { sent: 0, none: 0, failed: 0, errors: [], early: false };
   if (Number(nowIn(opts.timeZone, now).slice(11, 13)) < (opts.hour ?? DEFAULT_HOUR)) return { ...run, early: true };
   const today = todayIn(opts.timeZone, now);
-  const due = await db.sql<Due>`
+  // A task written to a team member by name goes to the email the team list has for them.
+  const emailOf = new Map(
+    (await db.sql<{ name: string; email: string }>`select name, email::text as email from resources where email is not null order by active, id`).map((r) => [r.name.toLowerCase(), r.email]),
+  );
+  const due = (await db.sql<Due>`
     select f.owner::text as owner, f.kind, f.title, to_char(f.due_on, 'YYYY-MM-DD') as due_on, to_char(f.due_time, 'HH24:MI') as due_time,
            c.name as customer_name, c.phone as customer_phone
     from follow_ups f join customers c on c.id = f.customer_id
-    where f.done_at is null and c.archived_at is null and f.due_on <= ${today}::date
-      and f.owner::text ~ '^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$'
-    order by f.owner, f.due_on, f.due_time nulls last, f.id`;
+    where f.done_at is null and c.archived_at is null and f.due_on <= ${today}::date and f.owner is not null
+    order by f.due_on, f.due_time nulls last, f.id`)
+    .map((d) => ({ ...d, owner: emailOf.get(d.owner.toLowerCase()) ?? d.owner }))
+    .filter((d) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.owner));
   if (!due.length) return run;
   const leads = (await present(db)).submissions
     ? (await db.sql<{ n: number }>`select count(*)::int as n from submissions where status is distinct from 'spam' and created_at >= ${now.toISOString()}::timestamptz - interval '1 day'`)[0].n

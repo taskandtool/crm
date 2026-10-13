@@ -296,7 +296,7 @@ test("the pages: a GET asks, the POST sends; Mark paid waits for Stripe; from a 
     assert.match(first, /\/invoices\/\d+\?saved=invoice-created$/);
     res = await post(`/invoices/quotes/${qid}/invoice`);
     assert.equal(res.headers.get("location"), first.replace("invoice-created", "invoiced"));
-    assert.match(await (await get(`/invoices/quotes/${qid}`)).text(), /The draft invoice<\/a>, draft/);
+    assert.match(await (await get(`/invoices/quotes/${qid}`)).text(), /Draft invoice<\/a><\/p>/);
   }));
 
 test("a proposal's Pay button: the invoice made in Stripe without its email, the link in the quote, paying it accepts the quote", (t) =>

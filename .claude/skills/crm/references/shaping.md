@@ -12,7 +12,7 @@ Website's forms (`select key, title from forms`). Ask only what you cannot
 infer. Then:
 
 1. Write the config: words, statuses, deals (their name, stages and lost
-   reasons), sources, fields, owner label, time zone, inbox, visits (their
+   reasons), sources, fields, owner label, time zone, inbox, events (their
    name and fields, or `false`), the business line.
 2. The defaults are already rows, so make the live statuses and deal
    stages match with `scripts/stages.mjs` (`--statuses` for a customer's;
@@ -28,8 +28,8 @@ piece of work is (Estimate sent). A trade's per-job steps are deal stages,
 so a returning customer gets a new deal rather than going backwards.
 
 A location or an insurer is a custom field; the truck that went or a
-party size is a visit field; a technician, dentist or hygienist is the
-owner. Name, email, phone,
+party size is an event field; a technician, dentist or hygienist is on the
+Team, and takes events. Name, email, phone,
 company, address, source, tags and owner are built in and always show;
 the config cannot hide them (hiding one is a small edit in
 `src/views/`, done only when asked). A practice that keeps clinical or

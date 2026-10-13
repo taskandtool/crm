@@ -30,11 +30,11 @@ test("every example is valid, shaped, and the five businesses are there", () => 
   const plumbing = JSON.parse(readFileSync("examples/plumbing-multi-location.json", "utf8"));
   // A customer's location is theirs; which truck went is the job's.
   assert.equal(plumbing.fields[0].key, "location");
-  assert.deepEqual(plumbing.visits.fields.map((f: { key: string }) => f.key).slice(0, 2), ["truck", "location"]);
+  assert.deepEqual(plumbing.events.fields.map((f: { key: string }) => f.key).slice(0, 2), ["truck", "location"]);
   const counselor = JSON.parse(readFileSync("examples/counselor.json", "utf8"));
   assert.deepEqual(counselor.statuses.map((s: { label: string }) => s.label), ["New", "Contacted", "Current client", "Closed"]);
   assert.equal(counselor.deals.many, "Enquiries", "every CRM has a deal pipeline, named for the business");
-  assert.equal(counselor.visits, false, "sessions are noted elsewhere");
+  assert.equal(counselor.events, false, "sessions are noted elsewhere");
   // A trade's pipeline is per job, so a returning customer gets a new one; their status says who they are.
   const hvac = JSON.parse(readFileSync("examples/hvac.json", "utf8"));
   assert.deepEqual(hvac.deals.stages.map((s: { label: string }) => s.label), ["New request", "Visit booked", "Estimate sent", "Job won", "Went elsewhere"]);
@@ -94,25 +94,27 @@ test("custom fields: known types, select options, no built-in or repeated keys",
   assert.ok(p.some((x) => x.includes("lower case")));
 });
 
-test("visits: off, or words, their own fields and a currency", () => {
+test("events: off (with online booking off too), or words, their own fields and a currency", () => {
   const off = good();
-  off.visits = false;
+  off.events = false;
+  assert.ok(validate(off).some((x) => x.includes("booking needs events")), "online booking is events");
+  off.booking = false;
   assert.deepEqual(validate(off), []);
-  delete off.visits;
+  delete off.events;
   assert.deepEqual(validate(off), []);
   const c = good();
-  c.visits = { one: "", many: "Jobs", fields: [{ key: "status", label: "Truck", type: "text" }, { key: "truck", label: "What", type: "text" }], currency: "usd" };
+  c.events = { one: "", many: "Jobs", fields: [{ key: "status", label: "Truck", type: "text" }, { key: "truck", label: "What", type: "text" }], currency: "usd" };
   const p = validate(c);
-  assert.ok(p.some((x) => x.includes("visits needs one and many")));
-  assert.ok(p.some((x) => x.includes("visits.fields[0].key status is a built-in")));
-  assert.ok(p.some((x) => x.includes("visits.fields[1].label What is a built-in")));
-  assert.ok(p.some((x) => x.includes("visits.currency")));
+  assert.ok(p.some((x) => x.includes("events needs one and many")));
+  assert.ok(p.some((x) => x.includes("events.fields[0].key status is a built-in")));
+  assert.ok(p.some((x) => x.includes("events.fields[1].label What is a built-in")));
+  assert.ok(p.some((x) => x.includes("events.currency")));
   const e = good();
   e.owner_label = "Technician";
-  e.visits = { one: "Job", many: "Jobs", fields: [{ key: "tech", label: "Technician", type: "text" }, { key: "fee", label: "Amount (USD)", type: "number" }] };
+  e.events = { one: "Job", many: "Jobs", fields: [{ key: "tech", label: "Technician", type: "text" }, { key: "fee", label: "Amount (USD)", type: "number" }] };
   const pe = validate(e);
-  assert.ok(pe.some((x) => x.includes("visits.fields[0].label Technician is a built-in")), "the owner's label heads a CSV column");
-  assert.ok(pe.some((x) => x.includes("visits.fields[1].label Amount (USD) reads as a built-in")));
+  assert.ok(pe.some((x) => x.includes("events.fields[0].label Technician is a built-in")), "the owner's label heads a CSV column");
+  assert.ok(pe.some((x) => x.includes("events.fields[1].label Amount (USD) reads as a built-in")));
   const b = good();
   b.booking = "yes";
   b.booking_page = "acme.com/book";
@@ -122,8 +124,8 @@ test("visits: off, or words, their own fields and a currency", () => {
   ok.booking_page = "https://acme.com/book";
   assert.deepEqual(validate(ok), []);
   const d = good();
-  d.visits = "yes";
-  assert.ok(validate(d).some((x) => x.includes("visits must be false or an object")));
+  d.events = "yes";
+  assert.ok(validate(d).some((x) => x.includes("events must be false or an object")));
 });
 
 test("time zone and inbox rules are checked", () => {

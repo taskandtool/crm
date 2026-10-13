@@ -9,7 +9,7 @@ Money goes through the owner's own Stripe account, by their connection.
 Every payment is a row in `payments` naming what it pays for (`ref_type`,
 `ref_id`), so every app reads the same rows.
 
-Version: 0.3.0 (taskandtool/skills)
+Version: 0.4.0 (taskandtool/skills)
 
 ## The rules
 
@@ -85,7 +85,7 @@ permissions) and registering the webhook (its URL and events):
 | `webhook.ts` | `stripeWebhook(getDb, { secret?, path?, more?, afterPaid? })`, `planEvent`, `applyEvent` |
 | `tax.ts` | tax rates (never changed once made), `stripeTaxRate` (made in Stripe once per mode) |
 | `money.ts` | minor units per currency, typed amounts, formatting |
-| `admin.tsx` | `paymentsAdmin(getDb, { base, css, timeZone, Frame?, … })`: the list, a payment, CSV, a refund a team member confirms |
+| `admin.tsx` | `paymentsAdmin(getDb, { base, css, timeZone, Frame?, returnTo?, … })`: the list, a payment, CSV, a refund a team member confirms (back to `returnTo`, where the app shows the payment) |
 | `test/` | signatures, encoding, the webhook out of order, checkout, the payment step, admin, the deposit recipe |
 | `references/setup.md` | when connecting Stripe or registering the webhook |
 | `references/recipes.md` | a deposit on a booking page, payment status in SQL, a refund asked for in chat, adding an event |

@@ -35,7 +35,7 @@ export type BookingEvent = BookingNotice & { manageUrl: string };
 
 /** What a type's page says about where, before anyone books. */
 const typeWhere = (t: BookingType) =>
-  ({ their_place: "At your address", our_place: t.location ? `At ${t.location}` : "At our place", phone: "By phone: we call you", video: "Video call: the link comes with your confirmation" })[
+  ({ their_place: "At your address", our_place: t.location ? `At ${t.location}` : "At our place", phone: "By phone: we call you", video: t.location ? "Video call: the link comes with your confirmation" : "Video call: we send you the link" })[
     t.location_kind
   ];
 
@@ -66,7 +66,7 @@ const control =
 const button =
   "rounded-control bg-accent px-4 py-2 font-semibold text-accent-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 const chipBase =
-  "inline-block rounded-control border px-3 py-2 text-center no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+  "inline-block whitespace-nowrap rounded-control border px-3 py-2 text-center no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 /** A choice: a time, a day, a host. */
 export const chip = chipBase + " border-line-strong bg-surface text-ink hover:bg-panel";
 
@@ -238,7 +238,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     const zone = viewerZone(c, b.booker_time_zone && isValidZone(b.booker_time_zone) ? b.booker_time_zone : host.time_zone);
     const self = `${base}/manage/${token}`;
     const open = b.status === "confirmed" && b.starts_at > new Date();
-    const days = open ? await upcoming(getDb(c), type, zone, maxDays, { hosts: [b.resource_id], exceptBooking: b.id }) : new Map<string, OpenSlot[]>();
+    const days = open ? await upcoming(getDb(c), type, zone, maxDays, { hosts: [host.id], exceptBooking: b.id }) : new Map<string, OpenSlot[]>();
     const keys = [...days.keys()];
     const chosen = keys.includes(c.req.query("date") ?? "") ? c.req.query("date")! : keys[0];
     const heading = c.req.query("new") === "1" ? "You are booked" : b.status === "cancelled" ? "This booking is cancelled" : `${type.name} with ${host.name}`;
@@ -266,7 +266,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
               <>
                 <div class="mb-6">
                   <DayAndTimes days={keys} chosen={chosen} href={(d) => listUrl(self, { date: d, tz: c.req.query("tz") })}>
-                    <ul class="grid grid-cols-2 gap-2 lg:grid-cols-3">
+                    <ul class="grid grid-cols-2 gap-2">
                       {(days.get(chosen) ?? []).map((s) => (
                         <li>
                           <form method="post" action={`${self}/reschedule`}>
@@ -403,7 +403,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
         {keys.length ? (
           <>
             <DayAndTimes days={keys} chosen={chosen} href={(d) => listUrl(self, { date: d, tz: tzq, host: host?.id })}>
-              <ul class="grid grid-cols-2 gap-2 lg:grid-cols-3">
+              <ul class="grid grid-cols-2 gap-2">
                 {(days.get(chosen) ?? []).map((s) => (
                   <li>
                     <a class={chip + " w-full"} href={listUrl(`${self}/confirm`, { start: s.start.toISOString(), tz: zone, host: host?.id })}>

@@ -3,7 +3,7 @@
 // the address they came in with), so the record kept takes the other's email
 // as one it also goes by (customers.other_emails), and everything those
 // tables hold under it is still theirs. The record kept also takes the
-// other's notes, jobs, deals and tasks, fills its blanks from the
+// other's notes, events, deals and tasks, fills its blanks from the
 // other's details (its own values win), and gains its tags. The other is
 // archived with merged_into set and its email and phone cleared, so nothing
 // matches it again; a note on the kept record says what was merged. One
@@ -14,7 +14,7 @@ import { getCustomer, type Customer } from "./customers";
 export type MergePreview = {
   keep: Customer;
   other: Customer;
-  moves: { notes: number; visits: number; deals: number; tasks: number };
+  moves: { notes: number; events: number; deals: number; tasks: number };
   /** The details the kept record gains, by name ("phone", "company"...). */
   fills: string[];
 };
@@ -28,16 +28,18 @@ export async function mergePreview(db: Db, keepId: string, otherId: string): Pro
   if (!ID.test(keepId) || !ID.test(otherId)) return null;
   const [keep, other] = await Promise.all([getCustomer(db, keepId), getCustomer(db, otherId)]);
   if (!keep || !other) return null;
-  const [n] = await db.sql<{ notes: number; visits: number; deals: number; follow_ups: number }>`
+  // Their events: the ones that name them, and the online bookings under their email (those follow the email, which the kept record takes).
+  const [n] = await db.sql<{ notes: number; events: number; deals: number; follow_ups: number }>`
     select (select count(*) from customer_notes where customer_id = ${otherId}::bigint)::int as notes,
-           (select count(*) from customer_visits where customer_id = ${otherId}::bigint)::int as visits,
+           (select count(*) from bookings b, customers o where o.id = ${otherId}::bigint
+              and (b.customer_id = o.id or (b.customer_id is null and b.email is not null and (b.email = o.email or o.other_emails @> array[lower(b.email::text)]))))::int as events,
            (select count(*) from deals where customer_id = ${otherId}::bigint)::int as deals,
            (select count(*) from follow_ups where customer_id = ${otherId}::bigint)::int as follow_ups`;
   const blank = (v: unknown) => v === null || v === undefined || v === "";
   const fills: string[] = (["phone", "company", "address", "source", "owner"] as const).filter((k) => blank(keep[k]) && !blank(other[k]));
   for (const [k, v] of Object.entries(other.fields ?? {})) if (blank(keep.fields?.[k]) && !blank(v)) fills.push(k);
   if (other.email && other.email.toLowerCase() !== keep.email?.toLowerCase()) fills.push(`also goes by ${other.email}`);
-  return { keep, other, moves: { notes: n.notes, visits: n.visits, deals: n.deals, tasks: n.follow_ups }, fills };
+  return { keep, other, moves: { notes: n.notes, events: n.events, deals: n.deals, tasks: n.follow_ups }, fills };
 }
 
 /** Merge `otherId` into `keepId`. */
@@ -77,7 +79,7 @@ export async function mergeCustomers(db: Db, keepId: string, otherId: string, us
         and exists (select 1 from customers k where k.id = ${keep}::bigint and k.merged_into is null)`,
     q`update customer_notes set customer_id = ${keep}::bigint where customer_id = ${other}::bigint
       and not exists (select 1 from customers x where x.id in (${keep}::bigint, ${other}::bigint) and x.merged_into is not null)`,
-    q`update customer_visits set customer_id = ${keep}::bigint where customer_id = ${other}::bigint
+    q`update bookings set customer_id = ${keep}::bigint where customer_id = ${other}::bigint
       and not exists (select 1 from customers x where x.id in (${keep}::bigint, ${other}::bigint) and x.merged_into is not null)`,
     q`update deals set customer_id = ${keep}::bigint where customer_id = ${other}::bigint
       and not exists (select 1 from customers x where x.id in (${keep}::bigint, ${other}::bigint) and x.merged_into is not null)`,

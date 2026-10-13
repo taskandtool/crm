@@ -6,6 +6,7 @@ import { applySchema } from "../../data/migrate";
 import { makeStamp } from "../../data/spam";
 import { scratch, why, type Scratch } from "../../data/test/scratch";
 import type { Field } from "../../forms/fields";
+import { formsAdmin } from "../../forms/admin";
 import { formRoutes } from "../../forms/routes";
 import { completePaidSubmission, seedForm } from "../../forms/store";
 import { paymentStep } from "../../payments/form-step";
@@ -17,7 +18,7 @@ import { emailSender, type Message, type Send } from "../notify";
 import { bookingPages } from "../public";
 import { addWindow, createPerson, createType, readType, setHosts } from "../hours";
 
-const schemas = ["../schema.sql", "../../payments/schema.sql", "../../forms/schema.sql"].map((p) => readFileSync(new URL(p, import.meta.url), "utf8"));
+const schemas = ["../schema.sql", "../../payments/schema.sql", "../../forms/schema.sql", "../../customers/schema.sql"].map((p) => readFileSync(new URL(p, import.meta.url), "utf8"));
 const HOST = "https://counsel.example";
 const BY = "owner@example.com";
 
@@ -243,4 +244,20 @@ test("a paid form's booking is confirmed on payment, by whichever app has a send
     assert.equal(mail.length, 1);
     const [b] = await s.db.sql`select hold_until, confirmation_sent_at from bookings`;
     assert.deepEqual([b.hold_until, !!b.confirmation_sent_at], [null, true], "paid: no longer held");
+  }));
+
+test("the submissions list has Booking and Payment columns only for forms that book or take payment", (t) =>
+  withDb(t, async (s) => {
+    await seedForm(s.db, { key: "intake", title: "Intake", fields: INTAKE }, "test");
+    await seedForm(s.db, { key: "plain", title: "Plain", fields: [{ name: "email", label: "Email", type: "email", required: true }] }, "test");
+    const app = new Hono();
+    app.route("/admin/submissions", formsAdmin(() => s.db, { base: "/admin/submissions", css: "/x.css", timeZone: "UTC" }));
+    const list = async (q: string) => (await app.request(`/admin/submissions${q}`, { headers: { "x-tasktool-user": BY } })).text();
+    for (const html of [await list(""), await list("?form=intake")]) {
+      assert.match(html, />Booking</);
+      assert.match(html, />Payment</);
+    }
+    const plain = await list("?form=plain");
+    assert.doesNotMatch(plain, />Booking</);
+    assert.doesNotMatch(plain, />Payment</);
   }));

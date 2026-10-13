@@ -44,3 +44,18 @@ export function listNotes(db: Db, customerId: string, limit = 200): Promise<Note
     select * from customer_notes where customer_id = ${customerId}::bigint
     order by happened_at desc, id desc limit ${limit}`;
 }
+
+/**
+ * "2026-10-02T14:30" (a datetime-local box) or "2026-10-02 14:30[:00]": a
+ * wall time, or null. Only a real calendar time: "2026-02-30 10:00" is null
+ * here, not an error from Postgres.
+ */
+export function wallTime(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const m = v.trim().match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  const [y, mo, d, h, mi, sec = "00"] = m.slice(1);
+  const t = new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +sec));
+  const same = t.getUTCFullYear() === +y && t.getUTCMonth() === +mo - 1 && t.getUTCDate() === +d && t.getUTCHours() === +h && t.getUTCMinutes() === +mi && t.getUTCSeconds() === +sec;
+  return same ? `${y}-${mo}-${d} ${h}:${mi}:${sec}` : null;
+}

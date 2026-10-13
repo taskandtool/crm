@@ -8,13 +8,15 @@
 //   create table if not exists <name> (...)
 //   create [unique] index if not exists <name> on <table> (...)
 //   alter table <name> add column if not exists <column> ...
+//   alter table <name> alter column <column> drop not null
 //   comment on ...
 //
 // Table names are plain, never schema-qualified, so every table lands in the
 // one namespace every app reads. No drop, rename, type change, or added
 // constraint (Postgres has no `add constraint if not exists`): a newer skill
 // adds a column an older app ignores, and an older one never removes what a
-// newer one needs. `applySchema` refuses a file that breaks this before
+// newer one needs. Loosening a column to allow null is the one change to what
+// exists: an older app still fills it, and runs again as a no-op. `applySchema` refuses a file that breaks this before
 // running any of it.
 //
 // Machine only: run it from the app's setup or start script, never per request
@@ -24,10 +26,12 @@
 //   await applySchema(db, readFileSync("src/booking/schema.sql", "utf8"));
 import { q, type Db, type Query } from "./db";
 
+const LOOSEN = /^alter\s+table\s+(if\s+exists\s+)?\w+\s+alter\s+column\s+\w+\s+drop\s+not\s+null$/i;
 const ALLOWED = [
   /^create\s+table\s+if\s+not\s+exists\s+\w+\s*\(/i,
   /^create\s+(unique\s+)?index\s+if\s+not\s+exists\s+\w+\s+on\s+\w+(\s|\()/i,
   /^alter\s+table\s+(if\s+exists\s+)?\w+\s+add\s+column\s+if\s+not\s+exists\s+\w+\s/i,
+  LOOSEN,
   /^comment\s+on\s+/i,
 ];
 
@@ -75,6 +79,7 @@ export function additiveProblems(text: string): string[] {
   for (const s of list) {
     const head = s.replace(/\s+/g, " ").slice(0, 80);
     if (!ALLOWED.some((re) => re.test(s))) problems.push(`not additive: ${head}`);
+    else if (LOOSEN.test(s)) continue;
     else if (/\b(drop|rename)\b/i.test(s) || /\balter\s+column\b/i.test(s)) problems.push(`changes what exists: ${head}`);
   }
   return problems;

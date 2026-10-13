@@ -24,7 +24,7 @@ export type Party = { email: string; name?: string | null };
 
 export type InviteInput = {
   method: IcsMethod;
-  booking: { id: string; starts_at: Date; ends_at: Date; sequence: number; name: string; email: string };
+  booking: { id: string; starts_at: Date; ends_at: Date; sequence: number; name: string; email: string | null };
   /** The business's domain, for the UID: booking-<id>@<domain>. Keep it fixed for the life of the app. */
   domain: string;
   /** Required for REQUEST and CANCEL; a PUBLISH download may leave it out. */
@@ -97,7 +97,7 @@ export function invite(input: InviteInput): string {
     ...(input.location ? [`LOCATION:${escapeText(input.location)}`] : []),
     ...(input.url ? [`URL:${input.url.replace(/[\r\n]/g, "")}`] : []),
     ...(organizer?.email ? [`ORGANIZER${organizer.name ? `;CN=${paramValue(organizer.name)}` : ""}:${mailto(organizer.email)}`] : []),
-    ...(method === "PUBLISH" ? [] : [`ATTENDEE;CN=${paramValue(b.name)};ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:${mailto(b.email)}`]),
+    ...(method === "PUBLISH" || !b.email ? [] : [`ATTENDEE;CN=${paramValue(b.name)};ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:${mailto(b.email)}`]),
     `STATUS:${cancel ? "CANCELLED" : "CONFIRMED"}`,
     "TRANSP:OPAQUE",
     "END:VEVENT",

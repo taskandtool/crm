@@ -1,7 +1,7 @@
 // One customer, laid out as every CRM lays out a record: what happens next
 // (tasks), one Activity timeline (notes and calls, and everything they
-// sent, booked, paid and were quoted, newest first) with a small box to log
-// a note on top, and their visits; beside it, Details (their details as
+// sent, paid and were quoted, newest first) with a small box to log
+// a note on top, and their events; beside it, Details (their details as
 // values, Edit for the form), their deals, quotes and invoices, possible
 // duplicates, Merge and Archive. Empty sections are left out. Plain forms
 // throughout: every change is a POST answered with a 303 back here.
@@ -9,7 +9,7 @@ import type { Child } from "hono/jsx";
 import { JsonData, Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
-import { cfg, dealsCfg, invoicesCfg, ownerLabel, showBooking, visitsCfg, vocab } from "../config";
+import { cfg, dealsCfg, eventsCfg, invoicesCfg, ownerLabel, vocab } from "../config";
 import type { Deal } from "../crm/deals";
 import type { Task } from "../crm/tasks";
 import { CustomerDeals } from "./deals";
@@ -17,19 +17,19 @@ import { TasksSection } from "./tasks";
 import { listUrl } from "../admin/query";
 import type { Customer } from "../crm/customers";
 import type { HistoryItem } from "../crm/history";
-import { NOTE_KINDS, NOTE_LABELS, type Note } from "../crm/notes";
+import { NOTE_KINDS, NOTE_LABELS, type Note } from "../customers/notes";
 import type { Stage } from "../crm/stages";
-import type { Visit } from "../crm/visits";
+import type { Event } from "../crm/events";
 import { missingSentence, type Present } from "../crm/tables";
 import { formatMoney } from "../payments/money";
-import { whereText, type Booking } from "../booking/book";
 import { firstText } from "./inbox";
 import { Layout } from "./layout";
 import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, shownField, stageOptions, telHref, timeZone } from "./ui";
-import { CustomerVisits, JobFromBooking } from "./visits";
+import { CustomerEvents, type Choices } from "./events";
 import { CustomerMoney, type Owed } from "./money";
 import type { Quote } from "../invoices/quotes";
 import type { Invoice } from "../invoices/invoices";
+import { ownerSuggestions, personName } from "../crm/people";
 
 /** How many Activity entries show before "Show older". */
 const RECENT = 10;
@@ -39,7 +39,9 @@ export function CustomerPage(p: {
   customer: Customer;
   stages: Stage[];
   notes: Note[];
-  visits: Visit[];
+  events: Event[];
+  /** What a new event chooses from. */
+  choices: Choices;
   history: HistoryItem[];
   present: Present;
   owners: string[];
@@ -57,7 +59,7 @@ export function CustomerPage(p: {
   const self = `/customers/${c.id}`;
   // A status another app wrote, or one archived since, still shows and stays selectable.
   const stages = p.stages.some((s) => s.key === c.stage) ? p.stages : [...p.stages, { key: c.stage, label: c.stage, position: 999, kind: "open" as const, archived: true }];
-  const missing = missingSentence(p.present, { bookings: true, payments: true });
+  const missing = missingSentence(p.present, { payments: true });
   const money = p.money && (p.money.quotes.length || p.money.invoices.length) ? p.money : null;
   return (
     <Layout
@@ -71,9 +73,6 @@ export function CustomerPage(p: {
           <SaveOnChange action={`${self}/stage`} current={c.stage} options={stageOptions(stages)} label="Status" returnTo={self} />
           {c.phone ? <a href={telHref(c.phone)} class={buttonClass}>Call</a> : null}
           {c.email ? <a href={`mailto:${c.email}`} class={buttonClass} title={c.email}>Email</a> : null}
-          {showBooking ? (
-            <a href={listUrl("/bookings/new", { name: c.name, email: c.email, phone: c.phone, address: c.address })} class={buttonClass}>Book a time</a>
-          ) : null}
           {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", { email: c.email, name: c.name, phone: c.phone, address: c.address })} class={buttonClass}>New quote</a> : null}
         </>
       }
@@ -94,9 +93,9 @@ export function CustomerPage(p: {
           <Section title="Activity">
             <Activity c={c} notes={p.notes} history={p.history} missing={missing} />
           </Section>
-          {visitsCfg ? (
-            <Section title={visitsCfg.many}>
-              <CustomerVisits c={c} visits={p.visits} owners={p.owners} />
+          {eventsCfg ? (
+            <Section title={eventsCfg.many}>
+              <CustomerEvents c={c} events={p.events} choices={p.choices} />
             </Section>
           ) : null}
         </div>
@@ -158,7 +157,7 @@ function Details({ c, owners }: { c: Customer; owners: string[] }) {
           // Company, phone and email are under their name, at the top.
           ...(c.other_emails?.length ? [{ label: "Also goes by", value: c.other_emails.join(", ") }] : []),
           { label: "Address", value: c.address },
-          { label: ownerLabel, value: c.owner },
+          { label: ownerLabel, value: personName(c.owner) },
           { label: "Source", value: c.source },
           { label: "Tags", value: c.tags.length ? c.tags.join(", ") : null },
           ...custom,
@@ -190,9 +189,9 @@ function DetailsForm({ c, owners }: { c: Customer; owners: string[] }) {
         <input name="address" value={c.address ?? ""} maxlength={500} autocomplete="off" class={controlClass} />
       </Field>
       <Field label={ownerLabel} hint="The team member responsible.">
-        <input name="owner" list="owners" value={c.owner ?? ""} maxlength={200} class={controlClass} />
+        <input name="owner" list="owners" value={personName(c.owner)} maxlength={200} class={controlClass} />
         <datalist id="owners">
-          {owners.map((o) => (
+          {ownerSuggestions(owners).map((o) => (
             <option value={o} />
           ))}
         </datalist>
@@ -228,7 +227,7 @@ type Entry = { at: Date; note?: Note; item?: HistoryItem };
 /**
  * One timeline: what the team logged (notes, calls, emails, meetings,
  * texts, tasks done) and what the person did across the project
- * (submissions, bookings, payments, quotes and invoices sent), newest
+ * (submissions, payments, quotes and invoices sent; their events have their own section), newest
  * first; the latest RECENT, then the rest behind "Show older".
  */
 function Activity({ c, notes, history, missing }: { c: Customer; notes: Note[]; history: HistoryItem[]; missing: string | null }) {
@@ -236,7 +235,7 @@ function Activity({ c, notes, history, missing }: { c: Customer; notes: Note[]; 
     ...notes.map((n) => ({ at: new Date(n.happened_at), note: n })),
     ...history.map((i) => ({ at: new Date(i.at), item: i })),
   ].sort((a, b) => b.at.getTime() - a.at.getTime());
-  const row = (e: Entry) => (e.note ? <NoteEntry n={e.note} /> : <HistoryEntry i={e.item!} customerId={c.id} />);
+  const row = (e: Entry) => (e.note ? <NoteEntry n={e.note} /> : <HistoryEntry i={e.item!} />);
   return (
     <div class="flex flex-col gap-4">
       <form method="post" action={`/customers/${c.id}/notes`} aria-label="Log activity" class="flex flex-col gap-2">
@@ -250,7 +249,7 @@ function Activity({ c, notes, history, missing }: { c: Customer; notes: Note[]; 
           <button class={buttonClass}>Log activity</button>
           {/* Now, unless it happened earlier: the time is there when it is needed. */}
           <details class="text-label text-ink-2">
-            <summary class="cursor-pointer list-none underline decoration-line-strong underline-offset-2 hover:decoration-current">Another time</summary>
+            <summary class="cursor-pointer list-none underline decoration-line-strong underline-offset-2 hover:decoration-current">Set date and time</summary>
             <input name="at" type="datetime-local" aria-label="When it happened" class={controlClass + " mt-2"} />
           </details>
         </div>
@@ -312,44 +311,9 @@ function NoteEntry({ n }: { n: Note }) {
   );
 }
 
-function BookingItem({ i, customerId }: { i: Extract<HistoryItem, { kind: "booking" }>; customerId: string }) {
-  return (
-    <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
-      <div class="min-w-0">
-        <p>
-          {i.type_name ? `${i.type_name}, ` : ""}
-          <When at={i.starts_at} timeZone={timeZone} />
-          {i.resource_name ? ` with ${i.resource_name}` : ""}
-        </p>
-        {i.location ? <p class="break-words text-label text-ink-2">{whereText({ location_kind: i.location_kind as Booking["location_kind"], location: i.location }, { link: true })}</p> : null}
-        <p class="text-label"><a href={`/bookings/${i.id}`}>The booking</a></p>
-      </div>
-      {visitsCfg ? (
-        i.visit_id ? (
-          <a href={`/visits/${i.visit_id}`} class="text-label">The {visitsCfg.one.toLowerCase()}</a>
-        ) : (
-          <JobFromBooking bookingId={i.id} customerId={customerId} />
-        )
-      ) : null}
-    </div>
-  );
-}
-
-function HistoryEntry({ i, customerId }: { i: HistoryItem; customerId: string }) {
-  // A comment the team wrote in another app reads like a note: who and when, then the text.
-  if (i.kind === "comment") {
-    return (
-      <>
-        <p class="text-label text-ink-3">
-          <span class="font-semibold text-ink-2">Comment</span> · <When at={i.at} timeZone={timeZone} />
-          {i.author ? ` · ${i.author}` : ""} · from the {i.source}
-        </p>
-        <p class="whitespace-pre-wrap break-words">{i.body}</p>
-      </>
-    );
-  }
+function HistoryEntry({ i }: { i: HistoryItem }) {
   const kindName =
-    i.kind === "submission" ? i.form_title || i.form_key : i.kind === "booking" ? "Booking" : i.kind === "payment" ? "Payment" : i.kind === "quote" ? `Quote ${i.number}` : i.number ? `Invoice ${i.number}` : "Invoice";
+    i.kind === "submission" ? i.form_title || i.form_key : i.kind === "payment" ? "Payment" : i.kind === "quote" ? `Quote ${i.number}` : i.number ? `Invoice ${i.number}` : "Invoice";
   return (
     <>
       <p class="text-label text-ink-3">
@@ -361,12 +325,10 @@ function HistoryEntry({ i, customerId }: { i: HistoryItem; customerId: string })
           <details class="mt-1">
             <summary class="cursor-pointer text-label text-ink-2">Everything they sent</summary>
             <div class="mt-2">
-              <JsonData data={i.data} />
+              <JsonData data={i.answers ?? i.data} />
             </div>
           </details>
         </>
-      ) : i.kind === "booking" ? (
-        <BookingItem i={i} customerId={customerId} />
       ) : i.kind === "quote" || i.kind === "invoice" ? (
         <p>
           <a href={i.kind === "quote" ? `/invoices/quotes/${i.id}` : `/invoices/${i.id}`}>{formatMoney(i.total_cents, i.currency)}</a>

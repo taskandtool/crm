@@ -31,7 +31,7 @@
   "owner_label": "Technician",
   "time_zone": "America/Denver",
   "inbox": { "forms": "all", "exclude_forms": ["careers"], "bookings": true, "payments": true },
-  "visits": {
+  "events": {
     "one": "Job",
     "many": "Jobs",
     "fields": [

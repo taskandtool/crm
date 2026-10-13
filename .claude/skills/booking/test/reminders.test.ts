@@ -173,3 +173,20 @@ test("the job's command: one line of what was sent and what was left alone", asy
     await s.drop();
   }
 });
+
+test("an event the team scheduled with no service, nobody assigned or no email is not reminded", async (t) => {
+  const s = await scratch();
+  if (!s) return t.skip(why);
+  try {
+    await setup(s);
+    await s.db.sql`
+      insert into bookings (starts_at, ends_at, title, name, email, location_kind, created_at)
+      values ('2026-03-10 15:00+00', '2026-03-10 16:00+00', 'Boiler service', 'Hank', null, 'their_place', '2026-03-01 00:00+00'),
+             ('2026-03-10 15:00+00', '2026-03-10 16:00+00', 'Boiler service', 'Ann', 'ann@example.com', 'their_place', '2026-03-01 00:00+00')`;
+    const { sent, send } = capture();
+    const run = await sendReminders(s.db, send, { now: T("2026-03-10T14:30:00Z") });
+    assert.deepEqual([run.sent, run.failed, sent.length], [0, 0, 0]);
+  } finally {
+    await s.drop();
+  }
+});

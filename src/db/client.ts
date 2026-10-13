@@ -9,7 +9,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { invoicesCfg, seeds, showBooking } from "../config";
+import { invoicesCfg, seeds } from "../config";
 import type { Db } from "../data/db";
 import { fromPool } from "../data/pg";
 import type { DbState, Runtime } from "../runtime";
@@ -55,7 +55,7 @@ export async function start(log: (msg: string) => void = console.log): Promise<v
       await p.query("select 1");
       state = "migrating";
       const handle = fromPool(p);
-      const { seeded } = await setup(handle, seeds, { booking: showBooking, invoices: !!invoicesCfg });
+      const { seeded } = await setup(handle, seeds, { invoices: !!invoicesCfg });
       if (seeded) log(`seeded ${seeded} statuses and deal stages from crm.config.json`);
       db = handle;
       state = "ready";

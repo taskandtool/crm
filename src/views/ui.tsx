@@ -4,7 +4,7 @@
 import type { Child } from "hono/jsx";
 import type { FlashMessages } from "../admin/flash";
 import { buttonClass, controlClass, fieldClass, primaryClass, type StatusOption } from "../admin/status";
-import { cfg, dealsCfg, visitsCfg, vocab } from "../config";
+import { cfg, dealsCfg, eventsCfg, vocab } from "../config";
 import type { CustomField } from "../config-schema";
 import { When } from "../admin/list";
 import { FieldList, type Field as Shown } from "../admin/detail";
@@ -58,10 +58,19 @@ const DUE_CLASS: Record<Due, string> = {
   none: "text-ink-3",
 };
 
-/** The mark on a card or a row: when the next task is, in words, or that nothing is planned. */
-export function DueMark({ next, today }: { next: { due_on: string; due_time: string | null } | undefined; today: string }) {
+/**
+ * The mark on a card or a row: when the next task is, in words, or that
+ * nothing is planned. `task` names it as the task where nothing else on the
+ * line does (a pipeline card), so "Overdue" cannot read as the deal's.
+ */
+export function DueMark({ next, today, task = false }: { next: { due_on: string; due_time: string | null } | undefined; today: string; task?: boolean }) {
   const due = dueOf(next, today);
-  const text = !next ? "No next step" : due === "overdue" ? `Overdue, ${dueDayText(next.due_on, today)}` : dueDayText(next.due_on, today, next.due_time);
+  const when = !next ? "" : due === "overdue" ? dueDayText(next.due_on, today) : dueDayText(next.due_on, today, next.due_time);
+  const text = !next
+    ? "Nothing planned"
+    : due === "overdue"
+      ? `${task ? "Task overdue" : "Overdue"}, ${when}`
+      : task ? `Task ${when.replace(/^(Today|Tomorrow)/, (w) => w.toLowerCase())}` : when;
   return (
     <span class={"whitespace-nowrap text-label " + DUE_CLASS[due]} title={next ? "Next task" : undefined}>
       {text}
@@ -170,7 +179,7 @@ export function CustomerPicker({ customers }: { customers: { id: string; name: s
   );
 }
 
-/** Who a new deal or visit is for: matched by email or phone, or added. In a two-column form the name takes a row, so email and phone pair up. */
+/** Who a new deal or event is for: matched by email or phone, or added. In a two-column form the name takes a row, so email and phone pair up. */
 export function PersonFields({ pairs }: { pairs?: boolean }) {
   return (
     <>
@@ -187,22 +196,24 @@ export function PersonFields({ pairs }: { pairs?: boolean }) {
   );
 }
 
-/** A custom field's input, named f_<key>, for a customer or a visit form. */
+/** A custom field's input, named f_<key>, for a customer or an event form. */
 export function CustomInput({ f, value }: { f: CustomField; value: unknown }) {
   const v = fieldText(value);
   const name = `f_${f.key}`;
   let input: Child;
   if (f.type === "select") {
-    const options = f.options ?? [];
+    // One "None": the empty choice stands for a "None" the field also lists.
+    const isNone = (o: string) => o.trim().toLowerCase() === "none";
+    const options = (f.options ?? []).filter((o) => !isNone(o));
     input = (
       <select name={name} class={controlClass}>
-        <option value="">None</option>
+        <option value="" selected={!v || isNone(v)}>None</option>
         {options.map((o) => (
           <option value={o} selected={o === v}>
             {o}
           </option>
         ))}
-        {v && !options.includes(v) ? (
+        {v && !isNone(v) && !options.includes(v) ? (
           <option value={v} selected>
             {v}
           </option>
@@ -238,7 +249,7 @@ export function RecordLine({ added, addedBy, changed, changedBy, children }: { a
 }
 
 const one = vocab.one.toLowerCase();
-const visitWords = visitsCfg ?? { one: "Visit" };
+const eventWord = (eventsCfg ?? { one: "Event" }).one;
 
 export const MESSAGES: FlashMessages = {
   added: `${vocab.one} added.`,
@@ -278,9 +289,12 @@ export const MESSAGES: FlashMessages = {
   "bad-target": { error: "Choose an active stage to move them to." },
   "pick-stage": { error: "Choose one of the stages." },
   "pick-status": { error: "Choose one of the statuses." },
-  "visit-added": `${visitWords.one} added.`,
-  "visit-title-needed": { error: `Say what the ${visitWords.one.toLowerCase()} is for first.` },
-  "visit-status": "Status changed.",
+  "event-added": `${eventWord} added.`,
+  "event-incomplete": { error: `Give the ${eventWord.toLowerCase()} a title or a service, and a time.` },
+  // What the booking pages' status route (an event's buttons post there) comes back with.
+  status: "Status saved.",
+  cancelled: `${eventWord} cancelled.`,
+  unchanged: { error: `Nothing changed. A cancelled ${eventWord.toLowerCase()} stays cancelled, and one is marked completed or no-show only once it has started.` },
 };
 
 export const timeZone = cfg.time_zone;

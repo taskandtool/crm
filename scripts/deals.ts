@@ -1,11 +1,10 @@
 // Deals from chat: the same changes as the pages. `node scripts/deals.mjs --help`.
-import { dealsCfg, visitsCfg } from "../src/config";
+import { dealsCfg } from "../src/config";
 import { createDeal, customerDeals, getDeal, listDeals, saveDeal, setDealArchived, setDealStage, setLostReason, type Deal, type DealInput } from "../src/crm/deals";
 import { firstOfKind, firstOpenStage, listStages, resolveStage } from "../src/crm/stages";
-import { clean } from "../src/crm/text";
+import { amountText, clean, parseAmount } from "../src/crm/text";
 import { formatMoney } from "../src/payments/money";
 import { readDay } from "../src/crm/tasks";
-import { amountText, parseAmount, visitFromDeal } from "../src/crm/visits";
 import { done, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, resolveCustomer, usage, who, withDb } from "./lib";
 
 const one = dealsCfg.one.toLowerCase();
@@ -20,7 +19,6 @@ const HELP = `deals.mjs <command> [...] [--json] [--as <email>]      ${dealsCfg.
   update <id> [--what w] [--value v] [--owner o] [--close d] [--notes n]   "" clears a value
   stage <id> <stage> [--reason r]      a stage key or label; --reason when it is a lost one
   won <id> | lost <id> [--reason r]    to the first won or lost stage
-  job <id>                             a won ${one}'s ${visitsCfg?.one.toLowerCase() ?? "job"}, once
   archive <id> [--undo]                never deletes
 
 <who> is a customer's id, email or phone. --value is in ${dealsCfg.currency}; blank, the
@@ -34,9 +32,9 @@ nothing. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misus
 const FIELDS = ["value", "owner", "close", "notes", "as"];
 const FLAGS: Record<string, string[]> = {
   list: ["open", "won", "lost", "stage", "owner", "customer", "limit"], show: [], add: [...FIELDS, "stage"], update: [...FIELDS, "what"],
-  stage: ["reason", "as"], won: ["as"], lost: ["reason", "as"], job: ["as"], archive: ["undo", "as"],
+  stage: ["reason", "as"], won: ["as"], lost: ["reason", "as"], archive: ["undo", "as"],
 };
-const WORDS: Record<string, number> = { list: 0, show: 1, update: 1, stage: 2, won: 1, lost: 1, job: 1, archive: 1 };
+const WORDS: Record<string, number> = { list: 0, show: 1, update: 1, stage: 2, won: 1, lost: 1, archive: 1 };
 
 const a = parseArgs(process.argv.slice(2), { bare: ["open", "won", "lost", "undo"] });
 const [cmd, ...rest] = a._;
@@ -45,7 +43,7 @@ const at = `deals ${cmd}`;
 if (WORDS[cmd] !== undefined) noMore(rest, WORDS[cmd], at);
 const json = has(a, "json");
 const show = (id: string) => `node scripts/deals.mjs show ${id}`;
-if (["show", "update", "stage", "won", "lost", "job", "archive"].includes(cmd) && !/^#?\d{1,18}$/.test(rest[0] ?? "")) misused(`${at}: name a ${one} by its id (#12 is 12)`, "node scripts/deals.mjs list");
+if (["show", "update", "stage", "won", "lost", "archive"].includes(cmd) && !/^#?\d{1,18}$/.test(rest[0] ?? "")) misused(`${at}: name a ${one} by its id (#12 is 12)`, "node scripts/deals.mjs list");
 if (cmd === "stage" && !rest[1]) misused(`${at}: to which stage?`, `node scripts/deals.mjs stage ${rest[0]} won`);
 const kinds = (["open", "won", "lost"] as const).filter((k) => has(a, k));
 if (kinds.length > 1) misused(`${at}: one of --open, --won, --lost`, "node scripts/deals.mjs list --open");
@@ -166,15 +164,6 @@ await withDb(async (db) => {
       const st = (await firstOfKind(db, "deals", cmd)) ?? fail(`${at}: there is no ${cmd} stage`, `node scripts/stages.mjs add "${cmd === "won" ? "Won" : "Lost"}" --kind ${cmd}`);
       if (stages.find((s) => s.key === d.stage)?.kind === cmd) return result(d, `${d.title} is already ${cmd} (${label(d.stage)}); left alone`, { next: show(d.id) });
       return moved(d, st.key, cmd === "lost" ? clean(flag(a, "reason"), 200) : null);
-    }
-
-    case "job": {
-      if (!visitsCfg) fail(`${at}: jobs are off in crm.config.json ("visits": false)`, "node scripts/deals.mjs --help");
-      const d = await dealOr(rest[0]);
-      if (stages.find((s) => s.key === d.stage)?.kind !== "won") fail(`${at}: ${d.title} is ${label(d.stage)}; only a won ${one} becomes a ${visitsCfg.one.toLowerCase()}`, `node scripts/deals.mjs won ${d.id}`);
-      const r = (await visitFromDeal(db, d.id, user)) ?? fail(`${at}: no ${one} ${d.id}`, "node scripts/deals.mjs list");
-      const v = r.visit;
-      return result(v, `${r.created ? "" : "already made: "}${visitsCfg.one.toLowerCase()} #${v.id} ${v.title} for ${v.customer_name}${r.created ? "" : "; left alone"}`, { next: `node scripts/visits.mjs show ${v.id}` });
     }
 
     case "archive": {

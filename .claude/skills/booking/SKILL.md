@@ -14,7 +14,7 @@ the project database reads the same rows: the Website's `/book` pages
 take bookings, the CRM sets types, hosts and hours and lists the bookings
 by email.
 
-Version: 0.4.0 (taskandtool/skills)
+Version: 0.5.0 (taskandtool/skills)
 
 ## The rules
 
@@ -38,6 +38,11 @@ Version: 0.4.0 (taskandtool/skills)
   last sync is not in `busy` yet, so that time can be booked. The event
   and the booking then both show in the owner's calendar. Say so if the owner asks; syncing every
   15 minutes keeps it small. Bookings never double-book each other.
+- **One appointment table.** `bookings` also holds what the team schedules
+  itself (the CRM's events): such a row may have no service (`title` names
+  it), nobody assigned yet, or no email. Read it with `left join` to
+  `booking_types` and `resources`. Reminders and invites go only to a
+  booking with a service, someone taking it and an email.
 - **Messages go through the owner's sender only.** Task & Tool sends no
   email for an app. The words are `bookingMessage` (`notify.ts`): booked,
   moved, cancelled, reminder, each naming what, with whom, when in the
@@ -93,7 +98,7 @@ bookings and payments".
 | `hours.ts` | The editor's writes: types and their hosts, people, weekly hours, time off, calendars |
 | `confirm.ts` | `confirmFormBooking`: a form's booking confirmed once, on the form completing |
 | `public.tsx` | `bookingPages`: what can be booked, a time, confirm, the manage page and .ics; `onBooked`, `afterBook` |
-| `admin.tsx` | `bookingAdmin`: Bookings (reschedule, cancel, completed, no-show), Calendar (with the app's own things through `more`), Services (types and who takes them), Team (each person's hours, time off, calendars), New booking |
+| `admin.tsx` | `bookingAdmin`: the Schedule (a week, by person), Book for someone, a booking's reschedule, cancel, completed and no-show; `typeRoutes`: Services (what each is, who takes it); `peopleRoutes`: Team (each person's hours, time off, calendars) |
 | `ics.ts` | RFC 5545 invite builder |
 | `notify.ts` | The words (`bookingMessage`), `notifyBooking`, `emailSend` and the `Send` type |
 | `reminders.ts` | `sendReminders`: claims and sends the reminders due now |

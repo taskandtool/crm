@@ -24,10 +24,12 @@ there, make the form with `node scripts/forms.mjs save`, then do steps 4 and 6.
    the page instead of showing nothing. On the Website, leave the page
    module out of `src/pages/index.ts` (listing it there would pre-render
    it), and add its nav link to `site.nav` by hand.
-5. Mount `formsAdmin(getDb, { base: "/admin/forms", css, timeZone, source: "<app slug>" })`
-   at `/admin/forms` (see the `admin` skill for where private views live).
+5. Mount `formsAdmin(getDb, { base: "/admin/submissions", css, timeZone })`
+   at `/admin/submissions` (see the `admin` skill for where private views
+   live), and apply the `customers` skill's `schema.sql` with the forms one:
+   a submission shows the person's notes.
 6. Set up telling the owner ("Telling the owner", below) or say there is no sender, then post a
-   test submission in dev and find it in `/admin/forms/submissions`.
+   test submission in dev and find it in `/admin/submissions`.
 
 ## The command
 

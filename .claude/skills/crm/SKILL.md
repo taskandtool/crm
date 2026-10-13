@@ -1,6 +1,6 @@
 ---
 name: crm
-description: "Runs and reshapes this CRM: customers keyed by email, what came in from the project's forms, bookings and payments, deals, tasks, notes, jobs, its config and schema. Use for 'add a customer', 'who should I follow up with', 'add a deal', 'log a job', 'import my list', 'merge these two', 'shape the CRM'. Not for quotes and invoices (invoices)."
+description: "Runs and reshapes this CRM: customers keyed by email, what came in from the project's forms, bookings and payments, deals, tasks, notes, the schedule, its config and schema. Use for 'add a customer', 'who should I follow up with', 'add a deal', 'book Ann in', 'import my list', 'merge these two', 'shape the CRM'. Not for quotes and invoices (invoices)."
 ---
 
 # CRM
@@ -24,15 +24,15 @@ the business skills' code in `src/` are kept.
   `customers` too, so its columns keep their names and meanings.
 - **The skills' tables it sets up and writes** (`src/db/setup.ts`): the
   forms tables (it shows submissions and edits forms), the booking tables
-  when booking is on, and, when invoices are on, the payments and invoices
+  (always: the schedule's events are bookings), and, when invoices are on, the payments and invoices
   tables (quotes, invoices, tax rates, refunds, the Stripe events).
 
 ## Read next
 
 | When | Read |
 |---|---|
-| Changing words, statuses, deal stages, custom fields, a real column; jobs, deals, tasks, the morning email, merging | `references/levers.md` |
-| What can be booked, hours, calendars, booking messages | `references/bookings.md` |
+| Changing words, statuses, deal stages, custom fields, a real column; deals, tasks, the morning email, merging | `references/levers.md` |
+| The schedule: events, what can be booked online, the Team's hours and calendars, booking messages | `references/schedule.md` |
 | Forms here; setting up quotes, invoices, Stripe or the email sender | `references/money.md`, then the `invoices` skill |
 | Shaping the CRM for a business; importing or exporting a list | `references/shaping.md` |
 

@@ -1,62 +1,84 @@
-// The private side of forms: the forms, what came in (per form and across
-// them), one submission, its status, a CSV export, and the form editor that
-// writes forms. Built from admin/'s pieces; teamOnly is applied here
-// as well, so a mount that forgets it still answers 404.
+// The private side of forms. formsAdmin is what came in: one list of
+// submissions from every form and the booking page, in three tabs (Inbox,
+// Archived, Spam) with a form picker and a search; one submission's page with
+// its answers, its booking (reschedule, cancel), its payment (refund) and the
+// person's notes. formEditor is for an app that lets the team set forms up
+// (the CRM): the forms, the editor, a CSV export, and who stopped part way.
+// teamOnly is applied to both, so a mount that forgets it still answers 404.
 //
-//   app.route("/admin/forms", formsAdmin(getDb, {
-//     base: "/admin/forms", css: "/site.css", timeZone: "America/Chicago", source: "website" }));
+//   app.route("/admin/submissions", formsAdmin(getDb, {
+//     base: "/admin/submissions", css: "/site.css", timeZone: "America/Chicago",
+//     links: { booking: (id) => `/admin/schedule/${id}`, payment: (id) => `/admin/payments/${id}` } }));
+//
+// Statuses: new and read are the Inbox (read once opened), done is Archived.
 import { Hono, type Context } from "hono";
 import type { Child } from "hono/jsx";
 import type { Db, GetDb } from "../data/db";
 import { normalizeEmail } from "../data/email";
-import { BulkForm } from "../admin/bulk";
-import { csvResponse, type CsvColumn } from "../admin/csv";
+import { envOf, setting } from "../data/env";
+import { senderOf } from "../data/send";
 import { FieldList, JsonData, Section } from "../admin/detail";
+import { csvResponse, type CsvColumn } from "../admin/csv";
 import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash";
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, everyPage, readCursor, type Cursor, type Keyed } from "../admin/keyset";
-import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
-import { DataTable, EmptyCard, EmptyState, NoMatches, rowClick, rowLink, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
+import { SectionPage, SectionTabs, type Frame, type Head, type NavItem } from "../admin/layout";
+import { DataTable, EmptyCard, rowClick, rowLink, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { formIds, idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
-import { buttonClass, controlClass, fieldClass, pickStatus, primaryClass, StatusBadge, StatusForm, type StatusOption } from "../admin/status";
+import { buttonClass, controlClass, fieldClass, inputClass, pickStatus, primaryClass, Select, smallText, StatusBadge, type StatusOption } from "../admin/status";
+import { customerByEmail, customerFor } from "../customers/customer";
+import { addNote, listNotes, NOTE_KINDS, NOTE_LABELS, pickNoteKind, wallTime, type Note } from "../customers/notes";
 import { checkFields, FIELD_TYPES, FORM_KEY, formKeyFrom, PHOTO_PATH, sitePath, type Errors, type Field, type Form } from "./fields";
 import { cameFrom } from "./origin";
-import { linkedTo, type Linked } from "./linked";
+import { linkedTo, linkKinds, type Linked } from "./linked";
 import { priceOf } from "./price";
 import { formatMoney } from "../payments/money";
-import { CONTACT_FORM, toForm } from "./store";
+import { refundable, type Payment } from "../payments/admin";
+import { BOOKING_STATUSES } from "../booking/admin";
+import { BOOKING_PAGE, CONTACT_FORM, toForm } from "./store";
 
 export type FormsAdminOptions = {
   base: string;
   css: string;
   timeZone: string;
-  /** This app's slug, stored on the forms it creates. */
-  source: string;
   nav?: NavItem[];
   pageSize?: number;
   /** The app's own page frame (the CRM's layout and nav) instead of AdminLayout. */
   Frame?: Frame;
-  /** Where a submission's booking and payment are shown, when the app has those pages. */
+  /** A booking's address where bookingAdmin is mounted (`/admin/schedule/42`: its Reschedule and Cancel) and a payment's where paymentsAdmin is. */
   links?: { booking?: (id: string) => string; payment?: (id: string) => string };
 };
 
+
 export const STATUSES: StatusOption[] = [
   { value: "new", label: "New", tone: "accent" },
-  { value: "read", label: "Read", tone: "strong" },
-  { value: "done", label: "Done", tone: "neutral" },
+  { value: "read", label: "Inbox", tone: "strong" },
+  { value: "done", label: "Archived", tone: "neutral" },
   { value: "spam", label: "Spam", tone: "muted" },
 ];
 
-/** A form switched off shows so in the list; one taking submissions needs no word. */
-const FORM_STATES: StatusOption[] = [{ value: "off", label: "Switched off", tone: "muted" }];
+/** The three tabs: which statuses each shows. */
+type View = "inbox" | "archived" | "spam";
+const VIEWS: Record<View, { path: string; label: string; statuses: string[]; empty: string }> = {
+  inbox: { path: "", label: "Inbox", statuses: ["new", "read"], empty: "Nothing here yet. What people send from your site's forms and booking page shows up here." },
+  archived: { path: "/archived", label: "Archived", statuses: ["done"], empty: "Nothing archived." },
+  spam: { path: "/spam", label: "Spam", statuses: ["spam"], empty: "No spam." },
+};
+const viewOf = (status: string): View => (status === "done" ? "archived" : status === "spam" ? "spam" : "inbox");
 
 const MESSAGES: FlashMessages = {
-  status: "Status saved.",
-  bulk: (n) => (n === 1 ? "Updated 1 submission." : `Updated ${n} submissions.`),
-  "none-selected": "Select at least one submission first.",
-  "pick-status": "Choose a status to apply.",
-  saved: "Form saved.",
-  created: "Form created. Add its questions below.",
+  done: "Archived.",
+  read: "Moved to the Inbox.",
+  spam: "Marked as spam.",
+  bulk: (n) => (n === 1 ? "Moved 1 submission." : `Moved ${n} submissions.`),
+  "none-selected": { error: "Select at least one submission first." },
+  booked: "Booked. They are sent a confirmation if email is on.",
+  cancelled: "Booking cancelled. They have been told.",
+  rescheduled: "Booking moved. They have been told the new time.",
+  unchanged: { error: "The booking was not changed. A cancelled or past booking cannot be moved." },
+  refund: "Refund requested. The payment changes when Stripe confirms it, usually within a minute.",
+  note: "Added to their notes.",
+  "note-empty": { error: "Write something in the note first." },
 };
 
 type Item = Keyed & {
@@ -73,29 +95,26 @@ type Item = Keyed & {
   completed_at: Date | null;
   updated_by: string | null;
   data: Record<string, unknown> | null;
-  /** Its booking and payment (linked.ts), on the list and the page. */
+  /** Its booking and payment (linked.ts). */
   linked?: Linked;
 };
-export type SubmissionFilter = { q: string | null; status: string | null; form: string | null };
+type Filter = { q: string | null; form: string | null };
 
-export function readFilter(c: Context): SubmissionFilter {
+function readFilter(c: Context): Filter {
   const q = (c.req.query("q") ?? "").trim().slice(0, 100);
   const form = c.req.query("form") ?? "";
-  return { q: q || null, status: pickStatus(c.req.query("status"), STATUSES), form: FORM_KEY.test(form) ? form : null };
+  return { q: q || null, form: FORM_KEY.test(form) ? form : null };
 }
 
-/**
- * One page plus one row, newest first. With no status chosen, spam is left
- * out: it is there to be checked, not read. `data` only when asked (the export).
- */
-export function listPage(db: Db, f: SubmissionFilter, after: Cursor | null, size: number, withData = false): Promise<Item[]> {
+/** One page plus one row of a tab, newest first. `data` only when asked (the export). */
+function listPage(db: Db, statuses: string[], f: Filter, after: Cursor | null, size: number, withData = false): Promise<Item[]> {
   const pat = likePattern(f.q);
   return db.sql<Item>`
     select id::text as id, form_key, name, email::text as email, phone, status, page, source, created_at, completed_at,
            updated_by::text as updated_by, created_at::text as k, case when ${withData} then data end as data
     from submissions s
-    where (${f.form}::text is null or s.form_key = ${f.form})
-      and (case when ${f.status}::text is null then s.status <> 'spam' else s.status = ${f.status} end)
+    where s.status = any(${statuses}::text[])
+      and (${f.form}::text is null or s.form_key = ${f.form})
       and (${pat}::text is null or s.name ilike ${pat} or s.email::text ilike ${pat})
       and (${after?.k ?? null}::timestamptz is null
            or (s.created_at, s.id) < (${after?.k ?? null}::timestamptz, ${after?.id ?? null}::bigint))
@@ -103,38 +122,479 @@ export function listPage(db: Db, f: SubmissionFilter, after: Cursor | null, size
     limit ${size + 1}`;
 }
 
-/** Each form's title by its key: what a list shows instead of the key. */
-async function formTitles(db: Db): Promise<Map<string, string>> {
-  return new Map((await db.sql<{ key: string; title: string }>`select key, title from forms`).map((f) => [f.key, f.title]));
+type FormInfo = { key: string; title: string; notify_emails: string[]; active: boolean };
+
+/** Every form, and every key that has submissions without a form row (the booking page), by name. */
+async function formsAndKeys(db: Db): Promise<{ forms: FormInfo[]; titles: Map<string, string>; fresh: number }> {
+  const [forms, keys] = await Promise.all([
+    db.sql<FormInfo>`select key, title, notify_emails::text[] as notify_emails, active from forms order by title, key`,
+    db.sql<{ form_key: string; fresh: number }>`
+      select form_key, count(*) filter (where status = 'new')::int as fresh from submissions group by form_key order by form_key`,
+  ]);
+  const titles = new Map(forms.map((f) => [f.key, f.title]));
+  for (const k of keys) if (!titles.has(k.form_key)) titles.set(k.form_key, k.form_key === BOOKING_PAGE.key ? BOOKING_PAGE.title : k.form_key);
+  return { forms, titles, fresh: keys.reduce((n, k) => n + k.fresh, 0) };
 }
 
-async function allForms(db: Db) {
-  return db.sql<{ key: string; title: string; active: boolean; new_count: number; total: number; last_at: Date | null }>`
-    select f.key, f.title, f.active,
-           (select count(*) from submissions s where s.form_key = f.key and s.status = 'new')::int as new_count,
-           (select count(*) from submissions s where s.form_key = f.key and s.status <> 'spam')::int as total,
-           (select max(created_at) from submissions s where s.form_key = f.key and s.status <> 'spam') as last_at
-    from forms f
-    order by f.title, f.key`;
+/** How the team hears of a new submission, in one line, and what to ask the AI when it is nobody. */
+function EmailNote({ c, forms }: { c: Context; forms: FormInfo[] }) {
+  const env = envOf(c);
+  const sender = senderOf(env);
+  const to = [...new Set(forms.filter((f) => f.active).flatMap((f) => f.notify_emails))];
+  if (typeof sender === "string" || !setting(env, "NOTIFY_FROM")) {
+    return (
+      <p class="mb-4 rounded-card border border-line bg-panel/60 px-4 py-3 text-copy text-ink">
+        <strong>Email is off.</strong> No email sender is connected, so nobody is emailed about new submissions and customers get no
+        booking confirmations. Ask the AI to connect one to turn it on.
+      </p>
+    );
+  }
+  const text = to.length
+    ? `New form submissions are emailed to ${to.join(", ")}.`
+    : "Nobody is emailed about new submissions. Ask the AI to email them to you.";
+  return <p class={`mb-4 ${smallText} text-ink-2`}>{text}</p>;
 }
 
-async function formRow(db: Db, key: string) {
-  const [row] = await db.sql`
-    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active,
-           updated_at::text as version
-    from forms where key = ${key}`;
-  return row ? { form: toForm(row), raw: (Array.isArray(row.fields) ? row.fields : []) as Record<string, unknown>[], version: row.version as string } : null;
+/** The note under every list: what is changed by asking, not here. */
+const AskNote = () => (
+  <p class={`mt-6 max-w-prose ${smallText} text-ink-3`}>
+    To add a form, change its questions or prices, or choose who is emailed, ask the AI in Task &amp; Tool.
+  </p>
+);
+
+/**
+ * Whether the forms listed (one, or every form) can lead to a booking or a
+ * payment: a booking step, or a payment or products step, on a form whose
+ * table is here. What the submissions list gives a column to.
+ */
+async function leadsTo(db: Db, form: string | null): Promise<{ bookings: boolean; payments: boolean }> {
+  const [has, forms] = await Promise.all([
+    linkKinds(db),
+    db.sql<{ fields: { type?: string }[] }>`select fields from forms where ${form}::text is null or key = ${form}::text`,
+  ]);
+  const types = new Set(forms.flatMap((f) => (Array.isArray(f.fields) ? f.fields.map((x) => x.type) : [])));
+  return { bookings: has.bookings && types.has("booking"), payments: has.payments && (types.has("payment") || types.has("items")) };
 }
 
 export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
   const base = opts.base.replace(/\/+$/, "");
-  const subs = `${base}/submissions`;
   const size = opts.pageSize ?? 50;
-  const nav = opts.nav ?? [
-    { href: base, label: "Forms" },
-    { href: subs, label: "Submissions" },
-  ];
+  const nav = opts.nav ?? [{ href: base || "/", label: "Submissions" }];
+  const tz = opts.timeZone;
   const who = (r: Item) => r.name || r.email || `Submission ${r.id}`;
+  const subUrl = (id: string) => `${base}/${id}`;
+  const app = new Hono<{ Variables: TeamVars }>();
+  app.use("*", teamOnly());
+
+  const page = (c: Context<{ Variables: TeamVars }>, title: string, body: Child, head: Omit<Head, "title"> = {}) => (
+    <SectionPage Frame={opts.Frame} css={opts.css} user={c.get("user")} label="Submissions" links={nav} current={base || "/"} head={{ title, ...head }}>
+      <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
+      {body}
+    </SectionPage>
+  );
+
+  // ---- the list ----------------------------------------------------------
+
+  // Booking and Payment are columns only where a listed form can lead to one (leadsTo).
+  const spec = (view: View, showForm: boolean, titles: Map<string, string>, has: { bookings: boolean; payments: boolean }): TableSpec<Item> => ({
+    id: "subs",
+    href: (r) => subUrl(r.id),
+    select: { form: "bulk", label: who },
+    columns: [
+      {
+        label: "From",
+        cell: (r) => (
+          <>
+            {view === "inbox" && r.status === "new" ? <span class="mr-2"><StatusBadge value="new" options={STATUSES} /></span> : null}
+            <span class={r.status === "new" ? "font-semibold" : ""}>{who(r)}</span>
+            {r.name && r.email ? <span class={`block break-all ${smallText} text-ink-2`}>{r.email}</span> : null}
+            {r.completed_at ? null : <span class={`block ${smallText} text-ink-2`}>Not finished</span>}
+          </>
+        ),
+      },
+      ...(showForm ? [{ label: "Form", cell: (r: Item) => titles.get(r.form_key) ?? r.form_key, class: "hidden sm:table-cell" }] : []),
+      ...(has.bookings ? [{
+        label: "Booking",
+        class: "hidden md:table-cell",
+        cell: (r: Item) => (r.linked?.booking ? <>{r.linked.booking.status === "cancelled" ? "Cancelled: " : ""}<When at={r.linked.booking.starts_at} timeZone={tz} /></> : ""),
+      }] : []),
+      ...(has.payments ? [{ label: "Payment", class: "hidden md:table-cell", cell: (r: Item) => r.linked?.payment?.label ?? "" }] : []),
+      { label: "Received", cell: (r) => <When at={r.created_at} timeZone={tz} /> },
+    ],
+  });
+
+  /** What the selected rows can be moved to from this tab. */
+  const MOVES: Record<View, { status: string; label: string }[]> = {
+    inbox: [{ status: "done", label: "Archive" }, { status: "spam", label: "Mark as spam" }],
+    archived: [{ status: "read", label: "Move to Inbox" }],
+    spam: [{ status: "read", label: "Not spam" }],
+  };
+
+  const list = (view: View) => async (c: Context<{ Variables: TeamVars }>) => {
+    const db = getDb(c);
+    const v = VIEWS[view];
+    const here = base + v.path || "/";
+    const f = readFilter(c);
+    const after = readCursor(c.req.query("after"));
+    const { page: rows, next } = cut(await listPage(db, v.statuses, f, after, size), size);
+    const linked = await linkedTo(db, rows.map((r) => r.id));
+    const withLinks = rows.map((r) => ({ ...r, linked: linked.get(r.id) }));
+    const { forms, titles, fresh } = await formsAndKeys(db);
+    const self = listUrl(here, { q: f.q, form: f.form });
+    const more = (cur: string) => listUrl(here, { q: f.q, form: f.form, after: cur });
+    const s = spec(view, !f.form, titles, await leadsTo(db, f.form));
+    if (isPartial(c) && after) return c.html(<TableRows spec={s} rows={withLinks} next={next} more={more} />);
+
+    const results = (
+      <div id="results">
+        <form id="bulk" method="post" action={`${base}/bulk`} aria-label="Move selected" class="mb-3 flex flex-wrap items-center gap-2">
+          <input type="hidden" name="return" value={self} />
+          <span class="text-label text-ink-2">Selected:</span>
+          {MOVES[view].map((m) => (
+            <button name="status" value={m.status} class={buttonClass}>{m.label}</button>
+          ))}
+        </form>
+        {after ? <p class="mb-3 text-label"><a href={self}>Back to the newest</a></p> : null}
+        <DataTable
+          spec={s}
+          caption={`${v.label}, newest first`}
+          rows={withLinks}
+          next={next}
+          more={more}
+          empty={f.q || f.form ? <>Nothing matches. <a href={here}>Show everything</a></> : v.empty}
+        />
+      </div>
+    );
+    if (isPartial(c)) return c.html(results);
+    const tabs = (Object.keys(VIEWS) as View[]).map((k) => ({
+      href: base + VIEWS[k].path || "/",
+      label: k === "inbox" && fresh ? `Inbox (${fresh} new)` : VIEWS[k].label,
+    }));
+    return c.html(
+      page(
+        c,
+        "Submissions",
+        <>
+          <SectionTabs label="Submissions" links={tabs} current={here} />
+          <EmailNote c={c} forms={forms} />
+          <SearchBar
+            action={here}
+            target="#results"
+            q={f.q}
+            placeholder="Name or email"
+            filters={[{ name: "form", label: "Form", options: [...titles].map(([value, label]) => ({ value, label })), value: f.form, any: "All forms" }]}
+          />
+          {results}
+          <AskNote />
+        </>,
+      ),
+    );
+  };
+
+  for (const view of Object.keys(VIEWS) as View[]) app.get(VIEWS[view].path || "/", list(view));
+
+  app.post("/bulk", async (c) => {
+    const body = await c.req.parseBody({ all: true });
+    const ret = localPath(str(body.return), base, base || "/");
+    const status = pickStatus(body.status, STATUSES);
+    const ids = formIds(body.id);
+    if (!ids.length || !status) return c.redirect(withFlash(ret, "none-selected"), 303);
+    const changed = await getDb(c).sql`
+      update submissions
+      set status = ${status}, updated_at = now(), updated_by = ${c.get("user")}
+      where id = any(${ids}::bigint[]) and status <> ${status}
+      returning id`;
+    return c.redirect(withFlash(ret, "bulk", changed.length), 303);
+  });
+
+  // ---- one submission ----------------------------------------------------
+
+  app.get("/:id{[0-9]+}", async (c) => {
+    const id = idParam(c.req.param("id"));
+    if (!id) return c.notFound();
+    const db = getDb(c);
+    // Opening a new one reads it: it stays in the Inbox, no longer marked new.
+    const [r] = await db.sql<Item & { updated_at: Date }>`
+      with opened as (update submissions set status = 'read' where id = ${id}::bigint and status = 'new' returning id)
+      select id::text as id, form_key, name, email::text as email, phone,
+             case when exists (select 1 from opened) then 'read' else status end as status,
+             page, source, created_at, completed_at, updated_by::text as updated_by, updated_at, created_at::text as k, data
+      from submissions where id = ${id}::bigint`;
+    if (!r) return c.notFound();
+    const [formRow] = await db.sql`
+      select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active
+      from forms where key = ${r.form_key}`;
+    const form = formRow ? toForm(formRow) : null;
+    const formTitle = form?.title ?? (r.form_key === BOOKING_PAGE.key ? BOOKING_PAGE.title : r.form_key);
+    const data = { ...(r.data ?? {}) };
+    // The person is on the Contact card, not repeated as answers.
+    for (const k of ["name", "email", "phone"] as const) if (r[k]) delete data[k];
+    let price: ReturnType<typeof priceOf> = null;
+    try {
+      price = form ? priceOf(form, r.data ?? {}) : null;
+    } catch {
+      price = null; // amounts in two currencies: shown as answers only
+    }
+    const answers = (form?.fields ?? [])
+      .filter((x) => Object.hasOwn(data, x.name))
+      .flatMap((x) => {
+        const v = data[x.name];
+        delete data[x.name];
+        if (x.type === "items") {
+          // An order ({ slug: quantity }) is the Order section when it prices.
+          if (price) return [];
+          const counts = v && typeof v === "object" ? Object.entries(v as Record<string, unknown>).map(([k, n]) => `${n} x ${k}`) : [];
+          return [{ label: x.label, value: counts.join(", ") }];
+        }
+        if (x.type === "photo" && typeof v === "string" && PHOTO_PATH.test(v)) {
+          return [{ label: x.label, value: <a href={v}><img src={v} alt={x.label} class="max-h-64 w-auto rounded-control" /></a> }];
+        }
+        return [{ label: x.label, value: Array.isArray(v) ? v.join(", ") : v === true ? "Yes" : v === false ? "No" : (v as Child) }];
+      });
+    const consent = data._consent as Record<string, string> | undefined;
+    const from = cameFrom(data);
+    for (const k of ["_consent", "_utm", "_referrer", "_charges", "_lines"]) delete data[k];
+    // A booking page's submission: the Booking card shows the service and who; their notes are its one answer.
+    if (r.form_key === BOOKING_PAGE.key && !form) {
+      const notes = data.notes;
+      for (const k of ["service", "with", "notes"]) delete data[k];
+      if (typeof notes === "string" && notes) answers.push({ label: "Notes", value: notes });
+    }
+    const linked = (await linkedTo(db, [r.id])).get(r.id)!;
+    const booking = linked.booking ? await bookingOf(db, linked.booking.id) : null;
+    const payment = linked.payment ? await paymentOf(db, linked.payment.id) : null;
+    // Notes are the CRM's: on the customer with this email, once there is one.
+    const customer = r.email ? await customerByEmail(db, r.email) : null;
+    const notes = customer ? await listNotes(db, customer.id) : [];
+
+    const self = subUrl(r.id);
+    const view = viewOf(r.status);
+    const move = (status: string, label: string, primary = false) => (
+      <form method="post" action={`${self}/status`}>
+        <input type="hidden" name="status" value={status} />
+        <button class={primary ? primaryClass : buttonClass}>{label}</button>
+      </form>
+    );
+    const actions =
+      view === "inbox" ? <>{move("done", "Archive", true)}{move("spam", "Mark as spam")}</>
+      : view === "archived" ? <>{move("read", "Move to Inbox")}{move("spam", "Mark as spam")}</>
+      : move("read", "Not spam");
+    const head = {
+      back: { href: base + VIEWS[view].path || "/", label: view === "inbox" ? "Submissions" : VIEWS[view].label },
+      sub: (
+        <p>
+          {formTitle} · <When at={r.created_at} timeZone={tz} />
+          {view === "inbox" ? null : <> · <StatusBadge value={r.status} options={STATUSES} /></>}
+        </p>
+      ),
+      actions,
+    };
+
+    return c.html(
+      page(
+        c,
+        who(r),
+        <>
+          <div class="grid gap-4 md:grid-cols-3">
+            <div class="flex flex-col gap-4 md:col-span-2">
+              <Section title="Contact">
+                <FieldList
+                  fields={[
+                    { label: "Name", value: r.name },
+                    { label: "Email", value: r.email ? <a href={`mailto:${r.email}`} class="break-all">{r.email}</a> : null },
+                    { label: "Phone", value: r.phone ? <a href={`tel:${r.phone.replace(/[^0-9+]/g, "")}`}>{r.phone}</a> : null },
+                  ]}
+                />
+              </Section>
+              {price ? (
+                <Section title="Order">
+                  <FieldList fields={[
+                    ...price.lines.map((l) => ({ label: l.quantity > 1 ? `${l.quantity} x ${l.label}` : l.label, value: formatMoney(l.quantity * l.unit_cents, price!.currency) })),
+                    { label: "Total before tax", value: <strong>{formatMoney(price.subtotal_cents, price.currency)}</strong> },
+                  ]} />
+                </Section>
+              ) : null}
+              {answers.length || Object.keys(data).length ? (
+                <Section title="Answers">
+                  {answers.length ? <FieldList fields={answers} /> : null}
+                  {Object.keys(data).length ? <JsonData data={data} /> : null}
+                </Section>
+              ) : null}
+              {consent && Object.keys(consent).length ? (
+                <Section title="Agreed to">
+                  <ul class="list-disc pl-5">
+                    {Object.values(consent).map((t) => (
+                      <li>{t}</li>
+                    ))}
+                  </ul>
+                </Section>
+              ) : null}
+              {r.email ? <NotesCard action={`${self}/notes`} email={r.email} notes={notes} timeZone={tz} /> : null}
+            </div>
+            <div class="flex flex-col gap-4">
+              {booking ? <BookingCard b={booking} held={linked.booking!.held && !linked.payment?.label.startsWith("Paid")} timeZone={tz} at={opts.links?.booking} /> : null}
+              {payment ? <PaymentCard p={payment} label={linked.payment!.label} at={opts.links?.payment} /> : null}
+              {r.completed_at ? null : (
+                <Section title="Not finished">
+                  <p class="text-ink-2">They answered the questions but have not finished booking or paying yet. It completes on its own when they do.</p>
+                </Section>
+              )}
+              <Section title="Where it came from">
+                <FieldList
+                  fields={[
+                    { label: "Form", value: formTitle },
+                    { label: "Page", value: r.page },
+                    { label: "Found you through", value: from },
+                    { label: "Last changed by", value: r.updated_by ? <>{r.updated_by}, <When at={r.updated_at} timeZone={tz} /></> : null },
+                  ]}
+                />
+              </Section>
+            </div>
+          </div>
+        </>,
+        head,
+      ),
+    );
+  });
+
+  // A note is about the person: it goes on their customer (the CRM's tables), made from this submission the first time.
+  app.post("/:id{[0-9]+}/notes", async (c) => {
+    const id = idParam(c.req.param("id"));
+    if (!id) return c.notFound();
+    const body = await c.req.parseBody();
+    const text = str(body.body);
+    if (!text.trim()) return c.redirect(withFlash(subUrl(id), "note-empty"), 303);
+    const db = getDb(c);
+    const [sub] = await db.sql<{ email: string; name: string | null; phone: string | null; created_at: Date; source: string }>`
+      select s.email::text as email, s.name, s.phone, s.created_at, coalesce(f.title, case when s.form_key = ${BOOKING_PAGE.key} then ${BOOKING_PAGE.title} end, s.form_key) as source
+      from submissions s left join forms f on f.key = s.form_key
+      where s.id = ${id}::bigint and s.email is not null`;
+    if (!sub) return c.notFound();
+    const customer = await customerFor(db, sub, c.get("user"));
+    await addNote(db, customer.id, { kind: pickNoteKind(body.kind) ?? "note", body: text, at: wallTime(body.at), timeZone: tz }, c.get("user"));
+    return c.redirect(withFlash(subUrl(id), "note"), 303);
+  });
+
+  app.post("/:id{[0-9]+}/status", async (c) => {
+    const id = idParam(c.req.param("id"));
+    if (!id) return c.notFound();
+    const status = pickStatus((await c.req.parseBody()).status, STATUSES);
+    if (!status) return c.text("Choose one of the listed statuses.", 400);
+    const [row] = await getDb(c).sql`
+      update submissions set status = ${status}, updated_at = now(), updated_by = ${c.get("user")}
+      where id = ${id}::bigint returning id`;
+    if (!row) return c.notFound();
+    // Archiving or marking spam is done with it: back to the list it left. Back to the Inbox stays on it.
+    return c.redirect(withFlash(status === "read" ? subUrl(id) : base || "/", status), 303);
+  });
+
+  return app;
+}
+
+// ---- a submission's booking, payment and the notes on its person ----------
+
+/**
+ * The person's notes: the CRM's timeline box (a note, or a call, email,
+ * meeting or text, now or at another time) and what is logged, newest first.
+ */
+function NotesCard({ action, email, notes, timeZone }: { action: string; email: string; notes: Note[]; timeZone: string }) {
+  return (
+    <Section title="Notes">
+      <p class={`mb-4 ${smallText} text-ink-3`}>About {email}: on every submission from them, and on their customer page in the CRM.</p>
+      <form method="post" action={action} aria-label="Log activity" class="flex flex-col gap-2">
+        <textarea name="body" rows={2} required maxlength={10000} placeholder="Add a note, or log a call" aria-label="Note" class={inputClass}></textarea>
+        <div class="flex flex-wrap items-center gap-2">
+          <Select name="kind" aria-label="Type" class="w-32">
+            {NOTE_KINDS.map((k) => (
+              <option value={k}>{NOTE_LABELS[k]}</option>
+            ))}
+          </Select>
+          <button class={buttonClass}>Log activity</button>
+          {/* Now, unless it happened earlier: the time is there when it is needed. */}
+          <details class="open:basis-full">
+            <summary class="w-fit cursor-pointer list-none px-1 text-sm/6 font-semibold text-ink-2 no-underline hover:text-ink">Another time</summary>
+            <input name="at" type="datetime-local" aria-label="When it happened" class={inputClass + " mt-2"} />
+          </details>
+        </div>
+      </form>
+      {notes.length ? (
+        <ol class="mt-6 flex flex-col gap-4">
+          {notes.map((n) => (
+            <li class="border-l-2 border-line pl-3">
+              <p class={`${smallText} text-ink-3`}>
+                <span class="font-semibold text-ink-2">{NOTE_LABELS[n.kind] ?? n.kind}</span> · <When at={n.happened_at} timeZone={timeZone} />
+                {n.author ? ` · ${n.author}` : ""}
+              </p>
+              <p class="mt-0.5 whitespace-pre-wrap break-words">{n.body}</p>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </Section>
+  );
+}
+
+type BookingRow = {
+  id: string; status: string; starts_at: Date; ends_at: Date; service: string | null; host: string | null; location_kind: string; location: string | null;
+};
+
+async function bookingOf(db: Db, id: string): Promise<BookingRow | null> {
+  const [b] = await db.sql<BookingRow>`
+    select b.id::text as id, b.status, b.starts_at, b.ends_at, t.name as service, r.name as host, b.location_kind, b.location
+    from bookings b left join booking_types t on t.id = b.type_id left join resources r on r.id = b.resource_id
+    where b.id = ${id}::bigint`;
+  return b ?? null;
+}
+
+async function paymentOf(db: Db, id: string): Promise<Payment | null> {
+  const [p] = await db.sql<Payment>`select p.*, p.id::text as id from payments p where p.id = ${id}::bigint`;
+  return p ?? null;
+}
+
+function BookingCard({ b, held, timeZone, at }: { b: BookingRow; held: boolean; timeZone: string; at?: (id: string) => string }) {
+  const upcoming = b.status === "confirmed" && new Date(b.starts_at) > new Date();
+  const base = at?.(b.id);
+  return (
+    <Section title="Booking">
+      <p class="font-semibold"><When at={b.starts_at} timeZone={timeZone} /></p>
+      <p class="text-ink-2">{[b.service, b.host ? `with ${b.host}` : null].filter(Boolean).join(" ")}</p>
+      <p class="mt-1 text-label text-ink-2">{held ? "Held until it is paid" : BOOKING_STATUSES.find((o) => o.value === b.status)?.label ?? b.status}</p>
+      {upcoming && base ? (
+        <div class="mt-3 flex flex-wrap gap-2">
+          <a href={`${base}/reschedule`} class={buttonClass}>Reschedule</a>
+          <form method="post" action={`${base}/status`} onsubmit={`return confirm(${JSON.stringify("Cancel this booking? They are told, and it cannot be undone.")})`}>
+            <input type="hidden" name="status" value="cancelled" />
+            <button class={buttonClass}>Cancel booking</button>
+          </form>
+        </div>
+      ) : null}
+    </Section>
+  );
+}
+
+function PaymentCard({ p, label, at }: { p: Payment; label: string; at?: (id: string) => string }) {
+  const base = at?.(p.id);
+  return (
+    <Section title="Payment">
+      <p>{base ? <a href={base}>{label}</a> : label}</p>
+      {refundable(p) && base ? (
+        <p class="mt-3">
+          <a href={`${base}/refund`} class={buttonClass}>Refund…</a>
+        </p>
+      ) : null}
+    </Section>
+  );
+}
+
+/**
+ * Setting forms up, for an app that offers it (the CRM): every form and what
+ * is new on it, a new form, the editor, a CSV export of a form's submissions,
+ * and who stopped part way. `submissions` is where formsAdmin is mounted.
+ */
+export function formEditor(getDb: GetDb, opts: { base: string; css: string; timeZone: string; source: string; submissions: string; nav?: NavItem[]; Frame?: Frame }) {
+  const base = opts.base.replace(/\/+$/, "");
+  const subs = opts.submissions;
+  const nav = opts.nav ?? [{ href: base, label: "Forms" }, { href: subs, label: "Submissions" }];
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
 
@@ -142,14 +602,10 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
   const layout = (c: Context<{ Variables: TeamVars }>, head: string | Head, current: string, body: Child) => (
     <SectionPage Frame={opts.Frame} css={opts.css} user={c.get("user")} label="Forms" links={nav} current={current}
       head={typeof head === "string" ? { title: head } : head}>
-      <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
+      <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={EDITOR_MESSAGES} />
       {body}
     </SectionPage>
   );
-  const withLinks = async (db: Db, rows: Item[]) => {
-    const linked = await linkedTo(db, rows.map((r) => r.id));
-    return rows.map((r) => ({ ...r, linked: linked.get(r.id) }));
-  };
 
   // ---- forms -------------------------------------------------------------
 
@@ -158,7 +614,12 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     title: form.title,
     back: { href: base, label: "Forms" },
     sub: form.active ? null : <StatusBadge value="off" options={FORM_STATES} />,
-    actions: <a href={listUrl(subs, { form: form.key })} class={buttonClass}>Submissions</a>,
+    actions: (
+      <>
+        <a href={listUrl(subs, { form: form.key })} class={buttonClass}>Submissions</a>
+        <a href={listUrl(`${base}/export.csv`, { form: form.key })} class={buttonClass}>Export CSV</a>
+      </>
+    ),
   });
 
   // As Google Forms and HubSpot list them: each form, whether it is taking
@@ -191,7 +652,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
                       {f.active ? null : <span class="ml-2"><StatusBadge value="off" options={FORM_STATES} /></span>}
                     </td>
                     <td class="px-4 py-3">
-                      {f.new_count ? <a href={listUrl(subs, { form: f.key, status: "new" })} class="font-semibold">{f.new_count}</a> : <span class="text-ink-3">0</span>}
+                      {f.new_count ? <a href={listUrl(subs, { form: f.key })} class="font-semibold">{f.new_count}</a> : <span class="text-ink-3">0</span>}
                     </td>
                     <td class="px-4 py-3">
                       {f.total ? <a href={listUrl(subs, { form: f.key })}>{f.total}</a> : <span class="text-ink-3">0</span>}
@@ -208,7 +669,14 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     );
   };
 
-  app.get("/", async (c) => c.html(await formsPage(c, <NewForm action={base} />)));
+  const newForm = (f: { title?: string; errors?: Errors; open?: boolean } = {}) => (
+    <>
+      <a href={`${base}/unfinished`} class={buttonClass}>Not finished</a>
+      <NewForm action={base} {...f} />
+    </>
+  );
+
+  app.get("/", async (c) => c.html(await formsPage(c, newForm())));
 
   // A title is all a new form needs; its key (its address) is made from it,
   // numbered when taken. A key given (the AI, a script) is used as given.
@@ -233,7 +701,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       }
       errors.key = given ? "A form with this key exists already. Choose another." : "There are many forms with this title already. Choose another.";
     }
-    return c.html(await formsPage(c, <NewForm action={base} title={title} errors={errors} open />), 422);
+    return c.html(await formsPage(c, newForm({ title, errors, open: true })), 422);
   });
 
   app.get("/form/:key", async (c) => {
@@ -289,110 +757,11 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     return c.redirect(withFlash(`${base}/form/${form.key}`, "saved") + `#${draft.focus}`, 303);
   });
 
-  // ---- submissions -------------------------------------------------------
-
-  const spec = (showForm: boolean, titles: Map<string, string>): TableSpec<Item> => ({
-    id: "subs",
-    href: (r) => `${subs}/${r.id}`,
-    select: { form: "bulk", label: who },
-    columns: [
-      { label: "From", cell: who },
-      { label: "Email", cell: (r) => r.email ?? "", class: "hidden sm:table-cell" },
-      ...(showForm ? [{ label: "Form", cell: (r: Item) => titles.get(r.form_key) ?? r.form_key, class: "hidden md:table-cell" }] : []),
-      {
-        label: "Status",
-        cell: (r) => <StatusBadge value={r.status} options={STATUSES} />,
-      },
-      {
-        label: "Booked, paid",
-        class: "hidden sm:table-cell",
-        cell: (r) => (
-          <>
-            {r.linked?.booking ? <span class="block"><When at={r.linked.booking.starts_at} timeZone={opts.timeZone} />{r.linked.booking.status === "cancelled" ? " (cancelled)" : ""}</span> : null}
-            {r.linked?.payment ? <span class="block text-label">{r.linked.payment.label}</span> : null}
-            {r.completed_at ? null : <span class="block text-label text-ink-2">Not complete</span>}
-          </>
-        ),
-      },
-      { label: "Received", cell: (r) => <When at={r.created_at} timeZone={opts.timeZone} />, class: "hidden md:table-cell" },
-    ],
-  });
-
-  app.get("/submissions", async (c) => {
-    const db = getDb(c);
-    const f = readFilter(c);
-    const after = readCursor(c.req.query("after"));
-    const cutPage = cut(await listPage(db, f, after, size), size);
-    const next = cutPage.next;
-    const page = await withLinks(db, cutPage.page);
-    const params = { q: f.q, status: f.status, form: f.form };
-    const self = listUrl(subs, params);
-    const more = (cur: string) => listUrl(subs, { ...params, after: cur });
-    const s = spec(!f.form, await formTitles(db));
-    if (isPartial(c) && after) return c.html(<TableRows spec={s} rows={page} next={next} more={more} />);
-
-    const results = (
-      <div id="results" class="group/bulk">
-        {/* As Gmail: the bar for the ticked rows shows once one is ticked. */}
-        <div class="hidden group-has-[input[name=id]:checked]/bulk:block">
-        <BulkForm id="bulk" action={`${subs}/bulk`} returnTo={self}>
-          <label class="flex items-center gap-2 text-label font-semibold text-ink-2">
-            Mark selected as
-            <select name="status" class={controlClass}>
-              {STATUSES.map((o) => (
-                <option value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </label>
-        </BulkForm>
-        </div>
-        {after ? (
-          <p class="mb-3 text-label">
-            <a href={self}>Back to the newest</a>
-          </p>
-        ) : null}
-        <DataTable
-          spec={s}
-          caption="Submissions, newest first"
-          rows={page}
-          next={next}
-          more={more}
-          empty={f.q || f.status || f.form ? <NoMatches clear={subs} /> : <EmptyState title="Nothing has come in yet.">What people send through your forms shows here.</EmptyState>}
-        />
-        <p class="mt-3 flex flex-wrap gap-x-4 text-label">
-          <a href={listUrl(`${subs}.csv`, params)}>Export CSV</a>
-          <a href={listUrl(`${subs}/unfinished`, { form: f.form })}>Not finished</a>
-        </p>
-      </div>
-    );
-    if (isPartial(c)) return c.html(results);
-    const forms = await allForms(db);
-    return c.html(
-      layout(
-        c,
-        "Submissions",
-        subs,
-        <>
-          <SearchBar
-            action={subs}
-            target="#results"
-            q={f.q}
-            placeholder="Name or email"
-            filters={[
-              { name: "form", label: "Form", options: forms.map((x) => ({ value: x.key, label: x.title })), value: f.form, any: "Every form" },
-              { name: "status", label: "Status", options: STATUSES, value: f.status, any: "All but spam" },
-            ]}
-          />
-          {results}
-        </>,
-      ),
-    );
-  });
-
-  app.get("/submissions.csv", async (c) => {
+  app.get("/export.csv", async (c) => {
     const db = getDb(c);
     const f = readFilter(c);
     const form = f.form ? (await formRow(db, f.form))?.form : null;
+    const statuses = ["new", "read", "done"];
     const answers: CsvColumn<Item>[] = form
       ? form.fields
           .filter((x) => !["name", "email", "phone"].includes(x.name))
@@ -412,26 +781,11 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       { label: "App", value: (r) => r.source },
     ];
     const day = new Date().toISOString().slice(0, 10);
-    return csvResponse(`${f.form ?? "submissions"}-${day}.csv`, columns, everyPage((after, size) => listPage(db, f, after, size, true)));
-  });
-
-  app.post("/submissions/bulk", async (c) => {
-    const body = await c.req.parseBody({ all: true });
-    const ret = localPath(str(body.return), subs, subs);
-    const status = pickStatus(body.status, STATUSES);
-    const ids = formIds(body.id);
-    if (!ids.length) return c.redirect(withFlash(ret, "none-selected"), 303);
-    if (!status) return c.redirect(withFlash(ret, "pick-status"), 303);
-    const changed = await getDb(c).sql`
-      update submissions
-      set status = ${status}, updated_at = now(), updated_by = ${c.get("user")}
-      where id = any(${ids}::bigint[]) and status <> ${status}
-      returning id`;
-    return c.redirect(withFlash(ret, "bulk", changed.length), 303);
+    return csvResponse(`${f.form ?? "submissions"}-${day}.csv`, columns, everyPage((after, size) => listPage(db, statuses, f, after, size, true)));
   });
 
   // Forms with steps that someone started and has not finished (store.ts drafts): the newest 200.
-  app.get("/submissions/unfinished", async (c) => {
+  app.get("/unfinished", async (c) => {
     const db = getDb(c);
     const formKey = c.req.query("form") ?? "";
     const only = FORM_KEY.test(formKey) ? formKey : null;
@@ -444,7 +798,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       layout(
         c,
         "Not finished",
-        subs,
+        base,
         <>
           <p class="mb-4 max-w-prose text-ink-2">
             People who started a form with steps and stopped before the end. What they answered is kept; nobody was emailed about it.
@@ -480,141 +834,33 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     );
   });
 
-  app.get("/submissions/:id", async (c) => {
-    const id = idParam(c.req.param("id"));
-    if (!id) return c.notFound();
-    const db = getDb(c);
-    const [r] = await db.sql<Item & { updated_at: Date }>`
-      select id::text as id, form_key, name, email::text as email, phone, status, page, source, created_at, completed_at,
-             updated_by::text as updated_by, updated_at, created_at::text as k, data
-      from submissions where id = ${id}::bigint`;
-    if (!r) return c.notFound();
-    const form = (await formRow(db, r.form_key))?.form;
-    const data = { ...(r.data ?? {}) };
-    let price: ReturnType<typeof priceOf> = null;
-    try {
-      price = form ? priceOf(form, r.data ?? {}) : null;
-    } catch {
-      price = null; // amounts in two currencies: shown as answers only
-    }
-    const answers = (form?.fields ?? [])
-      .filter((x) => Object.hasOwn(data, x.name))
-      .flatMap((x) => {
-        const v = data[x.name];
-        delete data[x.name];
-        if (x.type === "items") {
-          // An order ({ slug: quantity }) is the Order section when it prices.
-          if (price) return [];
-          const counts = v && typeof v === "object" ? Object.entries(v as Record<string, unknown>).map(([k, n]) => `${n} x ${k}`) : [];
-          return [{ label: x.label, value: counts.join(", ") }];
-        }
-        if (x.type === "photo" && typeof v === "string" && PHOTO_PATH.test(v)) {
-          return [{ label: x.label, value: <a href={v}><img src={v} alt={x.label} class="max-h-64 w-auto rounded-control" /></a> }];
-        }
-        return [{ label: x.label, value: Array.isArray(v) ? v.join(", ") : v === true ? "Yes" : v === false ? "No" : (v as Child) }];
-      });
-    const consent = data._consent as Record<string, string> | undefined;
-    const from = cameFrom(data);
-    delete data._consent;
-    delete data._utm;
-    delete data._referrer;
-    delete data._charges;
-    delete data._lines;
-    const self = `${subs}/${r.id}`;
-    const linked = (await linkedTo(db, [r.id])).get(r.id)!;
-    return c.html(
-      layout(
-        c,
-        {
-          title: who(r),
-          back: { href: listUrl(subs, { form: r.form_key }), label: `${form?.title ?? r.form_key} submissions` },
-          sub: (
-            <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <StatusBadge value={r.status} options={STATUSES} />
-              {r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : null}
-              {r.phone ? <a href={`tel:${r.phone}`}>{r.phone}</a> : null}
-            </span>
-          ),
-        },
-        subs,
-        // As a response in Typeform or HubSpot: the answers are the page; who,
-        // when and where from sit beside them.
-        <div class="grid gap-4 md:grid-cols-3">
-          <div class="flex flex-col gap-4 md:col-span-2">
-            {price ? (
-              <Section title="Order">
-                <FieldList fields={[
-                  ...price.lines.map((l) => ({ label: l.quantity > 1 ? `${l.quantity} x ${l.label}` : l.label, value: formatMoney(l.quantity * l.unit_cents, price!.currency) })),
-                  { label: "Total before tax", value: <strong>{formatMoney(price.subtotal_cents, price.currency)}</strong> },
-                ]} />
-              </Section>
-            ) : null}
-            <Section title="Answers">
-              {answers.length ? <FieldList fields={answers} /> : null}
-              {Object.keys(data).length ? <JsonData data={data} /> : answers.length ? null : <p class="text-ink-3">No other answers.</p>}
-            </Section>
-            {consent && Object.keys(consent).length ? (
-              <Section title="Agreed to">
-                <ul class="list-disc pl-5">
-                  {Object.values(consent).map((t) => (
-                    <li>{t}</li>
-                  ))}
-                </ul>
-              </Section>
-            ) : null}
-          </div>
-          <div class="flex flex-col gap-4">
-            <Section title="Status">
-              <StatusForm action={`${self}/status`} current={r.status} options={STATUSES} returnTo={self} label="Status" />
-            </Section>
-            {linked.booking ? (
-              <Section title="Booking">
-                <p><When at={linked.booking.starts_at} timeZone={opts.timeZone} /></p>
-                <p class="text-label text-ink-2">{linked.booking.status === "cancelled" ? "Cancelled" : linked.booking.held && !linked.payment?.label.startsWith("Paid") ? "Held until it is paid" : "Booked"}</p>
-                {opts.links?.booking ? <p class="mt-2 text-label"><a href={opts.links.booking(linked.booking.id)}>The booking</a></p> : null}
-              </Section>
-            ) : null}
-            {linked.payment ? (
-              <Section title="Payment">
-                <p>{linked.payment.label}</p>
-                {opts.links?.payment ? <p class="mt-2 text-label"><a href={opts.links.payment(linked.payment.id)}>The payment</a></p> : null}
-              </Section>
-            ) : null}
-            <Section title="Details">
-              <FieldList
-                fields={[
-                  { label: "Form", value: form?.title ?? r.form_key },
-                  { label: "Received", value: <When at={r.created_at} timeZone={opts.timeZone} /> },
-                  { label: "Finished", value: r.completed_at ? null : "Not yet: a booking or payment step is still to do" },
-                  { label: "Page", value: r.page },
-                  { label: "Came from", value: from },
-                  { label: "Last changed", value: r.updated_by ? <>{r.updated_by}, <When at={r.updated_at} timeZone={opts.timeZone} /></> : null },
-                ]}
-              />
-            </Section>
-          </div>
-        </div>,
-      ),
-    );
-  });
-
-  app.post("/submissions/:id/status", async (c) => {
-    const id = idParam(c.req.param("id"));
-    if (!id) return c.notFound();
-    const body = await c.req.parseBody();
-    const status = pickStatus(body.status, STATUSES);
-    if (!status) return c.text("Choose one of the listed statuses.", 400);
-    const ret = localPath(str(body.return), subs, `${subs}/${id}`);
-    const [row] = await getDb(c).sql`
-      update submissions
-      set status = ${status}, updated_at = now(), updated_by = ${c.get("user")}
-      where id = ${id}::bigint
-      returning id`;
-    if (!row) return c.notFound();
-    return c.redirect(withFlash(ret, "status"), 303);
-  });
-
   return app;
+}
+
+/** A form switched off shows so in the list; one taking submissions needs no word. */
+const FORM_STATES: StatusOption[] = [{ value: "off", label: "Switched off", tone: "muted" }];
+
+const EDITOR_MESSAGES: FlashMessages = {
+  saved: "Form saved.",
+  created: "Form created. Add its questions below.",
+};
+
+async function allForms(db: Db) {
+  return db.sql<{ key: string; title: string; active: boolean; new_count: number; total: number; last_at: Date | null }>`
+    select f.key, f.title, f.active,
+           (select count(*) from submissions s where s.form_key = f.key and s.status = 'new')::int as new_count,
+           (select count(*) from submissions s where s.form_key = f.key and s.status <> 'spam')::int as total,
+           (select max(created_at) from submissions s where s.form_key = f.key and s.status <> 'spam') as last_at
+    from forms f
+    order by f.title, f.key`;
+}
+
+async function formRow(db: Db, key: string) {
+  const [row] = await db.sql`
+    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active,
+           updated_at::text as version
+    from forms where key = ${key}`;
+  return row ? { form: toForm(row), raw: (Array.isArray(row.fields) ? row.fields : []) as Record<string, unknown>[], version: row.version as string } : null;
 }
 
 /** A spreadsheet cell from an answer: lists joined, yes or no for a box. */
@@ -717,17 +963,17 @@ const TYPE_LABELS: Record<Field["type"], string> = {
   text: "Short answer",
   email: "Email",
   tel: "Phone",
-  textarea: "Long answer",
+  textarea: "Paragraph",
   select: "Dropdown",
-  checkbox: "Tick boxes",
-  radio: "One choice",
+  checkbox: "Checkboxes",
+  radio: "Multiple choice",
   date: "Date",
   number: "Number",
-  consent: "Consent box",
-  items: "Things to buy",
-  photo: "Photo",
-  page: "New page",
-  booking: "Book a time",
+  consent: "Consent checkbox",
+  items: "Products",
+  photo: "Photo upload",
+  page: "Page break",
+  booking: "Appointment",
   payment: "Payment",
 };
 
@@ -799,9 +1045,6 @@ function Editor(props: {
         </div>
       </Section>
       <Section title="Questions">
-        <p class="mb-4 text-label text-ink-2">
-          A question's column is where its answers are kept. Renaming it starts a new column; earlier answers keep the old one.
-        </p>
         <ol id="fields" class="flex flex-col gap-4">
           {raw.map((f, i) => {
             const pid = `p-field-${i}`;
@@ -837,7 +1080,7 @@ function Editor(props: {
                         ))}
                       </select>
                     </label>
-                    {/* Only a dropdown, one choice or tick boxes takes options. */}
+                    {/* Only a dropdown, multiple choice or checkboxes takes options. */}
                     <label class={fieldClass + " hidden sm:col-span-2 [fieldset:has(option[value=select]:checked)_&]:flex [fieldset:has(option[value=radio]:checked)_&]:flex [fieldset:has(option[value=checkbox]:checked)_&]:flex"}>
                       Options, one per line
                       <textarea name={`f.${i}.options`} rows={3} class={controlClass}>
@@ -848,10 +1091,15 @@ function Editor(props: {
                       Help text
                       <input name={`f.${i}.help`} value={text(f.help)} placeholder="Optional" class={controlClass} />
                     </label>
-                    <label class={fieldClass}>
-                      Column
-                      <input name={`f.${i}.name`} value={text(f.name)} pattern="[a-z][a-z0-9_]*" class={controlClass} />
-                    </label>
+                    {/* Where the answers are kept: the AI and the exports read it; nobody filling the form sees it, so it waits under Advanced (as Google Forms never shows one). */}
+                    <details class="sm:col-span-2" open={/\bnamed?\b/.test(problems[String(i)] ?? "")}>
+                      <summary class="cursor-pointer text-label text-ink-2">Advanced</summary>
+                      <label class={fieldClass + " mt-2"}>
+                        Saved as
+                        <input name={`f.${i}.name`} value={text(f.name)} pattern="[a-z][a-z0-9_]*" class={controlClass} />
+                        <span class="text-label font-normal text-ink-3">Lowercase letters, digits and underscores. Changing it keeps earlier answers under the old name.</span>
+                      </label>
+                    </details>
                     {type === "booking" ? (
                       <label class={fieldClass + " sm:col-span-2"}>
                         Booking type (its page address, like intake)
@@ -908,7 +1156,7 @@ function NewForm({ action, title = "", errors = {}, open = false }: { action: st
             aria-invalid={errors.title || errors.key ? "true" : undefined} aria-describedby={errors.title || errors.key ? "new-form-p" : undefined} />
         </label>
         <Problem id="new-form-p" text={errors.title ?? errors.key} />
-        <button class={primaryClass}>Create the form</button>
+        <button class={primaryClass}>Create form</button>
       </form>
     </details>
   );

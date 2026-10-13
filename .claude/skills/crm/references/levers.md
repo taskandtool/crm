@@ -1,6 +1,6 @@
-# The levers, and jobs
+# The levers
 
-Read when changing what the CRM calls things, its statuses or deal stages, its fields or its tables, or when setting up jobs, deals or the morning email.
+Read when changing what the CRM calls things, its statuses or deal stages, its fields or its tables, or when setting up deals, tasks or the morning email.
 
 ## The four levers
 
@@ -34,12 +34,14 @@ Everything a business wants changed is one of these.
      people getting in touch; `exclude_forms` drops some (`newsletter`);
      `bookings` and `payments` turn those sources off. Find the form keys
      with `select key, title from forms`.
-   - `visits`: what one job, visit, appointment or event is called
-     (`{ "one": "Job", "many": "Jobs" }`), its own custom `fields` (same
-     shape as lever 3), and the `currency` of its amounts; `false` turns
-     them off (the counselor). See "Jobs and visits" below.
-   - `booking`: `false` leaves out the team's side of booking (the
-     dentist whose practice software books, the counselor). On otherwise.
+   - `events`: what one event on the schedule is called (`{ "one":
+     "Event", "many": "Events" }`; a trade's "Job", a practice's
+     "Appointment"), its own custom `fields` (same shape as lever 3), and
+     the `currency` of its amounts; `false` turns the schedule off (the
+     counselor). See `references/schedule.md`.
+   - `booking`: online booking (the Services customers book). `false` for
+     the dentist whose practice software books; needs `events`. On
+     otherwise.
    - `booking_page`: the Website's booking address (`https://acme.com/book`),
      once it has one, so the email for a booking the team makes carries a
      link to manage it there.
@@ -72,8 +74,8 @@ Everything a business wants changed is one of these.
    form would refuse is left out, a customer who already has a value keeps
    it, and a row with no phone takes the latest phone given with that
    email. Removing a field from the config hides it; the data stays. Two limits to tell the owner when they matter: a custom
-   field holds one value per customer (which truck went to each job is a
-   visit field, below), and the list cannot filter by one (for "show me
+   field holds one value per customer (which truck went to each job is an
+   event field: `references/schedule.md`), and the list cannot filter by one (for "show me
    everyone at the North location", use a tag or lever 4).
 
 4. **`schema.sql`, for a real column** (indexed, filtered, joined on). It is
@@ -92,25 +94,6 @@ Everything a business wants changed is one of these.
    restart, add it to `src/crm/customers.ts` and the views, `npm run check`
    and `npm test`.
 
-## Jobs and visits
-
-`customer_visits` holds one row per occasion: a plumber's job, a dentist's
-visit, a restaurant's event. Each has what it was (`title`), when
-(`starts_at`, null while not scheduled), a status (`planned`, `done`,
-`cancelled`; never deleted), who did it (`owner`, `owner_label` names it),
-an amount in minor units with its `currency`, notes, and the config's
-`visits.fields` in `fields` (jsonb). Pages: `/visits` (coming up, soonest
-first, then Done and All, CSV of each) and a section on every customer's
-page. Two rules the code keeps: a done visit counts as contact, and done
-is never in the future (a visit marked done early is dated now). Someone
-with a visit planned from now on has something planned.
-
-A fact about the customer is a customer field (their system, their
-insurer); a fact about one occasion is a visit field (the truck that went,
-the party size, the reason for the visit). A visit is a record, not a
-schedule: times people book stay in `bookings`, and a booking becomes a
-visit only when the owner asks (`visits.mjs add`).
-
 ## Deals and tasks
 
 The rules the code keeps, so the AI never redoes them by hand:
@@ -124,15 +107,16 @@ The rules the code keeps, so the AI never redoes them by hand:
   paying online.
 - A done task goes on the timeline as a note of its kind, so a done
   call counts as contact; so does a quote or an invoice that went out.
-  "No next step" (the Customers filter, `tasks.mjs list --none`) is
+  "Nothing planned" (the Customers filter, `tasks.mjs list --none`) is
   everyone with an open status or an open deal and no open task or
-  planned visit.
+  scheduled event.
 - The morning email lists each person's tasks due, through the
   owner's connected sender, once a day. Schedule it once a sender is set
   up: `python3 ~/tools/taskandtool.py schedule-job "Task emails"
   --when "0 * * * *" --command "npx tsx src/crm/digest-job.ts"` (hourly; it
-  sends at 7:00 in the business's zone, `--hour` to change). Only owners
-  written as an email get one.
+  sends at 7:00 in the business's zone, `--hour` to change). An owner
+  written as an email gets one, and so does a team member (Schedule's
+  Team) written by name.
 - Two records of one person: `customers.mjs merge <keep> <other>` shows
   a preview; add `--confirm` after the owner says yes. The kept record
   also goes by the other's email, so their history follows. A merge cannot

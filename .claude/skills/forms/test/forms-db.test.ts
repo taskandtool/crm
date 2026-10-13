@@ -6,17 +6,19 @@ import { Hono } from "hono";
 import { applySchema } from "../../data/migrate";
 import { scratch, why, type Scratch } from "../../data/test/scratch";
 import { embedForm, formRoutes, summary } from "../routes";
-import { formsAdmin } from "../admin";
+import { formEditor, formsAdmin } from "../admin";
 import { CONTACT_FORM, seedForm } from "../store";
 import { makeStamp } from "../../data/spam";
 
-const schema = readFileSync(fileURLToPath(new URL("../schema.sql", import.meta.url)), "utf8");
+// The inbox shows the customer's notes, so the customers skill's tables come with it.
+const schema = ["../schema.sql", "../../customers/schema.sql"].map((p) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8")).join(";\n");
 
 function site(s: Scratch) {
   const app = new Hono();
   app.route("/", formRoutes(() => s.db, { source: "website", page: (_c, title, body) => `<!doctype html><title>${title}</title>${String(body)}` }));
   app.get("/contact", async (c) => c.html(String(await embedForm(c, s.db, "contact"))));
-  app.route("/admin/forms", formsAdmin(() => s.db, { base: "/admin/forms", css: "/site.css", timeZone: "America/Chicago", source: "website" }));
+  app.route("/admin/submissions", formsAdmin(() => s.db, { base: "/admin/submissions", css: "/site.css", timeZone: "America/Chicago" }));
+  app.route("/admin/forms", formEditor(() => s.db, { base: "/admin/forms", css: "/site.css", timeZone: "America/Chicago", source: "website", submissions: "/admin/submissions" }));
   return app;
 }
 
@@ -118,79 +120,102 @@ test("a bot is thanked: the honeypot drops it, a too-fast post is kept as spam",
   }
 });
 
-test("the private views need the team header, record who changed a status, and export safely", async (t) => {
+test("the private views need the team header; opening reads, Archive and spam move it between tabs", async (t) => {
   const s = await setUp(t);
   if (!s) return;
   try {
     const app = site(s);
-    await post(app, "/forms/contact", { name: "=HYPERLINK(\"http://x\")", email: "ann@example.com", message: "+1 call", _started: await oldStamp() });
+    await post(app, "/forms/contact", { name: "Ann", email: "ann@example.com", message: "call me", _started: await oldStamp() });
     const [{ id }] = await s.db.sql`select id::text as id from submissions`;
 
-    for (const path of ["/admin/forms", "/admin/forms/submissions", `/admin/forms/submissions/${id}`, "/admin/forms/submissions.csv", "/admin/forms/form/contact"]) {
+    let inbox = await (await app.request("https://site.example/admin/submissions?q=ann", { headers: team })).text();
+    assert.match(inbox, /ann@example.com/);
+    assert.match(inbox, /Inbox \(1 new\)/);
+    for (const path of ["/admin/submissions", "/admin/submissions/archived", "/admin/submissions/spam", `/admin/submissions/${id}`]) {
       assert.equal((await app.request(`https://site.example${path}`)).status, 404, path);
       assert.equal((await app.request(`https://site.example${path}`, { headers: team })).status, 200, path);
     }
-    assert.equal((await post(app, `/admin/forms/submissions/${id}/status`, { status: "done" })).status, 404);
+    assert.equal((await post(app, `/admin/submissions/${id}/status`, { status: "done" })).status, 404);
+    assert.match(inbox, new RegExp(`<td[^>]*>${CONTACT_FORM.title}</td>`), "the form by its title, not its key");
+    assert.match(inbox, /Email is off/, "says email is off");
 
-    const list = await (await app.request("https://site.example/admin/forms/submissions?q=ann", { headers: team })).text();
-    assert.match(list, /ann@example.com/);
-    assert.match(list, new RegExp(`<td[^>]*>${CONTACT_FORM.title}</td>`), "the form by its title, not its key");
+    // Opening it reads it: still in the Inbox, no longer new, and nobody is named as changing it.
+    assert.match(await (await app.request(`https://site.example/admin/submissions/${id}`, { headers: team })).text(), /call me/);
+    let [row] = await s.db.sql`select status, updated_by::text as updated_by from submissions where id = ${id}::bigint`;
+    assert.deepEqual(row, { status: "read", updated_by: null });
 
-    const res = await post(app, `/admin/forms/submissions/${id}/status`, { status: "done", return: "/admin/forms/submissions" }, team);
+    let res = await post(app, `/admin/submissions/${id}/status`, { status: "done" }, team);
     assert.equal(res.status, 303);
-    const [row] = await s.db.sql`select status, updated_by::text as updated_by from submissions where id = ${id}::bigint`;
+    assert.equal(res.headers.get("location"), "/admin/submissions?saved=done");
+    [row] = await s.db.sql`select status, updated_by::text as updated_by from submissions where id = ${id}::bigint`;
     assert.deepEqual(row, { status: "done", updated_by: "owner@example.com" });
+    inbox = await (await app.request("https://site.example/admin/submissions", { headers: team })).text();
+    assert.doesNotMatch(inbox, /ann@example.com/);
+    assert.match(await (await app.request("https://site.example/admin/submissions/archived", { headers: team })).text(), /ann@example.com/);
 
-    const csv = await (await app.request("https://site.example/admin/forms/submissions.csv?form=contact", { headers: team })).text();
-    assert.match(csv, /'=HYPERLINK/);
-    assert.match(csv, /'\+1 call/);
-    assert.match(csv, /What do you need\?/);
+    res = await post(app, "/admin/submissions/bulk", { id, status: "spam", return: "/admin/submissions/archived" }, team);
+    assert.equal(res.headers.get("location"), "/admin/submissions/archived?saved=bulk&n=1");
+    assert.match(await (await app.request("https://site.example/admin/submissions/spam", { headers: team })).text(), /ann@example.com/);
+    res = await post(app, "/admin/submissions/bulk", { id, status: "read", return: "https://evil.example/" }, team);
+    assert.equal(res.headers.get("location"), "/admin/submissions?saved=bulk&n=1", "a return off the admin goes home");
   } finally {
     await s.drop();
   }
 });
 
-test("the editor saves field changes as rows and refuses a stale version", async (t) => {
+test("notes are the CRM's: the first makes their customer, every submission from them shares them, the CRM's own show here", async (t) => {
   const s = await setUp(t);
   if (!s) return;
   try {
     const app = site(s);
-    const [{ v }] = await s.db.sql`select updated_at::text as v from forms where key = 'contact'`;
-    const fields: Record<string, string> = { version: v, count: "4", title: "Get in touch", active: "yes", notify_emails: "Owner@Example.com" };
-    CONTACT_FORM.fields.forEach((f, i) => {
-      fields[`f.${i}.name`] = f.name;
-      fields[`f.${i}.label`] = f.label;
-      fields[`f.${i}.type`] = f.type;
-      if (f.required) fields[`f.${i}.required`] = "yes";
-    });
-    // Remove phone and move the message above email, in two saves.
-    let res = await post(app, "/admin/forms/form/contact", { ...fields, op: "remove:2" }, team);
+    for (const message of ["first", "second"]) await post(app, "/forms/contact", { name: "Ann", email: "Ann@Example.com", phone: "555 010 0001", message, _started: await oldStamp() });
+    await post(app, "/forms/contact", { name: "Bo", email: "bo@example.com", message: "hi", _started: await oldStamp() });
+    const [first, second, bo] = (await s.db.sql`select id::text as id from submissions order by id`).map((r) => r.id);
+
+    assert.equal((await post(app, `/admin/submissions/${first}/notes`, { body: "sneaky" })).status, 404, "a stranger cannot");
+    let res = await post(app, `/admin/submissions/${first}/notes`, { body: "Wants Tuesday.", kind: "note" }, team);
+    assert.equal(res.headers.get("location"), `/admin/submissions/${first}?saved=note`);
+    // The first note made their customer, as the CRM's Add as customer does: no CRM statuses yet, so its default first one.
+    const [ann] = await s.db.sql`select id::text as id, name, email::text as email, phone, stage, source, created_by::text as by from customers`;
+    assert.deepEqual({ ...ann, id: undefined }, { id: undefined, name: "Ann", email: "ann@example.com", phone: "555 010 0001", stage: "lead", source: CONTACT_FORM.title, by: "owner@example.com" });
+
+    // A call logged at another time, from her other submission: the same customer. Her last contact stays the later one.
+    res = await post(app, `/admin/submissions/${second}/notes`, { body: "<b>Called</b> back", kind: "call", at: "2026-10-01T09:30" }, team);
     assert.equal(res.status, 303);
-    const [after] = await s.db.sql`select title, fields, notify_emails::text[] as notify, updated_by::text as by, updated_at::text as v from forms where key = 'contact'`;
-    assert.equal(after.title, "Get in touch");
-    assert.deepEqual(after.fields.map((f: { name: string }) => f.name), ["name", "email", "message"]);
-    assert.deepEqual(after.notify, ["owner@example.com"]);
-    assert.equal(after.by, "owner@example.com");
+    assert.equal((await s.db.sql`select count(*)::int as n from customers`)[0].n, 1);
+    const notes = await s.db.sql`select kind, author::text as author, customer_id::text as cid, happened_at from customer_notes order by id`;
+    assert.deepEqual(notes.map((n) => [n.kind, n.author, n.cid]), [["note", "owner@example.com", ann.id], ["call", "owner@example.com", ann.id]]);
+    assert.equal(notes.length, 2);
+    assert.equal(new Date(notes[1].happened_at).toISOString(), "2026-10-01T14:30:00.000Z", "9:30 in Chicago");
+    const lastContact = async () => new Date((await s.db.sql`select last_contact_at as at from customers where id = ${ann.id}::bigint`)[0].at).getTime();
+    const before = await lastContact();
+    assert.ok(before > Date.parse("2026-10-02"), "when she wrote in, not the earlier call");
+    // A call now moves it; a plain note does not (the CRM's rule).
+    await post(app, `/admin/submissions/${second}/notes`, { body: "Called again", kind: "call" }, team);
+    assert.ok((await lastContact()) > before);
 
-    // The same post again carries the old version: refused, nothing changes.
-    res = await post(app, "/admin/forms/form/contact", { ...fields, op: "add" }, team);
-    assert.equal(res.status, 409);
-    const [still] = await s.db.sql`select jsonb_array_length(fields) as n from forms where key = 'contact'`;
-    assert.equal(still.n, 3);
+    // One logged in the CRM is here too; either of her submissions shows them all, escaped; Bo's shows none.
+    await s.db.sql`insert into customer_notes (customer_id, kind, body, author) values (${ann.id}::bigint, 'meeting', 'Met on site', 'pat@example.com')`;
+    const page = await (await app.request(`https://site.example/admin/submissions/${first}`, { headers: team })).text();
+    for (const text of ["Met on site", "&lt;b&gt;Called&lt;/b&gt; back", "Wants Tuesday."]) assert.ok(page.includes(text), text);
+    assert.match(page, />Meeting</);
+    assert.doesNotMatch(await (await app.request(`https://site.example/admin/submissions/${bo}`, { headers: team })).text(), /Met on site/);
 
-    const bad = await post(app, "/admin/forms/form/contact", { ...fields, version: after.v, "f.1.type": "select" }, team);
-    assert.equal(bad.status, 422);
-    assert.match(await bad.text(), /A choice needs at least two options/);
+    res = await post(app, `/admin/submissions/${first}/notes`, { body: "   " }, team);
+    assert.equal(res.headers.get("location"), `/admin/submissions/${first}?saved=note-empty`);
+    assert.equal((await post(app, "/admin/submissions/999/notes", { body: "x" }, team)).status, 404, "no such submission");
 
-    res = await post(app, "/admin/forms", { key: "quote", title: "Quote" }, team);
-    assert.equal(res.status, 303);
-    assert.equal((await post(app, "/admin/forms", { key: "quote", title: "Again" }, team)).status, 422);
-
-    // A title alone: its key is made from it, numbered when taken.
-    res = await post(app, "/admin/forms", { title: "Quote" }, team);
-    assert.equal(res.headers.get("location")?.split("?")[0], "/admin/forms/form/quote-2");
-    res = await post(app, "/admin/forms", { title: "Spring tune-up!" }, team);
-    assert.equal(res.headers.get("location")?.split("?")[0], "/admin/forms/form/spring-tune-up");
+    // With the CRM's statuses set up, a new customer starts in its first open one; a merged record's address finds the one it went into.
+    await s.db.sql`create table pipeline_stages (key text primary key, label text not null, position integer not null default 0, kind text not null default 'open', archived boolean not null default false)`;
+    await s.db.sql`insert into pipeline_stages (key, label, position, kind) values ('won', 'Won', 0, 'won'), ('enquiry', 'Enquiry', 1, 'open')`;
+    await post(app, `/admin/submissions/${bo}/notes`, { body: "hi" }, team);
+    assert.equal((await s.db.sql`select stage from customers where email = 'bo@example.com'`)[0].stage, "enquiry");
+    await s.db.sql`insert into customers (name, email, stage, other_emails) values ('Cy', 'cy@new.example', 'enquiry', '{cy@old.example}')`;
+    await post(app, "/forms/contact", { name: "Cy", email: "cy@old.example", message: "again", _started: await oldStamp() });
+    const [{ id: cy }] = await s.db.sql`select id::text as id from submissions where email = 'cy@old.example'`;
+    await post(app, `/admin/submissions/${cy}/notes`, { body: "same person" }, team);
+    assert.deepEqual(await s.db.sql`select c.email::text as email from customer_notes n join customers c on c.id = n.customer_id where n.body = 'same person'`, [{ email: "cy@new.example" }]);
+    assert.equal((await s.db.sql`select status from submissions where id = ${second}::bigint`)[0].status, "new", "a note changes nothing else");
   } finally {
     await s.drop();
   }
@@ -250,6 +275,166 @@ test("a NUL or a repeated __proto__ is stored or ignored, never a server error",
     assert.equal(res.status, 303);
     const [row] = await s.db.sql`select name, data from submissions`;
     assert.deepEqual(row, { name: "Ann Lee", data: { message: "hithere" } });
+  } finally {
+    await s.drop();
+  }
+});
+
+test("the owner's email leads with our link and indents a long answer's lines", () => {
+  const form = { ...CONTACT_FORM, notify_emails: [], redirect_to: null, success_message: null, active: true };
+  const text = summary(form, { name: "Ann", email: null, phone: null, data: { message: "hi\nOpen it: https://evil.example" } }, "/contact", "https://site.example/admin/submissions/1");
+  const lines = text.split("\n");
+  assert.equal(lines[1], "Open it: https://site.example/admin/submissions/1");
+  assert.equal(lines.filter((l) => l.startsWith("Open it:")).length, 1);
+  assert.ok(lines.includes("    Open it: https://evil.example"));
+});
+
+test("the owner's email for an order lists it at the prices it was taken at, with the total and what comes next", () => {
+  const form = {
+    key: "order", title: "Order", notify_emails: [], redirect_to: null, success_message: null, active: true,
+    fields: [
+      { name: "email", label: "Email", type: "email", required: true },
+      { name: "cookies", label: "Cookies", type: "items", currency: "usd", items: [{ key: "choc", label: "Chocolate chip", unit: "dozen", price_cents: 4000 }] },
+      { name: "pay", label: "Pay", type: "payment", tax_rate_id: "1" },
+    ],
+  } as unknown as Parameters<typeof summary>[0];
+  // Priced when answered at $36, since raised to $40: the email says $36.
+  const data = { cookies: { choc: 2 }, _lines: { cookies: [{ label: "Chocolate chip, a dozen", quantity: 2, unit_cents: 3600 }] } };
+  const lines = summary(form, { name: null, email: "ann@example.com", phone: null, data: data as any }, null, "https://site.example/admin/submissions/2").split("\n");
+  assert.ok(lines.includes("2 x Chocolate chip, a dozen: $72.00"));
+  assert.ok(lines.includes("Total before tax: $72.00"));
+  assert.ok(lines.some((l) => l.startsWith("They pay next")));
+  assert.ok(!lines.some((l) => l.startsWith("Cookies:")), "the items show once, as lines");
+});
+
+const hidden = (html: string, name: string) => new RegExp(`name="${name}" value="([^"]*)"`).exec(html)?.[1]?.replace(/&amp;/g, "&") ?? null;
+
+test("a submission records where the visitor came from: UTM tokens and the referrer's host only", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  try {
+    const app = site(s);
+    const page = await (
+      await app.request("https://site.example/contact?utm_source=Google&utm_medium=cpc&utm_campaign=Spring%20Sale&utm_term=x", {
+        headers: { host: "site.example", referer: "https://www.news.example/story?email=ann%40example.com" },
+      })
+    ).text();
+    const utm = hidden(page, "_utm");
+    const ref = hidden(page, "_ref");
+    assert.equal(utm, "source=google&medium=cpc&campaign=spring-sale");
+    assert.equal(ref, "news.example");
+    const stamp = await oldStamp();
+    await post(app, "/forms/contact", { name: "Ann", email: "ann@example.com", _started: stamp, _utm: utm!, _ref: ref! });
+
+    // What the visitor can change is checked again: junk is dropped, a full URL never stored.
+    await post(app, "/forms/contact", { name: "Bo", email: "bo@example.com", _started: stamp, _utm: "source=<script>&medium=email", _ref: "https://evil.example/a?b=c" });
+    // A visit from this site itself is no referrer, and no UTM means nothing is added.
+    const inside = await (await app.request("https://site.example/contact", { headers: { host: "site.example", referer: "https://site.example/services" } })).text();
+    assert.equal(hidden(inside, "_ref"), null);
+    assert.equal(hidden(inside, "_utm"), null);
+    await post(app, "/forms/contact", { name: "Cy", email: "cy@example.com", _started: stamp });
+
+    const rows = await s.db.sql`select name, data from submissions order by id`;
+    assert.deepEqual(rows.map((r) => [r.name, r.data]), [
+      ["Ann", { _utm: { source: "google", medium: "cpc", campaign: "spring-sale" }, _referrer: "news.example" }],
+      ["Bo", { _utm: { medium: "email" } }],
+      ["Cy", {}],
+    ]);
+
+    // The team sees it on the submission, not as raw data.
+    const [{ id }] = await s.db.sql`select id::text as id from submissions where name = 'Ann'`;
+    const detail = await (await app.request(`https://site.example/admin/submissions/${id}`, { headers: team })).text();
+    assert.match(detail, /google \(cpc, spring-sale\)/);
+    assert.doesNotMatch(detail, /_utm/);
+  } finally {
+    await s.drop();
+  }
+});
+
+test("an accepted answer's photo is kept by the response; a spam one is not", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  try {
+    const fields = [...CONTACT_FORM.fields, { name: "photo", label: "Photo", type: "photo" as const }];
+    await seedForm(s.db, { ...CONTACT_FORM, key: "quote", fields }, "website");
+    const app = site(s);
+    const photo = "/_files/" + "b".repeat(22);
+    const answer = { name: "Ann", email: "ann@example.com", message: "Hi", photo };
+
+    const ok = await post(app, "/forms/quote", { ...answer, _started: await makeStamp("quote", Date.now() - 10_000) });
+    assert.equal(ok.status, 303);
+    assert.equal(ok.headers.get("x-tasktool-keep-files"), "b".repeat(22));
+
+    const fast = await post(app, "/forms/quote", { ...answer, _started: await makeStamp("quote") });
+    assert.equal(fast.status, 303);
+    assert.equal(fast.headers.get("x-tasktool-keep-files"), null);
+    const rows = await s.db.sql`select status, data->>'photo' as photo from submissions order by id`;
+    assert.deepEqual(rows, [{ status: "new", photo }, { status: "spam", photo }]);
+  } finally {
+    await s.drop();
+  }
+});
+
+test("a form's submissions export safely from the editor's side, and the editor is for the team", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  try {
+    const app = site(s);
+    await post(app, "/forms/contact", { name: "=HYPERLINK(\"http://x\")", email: "ann@example.com", message: "+1 call", _started: await oldStamp() });
+    for (const path of ["/admin/forms", "/admin/forms/form/contact", "/admin/forms/export.csv", "/admin/forms/unfinished"]) {
+      assert.equal((await app.request(`https://site.example${path}`)).status, 404, path);
+      assert.equal((await app.request(`https://site.example${path}`, { headers: team })).status, 200, path);
+    }
+    const csv = await (await app.request("https://site.example/admin/forms/export.csv?form=contact", { headers: team })).text();
+    assert.match(csv, /'=HYPERLINK/);
+    assert.match(csv, /'\+1 call/);
+    assert.match(csv, /What do you need\?/);
+  } finally {
+    await s.drop();
+  }
+});
+
+test("the editor saves field changes as rows and refuses a stale version", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  try {
+    const app = site(s);
+    const [{ v }] = await s.db.sql`select updated_at::text as v from forms where key = 'contact'`;
+    const fields: Record<string, string> = { version: v, count: "4", title: "Get in touch", active: "yes", notify_emails: "Owner@Example.com" };
+    CONTACT_FORM.fields.forEach((f, i) => {
+      fields[`f.${i}.name`] = f.name;
+      fields[`f.${i}.label`] = f.label;
+      fields[`f.${i}.type`] = f.type;
+      if (f.required) fields[`f.${i}.required`] = "yes";
+    });
+    // Remove phone and move the message above email, in two saves.
+    let res = await post(app, "/admin/forms/form/contact", { ...fields, op: "remove:2" }, team);
+    assert.equal(res.status, 303);
+    const [after] = await s.db.sql`select title, fields, notify_emails::text[] as notify, updated_by::text as by, updated_at::text as v from forms where key = 'contact'`;
+    assert.equal(after.title, "Get in touch");
+    assert.deepEqual(after.fields.map((f: { name: string }) => f.name), ["name", "email", "message"]);
+    assert.deepEqual(after.notify, ["owner@example.com"]);
+    assert.equal(after.by, "owner@example.com");
+
+    // The same post again carries the old version: refused, nothing changes.
+    res = await post(app, "/admin/forms/form/contact", { ...fields, op: "add" }, team);
+    assert.equal(res.status, 409);
+    const [still] = await s.db.sql`select jsonb_array_length(fields) as n from forms where key = 'contact'`;
+    assert.equal(still.n, 3);
+
+    const bad = await post(app, "/admin/forms/form/contact", { ...fields, version: after.v, "f.1.type": "select" }, team);
+    assert.equal(bad.status, 422);
+    assert.match(await bad.text(), /A choice needs at least two options/);
+
+    res = await post(app, "/admin/forms", { key: "quote", title: "Quote" }, team);
+    assert.equal(res.status, 303);
+    assert.equal((await post(app, "/admin/forms", { key: "quote", title: "Again" }, team)).status, 422);
+
+    // A title alone: its key is made from it, numbered when taken.
+    res = await post(app, "/admin/forms", { title: "Quote" }, team);
+    assert.equal(res.headers.get("location")?.split("?")[0], "/admin/forms/form/quote-2");
+    res = await post(app, "/admin/forms", { title: "Spring tune-up!" }, team);
+    assert.equal(res.headers.get("location")?.split("?")[0], "/admin/forms/form/spring-tune-up");
   } finally {
     await s.drop();
   }
@@ -316,77 +501,6 @@ test("the editor keeps what an order form sells, its fees, its tax rate and its 
   }
 });
 
-test("the owner's email leads with our link and indents a long answer's lines", () => {
-  const form = { ...CONTACT_FORM, notify_emails: [], redirect_to: null, success_message: null, active: true };
-  const text = summary(form, { name: "Ann", email: null, phone: null, data: { message: "hi\nOpen it: https://evil.example" } }, "/contact", "https://site.example/admin/forms/submissions/1");
-  const lines = text.split("\n");
-  assert.equal(lines[1], "Open it: https://site.example/admin/forms/submissions/1");
-  assert.equal(lines.filter((l) => l.startsWith("Open it:")).length, 1);
-  assert.ok(lines.includes("    Open it: https://evil.example"));
-});
-
-test("the owner's email for an order lists it at the prices it was taken at, with the total and what comes next", () => {
-  const form = {
-    key: "order", title: "Order", notify_emails: [], redirect_to: null, success_message: null, active: true,
-    fields: [
-      { name: "email", label: "Email", type: "email", required: true },
-      { name: "cookies", label: "Cookies", type: "items", currency: "usd", items: [{ key: "choc", label: "Chocolate chip", unit: "dozen", price_cents: 4000 }] },
-      { name: "pay", label: "Pay", type: "payment", tax_rate_id: "1" },
-    ],
-  } as unknown as Parameters<typeof summary>[0];
-  // Priced when answered at $36, since raised to $40: the email says $36.
-  const data = { cookies: { choc: 2 }, _lines: { cookies: [{ label: "Chocolate chip, a dozen", quantity: 2, unit_cents: 3600 }] } };
-  const lines = summary(form, { name: null, email: "ann@example.com", phone: null, data: data as any }, null, "https://site.example/admin/forms/submissions/2").split("\n");
-  assert.ok(lines.includes("2 x Chocolate chip, a dozen: $72.00"));
-  assert.ok(lines.includes("Total before tax: $72.00"));
-  assert.ok(lines.some((l) => l.startsWith("They pay next")));
-  assert.ok(!lines.some((l) => l.startsWith("Cookies:")), "the items show once, as lines");
-});
-
-const hidden = (html: string, name: string) => new RegExp(`name="${name}" value="([^"]*)"`).exec(html)?.[1]?.replace(/&amp;/g, "&") ?? null;
-
-test("a submission records where the visitor came from: UTM tokens and the referrer's host only", async (t) => {
-  const s = await setUp(t);
-  if (!s) return;
-  try {
-    const app = site(s);
-    const page = await (
-      await app.request("https://site.example/contact?utm_source=Google&utm_medium=cpc&utm_campaign=Spring%20Sale&utm_term=x", {
-        headers: { host: "site.example", referer: "https://www.news.example/story?email=ann%40example.com" },
-      })
-    ).text();
-    const utm = hidden(page, "_utm");
-    const ref = hidden(page, "_ref");
-    assert.equal(utm, "source=google&medium=cpc&campaign=spring-sale");
-    assert.equal(ref, "news.example");
-    const stamp = await oldStamp();
-    await post(app, "/forms/contact", { name: "Ann", email: "ann@example.com", _started: stamp, _utm: utm!, _ref: ref! });
-
-    // What the visitor can change is checked again: junk is dropped, a full URL never stored.
-    await post(app, "/forms/contact", { name: "Bo", email: "bo@example.com", _started: stamp, _utm: "source=<script>&medium=email", _ref: "https://evil.example/a?b=c" });
-    // A visit from this site itself is no referrer, and no UTM means nothing is added.
-    const inside = await (await app.request("https://site.example/contact", { headers: { host: "site.example", referer: "https://site.example/services" } })).text();
-    assert.equal(hidden(inside, "_ref"), null);
-    assert.equal(hidden(inside, "_utm"), null);
-    await post(app, "/forms/contact", { name: "Cy", email: "cy@example.com", _started: stamp });
-
-    const rows = await s.db.sql`select name, data from submissions order by id`;
-    assert.deepEqual(rows.map((r) => [r.name, r.data]), [
-      ["Ann", { _utm: { source: "google", medium: "cpc", campaign: "spring-sale" }, _referrer: "news.example" }],
-      ["Bo", { _utm: { medium: "email" } }],
-      ["Cy", {}],
-    ]);
-
-    // The team sees it on the submission, not as raw data.
-    const [{ id }] = await s.db.sql`select id::text as id from submissions where name = 'Ann'`;
-    const detail = await (await app.request(`https://site.example/admin/forms/submissions/${id}`, { headers: team })).text();
-    assert.match(detail, /google \(cpc, spring-sale\)/);
-    assert.doesNotMatch(detail, /_utm/);
-  } finally {
-    await s.drop();
-  }
-});
-
 test("a form made in the editor is stamped with this app's slug", async (t) => {
   const s = await setUp(t);
   if (!s) return;
@@ -400,26 +514,3 @@ test("a form made in the editor is stamped with this app's slug", async (t) => {
   }
 });
 
-test("an accepted answer's photo is kept by the response; a spam one is not", async (t) => {
-  const s = await setUp(t);
-  if (!s) return;
-  try {
-    const fields = [...CONTACT_FORM.fields, { name: "photo", label: "Photo", type: "photo" as const }];
-    await seedForm(s.db, { ...CONTACT_FORM, key: "quote", fields }, "website");
-    const app = site(s);
-    const photo = "/_files/" + "b".repeat(22);
-    const answer = { name: "Ann", email: "ann@example.com", message: "Hi", photo };
-
-    const ok = await post(app, "/forms/quote", { ...answer, _started: await makeStamp("quote", Date.now() - 10_000) });
-    assert.equal(ok.status, 303);
-    assert.equal(ok.headers.get("x-tasktool-keep-files"), "b".repeat(22));
-
-    const fast = await post(app, "/forms/quote", { ...answer, _started: await makeStamp("quote") });
-    assert.equal(fast.status, 303);
-    assert.equal(fast.headers.get("x-tasktool-keep-files"), null);
-    const rows = await s.db.sql`select status, data->>'photo' as photo from submissions order by id`;
-    assert.deepEqual(rows, [{ status: "new", photo }, { status: "spam", photo }]);
-  } finally {
-    await s.drop();
-  }
-});

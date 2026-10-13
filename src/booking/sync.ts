@@ -204,7 +204,7 @@ export async function pullCalendar(db: Db, gw: Gateway, k: CalendarRow, now: Dat
 // ---- writing bookings into the calendar -------------------------------------------
 
 type Due = {
-  id: string; resource_id: string; status: string; starts_at: Date; ends_at: Date; name: string; email: string; phone: string | null;
+  id: string; resource_id: string; status: string; starts_at: Date; ends_at: Date; name: string; email: string | null; phone: string | null;
   type_name: string | null; location_kind: string; location: string | null;
   sequence: number; event_key: string; external_event_id: string | null; external_calendar_id: string | null;
   /** An earlier push may have reached the calendar (it died, or failed): look for its event before creating one. */
@@ -218,9 +218,9 @@ const WHERE: Record<string, string> = { their_place: "At", our_place: "At", phon
 /** What the person's calendar shows: what it is and who, where, and how to reach them. */
 export function eventText(b: Pick<Due, "id" | "name" | "email" | "phone" | "type_name" | "location_kind" | "location">): { title: string; details: string; location: string | null } {
   return {
-    title: b.type_name ? `${b.type_name}: ${b.name}` : `Booking: ${b.name}`,
+    title: b.type_name ? `${b.type_name}: ${b.name}` : b.name,
     details: [
-      `${b.name} <${b.email}>`,
+      b.email ? `${b.name} <${b.email}>` : b.name,
       b.phone ? `Phone: ${b.phone}` : "",
       b.location ? `${WHERE[b.location_kind] ?? "Where"}: ${b.location}` : "",
       `Booking ${b.id}`,
@@ -328,7 +328,7 @@ export async function pushBookings(db: Db, gw: Gateway, now = new Date(), limit 
         select k.id from calendars k where k.resource_id = b.resource_id and k.receives_bookings order by k.id limit 1))
     from due where b.id = due.id
     returning b.id::text as id, b.resource_id::text as resource_id, b.status, b.starts_at, b.ends_at, b.name, b.email::text as email,
-              b.phone, (select t.name from booking_types t where t.id = b.type_id) as type_name, b.location_kind, b.location,
+              b.phone, coalesce(b.title, (select t.name from booking_types t where t.id = b.type_id)) as type_name, b.location_kind, b.location,
               b.sequence, b.event_key, b.external_event_id, b.external_calendar_id::text as external_calendar_id, due.attempted`) as Due[];
   if (!due.length) return { pushed: 0, errors: [] };
   const cals = (await db.sql`

@@ -19,7 +19,7 @@ const KIND_OPTIONS: StatusOption[] = [
 
 export function StagesPage(p: { user: string; deals: StageWithCount[]; statuses: StageWithCount[]; flash: { code?: string | null; n?: string | null } }) {
   return (
-    <Layout title="Stages" user={p.user} section="stages">
+    <Layout title="Stages and statuses" user={p.user} section="deals" back={{ href: "/deals", label: dealsCfg.many }}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <StageList
         pipeline="deals"

@@ -14,7 +14,7 @@ carries meaning. `npm run check` enforces the parts that can be checked.
 | `--color-panel` | A pipeline column, a flash, a hover, the current nav item. |
 | `--color-ink` / `ink-2` / `ink-3` | Text, secondary text, metadata. Every pair meets 4.5:1 on canvas and panel. |
 | `--color-accent` / `accent-ink` / `accent-hover` | The one action colour: a page's primary action, Save, the focus ring; `accent-hover` under the pointer. A badge in it (New, a won stage) is a 10% tint with accent text, never filled: a filled accent is a button. |
-| `--color-late` | An overdue task, in its words ("Overdue"), never a colour alone. Nothing else is red. |
+| `--color-late` | Something past its day, always in its words, never a colour alone: an overdue task ("Overdue"), an event not marked after its time ("Late"), an invoice past due ("Past due"). Nothing else is red. |
 | `--color-line` / `line-strong` | Hairlines; input, button and table edges. `line-strong` keeps 3:1 on every ground, the floor for a control's edge. |
 
 Change a value in `styles/theme.css` and keep its row here. The Tailwind
@@ -41,7 +41,7 @@ written again. A link is underlined in `line-strong` until pointed at.
   title, then one line of who it is for (company, phone, email), with the
   page's actions on the right. At most one action is primary.
 - A list page's primary action is **New** (New customer, New request, New
-  job), a page of its own. A record's page reads as values with **Edit**
+  event), a page of its own. A record's page reads as values with **Edit**
   for the form; who added it is one quiet line at its foot, beside Merge
   and Archive.
 - Dates drop the year in this one and the time where the day is the point

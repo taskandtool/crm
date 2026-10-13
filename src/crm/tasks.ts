@@ -6,9 +6,10 @@
 // done moves their last contact as any call does. Never deleted.
 //
 // "Nothing planned" is everyone in play (an open status, or an open deal)
-// with no open task and no visit planned from today on: the list
+// with no open task and no event scheduled from today on: the list
 // nobody should be on for long, quietest first.
 import { q, type Db } from "../data/db";
+import { sameAs } from "./people";
 import { addDays } from "../reports/sql";
 
 export { addDays };
@@ -187,7 +188,7 @@ export async function listTasks(db: Db, view: TaskView, today: string, owner: st
   return sql<Task>(db)`
     select {select} {from}
     where t.done_at is null and c.archived_at is null
-      and (${owner}::text is null or t.owner = ${owner}::citext)
+      and (${owner}::text is null or t.owner = any(${owner ? sameAs(owner) : null}::citext[]))
       and case ${view}::text
             when 'today' then t.due_on <= ${today}::date
             else t.due_on > ${today}::date and t.due_on <= ${until}::date end
@@ -202,7 +203,7 @@ export async function taskCounts(db: Db, today: string, owner: string | null): P
            count(*) filter (where t.due_on = ${today}::date)::int as today
     from follow_ups t join customers c on c.id = t.customer_id
     where t.done_at is null and c.archived_at is null and t.due_on <= ${today}::date
-      and (${owner}::text is null or t.owner = ${owner}::citext)`;
+      and (${owner}::text is null or t.owner = any(${owner ? sameAs(owner) : null}::citext[]))`;
   return r;
 }
 
@@ -264,7 +265,7 @@ export type Unplanned = {
 
 /**
  * Everyone in play with nothing planned: an open status or an open deal, no
- * open task, no visit planned from today on. Quietest first (their last
+ * open task, no event scheduled from today on. Quietest first (their last
  * contact, or when they were added). `owner` narrows to the customers one
  * person looks after, or whose open deal they own. Days are calendar days in
  * `timeZone`: someone added late yesterday was added yesterday.
@@ -281,10 +282,11 @@ export async function nothingPlanned(db: Db, owner: string | null, limit = 100, 
       and (exists (select 1 from pipeline_stages s where s.key = c.stage and s.kind = 'open')
            or exists (select 1 from deals d join deal_stages s on s.key = d.stage where d.customer_id = c.id and d.archived_at is null and s.kind = 'open'))
       and not exists (select 1 from follow_ups t where t.customer_id = c.id and t.done_at is null)
-      and not exists (select 1 from customer_visits v where v.customer_id = c.id and v.status = 'planned' and v.starts_at >= now())
-      and (${owner}::text is null or c.owner = ${owner}::citext
+      and not exists (select 1 from bookings b where b.status = 'confirmed' and b.starts_at >= now()
+                      and (b.customer_id = c.id or (b.customer_id is null and b.email is not null and (b.email = c.email or c.other_emails @> array[lower(b.email::text)]))))
+      and (${owner}::text is null or c.owner = any(${owner ? sameAs(owner) : null}::citext[])
            or exists (select 1 from deals d join deal_stages s on s.key = d.stage
-                      where d.customer_id = c.id and d.archived_at is null and s.kind = 'open' and d.owner = ${owner}::citext))
+                      where d.customer_id = c.id and d.archived_at is null and s.kind = 'open' and d.owner = any(${owner ? sameAs(owner) : null}::citext[])))
     order by coalesce(c.last_contact_at, c.created_at), c.id
     limit ${limit + 1}`;
 }

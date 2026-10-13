@@ -16,6 +16,7 @@ import type { CustomField, InboxConfig } from "../config-schema";
 import { createCustomer, fillBlanks, validK, type Customer } from "./customers";
 import { readFields } from "./fields";
 import { cleanPhone } from "./phone";
+import { BOOKING_PAGE } from "../forms/store";
 import { clean } from "./text";
 import { present as presentTables, type Present } from "./tables";
 
@@ -35,8 +36,8 @@ type Base = {
   customer_archived_at: Date | null;
 };
 export type SubmissionRow = Base & { kind: "submission"; form_key: string; form_title: string | null; data: Record<string, unknown> };
-export type BookingRow = Base & { kind: "booking"; starts_at: Date; ends_at: Date; resource_name: string | null; type_name: string | null };
-export type PaymentRow = Base & { kind: "payment"; amount_cents: string; currency: string; pay_kind: string; description: string | null; livemode: boolean | null };
+export type BookingRow = Base & { kind: "booking"; starts_at: Date; ends_at: Date; resource_name: string | null; type_name: string | null; /** Marked done in the Inbox. */ handled: boolean };
+export type PaymentRow = Base & { kind: "payment"; amount_cents: string; currency: string; pay_kind: string; description: string | null; livemode: boolean | null; /** Marked done in the Inbox. */ handled: boolean };
 export type InboxRow = SubmissionRow | BookingRow | PaymentRow;
 
 export type InboxCursor = { k: string; r: number; id: string };
@@ -113,6 +114,7 @@ export async function inboxPage(
           order by (s.email is not null and (c.email = s.email or c.other_emails @> array[lower(s.email::text)])) desc, c.archived_at nulls first, c.id
           limit 1) m on true
         where s.status <> 'spam'
+          and s.form_key <> ${BOOKING_PAGE.key}
           and (${all}::boolean or s.form_key = any(${keys}::text[]))
           and not (s.form_key = any(${exclude}::text[]))
           and (${form}::text is null or s.form_key = ${form}::text)
@@ -124,12 +126,12 @@ export async function inboxPage(
         limit ${n}`,
     );
   }
-  if (p.bookings && ib.bookings !== false && !form) {
-    // bookings references resources and booking_types, so both are there too.
+  if (ib.bookings !== false && !form) {
     jobs.push(
       db.sql<BookingRow>`
         select 'booking' as kind, b.id::text as id, b.created_at, b.starts_at, b.ends_at, b.name, b.email::text as email, b.phone, b.status,
                r.name as resource_name, t.name as type_name,
+               exists (select 1 from inbox_done d where d.kind = 'booking' and d.ref_id = b.id) as handled,
                to_char(b.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k,
                m.id::text as customer_id, m.name as customer_name, m.archived_at as customer_archived_at
         from bookings b
@@ -142,9 +144,11 @@ export async function inboxPage(
                  and right(regexp_replace(regexp_replace(c.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10) = right(regexp_replace(regexp_replace(b.phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10))
           order by (b.email is not null and (c.email = b.email or c.other_emails @> array[lower(b.email::text)])) desc, c.archived_at nulls first, c.id
           limit 1) m on true
-        where (${since}::timestamptz is null or b.created_at >= ${since}::timestamptz)
+        where coalesce(b.source, '') <> 'crm' -- one the team put on the schedule is not news
+          and (${since}::timestamptz is null or b.created_at >= ${since}::timestamptz)
           and (not ${unmatched}::boolean or m.id is null)
-          and (not ${todo}::boolean or (m.id is null and b.status <> 'cancelled'))
+          and (not ${todo}::boolean or (m.id is null and b.status <> 'cancelled'
+               and not exists (select 1 from inbox_done d where d.kind = 'booking' and d.ref_id = b.id)))
           and (${ak}::timestamptz is null or (b.created_at, 1, b.id) < (${ak}::timestamptz, ${ar}::int, ${aid}::bigint))
         order by b.created_at desc, b.id desc
         limit ${n}`,
@@ -156,6 +160,7 @@ export async function inboxPage(
       db.sql<PaymentRow>`
         select 'payment' as kind, p.id::text as id, p.created_at, p.name, p.email::text as email, null::text as phone, p.status,
                p.amount_cents::text as amount_cents, p.currency, p.kind as pay_kind, p.description, p.livemode,
+               exists (select 1 from inbox_done d where d.kind = 'payment' and d.ref_id = p.id) as handled,
                to_char(p.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k,
                m.id::text as customer_id, m.name as customer_name, m.archived_at as customer_archived_at
         from payments p
@@ -167,7 +172,7 @@ export async function inboxPage(
         where p.status in ('paid', 'refunded', 'partially_refunded')
           and (${since}::timestamptz is null or p.created_at >= ${since}::timestamptz)
           and (not ${unmatched}::boolean or m.id is null)
-          and (not ${todo}::boolean or m.id is null)
+          and (not ${todo}::boolean or (m.id is null and not exists (select 1 from inbox_done d where d.kind = 'payment' and d.ref_id = p.id)))
           and (${ak}::timestamptz is null or (p.created_at, 2, p.id) < (${ak}::timestamptz, ${ar}::int, ${aid}::bigint))
         order by p.created_at desc, p.id desc
         limit ${n}`,
@@ -226,7 +231,7 @@ export async function addFromInbox(
       const [f] = await db.sql<{ title: string }>`select title from forms where key = ${row.source}`;
       if (f?.title) row.source = f.title;
     }
-  } else if (kind === "booking" && p.bookings) {
+  } else if (kind === "booking") {
     // What they booked is where they came from; a visit at their place gave their address.
     [row] = await db.sql<Src>`
       select b.name, b.email::text as email, b.phone, b.created_at, coalesce('Booking: ' || t.name, 'Booking') as source,
@@ -265,12 +270,11 @@ async function latestPhone(db: Db, p: Present, email: string): Promise<string | 
       where email = ${email}::citext and status <> 'spam' and nullif(trim(phone), '') is not null
       order by created_at desc, id desc limit 1`);
   }
-  if (p.bookings) {
-    jobs.push(db.sql<P>`
-      select phone, created_at as at from bookings
-      where email = ${email}::citext and nullif(trim(phone), '') is not null
-      order by created_at desc, id desc limit 1`);
-  }
+  jobs.push(db.sql<P>`
+    select phone, created_at as at from bookings
+    where email = ${email}::citext and nullif(trim(phone), '') is not null
+    order by created_at desc, id desc limit 1`);
+
   const [latest] = (await Promise.all(jobs)).flat().sort((a, b) => b.at.getTime() - a.at.getTime());
   return latest ? cleanPhone(latest.phone) : null;
 }
@@ -298,6 +302,20 @@ export async function markDone(db: Db, id: string, user: string): Promise<boolea
     where id = ${id}::bigint and status in ('new', 'read')
     returning id`;
   return rows.length > 0;
+}
+
+/** Take a booking or payment off To do: "done", "already" when it was, "missing" when there is none by that id. */
+export async function markHandled(db: Db, kind: "booking" | "payment", id: string, user: string): Promise<"done" | "already" | "missing"> {
+  if (!/^\d{1,18}$/.test(id)) return "missing";
+  if (kind === "payment" && !(await presentTables(db)).payments) return "missing";
+  const found = kind === "booking"
+    ? await db.sql`select 1 from bookings where id = ${id}::bigint`
+    : await db.sql`select 1 from payments where id = ${id}::bigint`;
+  if (!found.length) return "missing";
+  const rows = await db.sql`
+    insert into inbox_done (kind, ref_id, done_by) values (${kind}, ${id}::bigint, ${user})
+    on conflict do nothing returning ref_id`;
+  return rows.length ? "done" : "already";
 }
 
 /** A submission's status, or null when there is none by that id: what markDone found instead. */

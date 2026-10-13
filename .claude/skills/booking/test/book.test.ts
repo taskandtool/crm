@@ -7,6 +7,7 @@ import { applySchema } from "../../data/migrate";
 import { scratch, why, type Scratch } from "../../data/test/scratch";
 import {
   book, bookingByToken, cancelByToken, hostsOf, openSlotAt, resourceById, openSlotsFor, reschedule, setStatus, takeSlot, tokenHash, type BookingType,
+  checkBooker,
 } from "../book";
 import { addTimeOff, addWindow, createPerson, createType, readPerson, readType, setHosts, weeklyHours } from "../hours";
 
@@ -311,7 +312,7 @@ test("the hours editor refuses bad and overlapping windows", (t) =>
     assert.ok(!badType.ok);
     assert.deepEqual(Object.keys(badType.errors).sort(), ["duration_min", "location", "name", "slug"]);
     assert.ok(!readType({ name: "x", slug: "manage", duration_min: "30", interval_min: "30", buffer_before_min: "0", buffer_after_min: "0", min_notice_min: "0", horizon_days: "60", location_kind: "phone" }).ok, "manage is the manage links' address");
-    assert.equal(((await createType(s.db, { name: "Again", slug: "pat", duration_min: "30", interval_min: "30", buffer_before_min: "0", buffer_after_min: "0", min_notice_min: "0", horizon_days: "60", location_kind: "phone" }, "o@x.com", "test")) as { errors: Record<string, string> }).errors.slug, "Another booking type already uses this address.");
+    assert.equal(((await createType(s.db, { name: "Again", slug: "pat", duration_min: "30", interval_min: "30", buffer_before_min: "0", buffer_after_min: "0", min_notice_min: "0", horizon_days: "60", location_kind: "phone" }, "o@x.com", "test")) as { errors: Record<string, string> }).errors.slug, "Another service already uses this booking page address. Choose another.", "a typed address is the owner's to change");
   }));
 
 test("a booking that has not started cannot be marked completed or no-show: that would free its slot", (t) =>
@@ -327,3 +328,29 @@ test("a booking that has not started cannot be marked completed or no-show: that
     assert.equal(!second.ok && second.reason, "taken", "the slot is still held");
     assert.equal((await setStatus(s.db, a.booking.id, "cancelled", "owner@example.com"))?.status, "cancelled", "cancelling a future booking is fine");
   }));
+
+test("at their place the address is required, unless the team is booking by phone and does not have it yet", () => {
+  const who = { name: "Ann", email: "ann@example.com" };
+  assert.match(checkBooker(who, "their_place").address, /Enter the address/);
+  assert.deepEqual(checkBooker({ ...who, addressOptional: true }, "their_place"), {});
+  assert.deepEqual(checkBooker(who, "video"), {}, "a video call never asks");
+  assert.match(checkBooker({ ...who, address: "x".repeat(501), addressOptional: true }, "their_place").address, /500 characters/);
+});
+
+test("a service's address made from its name is numbered when taken; a video call may have no link", async (t) => {
+  const s = await scratch();
+  if (!s) return t.skip(why);
+  try {
+    await applySchema(s.db, schema);
+    const rules = { slug: "", duration_min: "30", interval_min: "30", buffer_before_min: "0", buffer_after_min: "0", min_notice_min: "0", horizon_days: "60" };
+    const a = await createType(s.db, { name: "Zoom consult", location_kind: "video", ...rules }, "o@x.com", "test");
+    const b = await createType(s.db, { name: "Zoom consult", location_kind: "video", ...rules }, "o@x.com", "test");
+    assert.ok(a.ok && b.ok);
+    assert.deepEqual([a.value.slug, b.value.slug], ["zoom-consult", "zoom-consult-2"]);
+    assert.equal(a.value.location, null, "no link: each person is sent theirs");
+    const bad = await createType(s.db, { name: "Call", location_kind: "video", location: "zoom.us/j/1", ...rules }, "o@x.com", "test");
+    assert.ok(!bad.ok && /starting https:\/\//.test(bad.errors.location));
+  } finally {
+    await s.drop();
+  }
+});

@@ -43,7 +43,7 @@ before(async () => {
   else {
     s = r;
     db = r.db;
-    await setup(db, { statuses: STATUSES, dealStages: DEAL_STAGES }, { booking: false, invoices: true, forms: true });
+    await setup(db, { statuses: STATUSES, dealStages: DEAL_STAGES }, { invoices: true, forms: true });
     await applySchema(db, readFileSync("test/fixtures/other-apps.sql", "utf8"));
   }
 });
@@ -175,7 +175,7 @@ test("merge: everything moves, the address is kept, the other never matches agai
   await db.sql`insert into submissions (form_key, name, email, data, source) values ('contact', 'Mia', 'mia.m@work.example', '{"message": "work one"}', 'website')`;
   assert.ok((await possibleDuplicates(db, keep)).some((d) => d.id === other.id));
   const pv = (await mergePreview(db, keep.id, other.id))!;
-  assert.deepEqual(pv.moves, { notes: 0, visits: 0, deals: 1, tasks: 1 });
+  assert.deepEqual(pv.moves, { notes: 0, events: 0, deals: 1, tasks: 1 });
   assert.deepEqual(pv.fills, ["phone", "company", "size", "also goes by mia.m@work.example"]);
 
   const results = await Promise.all([mergeCustomers(db, keep.id, other.id, ME), mergeCustomers(db, keep.id, other.id, ME)]);

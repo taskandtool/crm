@@ -27,7 +27,7 @@ create table if not exists quotes (
   sent_at timestamptz,
   decided_at timestamptz,
   decided_by citext,
-  visit_id bigint,                                -- the CRM job it is for; no foreign key, as customer_visits.booking_id
+  visit_id bigint,                                -- the appointment it is for (bookings.id); no foreign key, so no bookings table is needed
   source text,
   created_by citext,
   updated_by citext,
@@ -37,7 +37,7 @@ create table if not exists quotes (
 create unique index if not exists quotes_number on quotes (number);
 create index if not exists quotes_email on quotes (email, created_at desc);
 create index if not exists quotes_visit on quotes (visit_id);
--- The CRM deal a quote is for, as visit_id names its job.
+-- The CRM deal a quote is for, as visit_id names its appointment.
 alter table quotes add column if not exists deal_id bigint;
 create index if not exists quotes_deal on quotes (deal_id) where deal_id is not null;
 create index if not exists quotes_recent on quotes (created_at desc, id desc);
@@ -122,3 +122,6 @@ create table if not exists stripe_customers (
 comment on table quotes is 'Quotes the team sends through the owner''s own sender (invoices skill). Status moves forward only.';
 comment on table invoices is 'Invoices made, sent and collected by the owner''s Stripe account (invoices skill). Past draft, status changes only from verified Stripe webhooks.';
 comment on column invoices.status is 'draft until sent with Stripe; then Stripe''s, moved only by the webhook, never backwards.';
+
+comment on column quotes.visit_id is 'The appointment the quote is for (the booking skill''s bookings.id, the CRM''s event), if any. No foreign key.';
+comment on column invoices.visit_id is 'The appointment the invoice bills (the booking skill''s bookings.id, the CRM''s event), if any. No foreign key.';

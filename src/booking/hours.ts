@@ -1,6 +1,7 @@
-// The writes behind the booking editor: booking types and their hosts, and
-// each person's weekly hours, time off and calendars. Every function checks
-// its input and returns field errors rather than throwing, so a form can
+// The writes behind booking: booking types and their hosts, people, and each
+// person's weekly hours, time off and calendars (which the CRM's sync reads).
+// The AI uses them too when the owner asks for a service or a person. Every
+// function checks its input and returns field errors rather than throwing, so a form can
 // show them next to the field. The booking pages pick a change up on their
 // next read.
 import { q, type Db } from "../data/db";
@@ -175,7 +176,8 @@ export function readType(f: TypeFields): { ok: true; value: Omit<BookingType, "i
   if (!kind) errors.location_kind = "Choose where it happens.";
   const location = typeof f.location === "string" ? f.location.trim() : "";
   if (kind === "our_place" && !location) errors.location = "Enter the address people come to.";
-  if (kind === "video" && !/^https:\/\/\S+$/.test(location)) errors.location = "Enter the meeting link, starting https://.";
+  // A video call may have no fixed link: the business sends each person theirs.
+  if (kind === "video" && location && !/^https:\/\/\S+$/.test(location)) errors.location = "Enter the meeting link, starting https://, or leave it blank.";
   if (location.length > 500) errors.location = "Use 500 characters or fewer.";
   const st: Settings = {
     durationMin: int(f.duration_min), intervalMin: int(f.interval_min), bufferBeforeMin: int(f.buffer_before_min),
@@ -199,19 +201,29 @@ export function readType(f: TypeFields): { ok: true; value: Omit<BookingType, "i
       slug, name, description: description || null,
       duration_min: st.durationMin, interval_min: st.intervalMin, buffer_before_min: st.bufferBeforeMin,
       buffer_after_min: st.bufferAfterMin, min_notice_min: st.minNoticeMin, horizon_days: st.horizonDays,
-      location_kind: kind!, location: kind === "our_place" || kind === "video" ? location : null,
+      location_kind: kind!, location: (kind === "our_place" || kind === "video") && location ? location : null,
       position, active: checked(f.active),
       price_cents: price && price > 0 ? price : null, currency: price && price > 0 ? currency : null,
     },
   };
 }
 
-const TAKEN: Errors = { slug: "Another booking type already uses this address." };
+const TAKEN: Errors = { slug: "Another service already uses this booking page address. Choose another." };
 
 export async function createType(db: Db, f: TypeFields, by: string, source: string): Promise<Saved<BookingType>> {
   const r = readType(f);
   if (!r.ok) return r;
   const v = r.value;
+  // An address made from the name is numbered when it is taken (estimate-2); one the owner typed is theirs to change.
+  const typed = typeof f.slug === "string" && f.slug.trim() !== "";
+  for (const slug of typed ? [v.slug] : [v.slug, ...[2, 3, 4, 5, 6, 7, 8, 9].map((n) => `${v.slug.slice(0, 61)}-${n}`)]) {
+    const made = await insertType(db, { ...v, slug }, by, source);
+    if (made) return { ok: true, value: made };
+  }
+  return { ok: false, errors: TAKEN };
+}
+
+async function insertType(db: Db, v: Extract<ReturnType<typeof readType>, { ok: true }>["value"], by: string, source: string): Promise<BookingType | null> {
   const rows = await db.sql`
     insert into booking_types (slug, name, description, duration_min, interval_min, buffer_before_min, buffer_after_min,
       min_notice_min, horizon_days, location_kind, location, position, active, price_cents, currency, source, updated_by)
@@ -219,7 +231,7 @@ export async function createType(db: Db, f: TypeFields, by: string, source: stri
       ${v.min_notice_min}, ${v.horizon_days}, ${v.location_kind}, ${v.location}, ${v.position}, ${v.active}, ${v.price_cents}, ${v.currency}, ${source}, ${by})
     on conflict (slug) do nothing
     returning *`;
-  return rows.length ? { ok: true, value: toType(rows[0]) } : { ok: false, errors: TAKEN };
+  return rows.length ? toType(rows[0]) : null;
 }
 
 /** Save a type. A booking already made keeps the place it was booked for. */
@@ -253,7 +265,7 @@ export async function setHosts(db: Db, typeId: string, ids: string[]): Promise<v
   ]);
 }
 
-/** The types a person hosts. */
+/** The services a person takes. */
 export async function typesHostedBy(db: Db, resourceId: string): Promise<BookingType[]> {
   return (await db.sql`
     select t.* from booking_type_hosts h join booking_types t on t.id = h.type_id

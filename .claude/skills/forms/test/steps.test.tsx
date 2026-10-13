@@ -10,9 +10,10 @@ import { checkFields, stepsOf, type Field } from "../fields";
 import { embedForm, formRoutes } from "../routes";
 import type { FormSteps, StepContext } from "../steps";
 import { seedForm } from "../store";
-import { formsAdmin } from "../admin";
+import { formEditor, formsAdmin } from "../admin";
 
-const schema = readFileSync(fileURLToPath(new URL("../schema.sql", import.meta.url)), "utf8");
+// The inbox shows the customer's notes, so the customers skill's tables come with it.
+const schema = ["../schema.sql", "../../customers/schema.sql"].map((p) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8")).join(";\n");
 
 const INTAKE: Field[] = [
   { name: "name", label: "Name", type: "text", required: true },
@@ -156,7 +157,8 @@ test("an unfinished form stays a draft; a made-up key starts again; an unwired s
     await seedForm(s.db, { key: "intake", title: "Intake", fields: INTAKE }, "website");
     const app = new Hono();
     app.route("/", formRoutes(() => s.db, { source: "website", page: pageOf }));
-    app.route("/admin/forms", formsAdmin(() => s.db, { base: "/admin/forms", css: "/x.css", timeZone: "UTC", source: "website" }));
+    app.route("/admin/submissions", formsAdmin(() => s.db, { base: "/admin/submissions", css: "/x.css", timeZone: "UTC" }));
+    app.route("/admin/forms", formEditor(() => s.db, { base: "/admin/forms", css: "/x.css", timeZone: "UTC", source: "website", submissions: "/admin/submissions" }));
     const stamp = await makeStamp("intake", Date.now() - 10_000);
     let res = await send(app, "/forms/intake", { name: "Bo", email: "bo@example.com", company_website: "", _started: stamp });
     const key = keyOf(res.headers.get("location"));
@@ -178,14 +180,14 @@ test("an unfinished form stays a draft; a made-up key starts again; an unwired s
     const other = await send(app, "/forms/intake", { name: "Cy", email: "cy@example.com", company_website: "", _started: stamp });
     assert.equal(other.status, 303);
     const team = { headers: { "x-tasktool-user": "owner@example.com", host: "site.example" } };
-    const unfinished = await (await app.request(HOST + "/admin/forms/submissions/unfinished", team)).text();
+    const unfinished = await (await app.request(HOST + "/admin/forms/unfinished", team)).text();
     assert.match(unfinished, /cy@example\.com|Cy/);
     assert.doesNotMatch(unfinished, />Bo</, "Bo finished the questions");
-    // Bo's submission is there, not complete: the booking and payment steps are still to do.
-    const list = await (await app.request(HOST + "/admin/forms/submissions", team)).text();
-    assert.match(list, /Not complete/);
+    // Bo's submission is there, not finished: the booking and payment steps are still to do.
+    const list = await (await app.request(HOST + "/admin/submissions", team)).text();
+    assert.match(list, /Not finished/);
     const [bo] = await s.db.sql<{ id: string }>`select id::text as id from submissions`;
-    assert.match(await (await app.request(HOST + `/admin/forms/submissions/${bo.id}`, team)).text(), /Not yet: a booking or payment step is still to do/);
+    assert.match(await (await app.request(HOST + `/admin/submissions/${bo.id}`, team)).text(), /have not finished booking or paying yet/);
 
     // A page of its own for a link.
     const start = await (await app.request(HOST + "/forms/intake/start")).text();

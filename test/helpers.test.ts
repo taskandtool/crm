@@ -11,12 +11,15 @@ import { readFields } from "../src/crm/fields";
 import { guessMap, planRows } from "../src/crm/importer";
 import { makeInboxCursor, readInboxCursor, type InboxRow } from "../src/crm/inbox";
 import { cleanPhone, phoneKey } from "../src/crm/phone";
-import { amountText, parseAmount } from "../src/crm/visits";
 import type { Stage } from "../src/crm/stages";
 import { resolveStage } from "../src/crm/stages";
 import { missingSentence } from "../src/crm/tables";
-import { cash, nowIn, parseTags, relativeWall, slugify, wallTime, wallToInstant } from "../src/crm/text";
+import { amountText, cash, nowIn, parseAmount, parseTags, relativeWall, slugify, wallToInstant } from "../src/crm/text";
+import { wallTime } from "../src/customers/notes";
 import { readXlsx } from "../src/crm/xlsx-read";
+import { answersOf } from "../src/crm/history";
+import { ownerOptions, ownerSuggestions, personName, sameAs, setTeam } from "../src/crm/people";
+import { whereText } from "../src/booking/book";
 
 const STAGES: Stage[] = [
   { key: "new", label: "New", position: 0, kind: "open", archived: false },
@@ -139,10 +142,10 @@ test("the inbox cursor round-trips and refuses anything else", () => {
 });
 
 test("one sentence for the tables a project lacks", () => {
-  const none = { submissions: false, forms: false, bookings: false, resources: false, payments: false, quotes: false, invoices: false, comments: false };
-  assert.match(missingSentence(none, { bookings: true, payments: true })!, /no form submissions, bookings or payments yet/);
-  assert.match(missingSentence({ ...none, submissions: true, forms: true }, { bookings: false, payments: true })!, /no payments yet/);
-  assert.equal(missingSentence({ ...none, submissions: true, bookings: true, payments: true }, { bookings: true, payments: true }), null);
+  const none = { submissions: false, forms: false, payments: false, quotes: false, invoices: false };
+  assert.match(missingSentence(none, { payments: true })!, /no form submissions or payments yet/);
+  assert.match(missingSentence({ ...none, submissions: true, forms: true }, { payments: true })!, /no payments yet/);
+  assert.equal(missingSentence({ ...none, submissions: true, payments: true }, { payments: true }), null);
 });
 
 // Review regressions.
@@ -234,4 +237,39 @@ test("xlsx: the first sheet as rows, shared and inline text, dates, gaps, from E
   ];
   for (const f of ["test/fixtures/customers.xlsx", "test/fixtures/customers-libreoffice.xlsx"]) assert.deepEqual(readXlsx(readFileSync(f)), want, f);
   assert.throws(() => readXlsx(Buffer.from("Name,Email\n")), /not an .xlsx/);
+});
+
+test("one person, written by name or email, reads as one name", () => {
+  setTeam([{ name: "Dana Ortiz", email: "dana@shop.example" }, { name: "Marcus Reed", email: null }]);
+  try {
+    assert.equal(personName("DANA@shop.example"), "Dana Ortiz");
+    assert.equal(personName("Someone Else"), "Someone Else");
+    assert.equal(personName(null), "");
+    assert.deepEqual(sameAs("dana ortiz"), ["Dana Ortiz", "dana@shop.example"]);
+    assert.deepEqual(sameAs("Marcus Reed"), ["Marcus Reed"]);
+    assert.deepEqual(sameAs("pat@shop.example"), ["pat@shop.example"]);
+    assert.deepEqual(ownerOptions("me@shop.example", ["dana@shop.example", "Pat", "Dana Ortiz"]).map((o) => o.label),
+      ["Dana Ortiz", "Marcus Reed", "me@shop.example (me)", "Pat"]);
+    assert.deepEqual(ownerOptions("dana@shop.example", []).map((o) => o.label), ["Dana Ortiz (me)", "Marcus Reed"]);
+    assert.deepEqual(ownerSuggestions(["dana@shop.example", "Pat"]), ["Dana Ortiz", "Marcus Reed", "Pat"]);
+  } finally {
+    setTeam([]);
+  }
+  assert.equal(personName("dana@shop.example"), "dana@shop.example", "without a team, as written");
+});
+
+test("what someone sent reads under the form's questions, its internals left out", () => {
+  const fields = [{ name: "issue", label: "What's going on?" }, { name: "name", label: "Name" }];
+  assert.deepEqual(answersOf({ name: "Ann", issue: "No heat", system_age: 12, _utm: { source: "x" } }, fields),
+    { "What's going on?": "No heat", Name: "Ann", "System age": 12 });
+});
+
+test("where a booking happens: the booker's words, or the team's", () => {
+  const phone = { location_kind: "phone" as const, location: "512-555-0193" };
+  const home = { location_kind: "their_place" as const, location: "51 Sunset Ridge" };
+  assert.equal(whereText(phone), "We will call you on 512-555-0193");
+  assert.equal(whereText(phone, { team: true }), "Phone call: 512-555-0193");
+  assert.equal(whereText(home), "At 51 Sunset Ridge");
+  assert.equal(whereText(home, { team: true }), "51 Sunset Ridge");
+  assert.equal(whereText({ location_kind: "their_place", location: null }, { team: true }), "At their address");
 });

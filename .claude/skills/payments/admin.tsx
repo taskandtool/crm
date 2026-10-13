@@ -8,7 +8,9 @@
 //     base: "/admin/payments", css: "/site.css", timeZone: "America/Chicago", nav: NAV,
 //   }));                                      // Stripe from stripeFrom(envOf(c)) unless `stripe` says otherwise
 //
-// Link to one booking's payments with `?ref_type=booking&ref_id=42`.
+// Link to one booking's payments with `?ref_type=booking&ref_id=42`. An app
+// that shows a payment on its own page (the Website: on its submission) passes
+// `returnTo: (p) => ({ href, label })`, and a refund goes back there.
 //
 // A refund here is a person acting, not the AI: the guard puts a signed-in
 // team member behind every request, the amount is confirmed on its own page,
@@ -26,7 +28,7 @@ import { DataTable, EmptyState, NoMatches, SearchBar, TableRows, When, type Tabl
 import { FieldList, Section } from "../admin/detail";
 import { Flash, withFlash, type FlashMessages } from "../admin/flash";
 import { idParam, isPartial, likePattern, listUrl, str } from "../admin/query";
-import { buttonClass, controlClass, pickStatus, StatusBadge, type StatusOption } from "../admin/status";
+import { buttonClass, fieldClass, inputClass, pickStatus, StatusBadge, type StatusOption } from "../admin/status";
 import { decimals, formatMoney, toMinor } from "./money";
 import { StripeError, stripeFrom, type Stripe } from "./stripe";
 
@@ -44,6 +46,8 @@ export type PaymentsAdminOptions = {
   pageSize?: number;
   /** The app's own page frame (the CRM's layout and nav) instead of AdminLayout. */
   Frame?: Frame;
+  /** Where a refund goes back to, and its name, when the app shows the payment elsewhere (the Website: its submission). Default: the payment's page. */
+  returnTo?: (p: Payment) => { href: string; label: string };
 };
 
 export type Payment = {
@@ -81,10 +85,14 @@ export const STATUSES: StatusOption[] = [
 ];
 const KINDS: StatusOption[] = [
   { value: "deposit", label: "Deposit" },
-  { value: "full", label: "Full" },
+  { value: "full", label: "Paid in full" },
   { value: "invoice", label: "Invoice" },
   { value: "other", label: "Other" },
 ];
+
+/** What a payment is for, as people say it: "Booking 12", "Invoice 4". */
+const paidFor = (p: { ref_type: string | null; ref_id: string | null }) =>
+  p.ref_type ? `${p.ref_type.charAt(0).toUpperCase()}${p.ref_type.slice(1).replace(/_/g, " ")}${p.ref_id ? ` ${p.ref_id}` : ""}` : "";
 
 const MESSAGES: FlashMessages = {
   refund: "Refund requested. The status changes when Stripe confirms it, usually within a minute.",
@@ -145,7 +153,7 @@ const CSV: CsvColumn<Payment>[] = [
 /** What was paid: the total with tax and fees where recorded, else the amount. Refunds and the pages use it. */
 const paid = (p: Payment) => p.total_cents ?? p.amount_cents;
 const remaining = (p: Payment) => Number(paid(p)) - Number(p.refunded_cents);
-const refundable = (p: Payment) => (p.status === "paid" || p.status === "partially_refunded") && !!p.stripe_payment_intent_id && remaining(p) > 0;
+export const refundable = (p: Payment) => (p.status === "paid" || p.status === "partially_refunded") && !!p.stripe_payment_intent_id && remaining(p) > 0;
 
 function whyNotRefundable(p: Payment): string {
   if (p.status === "refunded") return "Refunded in full.";
@@ -182,8 +190,8 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
     href: (p) => `${base}/${p.id}`,
     columns: [
       { label: "Date", cell: (p) => <When at={p.created_at} timeZone={tz} /> },
-      { label: "Email", cell: (p) => p.email ?? "Not given" },
-      { label: "Paid for", cell: (p) => (p.ref_type ? `${p.ref_type} ${p.ref_id ?? ""}` : ""), class: "hidden md:table-cell" },
+      { label: "Customer", cell: (p) => (p.name ? <>{p.name}{p.email ? <span class="block break-all text-label text-ink-2">{p.email}</span> : null}</> : p.email ?? "Not given") },
+      { label: "Paid for", cell: (p) => paidFor(p), class: "hidden md:table-cell" },
       { label: "Type", cell: (p) => KINDS.find((k) => k.value === p.kind)?.label ?? p.kind, class: "hidden sm:table-cell" },
       { label: "Amount", cell: (p) => formatMoney(paid(p), p.currency), class: "text-right tabular-nums" },
       { label: "Status", cell: (p) => <Status p={p} /> },
@@ -280,7 +288,7 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
                 { label: "Type", value: KINDS.find((k) => k.value === p.kind)?.label ?? p.kind },
                 {
                   label: "Paid for",
-                  value: p.ref_type ? <a href={listUrl(base, { ref_type: p.ref_type, ref_id: p.ref_id })}>{`${p.ref_type} ${p.ref_id ?? ""}`}</a> : null,
+                  value: p.ref_type ? <a href={listUrl(base, { ref_type: p.ref_type, ref_id: p.ref_id })}>{paidFor(p)}</a> : null,
                 },
                 { label: "Email", value: p.email },
                 { label: "Name", value: p.name },
@@ -323,10 +331,11 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
     );
   });
 
+  const homeOf = (p: Payment) => opts.returnTo?.(p) ?? { href: `${base}/${p.id}`, label: `Payment ${p.id}` };
   const refundPage = (c: Context<{ Variables: TeamVars }>, p: Payment, amount: string, error?: string) =>
     c.html(
-      frame(c, { title: `Refund payment ${p.id}`, back: { href: `${base}/${p.id}`, label: `Payment ${p.id}` } }, <>
-        <RefundForm p={p} base={base} amount={amount} error={error} />
+      frame(c, { title: `Refund payment ${p.id}`, back: homeOf(p) }, <>
+        <RefundForm p={p} base={base} keep={homeOf(p).href} amount={amount} error={error} />
       </>),
       error ? 422 : 200,
     );
@@ -335,14 +344,14 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
   app.get("/:id/refund", async (c) => {
     const p = await load(c);
     if (!p) return c.notFound();
-    if (!refundable(p)) return c.redirect(`${base}/${p.id}`, 303);
+    if (!refundable(p)) return c.redirect(homeOf(p).href, 303);
     return refundPage(c, p, major(remaining(p), p.currency));
   });
 
   app.post("/:id/refund", async (c) => {
     const p = await load(c);
     if (!p) return c.notFound();
-    if (!refundable(p)) return c.redirect(`${base}/${p.id}`, 303);
+    if (!refundable(p)) return c.redirect(homeOf(p).href, 303);
     const body = await c.req.parseBody();
     const typed = str(body.amount);
 
@@ -366,13 +375,13 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
       throw e;
     }
     await getDb(c).sql`update payments set updated_by = ${c.get("user")}, updated_at = now() where id = ${p.id}::bigint`;
-    return c.redirect(withFlash(`${base}/${p.id}`, "refund"), 303);
+    return c.redirect(withFlash(homeOf(p).href, "refund"), 303);
   });
 
   return app;
 }
 
-function RefundForm({ p, base, amount, error }: { p: Payment; base: string; amount: string; error?: string }) {
+function RefundForm({ p, base, keep, amount, error }: { p: Payment; base: string; keep: string; amount: string; error?: string }) {
   return (
     <form method="post" action={`${base}/${p.id}/refund`} class="flex max-w-md flex-col gap-3 rounded-card border border-line bg-surface p-4">
       <p>
@@ -380,7 +389,7 @@ function RefundForm({ p, base, amount, error }: { p: Payment; base: string; amou
         {Number(p.refunded_cents) ? `, already refunded ${formatMoney(p.refunded_cents, p.currency)}` : ""}.
       </p>
       <input type="hidden" name="seen" value={String(p.refunded_cents)} />
-      <label for="amount" class="flex flex-col gap-1 text-label text-ink-2">
+      <label for="amount" class={fieldClass}>
         Amount to refund ({p.currency.toUpperCase()})
         <input
           id="amount"
@@ -390,7 +399,7 @@ function RefundForm({ p, base, amount, error }: { p: Payment; base: string; amou
           value={amount}
           aria-invalid={error ? "true" : undefined}
           aria-describedby={error ? "amount-error" : undefined}
-          class={controlClass}
+          class={inputClass}
         />
       </label>
       {error ? (
@@ -400,7 +409,7 @@ function RefundForm({ p, base, amount, error }: { p: Payment; base: string; amou
       ) : null}
       <div class="flex flex-wrap items-center gap-3">
         <button class={buttonClass}>Refund this amount</button>
-        <a href={`${base}/${p.id}`} class="text-label text-ink-2">
+        <a href={keep} class="text-sm/6 font-semibold text-ink-2 no-underline hover:text-ink">
           Keep the payment
         </a>
       </div>

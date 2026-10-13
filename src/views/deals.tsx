@@ -8,18 +8,19 @@ import { Flash } from "../admin/flash";
 import { rowClick, When } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { StatusBadge, StatusForm } from "../admin/status";
-import { dealsCfg, invoicesCfg, ownerLabel, visitsCfg, vocab } from "../config";
+import { dealsCfg, invoicesCfg, ownerLabel, vocab } from "../config";
 import type { Customer } from "../crm/customers";
 import type { Deal } from "../crm/deals";
-import { dueOf, type Task } from "../crm/tasks";
+import type { Task } from "../crm/tasks";
 import { KIND_LABELS, type Stage } from "../crm/stages";
 import { cash } from "../crm/text";
-import { amountText, type Visit } from "../crm/visits";
+import { amountText } from "../crm/text";
 import type { Quote } from "../invoices/quotes";
 import { Docs } from "./money";
 import { TasksSection } from "./tasks";
 import { Layout } from "./layout";
 import { AddToggle, buttonClass, controlClass, dueDayText, CustomerPicker, DueMark, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, stageOptions, timeZone } from "./ui";
+import { ownerSuggestions, personName } from "../crm/people";
 
 /** How many cards a column shows; how many days won and lost ones stay on the board. */
 export const PER_COLUMN = 100;
@@ -41,7 +42,7 @@ export function DealsPage(p: { user: string; data: BoardData; flash: { code?: st
   return (
     <Layout title={dealsCfg.many} user={p.user} section="deals" drag wide
       sub={<OpenTotal data={p.data} />}
-      actions={<a href="/deals/new" class={primaryClass}>New {one}</a>}>
+      actions={<><a href="/stages" class={buttonClass}>Edit stages</a><a href="/deals/new" class={primaryClass}>New {one}</a></>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <Board data={p.data} />
     </Layout>
@@ -150,7 +151,7 @@ function Card({ d, options, stray, next, today, open }: { d: Deal; options: Retu
       </p>
       <p class="flex flex-wrap gap-x-2 text-label text-ink-3">
         {open || stray ? <NextMark next={next} today={today} /> : d.closed_at ? <span>Closed <When at={d.closed_at} timeZone={timeZone} day /></span> : null}
-        {d.owner ? <span class="truncate">{ownerLabel}: {d.owner}</span> : null}
+        {d.owner ? <span class="truncate">{ownerLabel}: {personName(d.owner)}</span> : null}
       </p>
       {/* Dragging moves a card on a wide screen; the select is for a phone, and for a browser without JavaScript. */}
       <div class="mt-2 md:[.js_&]:hidden">
@@ -167,13 +168,12 @@ function Card({ d, options, stray, next, today, open }: { d: Deal; options: Retu
   );
 }
 
-/** A card's next task: Today and Overdue say what they are; a later day says it is the task. */
+/** A card's next task, named as the task: "Task overdue, Sat, Oct 10", "Task today 10:00 AM". */
 function NextMark({ next, today }: { next: { due_on: string; due_time: string | null } | undefined; today: string }) {
-  const later = !!next && dueOf(next, today) === "later";
-  return later ? <span>Task <DueMark next={next} today={today} /></span> : <DueMark next={next} today={today} />;
+  return <DueMark next={next} today={today} task />;
 }
 
-/** One deal: its stage, worth, tasks, details, quotes and jobs. */
+/** One deal: its stage, worth, tasks, details and quotes. */
 export function DealPage(p: {
   user: string;
   deal: Deal;
@@ -181,7 +181,6 @@ export function DealPage(p: {
   tasks: { open: Task[]; done: Task[] };
   openDeals: { id: string; title: string }[];
   quotes: Quote[] | null;
-  jobs: Visit[];
   owners: string[];
   today: string;
   flash: { code?: string | null; n?: string | null };
@@ -278,19 +277,6 @@ export function DealPage(p: {
               )}
             </Section>
           ) : null}
-          {visitsCfg && (p.jobs.length || stage?.kind === "won") ? (
-            <Section title={visitsCfg.many}>
-              {p.jobs.length ? (
-                <ul class="flex flex-col gap-1">
-                  {p.jobs.map((j) => <li><a href={`/visits/${j.id}`}>{j.title}</a></li>)}
-                </ul>
-              ) : (
-                <form method="post" action={`${self}/job`}>
-                  <button class={buttonClass}>Create {visitsCfg.one.toLowerCase()}</button>
-                </form>
-              )}
-            </Section>
-          ) : null}
         </div>
         <div class="flex flex-col gap-4">
           <Section title="Details">
@@ -298,7 +284,7 @@ export function DealPage(p: {
               fields={[
                 { label: "Value", value: value ? `${value}${d.from_quote ? " (from the quote)" : ""}` : "Not set" },
                 { label: "Expected close", value: d.expected_close ? dueDayText(d.expected_close, p.today) : null },
-                { label: ownerLabel, value: d.owner },
+                { label: ownerLabel, value: personName(d.owner) },
                 { label: "In this stage since", value: <When at={d.stage_changed_at} timeZone={timeZone} day /> },
                 { label: "Closed", value: d.closed_at ? <When at={d.closed_at} timeZone={timeZone} day /> : null },
                 { label: "Notes", value: d.notes ? <span class="whitespace-pre-wrap">{d.notes}</span> : null },
@@ -358,9 +344,9 @@ function DealEdit({ d, owners }: { d: Deal; owners: string[] }) {
         <input name="expected_close" type="date" value={d.expected_close ?? ""} class={controlClass} />
       </Field>
       <Field label={ownerLabel}>
-        <input name="owner" list="owners" value={d.owner ?? ""} maxlength={200} class={controlClass} />
+        <input name="owner" list="owners" value={personName(d.owner)} maxlength={200} class={controlClass} />
         <datalist id="owners">
-          {owners.map((o) => <option value={o} />)}
+          {ownerSuggestions(owners).map((o) => <option value={o} />)}
         </datalist>
       </Field>
       <Field label="Notes">

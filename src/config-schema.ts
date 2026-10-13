@@ -13,8 +13,8 @@ export type InboxConfig = {
   bookings?: boolean;
   payments?: boolean;
 };
-/** A customer's jobs, visits, appointments or events: its words, its own custom fields, the currency its amounts are in. */
-export type VisitsConfig = { one: string; many: string; fields: CustomField[]; currency?: string };
+/** The events on the schedule (an appointment, a job, a visit): their words, their own custom fields, the currency their amounts are in. */
+export type EventsConfig = { one: string; many: string; fields: CustomField[]; currency?: string };
 /** Deals: what one piece of work being won is called, the stages seeded on the first run, the currency of their values, and the reasons offered when one is lost. */
 export type DealsConfig = { one: string; many: string; stages: StageConfig[]; currency?: string; lost_reasons?: string[] };
 /** Tasks: whether a lead added from the Inbox gets a "Call back" due that day. On unless false. */
@@ -33,9 +33,9 @@ export type Config = {
   owner_label?: string;
   time_zone: string;
   inbox: InboxConfig;
-  /** false (or absent) turns them off. */
-  visits?: VisitsConfig | false;
-  /** The team's side of booking (types, hosts, hours, calendars, the bookings); false leaves it out. On unless false. */
+  /** The schedule: its events, the Calendar and the Team. false (or absent) turns it off. */
+  events?: EventsConfig | false;
+  /** Online booking: the Services customers book, their reminders. Needs events. On unless false. */
   booking?: boolean;
   /** The Website's booking pages, absolute ("https://acme.com/book"): a booking the team makes then mails a manage link there. */
   booking_page?: string;
@@ -52,9 +52,9 @@ const FORM_KEY = /^[a-z0-9][a-z0-9-]{0,62}$/;
 // The built-in columns' CSV headers (crm/columns.ts): a custom field labelled
 // the same would export two "Email" columns and import into the wrong one.
 export const BUILT_IN_HEADERS = ["id", "name", "email", "phone", "company", "address", "stage", "status", "source", "tags", "owner", "notes", "last contact (utc)", "added (utc)", "changed (utc)", "archived (utc)"];
-// The same for a visit's custom fields (crm/visits.ts's CSV columns).
-export const VISIT_BUILT_IN = ["id", "customer", "customer_id", "title", "status", "starts_at", "when", "owner", "amount", "amount_cents", "currency", "notes", "created_at", "updated_at", "created_by", "updated_by"];
-export const VISIT_HEADERS = ["id", "customer", "customer email", "customer phone", "what", "status", "notes", "added (utc)"];
+// The same for an event's custom fields (crm/events.ts's CSV columns).
+export const EVENT_BUILT_IN = ["id", "customer", "customer_id", "title", "status", "starts_at", "ends_at", "when", "service", "amount", "amount_cents", "currency", "where", "notes", "created_at", "updated_at", "updated_by"];
+export const EVENT_HEADERS = ["id", "customer", "customer email", "customer phone", "what", "service", "status", "where", "notes", "added (utc)"];
 export const BUILT_IN = ["id", "name", "email", "phone", "company", "address", "stage", "source", "tags", "owner", "notes", "last_contact_at", "archived", "archived_at", "created_at", "updated_at", "created_by", "updated_by", "first_name", "last_name"];
 
 // Returns the problems with a config object, or an empty list. Used at
@@ -116,21 +116,23 @@ export function validate(raw: unknown): string[] {
       if (iv.days_until_due !== undefined && !(Number.isInteger(iv.days_until_due) && iv.days_until_due >= 0 && iv.days_until_due <= 365)) out.push("invoices.days_until_due must be a whole number of days, 0 to 365");
     }
   }
-  if (c.visits !== undefined && c.visits !== false) {
-    const vs = c.visits as Partial<VisitsConfig> | null;
-    if (!vs || typeof vs !== "object" || Array.isArray(vs)) out.push('visits must be false or an object, e.g. { "one": "Job", "many": "Jobs", "fields": [] }');
+  if (c.events !== undefined && c.events !== false) {
+    const vs = c.events as Partial<EventsConfig> | null;
+    if (!vs || typeof vs !== "object" || Array.isArray(vs)) out.push('events must be false or an object, e.g. { "one": "Event", "many": "Events", "fields": [] }');
     else {
-      if (typeof vs.one !== "string" || typeof vs.many !== "string" || !vs.one.trim() || !vs.many.trim()) out.push('visits needs one and many, e.g. { "one": "Job", "many": "Jobs" }');
+      if (typeof vs.one !== "string" || typeof vs.many !== "string" || !vs.one.trim() || !vs.many.trim()) out.push('events needs one and many, e.g. { "one": "Event", "many": "Events" }');
       // The CSV also heads columns with the owner's label, "When (zone)" and "Amount (currency)".
       const owner = (typeof c.owner_label === "string" && c.owner_label.trim() ? c.owner_label : "Owner").trim().toLowerCase();
-      out.push(...fieldProblems(vs.fields, "visits.fields", VISIT_BUILT_IN, [...VISIT_HEADERS, owner]));
+      out.push(...fieldProblems(vs.fields, "events.fields", EVENT_BUILT_IN, [...EVENT_HEADERS, owner]));
       if (Array.isArray(vs.fields)) {
         vs.fields.forEach((f, i) => {
-          if (typeof f?.label === "string" && /^\s*(when|amount)\s*\(/i.test(f.label)) out.push(`visits.fields[${i}].label ${f.label} reads as a built-in column's name; pick another label`);
+          if (typeof f?.label === "string" && /^\s*(when|amount)\s*\(/i.test(f.label)) out.push(`events.fields[${i}].label ${f.label} reads as a built-in column's name; pick another label`);
         });
       }
-      if (vs.currency !== undefined && !validCurrency(vs.currency)) out.push(`visits.currency must be a currency code such as "USD" or "GBP" (got ${JSON.stringify(vs.currency)})`);
+      if (vs.currency !== undefined && !validCurrency(vs.currency)) out.push(`events.currency must be a currency code such as "USD" or "GBP" (got ${JSON.stringify(vs.currency)})`);
     }
+  } else if (c.booking !== false) {
+    out.push('booking needs events: turn events on, e.g. { "one": "Event", "many": "Events", "fields": [] }, or set "booking": false');
   }
   return out;
 }

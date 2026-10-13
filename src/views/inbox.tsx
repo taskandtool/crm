@@ -9,7 +9,7 @@ import { EmptyCard, rowClick, When } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { StatusBadge, type StatusOption } from "../admin/status";
 import { BOOKING_STATUSES } from "../booking/admin";
-import { dealsCfg, invoicesCfg, showBooking, vocab } from "../config";
+import { dealsCfg, eventsCfg, invoicesCfg, vocab } from "../config";
 import type { Overview } from "../crm/overview";
 import { sourceOf, type InboxRow } from "../crm/inbox";
 import { cash } from "../crm/text";
@@ -142,7 +142,7 @@ export function InboxRows({ rows, next, more, self }: { rows: InboxRow[]; next: 
 /** Where the thing that came in is kept: the submission, the booking, the payment (when this CRM shows that page). */
 function itemHref(row: InboxRow): string | null {
   if (row.kind === "submission") return `/forms/submissions/${row.id}`;
-  if (row.kind === "booking") return showBooking ? `/bookings/${row.id}` : null;
+  if (row.kind === "booking") return eventsCfg ? `/events/${row.id}` : null;
   return invoicesCfg ? `/invoices/payments/${row.id}` : null;
 }
 
@@ -191,8 +191,10 @@ function Row({ row, self }: { row: InboxRow; self: string }) {
             Add as {dealsCfg.one.toLowerCase()}
           </button>
         </form>
-        {row.kind === "submission" && (row.status === "new" || row.status === "read") ? (
+        {/* What still needs someone can be marked done: a form by its status, a booking or payment nobody made a customer of. */}
+        {(row.kind === "submission" ? row.status === "new" || row.status === "read" : !row.customer_id && !row.handled && row.status !== "cancelled") ? (
           <form method="post" action="/inbox/done">
+            <input type="hidden" name="kind" value={row.kind} />
             <input type="hidden" name="id" value={row.id} />
             <input type="hidden" name="return" value={self} />
             <button class={buttonClass} aria-label={`Mark ${person}'s ${sourceOf(row)} done`}>

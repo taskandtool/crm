@@ -2,16 +2,17 @@
 // project, who they matched, and the two actions the page has.
 // `node scripts/inbox.mjs --help`.
 import { cfg } from "../src/config";
-import { addFromInbox, inboxPage, markDone, sinceDays, sourceOf, submissionStatus, type InboxKind, type InboxRow } from "../src/crm/inbox";
+import { addFromInbox, inboxPage, markDone, markHandled, sinceDays, sourceOf, submissionStatus, type InboxKind, type InboxRow } from "../src/crm/inbox";
 import { firstOpenStage } from "../src/crm/stages";
 import { missingSentence } from "../src/crm/tables";
-import { wallTime, wallToInstant } from "../src/crm/text";
+import { wallToInstant } from "../src/crm/text";
+import { wallTime } from "../src/customers/notes";
 import { formatMoney } from "../src/payments/money";
 import { done, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, usage, who, withDb } from "./lib";
 
 const HELP = `inbox.mjs [list] [--since 7d|YYYY-MM-DD (in the business's zone)] [--unmatched] [--limit 50] [--json]
 inbox.mjs add <submission|booking|payment> <id>     make a customer from it (or find the one it matches)
-inbox.mjs done <submission id>                      mark a form submission done
+inbox.mjs done [booking|payment] <id>              mark a form submission (or a booking or payment) done: off To do
 
 Newest first across form submissions (not spam), bookings and payments
 (paid or refunded), as crm.config.json's "inbox" says. Each row shows the
@@ -29,9 +30,11 @@ const a = parseArgs(process.argv.slice(2), { bare: ["unmatched"] });
 const [cmd = "list", ...rest] = a._;
 usage(a, cmd, Object.keys(FLAGS), HELP, "inbox", FLAGS);
 const at = `inbox ${cmd}`;
-noMore(rest, { list: 0, add: 2, done: 1 }[cmd] ?? 0, at);
+noMore(rest, { list: 0, add: 2, done: 2 }[cmd] ?? 0, at);
 if (cmd === "add" && (!KINDS.includes(rest[0]) || !rest[1])) misused(`${at}: name what came in: ${KINDS.join(", ")}, then its id`, "node scripts/inbox.mjs add submission 12");
-if (cmd === "done" && !/^\d{1,18}$/.test(rest[0] ?? "")) misused(`${at}: name the submission by its id (submission 12 is 12)`, "node scripts/inbox.mjs");
+const doneKind = cmd === "done" && rest.length === 2 ? rest[0] : "submission";
+const doneId = cmd === "done" ? rest[rest.length - 1] ?? "" : "";
+if (cmd === "done" && (!KINDS.includes(doneKind) || !/^\d{1,18}$/.test(doneId))) misused(`${at}: name a submission by its id (submission 12 is 12), or a booking or payment as "booking 12"`, "node scripts/inbox.mjs");
 const json = has(a, "json");
 
 function since(v: string | undefined): Date | null {
@@ -58,7 +61,7 @@ await withDb(async (db) => {
     case "list": {
       const limit = limitOf(a, at, { max: 500 });
       const { rows, next, present } = await inboxPage(db, { inbox: cfg.inbox, since: since(flag(a, "since")), unmatched: has(a, "unmatched") }, null, limit);
-      const missing = missingSentence(present, { bookings: cfg.inbox.bookings !== false, payments: cfg.inbox.payments !== false });
+      const missing = missingSentence(present, { payments: cfg.inbox.payments !== false });
       if (json) return out(true, { rows, more: !!next, missing }, String);
       const extra = [missing ?? "", next ? `the first ${limit}; --limit ${Math.min(limit * 4, 500)} or a narrower --since for more` : ""].filter(Boolean);
       if (!rows.length) return done(at, `nothing came in${has(a, "unmatched") ? " from anyone who is not a customer yet" : ""}`, { lines: extra });
@@ -77,7 +80,13 @@ await withDb(async (db) => {
       });
     }
     case "done": {
-      const id = rest[0];
+      const id = doneId;
+      if (doneKind === "booking" || doneKind === "payment") {
+        const r = await markHandled(db, doneKind, id, user);
+        if (r === "missing") return fail(`${at}: no ${doneKind} ${id}`, "node scripts/inbox.mjs");
+        if (r === "done") return json ? out(true, { ok: true, kind: doneKind, id }, String) : done(at, `${doneKind} ${id} marked done`, { next: "node scripts/inbox.mjs" });
+        return json ? out(true, { ok: true, kind: doneKind, id, already: true }, String) : done(at, `${doneKind} ${id} is already done; left alone`);
+      }
       if (await markDone(db, id, user)) return json ? out(true, { ok: true, id }, String) : done(at, `submission ${id} marked done`, { next: "node scripts/inbox.mjs" });
       const status = (await submissionStatus(db, id)) ?? fail(`${at}: no submission ${id}`, "node scripts/inbox.mjs");
       if (status === "done") return json ? out(true, { ok: true, id, already: true }, String) : done(at, `submission ${id} is already done; left alone`);

@@ -7,8 +7,8 @@ Website, bookings, payments), newest first, each matched to a customer by email 
 or a new deal, under four figures: leads this week, tasks due, the
 open pipeline and what was won this month. Then the tasks due, the
 deals on a board you drag between stages, the customers themselves, a
-timeline of notes and calls per customer, and their jobs or visits: what
-was done, when, by whom, for how much. It works the minute it
+timeline of notes and calls per customer, and a schedule of events (an
+appointment, a job, a visit): when, who, where, for how much. It works the minute it
 is installed and is shaped for the business by talking to the app's AI:
 an HVAC shop, a dental practice, a restaurant, a plumber with several
 locations and trucks, a counselor who only wants a record of who called.
@@ -29,33 +29,32 @@ runs anywhere with Node 20 and a Postgres.
 - **Tasks**: a call, email, meeting, text or to-do due on a day, by
   one person. Today (overdue first) and Upcoming, mine or everyone's, and
   New task; the next one at the top of a customer's page and on every
-  card. Customers' "No next step" filter shows who is in play with
+  card. Customers' "Nothing planned" filter shows who is in play with
   nothing planned. Done goes on the timeline. A new lead gets a
   "Call back" for that day, and a morning email lists what is due.
 - **Deals**: one piece of work being won, for one customer, who may have
   many. Stages you name, a value (a quote's total until one is typed),
   an owner, an expected close; won makes them a customer, a quote's yes
-  wins it, a lost one keeps why. Create a job once won.
+  wins it, a lost one keeps why.
 - **Customers**, keyed by email (a phone alone is fine too), each with a
   status (Lead, Customer, Not a fit): search by name, email, phone or
   company, filter by status, tag and owner, export the filter as CSV,
   archive (never delete), and merge two records of one person.
 - **A customer's page**, laid out as CRMs lay out a record: tasks,
   one Activity timeline (notes and calls, and everything they sent,
-  booked, paid and were quoted) with a note box on top, and their visits;
+  paid and were quoted) with a note box on top, and their events;
   beside it Details (details and custom fields, Edit), their deals, quotes
   and invoices, possible duplicates, Merge and Archive.
-- **Schedule**: one Calendar of bookings and jobs, day by day, then a
-  tab each for Jobs, Bookings, Services and Team.
-  - **Jobs, visits or events** (the config names them): one per occasion,
-    planned, done or cancelled, with who did it, an amount and its own
-    fields (which truck, which room). A list of what is coming up and what
-    was done, exported as CSV. Turned off for a business that keeps them
-    elsewhere.
-  - **Bookings**: what customers can book (an estimate visit, an
-    installation, a video call), who takes each, everyone's hours, time off
-    and Google or Outlook calendar, and every booking, with "Create job".
-    The public booking page is the Website's; both use the same tables.
+- **Schedule**: one record per event (the config names them: Event,
+  Job, Appointment), whether a customer booked it online or the team put
+  it on the schedule. Scheduled, then completed, no-show or cancelled,
+  with who takes it, where, an amount and its own fields (which truck,
+  which room). A Calendar of the week by person, the list (upcoming, past,
+  all, exported as CSV), Services (what customers can book online, with
+  online booking on) and the Team (everyone's hours, time off and Google
+  or Outlook calendar). The public booking page is the Website's; both use
+  the same table. Turned off for a business that keeps its schedule
+  elsewhere.
 - **Quotes and invoices**: a quote with lines and tax, previewed and
   emailed as a PDF from your own email sender, marked accepted or declined;
   then an invoice made in your Stripe account, which emails it and takes
@@ -68,7 +67,7 @@ runs anywhere with Node 20 and a Postgres.
   so nobody is added twice, with a dry run first.
 - **The AI's hands**: scripts to find, add, update, note, tag, merge,
   import and export customers from chat, add and move deals, plan and
-  tick off tasks, add and close jobs or visits, quote and invoice,
+  tick off tasks, schedule and close events, quote and invoice,
   and list the Inbox. Sending anything to a customer, and a merge,
   waits for your yes.
 
@@ -78,11 +77,11 @@ runs anywhere with Node 20 and a Postgres.
 statuses and deal stages seeded on the first run (and what a deal is
 called), sources, custom fields (`text`, `number`, `date`, `select`,
 `phone`, `email`, no migration needed), what the owner is called, the
-time zone, which forms count as leads, and what a visit is called and
+time zone, which forms count as leads, and what an event is called and
 records. `examples/` has five worked configs. Ask the AI to shape the CRM
 for your business; it reads them, asks what it cannot infer, and sets it
-up. After the first run, statuses and deal stages are rows, edited on the
-Stages page. A field that deserves a real column is an additive line in
+up. After the first run, statuses and deal stages are rows, edited from
+Edit stages on the board. A field that deserves a real column is an additive line in
 `schema.sql`.
 
 ## How it runs
@@ -106,14 +105,14 @@ Stages page. A field that deserves a real column is an additive line in
 crm.config.json          the levers: words, statuses, deals, sources, fields, zone, inbox
 schema.sql               the tables, additive only, applied at start and deploy
 src/app.tsx              the Hono app: the team-only gate, the routes
-src/crm/                 customers, stages, deals, tasks, notes, visits, the inbox, history, merge, import
-src/views/               inbox, tasks, deals, customers, a customer, visits, stages
-src/booking/             a copy of the booking skill: the Bookings section, the calendar sync job
+src/crm/                 customers, stages, deals, tasks, notes, events, the inbox, history, merge, import
+src/views/               inbox, tasks, deals, customers, a customer, events, stages
+src/booking/             a copy of the booking skill: the Calendar, Services and Team, the calendar sync job
 src/forms/               a copy of the forms skill: submissions by form, the form editor
 src/invoices/            a copy of the invoices skill: quotes, invoices, tax rates, Stripe
 src/data/  src/admin/    copies of the data and admin business skills, and what is
 src/payments/ src/reports/   used of payments and reports
-scripts/                 customers, deals, tasks, visits, forms, quotes, invoices, inbox, stages, import, export, migrate (--help)
+scripts/                 customers, deals, tasks, events, forms, quotes, invoices, inbox, stages, import, export, migrate (--help)
 styles/  static/         the tokens; the built CSS, vendored htmx and SortableJS, crm.js
 examples/                hvac, dental, restaurant, plumbing, counselor configs
 test/                    node:test

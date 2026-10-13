@@ -68,9 +68,9 @@ export type InvoicesAdminOptions = {
   /** A PDF of the document's HTML, or null when this runtime cannot print (production). */
   print?: (c: Ctx, html: string) => Promise<Uint8Array | null>;
   /**
-   * The app's own records in a quote's or an invoice's Details, as Stripe and
-   * Jobber show them: the customer's name links to their record, and the lines
-   * after it (the CRM's request, its job or "Create job"). No card of its own,
+   * The app's own records in a quote's or an invoice's Details, as Stripe
+   * shows them: the customer's name links to their record, and the lines
+   * after it (the CRM's request and event). No card of its own,
    * so the customer shows once.
    */
   links?: (c: Ctx, doc: { kind: "quote"; quote: Quote } | { kind: "invoice"; invoice: Invoice }) => Promise<DocLinks>;
@@ -105,7 +105,7 @@ function Party({ doc, href }: { doc: { name: string | null; email: string; phone
   );
 }
 
-export const SHOWN_INVOICE: StatusOption[] = [...INVOICE_OPTIONS, { value: "due", label: "Past due", tone: "strong" }];
+export const SHOWN_INVOICE: StatusOption[] = [...INVOICE_OPTIONS, { value: "due", label: "Past due", tone: "late" }];
 
 /** What is owed, how much of it is late, and what came in this month: each a link to the invoices behind it. */
 function Totals({ totals, currency, base }: { totals: Awaited<ReturnType<typeof invoiceTotals>>; currency: string; base: string }) {
@@ -257,7 +257,6 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     columns: [
       { label: "Quote", cell: (r) => <span class="whitespace-nowrap">{r.number}</span> },
       { label: "Customer", cell: (r) => r.name ?? r.email },
-      { label: "Email", cell: (r) => r.email, class: "hidden md:table-cell" },
       { label: "Total", cell: (r) => money(r.total_cents, r.currency), class: "text-right" },
       { label: "Status", cell: (r) => <StatusBadge value={shownStatus(r, todayIn(opts.timeZone))} options={QUOTE_OPTIONS} /> },
       { label: "Created", cell: (r) => <When at={r.created_at} timeZone={opts.timeZone} />, class: "hidden sm:table-cell" },
@@ -299,16 +298,16 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 
   const editor = async (c: Ctx, p: { title: string; action: string; values: FormValues; errors: Errors; current: string }, status = 200) => {
     const rates = await taxRates(getDb(c));
-    return framed(c, p.current, p.title, <DocForm kind="quote" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === qbase ? "Create quote" : "Save"} taxPage={`${base}/tax-rates`} />, status);
+    return framed(c, p.current, p.title, <DocForm kind="quote" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === qbase ? "Create quote" : "Save"} taxPage={`${base}/tax-rates`} currency={opts.currency} />, status);
   };
 
-  // Prefilled from the query: a customer's page or a job hands over who, and the first line.
+  // Prefilled from the query: a customer's page or an appointment hands over who, and the first line.
   app.get("/quotes/new", async (c) => {
     const qy = (k: string) => (c.req.query(k) ?? "").slice(0, 500);
     const currency = (qy("currency") || opts.currency || "usd").toLowerCase();
     const values: FormValues = {
       email: qy("email"), name: qy("name"), phone: qy("phone"), address: qy("address"), currency,
-      valid_until: addDays(todayIn(opts.timeZone), 30), notes: "", terms: opts.terms ?? "", days_until_due: "", visit_id: qy("visit"), deal_id: qy("deal"),
+      valid_until: addDays(todayIn(opts.timeZone), 30), notes: "", terms: opts.terms ?? "", days_until_due: "", visit_id: qy("event"), deal_id: qy("deal"),
       lines: qy("line") ? [{ description: qy("line"), quantity: "1", unit: qy("unit"), tax_rate_id: "" }] : [],
     };
     return editor(c, { title: "New quote", action: qbase, values, errors: {}, current: qbase });
@@ -383,7 +382,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             {qt.status === "accepted" ? (
               <Section title="Invoice">
                 {invoices.length ? (
-                  invoices.map((i) => <p><a href={`${base}/${i.id}`}>{i.number ? `Invoice ${i.number}` : "The draft invoice"}</a>, {INVOICE_STATUS_LABELS[i.status].toLowerCase()}</p>)
+                  invoices.map((i) => <p class="flex flex-wrap items-center gap-2"><a href={`${base}/${i.id}`}>{i.number ? `Invoice ${i.number}` : "Draft invoice"}</a>{i.number ? <StatusBadge value={i.status} options={INVOICE_OPTIONS} /> : null}</p>)
                 ) : (
                   <form method="post" action={`${self}/invoice`}><button class={primaryClass}>Make the invoice</button></form>
                 )}
@@ -573,7 +572,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     id: "invoices",
     href: (r) => `${base}/${r.id}`,
     columns: [
-      { label: "Invoice", cell: (r) => <span class="whitespace-nowrap">{r.number ?? `Draft ${r.id}`}</span> },
+      { label: "Invoice", cell: (r) => <span class="whitespace-nowrap">{r.number ?? <span class="text-ink-3">Not sent</span>}</span> },
       { label: "Customer", cell: (r) => r.name ?? r.email },
       { label: "Total", cell: (r) => money(r.total_cents, r.currency), class: "text-right" },
       { label: "Status", cell: (r) => <><StatusBadge value={r.past_due ? "due" : r.status} options={SHOWN_INVOICE} />{r.livemode === false ? <span class="ml-1 text-label text-ink-3">test</span> : null}</> },
@@ -599,7 +598,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
         <DataTable spec={ispec} caption="Invoices, newest first" rows={page} next={next} more={more}
           empty={q || asked ? <NoMatches clear={base} /> : (
             <EmptyState title="No invoices yet." action={<a href={`${base}/new`} class={primaryClass}>New invoice</a>}>
-              Send one for a finished job, or from an accepted quote. Your customer pays it online.
+              Send one for finished work, or from an accepted quote. Your customer pays it online.
             </EmptyState>
           )} />
       </div>
@@ -621,15 +620,15 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 
   const invoiceEditor = async (c: Ctx, p: { title: string; action: string; values: FormValues; errors: Errors; current: string }, status = 200) => {
     const rates = await taxRates(getDb(c));
-    return framed(c, base, p.title, <DocForm kind="invoice" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === base ? "Create invoice" : "Save"} taxPage={`${base}/tax-rates`} />, status);
+    return framed(c, base, p.title, <DocForm kind="invoice" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === base ? "Create invoice" : "Save"} taxPage={`${base}/tax-rates`} currency={opts.currency} />, status);
   };
 
-  // Blank, or prefilled from the query: a customer's page or a job hands over who, and the first line.
+  // Blank, or prefilled from the query: a customer's page or an appointment hands over who, and the first line.
   app.get("/new", async (c) => {
     const qy = (k: string) => (c.req.query(k) ?? "").slice(0, 500);
     const values: FormValues = {
       email: qy("email"), name: qy("name"), phone: qy("phone"), address: qy("address"), currency: (qy("currency") || opts.currency || "usd").toLowerCase(),
-      valid_until: "", notes: "", terms: "", days_until_due: String(opts.daysUntilDue ?? 30), visit_id: qy("visit"), deal_id: "",
+      valid_until: "", notes: "", terms: "", days_until_due: String(opts.daysUntilDue ?? 30), visit_id: qy("event"), deal_id: "",
       lines: qy("line") ? [{ description: qy("line"), quantity: "1", unit: qy("unit"), tax_rate_id: "" }] : [],
     };
     return invoiceEditor(c, { title: "New invoice", action: base, values, errors: {}, current: base });
@@ -703,7 +702,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             <Section title="Details">
               <FieldList fields={[
                 { label: "Bill to", value: <Party doc={inv} href={linked.customer} /> },
-                inv.due_date ? { label: "Due", value: <When at={`${inv.due_date}T00:00:00Z`} timeZone="UTC" day /> } : { label: "Days to pay", value: String(inv.days_until_due) },
+                inv.due_date ? { label: "Due", value: <When at={`${inv.due_date}T00:00:00Z`} timeZone="UTC" day /> } : { label: "Payment due", value: `${inv.days_until_due} ${inv.days_until_due === 1 ? "day" : "days"} after it is sent` },
                 { label: "Sent", value: inv.sent_at ? <When at={inv.sent_at} timeZone={opts.timeZone} /> : null },
                 { label: "Paid", value: inv.paid_at ? <When at={inv.paid_at} timeZone={opts.timeZone} /> : null },
                 { label: "Quote", value: quote ? <a href={`${qbase}/${quote.id}`}>Quote {quote.number}</a> : null },
@@ -789,7 +788,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       if (!act.allowed(inv)) return back(c, self, "not-now");
       const problem = c.req.query("problem");
       const ready = await stripeReady(c);
-      return framed(c, base, { title: `${act.title}: ${inv.number ? `invoice ${inv.number}` : "draft invoice"}`, back: { href: self, label: inv.number ? `Invoice ${inv.number}` : "Draft invoice" } }, (
+      return framed(c, base, { title: inv.number ? `${act.title}: invoice ${inv.number}` : `${act.title} to ${inv.name || inv.email}`, back: { href: self, label: inv.number ? `Invoice ${inv.number}` : "Draft invoice" } }, (
         <>
           {problem ? <p role="alert" class={"mb-4 " + alertClass}>{problem}</p> : null}
           {ready ? null : needStripe}
@@ -918,7 +917,9 @@ export function Lines({ qt, rates }: { qt: { currency: string; subtotal_cents: s
 const BLANK_ROWS = 3;
 
 /** A quote or invoice, new or being edited; `submit` says which: Create quote when it posts to the list (a new one), Save when to its own page. */
-function DocForm({ kind, action, v, errors, rates, cancel, submit, taxPage }: { kind: "quote" | "invoice"; action: string; v: FormValues; errors: Errors; rates: TaxRate[]; cancel: string; submit: string; taxPage: string }) {
+/** `currency` is the app's own (crm.config.json's): a document in it asks nothing, as Stripe takes it from the account; one in another shows the field. */
+function DocForm({ kind, action, v, errors, rates, cancel, submit, taxPage, currency }: { kind: "quote" | "invoice"; action: string; v: FormValues; errors: Errors; rates: TaxRate[]; cancel: string; submit: string; taxPage: string; currency?: string }) {
+  const ownCurrency = !!currency && v.currency.toLowerCase() === currency.toLowerCase() && !errors.currency;
   const err = (k: string) => (errors[k] ? <span class="text-ink" id={`err-${k.replace(/\./g, "-")}`}>{errors[k]}</span> : null);
   const offered = rates.filter((r) => r.active || v.lines.some((l) => l.tax_rate_id === r.id));
   const rows = [...v.lines, ...Array.from({ length: Math.max(BLANK_ROWS, 5 - v.lines.length) }, () => ({ description: "", quantity: "", unit: "", tax_rate_id: "" }))];
@@ -973,11 +974,11 @@ function DocForm({ kind, action, v, errors, rates, cancel, submit, taxPage }: { 
       </Section>
       <Section title={kind === "quote" ? "Terms" : "Payment"}>
         <div class="grid gap-3 sm:grid-cols-2">
-          <label class={fieldClass}>Currency<input name="currency" value={v.currency} maxlength={3} class={controlClass} />{err("currency")}</label>
+          {ownCurrency ? <input type="hidden" name="currency" value={v.currency} /> : <label class={fieldClass}>Currency<input name="currency" value={v.currency} maxlength={3} class={controlClass} />{err("currency")}</label>}
           {kind === "quote" ? (
             <label class={fieldClass}>Valid until<input name="valid_until" type="date" value={v.valid_until} class={controlClass} />{err("valid_until")}</label>
           ) : (
-            <label class={fieldClass}>Days to pay<input name="days_until_due" inputmode="numeric" value={v.days_until_due} class={controlClass} />{err("days_until_due")}</label>
+            <label class={fieldClass}>Payment due in (days)<input name="days_until_due" inputmode="numeric" value={v.days_until_due} class={controlClass} />{err("days_until_due")}</label>
           )}
           <label class={fieldClass + " sm:col-span-2"}>Message to the customer<textarea name="notes" rows={3} maxlength={5000} class={controlClass}>{v.notes}</textarea>{err("notes")}</label>
           {kind === "quote" ? (

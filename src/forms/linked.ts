@@ -24,15 +24,23 @@ export function paymentLabel(p: { status: string; cents: string; currency: strin
   return "Not paid";
 }
 
-export async function linkedTo(db: Db, ids: string[]): Promise<Map<string, Linked>> {
-  const out = new Map<string, Linked>(ids.map((id) => [id, { booking: null, payment: null }]));
-  if (!ids.length) return out;
-  // A table that is not there cannot be named even in a query that would not reach it.
-  // A bookings table made by an older booking skill has no submission_id yet.
+/**
+ * Whether a submission can lead to a booking or a payment here at all.
+ * A table that is not there cannot be named even in a query that would not reach it;
+ * a bookings table made by an older booking skill has no submission_id yet.
+ */
+export async function linkKinds(db: Db): Promise<{ bookings: boolean; payments: boolean }> {
   const [has] = await db.sql<{ bookings: boolean; payments: boolean }>`
     select exists (select 1 from information_schema.columns where table_schema = any(current_schemas(false))
                    and table_name = 'bookings' and column_name = 'submission_id') as bookings,
            to_regclass('payments') is not null as payments`;
+  return has;
+}
+
+export async function linkedTo(db: Db, ids: string[]): Promise<Map<string, Linked>> {
+  const out = new Map<string, Linked>(ids.map((id) => [id, { booking: null, payment: null }]));
+  if (!ids.length) return out;
+  const has = await linkKinds(db);
   const [bookings, payments] = await Promise.all([
     has.bookings
       ? db.sql`

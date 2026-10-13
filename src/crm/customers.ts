@@ -6,6 +6,7 @@ import { q, type Db, type Query } from "../data/db";
 import { normalizeEmail } from "../data/email";
 import { readCursor, type Cursor, type Keyed } from "../admin/keyset";
 import { likePattern } from "../admin/query";
+import { sameAs } from "./people";
 import { cleanPhone, phoneKey } from "./phone";
 
 export type Customer = Keyed & {
@@ -69,7 +70,11 @@ export function readListCursor(s: string | null | undefined): Cursor | null {
   return c && validK(c.k) ? c : null;
 }
 
-/** One page plus one row, most recently changed first, after the cursor. */
+/**
+ * One page plus one row, most recent contact first (one never contacted by
+ * when they were added, so a new lead is near the top), as the Last contact
+ * column reads; after the cursor.
+ */
 export function listPage(db: Db, f: ListFilter, after: Cursor | null, size: number): Promise<Customer[]> {
   const pat = likePattern(f.q);
   // "555 0102" finds "(555) 010-2" too: a search with four or more digits and
@@ -77,22 +82,23 @@ export function listPage(db: Db, f: ListFilter, after: Cursor | null, size: numb
   const digits = f.q && /^[\d\s()+.-]+$/.test(f.q) ? f.q.replace(/\D/g, "") : "";
   const digitPat = digits.length >= 4 ? `%${digits}%` : null;
   return db.sql<Customer>`
-    select c.*, to_char(c.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k
+    select c.*, to_char(coalesce(c.last_contact_at, c.created_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k
     from customers c
     where (${pat}::text is null or c.name ilike ${pat} or c.email::text ilike ${pat} or c.phone ilike ${pat} or c.company ilike ${pat}
            or (${digitPat}::text is not null and regexp_replace(c.phone, '[^0-9]', '', 'g') like ${digitPat}))
       and (${f.stage}::text is null or c.stage = ${f.stage})
       and (${f.tag}::text is null or c.tags @> array[${f.tag}::text])
-      and (${f.owner}::text is null or c.owner = ${f.owner}::citext)
+      and (${f.owner}::text is null or c.owner = any(${f.owner ? sameAs(f.owner) : null}::citext[]))
       and ((c.archived_at is not null) = ${f.archived}::boolean)
       and (not ${f.unplanned}::boolean or (
             (exists (select 1 from pipeline_stages s where s.key = c.stage and s.kind = 'open')
              or exists (select 1 from deals d join deal_stages s on s.key = d.stage where d.customer_id = c.id and d.archived_at is null and s.kind = 'open'))
             and not exists (select 1 from follow_ups t where t.customer_id = c.id and t.done_at is null)
-            and not exists (select 1 from customer_visits v where v.customer_id = c.id and v.status = 'planned' and v.starts_at >= now())))
+            and not exists (select 1 from bookings b where b.status = 'confirmed' and b.starts_at >= now()
+                            and (b.customer_id = c.id or (b.customer_id is null and b.email is not null and (b.email = c.email or c.other_emails @> array[lower(b.email::text)]))))))
       and (${after?.k ?? null}::timestamptz is null
-           or (c.updated_at, c.id) < (${after?.k ?? null}::timestamptz, ${after?.id ?? null}::bigint))
-    order by c.updated_at desc, c.id desc
+           or (coalesce(c.last_contact_at, c.created_at), c.id) < (${after?.k ?? null}::timestamptz, ${after?.id ?? null}::bigint))
+    order by coalesce(c.last_contact_at, c.created_at) desc, c.id desc
     limit ${size + 1}`;
 }
 

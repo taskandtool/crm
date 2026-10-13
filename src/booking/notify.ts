@@ -113,6 +113,7 @@ export function notifyBooking(
   e: BookingNotice,
   opts: { domain: string },
 ): Promise<Sent> {
+  if (!e.booking.email) return Promise.resolve({ status: "none", why: "the booker has no email" });
   const { subject, text } = bookingMessage(e.event, e);
   const method: IcsMethod = e.event === "cancelled" ? "CANCEL" : "REQUEST";
   const ics = e.host.email

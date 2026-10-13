@@ -12,7 +12,7 @@
 // is the #results block, and a plain request is the whole page.
 import type { Child } from "hono/jsx";
 import { listUrl } from "./query";
-import { buttonClass, controlClass } from "./status";
+import { buttonClass, inputClass, Select } from "./status";
 
 export type Column<T> = { label: string; cell: (row: T) => Child; class?: string };
 
@@ -22,7 +22,7 @@ export type TableSpec<T extends { id: string | number | bigint }> = {
   columns: Column<T>[];
   /** Detail URL; the first column links to it. */
   href?: (row: T) => string;
-  /** A checkbox per row belonging to the BulkForm with this id. */
+  /** A checkbox per row belonging to the bulk form with this id (`form=`), so rows added by Load more join it. */
   select?: { form: string; label: (row: T) => string };
 };
 
@@ -172,7 +172,7 @@ export const rowLink = "font-semibold text-ink no-underline focus-visible:outlin
 export function TableRow<T extends { id: string | number | bigint }>({ spec, row }: { spec: TableSpec<T>; row: T }) {
   const href = spec.href?.(row);
   return (
-    <tr id={`${spec.id}-row-${row.id}`} class={"group hover:bg-canvas" + (href ? " cursor-pointer" : "")} {...(href ? rowClick(href) : {})}>
+    <tr id={`${spec.id}-row-${row.id}`} class={"group hover:bg-panel/60" + (href ? " cursor-pointer" : "")} {...(href ? rowClick(href) : {})}>
       {spec.select ? (
         <td class={cell + " border-b border-line group-last:border-b-0"}>
           <input type="checkbox" name="id" value={String(row.id)} form={spec.select.form} aria-label={`Select ${spec.select.label(row)}`} />
@@ -242,7 +242,7 @@ export function SearchBar(props: {
       {Object.entries(keep).map(([name, value]) => (value ? <input type="hidden" name={name} value={value} /> : null))}
       <label class="relative min-w-48 flex-1">
         <span class="sr-only">{label}</span>
-        <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-3">
+        <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3">
           <circle cx="7" cy="7" r="4.5" />
           <path d="m10.5 10.5 3 3" />
         </svg>
@@ -255,20 +255,20 @@ export function SearchBar(props: {
           hx-get={action}
           hx-trigger="input changed delay:300ms, search"
           hx-include="closest form"
-          class={controlClass + " w-full pl-8"}
+          class={inputClass + " pl-9"}
         />
       </label>
       {filters.map((f) => (
         <label class="min-w-32 flex-1 sm:flex-none">
           <span class="sr-only">{f.label}</span>
-          <select name={f.name} hx-get={action} hx-trigger="change" hx-include="closest form" class={controlClass + " w-full"}>
+          <Select name={f.name} hx-get={action} hx-trigger="change" hx-include="closest form" class="w-full">
             <option value="">{f.any ?? "All"}</option>
             {f.options.map((o) => (
               <option value={o.value} selected={o.value === f.value}>
                 {o.label}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       ))}
       {/* htmx applies every change; the button is for a browser without it. */}
@@ -276,7 +276,7 @@ export function SearchBar(props: {
         <button class={buttonClass}>Apply</button>
       </noscript>
       {active ? (
-        <a href={listUrl(action, keep)} class="px-1 text-label text-ink-2">
+        <a href={listUrl(action, keep)} class="px-1 text-sm/6 font-semibold text-ink-2 no-underline hover:text-ink">
           Clear
         </a>
       ) : null}

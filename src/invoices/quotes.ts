@@ -91,7 +91,7 @@ export function readHead(f: QuoteFields & { currency?: unknown }, errors: Errors
   if (notes === false) errors.notes = "Up to 5000 characters.";
   if (terms === false) errors.terms = "Up to 5000 characters.";
   const visit = opt(f.visit_id, 18);
-  if (visit !== null && (visit === false || !/^\d+$/.test(visit))) errors.visit_id = "Not a job.";
+  if (visit !== null && (visit === false || !/^\d+$/.test(visit))) errors.visit_id = "Not an appointment.";
   const deal = opt(f.deal_id, 18);
   if (deal !== null && (deal === false || !/^\d+$/.test(deal))) errors.deal_id = "Not a deal.";
   return {
@@ -166,7 +166,7 @@ export async function quoteById(db: Db, id: string): Promise<(Quote & { lines: S
   return rows[0] ? { ...toQuote(rows[0]), lines: lines.map(toLine) } : null;
 }
 
-/** Quotes for one customer, one job or one deal, newest first. */
+/** Quotes for one customer, one appointment or one deal, newest first. */
 export async function quotesFor(db: Db, by: { email?: string | null; visitId?: string | null; dealId?: string | null }): Promise<Quote[]> {
   const email = by.email ?? null, visit = by.visitId ?? null, deal = by.dealId ?? null;
   const rows = await db.sql`

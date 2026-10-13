@@ -236,20 +236,13 @@ test("deals: the board's columns and totals; a move answers htmx with the board 
   const bad = await post(`/deals/${dealId}/stage`, { stage: "nope", return: "/deals" });
   assert.equal(bad.headers.get("location"), "/deals?saved=pick-stage");
 
-  // Its page: details saved, the value as typed; a won deal becomes a job once.
+  // Its page: details saved, the value as typed.
   const detail = await (await get(`/deals/${dealId}`)).text();
   assert.match(detail, /Lost reason/);
-  assert.doesNotMatch(detail, /No task scheduled|Create visit/, "a lost deal asks for nothing next");
+  assert.doesNotMatch(detail, /No task scheduled/, "a lost deal asks for nothing next");
   assert.match(detail, new RegExp(`For <a href="/customers/${pat.id}">Pat Doe</a>`));
   assert.match(detail, /Pat Doe/);
   assert.equal((await post(`/deals/${dealId}`, { title: "New boiler and flue", value: "5200", owner: "sam@team.example", expected_close: "2026-11-30", notes: "" })).headers.get("location"), `/deals/${dealId}?saved=deal-saved`);
-  await post(`/deals/${dealId}/stage`, { stage: "won" });
-  const job = await post(`/deals/${dealId}/job`, {});
-  assert.match(job.headers.get("location")!, /^\/visits\/\d+\?saved=visit-added$/);
-  const again = await post(`/deals/${dealId}/job`, {});
-  assert.equal(again.headers.get("location"), job.headers.get("location"), "once per deal");
-  const [v] = await db.sql<{ title: string; amount_cents: string }>`select title, amount_cents::text from customer_visits where deal_id = ${dealId}::bigint`;
-  assert.deepEqual(v, { title: "New boiler and flue", amount_cents: "520000" });
 
   // New deal from the board, on a page of its own, for someone new: they are added as a lead.
   assert.match(await (await get("/deals/new")).text(), /<form method="post" action="\/deals"/);
@@ -311,7 +304,7 @@ test("tasks: added, listed for today, the nav's count, done onto the timeline, m
   assert.match(await (await get("/tasks?view=upcoming", { ...ME, "x-tasktool-user": "new@team.example" })).text(), /Nothing in the next \d+ days\.[\s\S]*A task is a call[\s\S]*href="\/tasks\/new"[^>]*>New task<\/a>/, "someone with no tasks: the empty state offers New task");
 });
 
-test("no next step: a customer with an open deal is in play, a planned job is a next step, one done with nothing open is not", async (t) => {
+test("nothing planned: a customer with an open deal is in play, a scheduled event is planned, one with nothing open is not", async (t) => {
   if (skip) return t.skip(skip);
   const made = await post("/customers", { name: "Nan Step", email: "nan@example.com" });
   const id = made.headers.get("location")!.match(/\/customers\/(\d+)/)![1];
@@ -321,8 +314,8 @@ test("no next step: a customer with an open deal is in play, a planned job is a 
   assert.equal(await unplanned(), false, "a customer with nothing open needs no next step");
   await post(`/customers/${id}/deals`, { title: "Second boiler", value: "" });
   assert.equal(await unplanned(), true, "an open deal with nothing planned");
-  await post(`/customers/${id}/visits`, { title: "Survey", at: "2099-03-01T10:00", status: "planned" });
-  assert.equal(await unplanned(), false, "a planned job is the next step");
+  await post(`/customers/${id}/events`, { title: "Survey", at: "2099-03-01T10:00" });
+  assert.equal(await unplanned(), false, "a scheduled event is planned");
 });
 
 test("Add as deal: a new person, and a customer already here getting another", async (t) => {
@@ -439,151 +432,135 @@ test("CSV export of the filter, with formulas defused", async (t) => {
   assert.match(lines[1], /,"'=HYPERLINK\(""http:\/\/evil\.example"",""click""\)",formula@example\.com,/);
 });
 
-test("visits: add from the customer's page, the list, its page, status, CSV", async (t) => {
+test("events: add from the customer's page, the list, its page, status, CSV", async (t) => {
   if (skip) return t.skip(skip);
-  const made = await post("/customers", { name: "Val Visit", email: "val@example.com", phone: "555 404 0000" });
+  const made = await post("/customers", { name: "Val Event", email: "val@example.com", phone: "555 404 0000", address: "12 Oak St" });
   const cid = made.headers.get("location")!.match(/\/customers\/(\d+)/)![1];
+  const [sam] = await db.sql<{ id: string }>`insert into resources (name, email, time_zone) values ('Sam', 'sam@team.example', 'UTC') returning id::text as id`;
   const page = await (await get(`/customers/${cid}`)).text();
-  assert.match(page, /<h2[^>]*>Visits<\/h2>/);
-  assert.match(page, /<a href="\/bookings\/calendar"[^>]*>Schedule<\/a>/, "under Schedule in the nav");
-  assert.match(await (await get("/visits")).text(), /<nav aria-label="Schedule"[\s\S]*<a href="\/visits" aria-current="page"[^>]*>Visits<\/a>/, "a tab of Schedule");
-  // New visit and New deal for a customer picked from the list: theirs, nobody added.
-  const [{ n: people }] = await db.sql<{ n: number }>`select count(*)::int as n from customers`;
-  assert.match(await (await get("/visits/new")).text(), /<option value="\d+">Val Visit \(val@example\.com\)<\/option>/);
-  assert.match((await post("/visits", { customer: cid, title: "Picked job" })).headers.get("location")!, /^\/visits\/\d+\?saved=visit-added$/);
-  assert.match((await post("/deals", { customer: cid, title: "Picked deal" })).headers.get("location")!, /^\/deals\/\d+\?saved=deal-added$/);
-  const picked = await db.sql<{ n: number }>`
-    select (select count(*) from customers)::int as n
-    where exists (select 1 from customer_visits where title = 'Picked job' and customer_id = ${cid}::bigint)
-      and exists (select 1 from deals where title = 'Picked deal' and customer_id = ${cid}::bigint)`;
-  assert.deepEqual(picked, [{ n: people }], "both on the picked customer, nobody new");
-  assert.match(page, /<form method="post" action="\/customers\/\d+\/visits" aria-label="Add a visit"/);
+  assert.match(page, /<h2[^>]*>Events<\/h2>/);
+  assert.match(page, /<a href="\/schedule"[^>]*>Schedule<\/a>/, "under Schedule in the nav");
+  assert.match(page, /<form method="post" action="\/customers\/\d+\/events" aria-label="Add an event"/);
+  assert.match(page, /name="location" value="12 Oak St"/, "a new one is at their address");
+  assert.doesNotMatch(page, /Book a time|Create job/, "one way to put them on the schedule");
+  assert.match(await (await get("/events")).text(), /<nav aria-label="Schedule"[\s\S]*>Calendar<[\s\S]*<a href="\/events" aria-current="page"[^>]*>Events<\/a>[\s\S]*>Services<[\s\S]*>Team</, "the Schedule's tabs");
 
-  assert.equal((await post(`/customers/${cid}/visits`, { title: " " })).headers.get("location"), `/customers/${cid}?saved=visit-title-needed`);
-  const added = await post(`/customers/${cid}/visits`, { title: "Boiler service", at: "2099-01-15T09:30", status: "planned", owner: "Sam", amount: "$1,245.50" });
-  assert.equal(added.status, 303);
+  assert.equal((await post(`/customers/${cid}/events`, { title: " ", at: "2099-01-15T09:30" })).headers.get("location"), `/customers/${cid}?saved=event-incomplete`);
+  assert.equal((await post(`/customers/${cid}/events`, { title: "No time" })).headers.get("location"), `/customers/${cid}?saved=event-incomplete`);
+  const added = await post(`/customers/${cid}/events`, { title: "Boiler service", at: "2099-01-15T09:30", minutes: "90", host: sam.id, location: "12 Oak St", amount: "$1,245.50" });
   const loc = added.headers.get("location")!;
-  assert.match(loc, /^\/visits\/\d+\?saved=visit-added$/);
-  const vid = loc.match(/\/visits\/(\d+)/)![1];
+  assert.match(loc, /^\/events\/\d+\?saved=event-added$/);
+  const eid = loc.match(/\/events\/(\d+)/)![1];
   const detail = await (await get(loc)).text();
-  assert.match(detail, /Visit added\./);
+  assert.match(detail, /Event added\./);
   assert.match(detail, /value="2099-01-15T09:30"/, "the time back in the business's zone");
   assert.match(detail, /value="1245.50"/);
-  assert.match(detail, new RegExp(`<a href="/customers/${cid}">Val Visit</a>`));
-  assert.equal((await get("/visits/999999")).status, 404);
-  assert.equal((await post(`/customers/999999/visits`, { title: "x" })).status, 404);
+  assert.match(detail, /for 1 hr 30 min/);
+  assert.match(detail, new RegExp(`<a href="/customers/${cid}"[^>]*>Val Event</a>`));
+  assert.match(detail, />Scheduled</);
+  assert.doesNotMatch(detail, /Mark completed/, "not before it starts");
+  assert.equal((await get("/events/999999")).status, 404);
+  assert.equal((await post(`/customers/999999/events`, { title: "x", at: "2099-01-15T09:30" })).status, 404);
 
-  const list = await (await get("/visits")).text();
+  const list = await (await get("/events")).text();
   assert.match(list, /Boiler service/);
   assert.match(list, /\$1,245\.50/);
-  assert.match(await (await get("/visits?q=boiler", { ...ME, "hx-request": "true" })).text(), /^<div id="results">/);
+  assert.match(await (await get(`/events?host=${sam.id}`)).text(), /Boiler service/, "by the person taking it");
+  assert.match(await (await get("/events?q=boiler", { ...ME, "hx-request": "true" })).text(), /^<div id="results">/);
 
   // A bad amount or time is flagged and keeps what was there; the rest saves.
-  const saved = await post(`/visits/${vid}`, { title: "Boiler service and flue check", at: "2099-02-30T09:30", status: "planned", owner: "Sam", amount: "lots" });
-  assert.equal(saved.headers.get("location"), `/visits/${vid}?saved=invalid`);
-  const after = await (await get(`/visits/${vid}`)).text();
+  const saved = await post(`/events/${eid}`, { title: "Boiler service and flue check", at: "2099-02-30T09:30", minutes: "90", host: sam.id, location: "12 Oak St", amount: "lots" });
+  assert.equal(saved.headers.get("location"), `/events/${eid}?saved=invalid`);
+  const after = await (await get(`/events/${eid}`)).text();
   assert.match(after, /Boiler service and flue check/);
   assert.match(after, /value="2099-01-15T09:30"/);
   assert.match(after, /value="1245.50"/);
 
-  const status = await post(`/visits/${vid}/status`, { status: "done", return: `/visits/${vid}` });
-  assert.equal(status.headers.get("location"), `/visits/${vid}?saved=visit-status`);
-  assert.equal((await post(`/visits/${vid}/status`, { status: "maybe", return: `/visits/${vid}` })).headers.get("location"), `/visits/${vid}?saved=pick-status`);
-  assert.doesNotMatch(await (await get("/visits")).text(), /Boiler service/, "done is not coming up");
-  assert.match(await (await get("/visits?view=done")).text(), /Boiler service/);
-  // Done and not billed: under To invoice (Jobber's "requires invoicing"), with the invoice as the job's next step.
-  assert.match(await (await get("/visits?view=invoice")).text(), /Boiler service/);
-  assert.match(await (await get(`/visits/${vid}`)).text(), /href="\/invoices\/new\?[^"]*" class="[^"]*bg-accent[^"]*">Invoice this visit</);
-  await db.sql`insert into invoices (visit_id, email, currency, status) values (${vid}::bigint, 'val@example.com', 'usd', 'draft')`;
-  assert.doesNotMatch(await (await get("/visits?view=invoice")).text(), /Boiler service/, "invoiced, even as a draft");
-  await db.sql`delete from invoices where visit_id = ${vid}::bigint`;
-  assert.ok((await getCustomer(db, cid))!.last_contact_at, "done counts as contact");
+  // An edit from a form with no Service choice keeps the service an online booking came with.
+  const [{ id: svc }] = await db.sql<{ id: string }>`insert into booking_types (slug, name) values (${`kept-${eid}`}, 'Kept service') returning id::text as id`;
+  await db.sql`update bookings set type_id = ${svc}::bigint where id = ${eid}::bigint`;
+  await post(`/events/${eid}`, { title: "Boiler service and flue check", at: "2099-01-15T09:30", minutes: "90", host: sam.id, location: "12 Oak St", amount: "1245.50" });
+  assert.equal((await db.sql<{ t: string }>`select type_id::text as t from bookings where id = ${eid}::bigint`)[0].t, svc);
+  await db.sql`update bookings set type_id = null where id = ${eid}::bigint`;
 
-  const csv = await get("/visits/export.csv?view=done&q=boiler");
+  // Completed through the booking pages' route, which comes back here; completed is contact and past.
+  await db.sql`update bookings set starts_at = now() - interval '2 hours', ends_at = now() - interval '30 minutes' where id = ${eid}::bigint`;
+  const over = await (await get(`/events/${eid}`)).text();
+  assert.match(over, />Late</, "over and not marked");
+  assert.match(over, /Mark completed/);
+  const status = await post(`/schedule/${eid}/status`, { status: "completed" });
+  assert.equal(status.headers.get("location"), `/events/${eid}?saved=status`);
+  assert.ok((await getCustomer(db, cid))!.last_contact_at, "completed counts as contact");
+  assert.doesNotMatch(await (await get("/events")).text(), /Boiler service/, "completed is not upcoming");
+  assert.match(await (await get("/events?view=past")).text(), /Boiler service/);
+  assert.match(await (await get(`/events/${eid}`)).text(), /href="\/invoices\/new\?[^"]*event=\d+[^"]*" class="[^"]*bg-accent[^"]*">Invoice</, "the invoice is its next step");
+
+  const csv = await get("/events/export.csv?view=past&q=boiler");
   assert.equal(csv.status, 200);
   const text = new TextDecoder().decode(new Uint8Array(await csv.arrayBuffer()).slice(3));
   const lines = text.trim().split("\r\n");
-  assert.equal(lines[0], `ID,Customer,Customer email,Customer phone,What,When (${cfg.time_zone}),Status,Owner,Amount (USD),Notes,Added (UTC)`);
+  assert.equal(lines[0], `ID,Customer,Customer email,Customer phone,What,Service,When (${cfg.time_zone}),Status,Owner,Where,Amount (USD),Notes,Added (UTC)`);
   assert.equal(lines.length, 2);
-  assert.match(lines[1], /,Val Visit,val@example\.com,555 404 0000,Boiler service and flue check,\d{4}-\d{2}-\d{2} \d{2}:\d{2},Done,Sam,1245\.50,,/);
+  assert.match(lines[1], /,Val Event,val@example\.com,555 404 0000,Boiler service and flue check,,\d{4}-\d{2}-\d{2} \d{2}:\d{2},Completed,Sam,12 Oak St,1245\.50,,/);
 
-  assert.equal((await get("/visits", { host: "crm.example" })).status, 404, "team only");
-  assert.equal((await post(`/visits/${vid}/status`, { status: "planned" }, { ...ME, origin: "https://evil.example" })).status, 403);
+  assert.equal((await get("/events", { host: "crm.example" })).status, 404, "team only");
+  assert.equal((await post(`/events/${eid}`, { title: "x", at: "2099-01-15T09:30" }, { ...ME, origin: "https://evil.example" })).status, 403);
 
   // New from the list: someone already here by email gets it; anyone else is added.
-  assert.match(await (await get("/visits/new")).text(), /<form method="post" action="\/visits"/);
-  assert.equal((await post("/visits", { title: "Tune-up", name: "" })).headers.get("location"), "/visits/new?saved=name-needed");
-  assert.equal((await post("/visits", { title: "", name: "Val" })).headers.get("location"), "/visits/new?saved=visit-title-needed");
-  const theirs = (await post("/visits", { title: "Annual tune-up", email: "VAL@example.com" })).headers.get("location")!;
-  assert.match(theirs, /^\/visits\/\d+\?saved=visit-added$/);
-  const [same] = await db.sql<{ customer_id: string }>`select customer_id::text from customer_visits where id = ${theirs.match(/\/visits\/(\d+)/)![1]}::bigint`;
+  assert.match(await (await get("/events/new")).text(), /<option value="\d+">Val Event \(val@example\.com\)<\/option>/);
+  assert.equal((await post("/events", { title: "Tune-up", at: "2099-03-01T09:00", name: "" })).headers.get("location"), "/events/new?saved=name-needed");
+  assert.equal((await post("/events", { title: "", name: "Val" })).headers.get("location"), "/events/new?saved=event-incomplete");
+  const theirs = (await post("/events", { title: "Annual tune-up", at: "2099-03-01T09:00", email: "VAL@example.com" })).headers.get("location")!;
+  assert.match(theirs, /^\/events\/\d+\?saved=event-added$/);
+  const [same] = await db.sql<{ customer_id: string }>`select customer_id::text from bookings where id = ${theirs.match(/\/events\/(\d+)/)![1]}::bigint`;
   assert.equal(same.customer_id, cid, "matched by email, not added twice");
-  const fresh = (await post("/visits", { title: "Estimate", name: "Nia New", phone: "555 404 1111" })).headers.get("location")!;
-  const [made2] = await db.sql<{ name: string }>`select c.name from customer_visits v join customers c on c.id = v.customer_id where v.id = ${fresh.match(/\/visits\/(\d+)/)![1]}::bigint`;
-  assert.equal(made2.name, "Nia New");
+  const fresh = (await post("/events", { title: "Estimate", at: "2099-03-02T09:00", name: "Nia New", phone: "555 404 1111" })).headers.get("location")!;
+  const [made2] = await db.sql<{ name: string; email: string | null }>`select c.name, b.email::text as email from bookings b join customers c on c.id = b.customer_id where b.id = ${fresh.match(/\/events\/(\d+)/)![1]}::bigint`;
+  assert.deepEqual({ ...made2 }, { name: "Nia New", email: null }, "a customer with no email still has events");
 });
 
-test("bookings in the CRM: its own frame, a type and a person, Create job from a booking", async (t) => {
+test("the schedule in the CRM: its own frame, a service and a person; an online booking is an event, shown once", async (t) => {
   if (skip) return t.skip(skip);
-  let html = await (await get("/bookings/types")).text();
+  let html = await (await get("/services")).text();
   assert.match(html, /<nav aria-label="CRM"/, "the CRM's own frame");
-  assert.match(html, /<a href="\/bookings\/calendar" aria-current="page"[^>]*>Schedule<\/a>/);
-  assert.match(html, /<nav aria-label="Schedule"[\s\S]*>Calendar<[\s\S]*>Visits<[\s\S]*>Bookings<[\s\S]*>Services</, "Schedule's tabs");
-  assert.equal((await get("/bookings/types", { host: "crm.example" })).status, 404, "team only");
+  assert.match(html, /<a href="\/schedule" aria-current="page"[^>]*>Schedule<\/a>/);
+  assert.doesNotMatch(html, />Bookings</, "no second list of the same events");
+  assert.equal((await get("/services", { host: "crm.example" })).status, 404, "team only");
 
-  const person = await post("/bookings/people", { name: "Rae", email: "rae@team.example", time_zone: "America/Chicago", active: "1" });
-  assert.equal(person.status, 303);
-  const personId = person.headers.get("location")!.match(/\/people\/(\d+)/)![1];
-  const type = await post("/bookings/types", {
+  const person = await post("/team", { name: "Rae", email: "rae@team.example", time_zone: "America/Chicago", active: "1" });
+  const personId = person.headers.get("location")!.match(/\/team\/(\d+)/)![1];
+  const type = await post("/services", {
     name: "Estimate visit", slug: "estimate-visit", location_kind: "their_place", duration_min: "60", interval_min: "60",
     buffer_before_min: "30", buffer_after_min: "30", min_notice_min: "120", horizon_days: "30", active: "1",
   });
-  assert.equal(type.status, 303);
-  const typeId = type.headers.get("location")!.match(/\/types\/(\d+)/)![1];
-  assert.equal((await post(`/bookings/types/${typeId}/hosts`, { host: personId })).status, 303);
-  assert.match(await (await get(`/bookings/people/${personId}`)).text(), /Estimate visit/);
+  const typeId = type.headers.get("location")!.match(/\/services\/(\d+)/)![1];
+  assert.equal((await post(`/services/${typeId}/hosts`, { host: personId })).status, 303);
 
-  // A booking the Website took, then Create job from the Jobs page.
+  // A booking the Website took is on the events list and the Calendar, and opens as an event.
   const [b] = await db.sql<{ id: string }>`
-    insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, location_kind, location)
-    values (${typeId}::bigint, ${personId}::bigint, now() + interval '2 days', now() + interval '2 days 1 hour', 'Lee Wong', 'lee@example.com', 'their_place', '7 Pine St')
+    insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, location_kind, location, source)
+    values (${typeId}::bigint, ${personId}::bigint, now() + interval '2 days', now() + interval '2 days 1 hour', 'Lee Wong', 'lee@example.com', 'their_place', '7 Pine St', 'website')
     returning id::text as id`;
-  html = await (await get("/visits")).text();
-  assert.match(html, /Bookings to convert/);
-  assert.match(html, /Estimate visit, Lee Wong, with Rae/);
-  assert.match(await (await get(`/bookings/${b.id}`)).text(), /Not a customer yet\.[\s\S]*Create visit/);
-  const made = await post(`/bookings/${b.id}/job`, {});
-  assert.equal(made.status, 303);
-  const visitUrl = made.headers.get("location")!;
-  assert.match(visitUrl, /^\/visits\/\d+\?saved=visit-added$/);
-  html = await (await get(visitUrl)).text();
-  assert.match(html, /<h1[^>]*>Estimate visit<\/h1>/);
-  // The Calendar shows the job beside its booking, one Schedule.
-  const [{ week }] = await db.sql<{ week: string }>`select to_char(starts_at at time zone 'UTC', 'YYYY-MM-DD') as week from bookings where id = ${b.id}::bigint`;
-  const cal = await (await get(`/bookings/calendar?week=${week}`)).text();
-  assert.match(cal, /Lee Wong<\/a><span class="text-ink-2"> · Estimate visit with Rae/, "the booking on the Calendar");
-  assert.doesNotMatch(cal, /Visit: Estimate visit/, "its job made from it is the same visit: shown once");
-  await post("/visits", { name: "Mo Job", email: "mo@example.com", title: "Fix the boiler", at: `${week}T15:00` });
-  assert.match(await (await get(`/bookings/calendar?week=${week}`)).text(), /Mo Job<\/a><span class="text-ink-2"> · Visit: Fix the boiler/, "a job of its own is on the Calendar");
-  assert.match(html, />Lee Wong<\/a>/);
-  assert.doesNotMatch(await (await get("/visits")).text(), /Lee Wong, with Rae/, "made into a job, it leaves the list");
-  assert.match(await (await get(`/bookings/${b.id}`)).text(), /The visit<\/a>/);
-  assert.equal((await post(`/bookings/999999/job`, {})).status, 404);
-
-  // From the customer's page, Book a time carries who they are into New booking.
-  const lee = (await db.sql<{ id: string }>`select id::text as id from customers where email = 'lee@example.com'`)[0].id;
-  html = await (await get(`/customers/${lee}`)).text();
-  const bookLink = /href="(\/bookings\/new\?[^"]+)"[^>]*>Book a time</.exec(html)![1].replace(/&amp;/g, "&");
-  assert.match(bookLink, /name=Lee\+Wong&email=lee%40example\.com/);
-  html = await (await get(bookLink)).text();
-  assert.match(html, /<h1[^>]*>Book a time for Lee Wong<\/h1>/);
+  html = await (await get("/events")).text();
+  assert.match(html, new RegExp(`href="/events/${b.id}"`));
   assert.match(html, /Estimate visit/);
-  html = await (await get("/bookings/calendar")).text();
-  assert.match(html, /<a href="\/bookings\/calendar" aria-current="page"[^>]*>Schedule<\/a>/, "inside the CRM's frame");
-  assert.match(html, /Times are in UTC/, "the CRM's zone");
+  assert.doesNotMatch(html, /Bookings to convert|Create job/);
+  html = await (await get(`/events/${b.id}`)).text();
+  assert.match(html, /<h1[^>]*>Estimate visit<\/h1>/);
+  assert.match(html, /Lee Wong/);
+  const [{ week }] = await db.sql<{ week: string }>`select to_char(starts_at at time zone 'UTC', 'YYYY-MM-DD') as week from bookings where id = ${b.id}::bigint`;
+  await post("/events", { name: "Mo Job", email: "mo@example.com", title: "Fix the boiler", at: `${week}T15:00` });
+  const cal = await (await get(`/schedule?week=${week}`)).text();
+  assert.match(cal, new RegExp(`<a href="/events/${b.id}"[^>]*>Lee Wong</a><span class="text-ink-2"> · Estimate visit with Rae`), "the booking on the Calendar, opening its event");
+  assert.match(cal, /Mo Job<\/a><span class="text-ink-2"> · Fix the boiler/, "one the team scheduled is there too");
+  assert.match(cal, /href="\/events\/new"[^>]*>New event</);
+  assert.doesNotMatch(cal, /New booking/);
+  assert.match(cal, /Times are in UTC/, "the CRM's zone");
+  // A cancel from its page goes through the booking pages and comes back.
+  assert.equal((await post(`/schedule/${b.id}/status`, { status: "cancelled" })).headers.get("location"), `/events/${b.id}?saved=cancelled`);
 });
 
-test("quotes in the CRM: from a job, sent, accepted, made a job; Create job once", async (t) => {
+test("quotes in the CRM: from an event, sent, accepted, invoiced", async (t) => {
   if (skip) return t.skip(skip);
   const made = await post("/customers", { name: "Quin Quote", email: "quin@example.com", phone: "555 777 0000" });
   const cid = made.headers.get("location")!.match(/\/customers\/(\d+)/)![1];
@@ -591,11 +568,11 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Create job once
   assert.match(html, /<a href="\/invoices"[^>]*>Invoices<\/a>/, "in the nav");
   assert.match(html, /href="\/invoices\/quotes\/new\?email=quin%40example\.com&amp;name=Quin\+Quote/);
 
-  // Quote this job: the job's title and amount are the first line.
-  const job = await post(`/customers/${cid}/visits`, { title: "Water heater swap", status: "planned", amount: "1,200.00" });
-  const vid = job.headers.get("location")!.match(/\/visits\/(\d+)/)![1];
-  html = await (await get(`/visits/${vid}`)).text();
-  const quoteLink = /href="(\/invoices\/quotes\/new\?[^"]+)"[^>]*>Quote this visit</.exec(html)![1].replace(/&amp;/g, "&");
+  // Quote from an event: what it is and its amount are the first line.
+  const event = await post(`/customers/${cid}/events`, { title: "Water heater swap", at: "2099-04-01T09:00", amount: "1,200.00" });
+  const vid = event.headers.get("location")!.match(/\/events\/(\d+)/)![1];
+  html = await (await get(`/events/${vid}`)).text();
+  const quoteLink = /href="(\/invoices\/quotes\/new\?[^"]+)"[^>]*>Quote</.exec(html)![1].replace(/&amp;/g, "&");
   html = await (await get(quoteLink)).text();
   assert.match(html, /<nav aria-label="CRM"/, "the CRM's own frame");
   assert.match(html, /<nav aria-label="Quotes and invoices"/);
@@ -613,10 +590,11 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Create job once
   const qid = res.headers.get("location")!.match(/\/invoices\/quotes\/(\d+)/)![1];
   html = await (await get(`/invoices/quotes/${qid}`)).text();
   assert.match(html, /\$1,200\.00/);
-  // In Details, as Stripe and Jobber show them: the customer once, as a link, then the job.
+  // In Details: the customer once, as a link, then the event.
   assert.match(html, new RegExp(`<dd[^>]*><a href="/customers/${cid}">Quin Quote</a>`));
-  assert.match(html, new RegExp(`<dt[^>]*>Visit</dt><dd[^>]*><a href="/visits/${vid}">`));
+  assert.match(html, new RegExp(`<dt[^>]*>Event</dt><dd[^>]*><a href="/events/${vid}">`));
   assert.doesNotMatch(html, /<h2[^>]*>Customer<\/h2>/, "no card of its own");
+  assert.doesNotMatch(html, /Create (job|event)/, "nothing to convert");
 
   // No sender connected here: nothing goes, and the page says to send it yourself.
   const send = await post(`/invoices/quotes/${qid}/send`, {});
@@ -626,40 +604,20 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Create job once
   assert.ok((await getCustomer(db, cid))!.last_contact_at, "a quote that went out is contact");
   assert.equal((await post(`/invoices/quotes/${qid}/decide`, { answer: "accepted" })).headers.get("location"), `/invoices/quotes/${qid}?saved=accepted`);
 
-  // A quote for someone new, accepted with no job: Create job adds them, once.
-  const nb = new URLSearchParams({ email: "new@example.com", name: "Nia New", currency: "usd", valid_until: "", visit_id: "", notes: "", terms: "", address: "9 Elm St" });
-  nb.append("description", "Gutter clean"); nb.append("quantity", "1"); nb.append("unit", "180");
-  const r2 = await app.request(HOST + "/invoices/quotes", { method: "POST", body: nb, headers: { ...ME, origin: HOST, "content-type": "application/x-www-form-urlencoded" } }, { runtime });
-  const q2 = r2.headers.get("location")!.match(/\/invoices\/quotes\/(\d+)/)![1];
-  assert.equal((await post(`/invoices/quotes/${q2}/job`, {})).headers.get("location"), `/invoices/quotes/${q2}?saved=not-now`, "only an accepted quote");
-  await post(`/invoices/quotes/${q2}/decide`, { answer: "accepted" });
-  assert.match(await (await get(`/invoices/quotes/${q2}`)).text(), /Create visit<\/button><span[^>]*>Not a customer yet; this adds them\./);
-  const [one, two] = await Promise.all([post(`/invoices/quotes/${q2}/job`, {}), post(`/invoices/quotes/${q2}/job`, {})]);
-  assert.equal(one.headers.get("location"), two.headers.get("location"));
-  const jobUrl = one.headers.get("location")!;
-  assert.match(jobUrl, /^\/visits\/\d+\?saved=visit-added$/);
-  html = await (await get(jobUrl)).text();
-  assert.match(html, /<h1[^>]*>Gutter clean<\/h1>/);
-  assert.match(html, />Nia New<\/a>/);
-  assert.match(html, /value="180\.00"/);
-  const [{ n }] = await db.sql<{ n: number }>`select count(*)::int as n from customer_visits where title = 'Gutter clean'`;
-  assert.equal(n, 1);
-  const [nia] = await db.sql<{ address: string; source: string }>`select address, source from customers where email = 'new@example.com'`;
-  assert.deepEqual({ ...nia }, { address: "9 Elm St", source: "Quote" });
-
-  // Invoice this job: the job's line on a new invoice; the quote's invoice from Make the invoice.
-  html = await (await get(`/visits/${vid}`)).text();
-  assert.match(html, /href="\/invoices\/new\?[^"]*line=Water\+heater\+swap[^"]*"[^>]*>Invoice this visit</);
+  // A completed event's Invoice carries its line; the quote's invoice comes from Make the invoice.
+  await db.sql`update bookings set status = 'completed' where id = ${vid}::bigint`;
+  html = await (await get(`/events/${vid}`)).text();
+  assert.match(html, /href="\/invoices\/new\?[^"]*line=Water\+heater\+swap[^"]*"[^>]*>Invoice</);
   const inv = await post(`/invoices/quotes/${qid}/invoice`, {});
   const iid = inv.headers.get("location")!.match(/^\/invoices\/(\d+)\?saved=invoice-created$/)![1];
   html = await (await get(`/invoices/${iid}`)).text();
   assert.match(html, /<a href="\/invoices" aria-current="page"[^>]*>Invoices<\/a>/, "the CRM's nav");
-  // In Details, as Stripe and Jobber show them: the customer once, as a link, then the job.
+  // In Details: the customer once, as a link, then the event.
   assert.match(html, new RegExp(`<dd[^>]*><a href="/customers/${cid}">Quin Quote</a>`));
-  assert.match(html, new RegExp(`<dt[^>]*>Visit</dt><dd[^>]*><a href="/visits/${vid}">`));
+  assert.match(html, new RegExp(`<dt[^>]*>Event</dt><dd[^>]*><a href="/events/${vid}">`));
   assert.doesNotMatch(html, /<h2[^>]*>Customer<\/h2>/, "no card of its own");
 
-  // What is quoted, owed and paid: on the customer's page and the job's, and paid by month on the list.
+  // What is quoted, owed and paid: on the customer's page and the event's, and paid by month on the list.
   html = await (await get(`/customers/${cid}`)).text();
   assert.match(html, /<h2[^>]*>Quotes and invoices<\/h2>/);
   assert.match(html, new RegExp(`<a href="/invoices/quotes/${qid}">Quote Q-\\d+</a>`));
@@ -674,7 +632,7 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Create job once
   await db.sql`update invoices set due_date = '2000-01-31' where id = ${iid}::bigint`;
   assert.match(await (await get(`/customers/${cid}`)).text(), /Invoice ACME-0042<\/a>[\s\S]*?>Past due</, "overdue, as the invoices page says it");
   await db.sql`update invoices set due_date = '2099-01-31' where id = ${iid}::bigint`;
-  html = await (await get(`/visits/${vid}`)).text();
+  html = await (await get(`/events/${vid}`)).text();
   assert.match(html, /<h2[^>]*>Quote and invoice<\/h2>[\s\S]*Invoice ACME-0042/);
   html = await (await get("/invoices")).text();
   assert.match(html, /\$1,200<\/span><span[^>]*>Outstanding</, "owed, on the invoices page");
@@ -717,7 +675,17 @@ test("forms in the CRM: submissions by form, an order with its payment, the Inbo
   assert.match(html, /2 x Chocolate chip, a dozen/);
   assert.match(html, new RegExp(`href="/invoices/payments/${pay.id}"`));
   assert.equal((await get(`/invoices/payments/${pay.id}`)).status, 200, "the payment, in the CRM");
-  assert.equal((await get("/forms/submissions/unfinished")).status, 200);
+  assert.equal((await get("/forms/unfinished")).status, 200);
+
+  // A submission's booking is moved and cancelled on the Schedule's routes, and comes back to its event.
+  const [bk] = await db.sql<{ id: string }>`
+    insert into bookings (starts_at, ends_at, title, name, email, location_kind, submission_id, source)
+    values (now() + interval '3 days', now() + interval '3 days 1 hour', 'Delivery', 'Olive Order', 'olive@example.com', 'their_place', ${order.id}::bigint, 'website')
+    returning id::text as id`;
+  html = await (await get(`/forms/submissions/${order.id}`)).text();
+  assert.match(html, new RegExp(`href="/schedule/${bk.id}/reschedule"`));
+  const cancelled = await post(`/schedule/${bk.id}/status`, { status: "cancelled" });
+  assert.equal(cancelled.headers.get("location"), `/events/${bk.id}?saved=cancelled`);
 
   html = await (await get("/?form=order")).text();
   assert.match(html, /Olive Order/);

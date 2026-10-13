@@ -1,6 +1,6 @@
 // Customers from chat: list, find, show, add, update, status, tag, note,
 // archive, merge. `node scripts/customers.mjs --help`.
-import { cfg, dealsCfg, visitsCfg } from "../src/config";
+import { cfg, dealsCfg, eventsCfg } from "../src/config";
 import { customerDeals } from "../src/crm/deals";
 import { customerTasks } from "../src/crm/tasks";
 import { mergeCustomers, mergePreview } from "../src/crm/merge";
@@ -9,11 +9,11 @@ import {
   createCustomer, listPage, patchCustomer, retag, setArchived, setStage, NO_FILTER, type Details,
 } from "../src/crm/customers";
 import { everythingFrom } from "../src/crm/history";
-import { addNote, listNotes, pickNoteKind, NOTE_KINDS } from "../src/crm/notes";
+import { addNote, listNotes, pickNoteKind, wallTime, NOTE_KINDS } from "../src/customers/notes";
 import { phoneKey } from "../src/crm/phone";
-import { customerVisits } from "../src/crm/visits";
+import { customerEvents } from "../src/crm/events";
 import { firstOpenStage, listStages, resolveStage } from "../src/crm/stages";
-import { clean, parseTags, relativeWall, wallTime } from "../src/crm/text";
+import { clean, parseTags, relativeWall } from "../src/crm/text";
 import { formatMoney } from "../src/payments/money";
 import { normalizeEmail } from "../src/data/email";
 import { done, fieldFlags, fail, flag, flags, fmtCustomer, has, limitOf, local, misused, noMore, out, parseArgs, resolveCustomer, usage, who, withDb } from "./lib";
@@ -22,7 +22,7 @@ const HELP = `customers.mjs <command> [...] [--json] [--as <email>]
 
   list [--status s] [--tag t] [--owner o] [--archived] [--limit 50]
   find <text>                          name, email, phone or company
-  show <who>                           details, notes, tasks, deals, visits, and what they sent, booked and paid
+  show <who>                           details, notes, tasks, deals, events, and what they sent and paid
   add "<name>" [--email e] [--phone p] [--company c] [--address a] [--status s]
                [--source s] [--tag t]... [--owner o] [--notes n] [--field key=value]...
                                        an email or phone already here is reported, not added twice
@@ -89,11 +89,11 @@ await withDb(async (db) => {
 
     case "show": {
       const c = await resolveCustomer(db, rest[0], at);
-      const [notes, visits, history, deals, tasks] = await Promise.all([
-        listNotes(db, c.id, 20), visitsCfg ? customerVisits(db, c.id, 20) : [], everythingFrom(db, c, 20), customerDeals(db, c.id, 20), customerTasks(db, c.id),
+      const [notes, events, history, deals, tasks] = await Promise.all([
+        listNotes(db, c.id, 20), eventsCfg ? customerEvents(db, c.id, 20) : [], everythingFrom(db, c, 20), customerDeals(db, c.id, 20), customerTasks(db, c.id),
       ]);
       const dealStage = new Map((await listStages(db, "deals", { archived: true })).map((s) => [s.key, s.label]));
-      return result({ customer: c, notes, visits, history: history.items, deals, tasks: tasks.open }, fmtCustomer(c, label(c.stage)), {
+      return result({ customer: c, notes, events, history: history.items, deals, tasks: tasks.open }, fmtCustomer(c, label(c.stage)), {
         lines: [
           c.address ? `address: ${c.address}` : "",
           c.source ? `source: ${c.source}` : "",
@@ -106,16 +106,14 @@ await withDb(async (db) => {
             ? `${dealsCfg.many.toLowerCase()}:\n` + deals.map((d) => `  #${d.id} ${d.title} [${dealStage.get(d.stage) ?? d.stage}]${d.shown_cents !== null ? " " + formatMoney(d.shown_cents, d.currency ?? dealsCfg.currency) : ""}`).join("\n")
             : `no ${dealsCfg.many.toLowerCase()}`,
           notes.length ? "notes:\n" + notes.map((n) => `  ${local(n.happened_at)} ${n.kind}${n.author ? " " + n.author : ""}: ${n.body}`).join("\n") : "no notes",
-          visitsCfg
-            ? visits.length
-              ? `${visitsCfg.many.toLowerCase()}:\n` + visits.map((x) => `  #${x.id} ${x.starts_at ? local(x.starts_at) : "not scheduled"} [${x.status}] ${x.title}`).join("\n")
-              : `no ${visitsCfg.many.toLowerCase()}`
+          eventsCfg
+            ? events.length
+              ? `${eventsCfg.many.toLowerCase()}:\n` + events.map((x) => `  #${x.id} ${local(x.starts_at)} [${x.status}] ${x.what}`).join("\n")
+              : `no ${eventsCfg.many.toLowerCase()}`
             : "",
           history.items.length
-            ? "from this person:\n" + history.items.map((i) => (i.kind === "comment"
-                ? `  ${local(i.at)} comment${i.author ? " " + i.author : ""} (in the ${i.source}): ${i.body}`
-                : `  ${local(i.at)} ${i.kind === "submission" ? i.form_title || i.form_key : i.kind} (${i.status})`)).join("\n")
-            : "nothing from this person in forms, bookings or payments",
+            ? "from this person:\n" + history.items.map((i) => `  ${local(i.at)} ${i.kind === "submission" ? i.form_title || i.form_key : i.kind} (${i.status})`).join("\n")
+            : "nothing from this person in forms or payments",
         ].filter(Boolean),
       });
     }
@@ -227,7 +225,7 @@ await withDb(async (db) => {
       if (other.merged_into) return result(other, `#${other.id} was already merged into #${other.merged_into}; left alone`, { next: show(other.merged_into) });
       const pv = (await mergePreview(db, keep.id, other.id)) ?? fail(`${at}: one of them is gone`, "node scripts/customers.mjs list");
       const lines = [
-        `moves: ${pv.moves.notes} notes, ${pv.moves.deals} deals, ${pv.moves.tasks} tasks${visitsCfg ? `, ${pv.moves.visits} ${visitsCfg.many.toLowerCase()}` : ""}`,
+        `moves: ${pv.moves.notes} notes, ${pv.moves.deals} deals, ${pv.moves.tasks} tasks${eventsCfg ? `, ${pv.moves.events} ${eventsCfg.many.toLowerCase()}` : ""}`,
         pv.fills.length ? `${keep.name} gains: ${pv.fills.join(", ")}` : `${keep.name} keeps every detail it has`,
         `#${other.id} is archived and opens #${keep.id}; not undone`,
       ];

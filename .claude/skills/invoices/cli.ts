@@ -7,7 +7,7 @@
 //     withDb, business: "Acme", currency: "usd", timeZone: "America/Denver", terms: null, daysUntilDue: 30,
 //     source: "crm", env: machineEnv(), print: printPdf,
 //     person: (db, ref) => …,                       // <who>: the app's customers, by id, email or phone
-//     more: { help: "  job <id> …", commands: { job: async (db, a, rest, by) => … } },
+//     more: { help: "  bill <who> …", commands: { bill: async (db, a, rest, by) => … } },
 //   });
 //
 // Nothing reaches a customer or moves money without --confirm. The AI adds
@@ -115,12 +115,12 @@ export const problems = (errors: Record<string, string>) =>
     if (line) return `--line ${Number(line[1]) + 1} (${FIELD_NAMES[line[2]] ?? line[2]}): ${v}`;
     if (k === "status") return v;
     if (k === "lines") return `--line: ${v}`;
-    return `--${k === "visit_id" ? "job" : k === "deal_id" ? "deal" : k === "days_until_due" ? "days" : k.replace(/_/g, "-")}: ${v}`;
+    return `--${k === "visit_id" ? "event" : k === "deal_id" ? "deal" : k === "days_until_due" ? "days" : k.replace(/_/g, "-")}: ${v}`;
   }).join("\n");
 
 // ---- quotes -------------------------------------------------------------------
 
-const QUOTE_FIELDS = ["line", "name", "phone", "address", "valid-until", "notes", "terms", "job", "deal", "currency", "as"];
+const QUOTE_FIELDS = ["line", "name", "phone", "address", "valid-until", "notes", "terms", "event", "deal", "currency", "as"];
 const QUOTE_FLAGS: Record<string, string[]> = {
   list: ["status", "find", "limit", "customer"], show: [], add: QUOTE_FIELDS, edit: QUOTE_FIELDS, send: ["pay", "confirm", "as"],
   "mark-sent": ["as"], accept: ["as"], decline: ["as"], expire: ["as"], "tax-rates": [], "tax-rate": ["inclusive", "as"],
@@ -137,7 +137,7 @@ export async function quotesCli(argv: string[], cli: InvoicesCli): Promise<void>
   list --customer <who>
   show <id>
   add <who> --line "<what>|[qty|]<price>[|<tax rate>]"... [--name n] [--phone p] [--address a]
-            [--valid-until YYYY-MM-DD] [--notes n] [--terms t] [--job <id>] [--deal <id>] [--currency ${cli.currency}]
+            [--valid-until YYYY-MM-DD] [--notes n] [--terms t] [--event <id>] [--deal <id>] [--currency ${cli.currency}]
   edit <id> [the same flags]           a draft only; --line replaces every line
   send <id> [--pay]                    prints exactly what would go to whom; sends nothing. --pay adds a
                                        Pay button: Stripe's page for these lines; paying it accepts the quote
@@ -167,7 +167,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
   const local = (d: Date | string) => localTime(d, cli.timeZone);
   const fmt = (r: Quote) =>
     [`#${r.id}`, r.number, `[${shownStatus(r, todayIn(cli.timeZone))}]`, r.name ? `${r.name} <${r.email}>` : r.email, money(r.total_cents, r.currency),
-      r.valid_until ? `valid until ${r.valid_until}` : "", r.visit_id ? `job #${r.visit_id}` : "", r.deal_id ? `deal #${r.deal_id}` : ""].filter(Boolean).join("  ");
+      r.valid_until ? `valid until ${r.valid_until}` : "", r.visit_id ? `event #${r.visit_id}` : "", r.deal_id ? `deal #${r.deal_id}` : ""].filter(Boolean).join("  ");
   const quoteOr = async (db: Db, id: string | undefined) => {
     if (!id || !ID.test(id)) misused(`${at}: name a quote by its id (#12 is 12)`, "node scripts/quotes.mjs list");
     return (await quoteById(db, id)) ?? fail(`${at}: no quote ${id}`, "node scripts/quotes.mjs list");
@@ -232,7 +232,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
           if (has(a, flagName)) f[k] = flag(a, flagName) ?? "";
         };
         set("name", "name"); set("phone", "phone"); set("address", "address"); set("valid_until", "valid-until");
-        set("notes", "notes"); set("terms", "terms"); set("visit_id", "job"); set("deal_id", "deal"); set("currency", "currency");
+        set("notes", "notes"); set("terms", "terms"); set("visit_id", "event"); set("deal_id", "deal"); set("currency", "currency");
         if (has(a, "line")) f.lines = lineFlags(a, rates, "quotes");
         const r = current ? await saveQuote(db, current.id, f, by) : await createQuote(db, f, by, cli.source);
         if (!r.ok) fail(`${at}: not saved\n${problems(r.errors)}`, "node scripts/quotes.mjs --help");
@@ -319,7 +319,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
 
 // ---- invoices -----------------------------------------------------------------
 
-const INVOICE_FIELDS = ["line", "days", "notes", "job", "currency", "as"];
+const INVOICE_FIELDS = ["line", "days", "notes", "event", "currency", "as"];
 const INVOICE_FLAGS: Record<string, string[]> = {
   list: ["status", "find", "limit", "customer"], show: [], owed: [], add: INVOICE_FIELDS, edit: INVOICE_FIELDS, "from-quote": ["as"],
   discard: ["as"], send: ["confirm", "as"], "mark-paid": ["confirm", "as"], void: ["confirm", "as"], uncollectible: ["confirm", "as"],
@@ -334,7 +334,7 @@ export async function invoicesCli(argv: string[], cli: InvoicesCli): Promise<voi
   list --customer <who>
   show <id>
   owed <who>                           open invoices, live money only, per currency
-  add <who> --line "<what>|[qty|]<price>[|<tax rate>]"... [--days ${days}] [--notes n] [--job <id>] [--currency ${cli.currency}]
+  add <who> --line "<what>|[qty|]<price>[|<tax rate>]"... [--days ${days}] [--notes n] [--event <id>] [--currency ${cli.currency}]
   from-quote <quote id>                an accepted quote's lines, once
   edit <id> [the add flags]            a draft not yet in Stripe; --line replaces every line
   discard <id>                         a draft not yet in Stripe: kept as void
@@ -361,7 +361,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
   const fmt = (r: Invoice) =>
     [`#${r.id}`, r.number ?? "(no number yet)", `[${r.status}]`, r.livemode === false ? "(test mode)" : "", r.name ? `${r.name} <${r.email}>` : r.email,
       money(r.total_cents, r.currency), r.due_date ? `due ${r.due_date}` : "", r.paid_at ? `paid ${local(r.paid_at)}` : "",
-      r.quote_id ? `quote #${r.quote_id}` : "", r.visit_id ? `job #${r.visit_id}` : ""].filter(Boolean).join("  ");
+      r.quote_id ? `quote #${r.quote_id}` : "", r.visit_id ? `event #${r.visit_id}` : ""].filter(Boolean).join("  ");
   const invoiceOr = async (db: Db, id: string | undefined) => {
     if (!id || !ID.test(id)) misused(`${at}: name an invoice by its id (#12 is 12)`, "node scripts/invoices.mjs list");
     return (await invoiceById(db, id)) ?? fail(`${at}: no invoice ${id}`, "node scripts/invoices.mjs list");
@@ -432,7 +432,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         }
         if (has(a, "days")) f.days_until_due = flag(a, "days") ?? "";
         if (has(a, "notes")) f.notes = flag(a, "notes") ?? "";
-        if (has(a, "job")) f.visit_id = flag(a, "job") ?? "";
+        if (has(a, "event")) f.visit_id = flag(a, "event") ?? "";
         if (has(a, "currency")) f.currency = flag(a, "currency") ?? "";
         if (has(a, "line")) f.lines = lineFlags(a, rates, "invoices");
         const r = current ? await saveInvoice(db, current.id, f, by) : await createInvoice(db, f, by, cli.source);

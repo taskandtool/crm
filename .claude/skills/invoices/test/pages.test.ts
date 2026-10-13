@@ -46,8 +46,8 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     // Nobody signed in: nothing.
     assert.equal((await app.request(HOST + "/invoices/quotes")).status, 404);
 
-    // A job hands over who and the first line.
-    let res = await app.request(...get("/invoices/quotes/new?email=ann@example.com&name=Ann%20Lee&visit=12&deal=5&line=Fence%20repair&unit=450.00"));
+    // An appointment hands over who and the first line.
+    let res = await app.request(...get("/invoices/quotes/new?email=ann@example.com&name=Ann%20Lee&event=12&deal=5&line=Fence%20repair&unit=450.00"));
     let html = await res.text();
     assert.equal(res.status, 200);
     assert.match(html, /value="Fence repair"/);

@@ -382,6 +382,7 @@ test("a refund needs a confirmation, sends an idempotency key, and leaves the st
   assert.match(await (await post("60.00")).text(), /At most \$50\.00/);
   const ok = await post("20.00");
   assert.equal(ok.status, 303);
+  assert.match(ok.headers.get("location")!, /^\/admin\/payments\/\d+\?saved=refund$/, "back to the payment");
   assert.equal(sent.length, 1);
   assert.equal(sent[0].key, `refund-pi_r1-0-2000`);
   assert.deepEqual((sent[0].params as any).amount, 2000);
@@ -421,4 +422,21 @@ test("with no secret option the webhook reads STRIPE_WEBHOOK_SECRET as a setting
     if (saved === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;
     else process.env.STRIPE_WEBHOOK_SECRET = saved;
   }
+});
+
+test("an app that shows the payment elsewhere gets the refund back there", async (t) => {
+  if (!s) return t.skip(why);
+  const id = await pending("ret1");
+  await s.db.sql`update payments set status = 'paid', stripe_payment_intent_id = 'pi_ret1', ref_type = 'submission', ref_id = '7' where id = ${id}`;
+  const app = new Hono();
+  app.route("/admin/payments", paymentsAdmin(() => s!.db, {
+    stripe: () => (async () => ({})) as Stripe, base: "/admin/payments", css: "/site.css", timeZone: "UTC",
+    returnTo: (p) => ({ href: `/admin/submissions/${p.ref_id}`, label: "Back to the submission" }),
+  }));
+  const page = await (await app.request(`https://site.example/admin/payments/${id}/refund`, { headers: team })).text();
+  assert.match(page, /href="\/admin\/submissions\/7"/);
+  const res = await app.request(`https://site.example/admin/payments/${id}/refund`, {
+    method: "POST", headers: { ...team, "content-type": "application/x-www-form-urlencoded" }, body: "amount=10.00&seen=0",
+  });
+  assert.equal(res.headers.get("location"), "/admin/submissions/7?saved=refund");
 });

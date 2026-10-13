@@ -8,7 +8,7 @@ description: "The private side of an app: lists of what came in (submissions, bo
 Private views over the project's tables: the CRM's starting surface and the
 Website's `/admin`. The other skills build their own lists on these pieces.
 
-Version: 0.1.0 (taskandtool/skills)
+Version: 0.2.0 (taskandtool/skills)
 
 ## Where private views live
 
@@ -43,7 +43,7 @@ default, with two locks:
   Sec-Fetch-Site), which stands in for a CSRF token. Record who acted:
   `updated_by = ${c.get("user")}` (and `updated_at = now()`) on every change.
 - **One `/admin`, a section per skill.** Each skill's views mount under it
-  (`/admin/forms`, `/admin/bookings`) on one guarded sub-app, all passing the
+  (`/admin/submissions`, `/admin/schedule`) on one guarded sub-app, all passing the
   same `nav`; `/admin` itself redirects to the list the owner reads most.
 - Running locally, off the platform: set `ADMIN_DEV_USER=you@example.com`.
   It is honoured only for a localhost URL on a loopback connection with no

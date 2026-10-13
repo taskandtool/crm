@@ -80,7 +80,7 @@ async function readInvoice(db: Db, f: InvoiceFields) {
     : ({ ok: true, value: { head, days, lines: lines.value as Line[] } } as const);
 }
 
-/** A new draft invoice with its lines (blank, or a job's: pass its visit_id and the lines). */
+/** A new draft invoice with its lines (blank, or an appointment's: pass its visit_id and the lines). */
 export async function createInvoice(db: Db, f: InvoiceFields, by: string, source: string): Promise<Saved<Invoice>> {
   const r = await readInvoice(db, f);
   if (!r.ok) return r;
@@ -121,7 +121,7 @@ export type FromQuote = { ok: true; value: Invoice } | { ok: false; reason: "not
 
 /**
  * A draft invoice from an accepted quote (or, for a proposal's Pay button,
- * one still waiting for its answer: `beforeAnswer`): its customer, job, lines and
+ * one still waiting for its answer: `beforeAnswer`): its customer, appointment, lines and
  * totals, in one statement. A quote has one invoice that is not void; asking
  * again answers `invoiced` with that invoice's id.
  */
@@ -175,7 +175,7 @@ export async function invoiceById(db: Db, id: string): Promise<(Invoice & { line
 export const pastDue = (inv: Invoice, today: string, quote: { status: string } | null): boolean =>
   inv.status === "open" && !!inv.due_date && inv.due_date < today && (!inv.quote_id || quote?.status === "accepted");
 
-/** Invoices for one customer, one job or one quote, newest first. */
+/** Invoices for one customer, one appointment or one quote, newest first. */
 export async function invoicesFor(db: Db, by: { email?: string | null; visitId?: string | null; quoteId?: string | null }): Promise<Invoice[]> {
   const email = by.email ?? null, visit = by.visitId ?? null, quote = by.quoteId ?? null;
   const rows = await db.sql`

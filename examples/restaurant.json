@@ -29,7 +29,7 @@
   "owner_label": "Host",
   "time_zone": "Europe/London",
   "inbox": { "forms": ["private-dining", "contact"], "exclude_forms": [], "bookings": true, "payments": true },
-  "visits": {
+  "events": {
     "one": "Event",
     "many": "Events",
     "fields": [

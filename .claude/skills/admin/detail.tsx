@@ -7,14 +7,14 @@
 //   <Section title="Answers"><JsonData data={r.data} /></Section>
 import type { Child } from "hono/jsx";
 import { When } from "./list";
-import { buttonClass, controlClass } from "./status";
+import { buttonClass, inputClass } from "./status";
 
 export type Field = { label: string; value: Child };
 
 export function Section({ title, children, class: extra = "" }: { title: string; children?: Child; class?: string }) {
   return (
     <section class={"rounded-card border border-line bg-surface p-4 shadow-card " + extra}>
-      <h2 class="mb-3 text-copy font-semibold text-ink">{title}</h2>
+      <h2 class="mb-3 text-base/7 font-semibold text-ink">{title}</h2>
       {children}
     </section>
   );
@@ -90,7 +90,7 @@ export function Activity(props: {
           <input type="hidden" name="return" value={note.returnTo} />
           <label class="flex flex-col gap-1 text-label text-ink-2">
             Add a note
-            <textarea name="text" rows={3} maxlength={4000} required class={controlClass}></textarea>
+            <textarea name="text" rows={3} maxlength={4000} required class={inputClass}></textarea>
           </label>
           <button class={buttonClass + " self-start"}>Add note</button>
         </form>

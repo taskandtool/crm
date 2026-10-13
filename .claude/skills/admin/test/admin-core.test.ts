@@ -1,26 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hono } from "hono";
-import { csvCell, csvResponse } from "../csv";
-import { cut, everyPage, readCursor, makeCursor, type Cursor } from "../keyset";
+import { cut, readCursor, makeCursor } from "../keyset";
 import { teamOnly, type TeamVars } from "../guard";
-
-test("a cell a spreadsheet would run as a formula is defused", () => {
-  for (const v of ["=HYPERLINK(\"x\")", "+1", "-2+3", "@SUM(A1)", "\tx", "\rx"]) assert.ok(csvCell(v).replace(/^"/, "").startsWith("'"), v);
-  assert.equal(csvCell('say "hi", ok'), '"say ""hi"", ok"');
-  assert.equal(csvCell(null), "");
-  assert.equal(csvCell(new Date("2026-01-02T03:04:05Z")), "2026-01-02T03:04:05.000Z");
-});
-
-test("an export streams a header and every row", async () => {
-  async function* rows() {
-    yield { n: "=a" };
-    yield { n: "b" };
-  }
-  const res = csvResponse("x.csv", [{ label: "Name", value: (r: { n: string }) => r.n }], rows());
-  const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(await res.arrayBuffer());
-  assert.equal(text, "﻿Name\r\n'=a\r\nb\r\n");
-});
 
 test("a cursor round-trips the text sort key and refuses junk", () => {
   const k = "2026-10-02 12:00:00.123456+00";
@@ -84,27 +66,7 @@ test("a Host header alone does not make a request local", async () => {
   }
 });
 
-test("a formula hidden behind spaces, a line break or a full-width sign is defused too", () => {
-  for (const v of [" =1+1", "\n=1+1", "　=1+1", "＝1+1", "＋1", "＠SUM(A1)"]) {
-    assert.ok(csvCell(v).replace(/^"/, "").startsWith("'"), JSON.stringify(v));
-  }
-  assert.equal(csvCell("a = b"), "a = b");
-});
-
 test("a cursor id too long for a bigint is refused, not sent to the database", () => {
   assert.equal(readCursor(btoa(JSON.stringify(["2026-10-02", "9".repeat(19)]))), null);
 });
 
-test("everyPage walks a keyset query to the end, one page at a time", async () => {
-  const rows = Array.from({ length: 7 }, (_, i) => ({ k: `2026-10-0${9 - i}`, id: String(i + 1) }));
-  const asked: (Cursor | null)[] = [];
-  const fetchPage = async (after: Cursor | null, size: number) => {
-    asked.push(after);
-    const from = after ? rows.findIndex((r) => r.id === after.id) + 1 : 0;
-    return rows.slice(from, from + size + 1);
-  };
-  const seen: string[] = [];
-  for await (const r of everyPage(fetchPage, 3)) seen.push(r.id);
-  assert.deepEqual(seen, rows.map((r) => r.id));
-  assert.deepEqual(asked.map((a) => a?.id ?? null), [null, "3", "6"]);
-});

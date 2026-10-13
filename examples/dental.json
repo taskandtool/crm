@@ -30,7 +30,7 @@
   "owner_label": "Dentist",
   "time_zone": "America/New_York",
   "inbox": { "forms": "all", "exclude_forms": [], "bookings": true, "payments": false },
-  "visits": {
+  "events": {
     "one": "Visit",
     "many": "Visits",
     "fields": [

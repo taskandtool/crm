@@ -59,8 +59,8 @@ export function CustomerMoney({ c, quotes, invoices, owed }: { c: Customer; quot
   );
 }
 
-/** A job's quote and invoice. */
-export function VisitMoney({ quotes, invoices }: { quotes: Quote[]; invoices: Invoice[] }) {
+/** An event's quote and invoice. */
+export function EventMoney({ quotes, invoices }: { quotes: Quote[]; invoices: Invoice[] }) {
   return (
     <Section title="Quote and invoice">
       <Docs quotes={quotes} invoices={invoices} />

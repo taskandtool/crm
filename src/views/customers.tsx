@@ -5,11 +5,12 @@ import { Flash } from "../admin/flash";
 import { DataTable, EmptyState, NoMatches, SearchBar, When, type TableSpec } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { StatusBadge } from "../admin/status";
-import { cfg, dealsCfg, ownerLabel, visitsCfg, vocab } from "../config";
+import { cfg, dealsCfg, eventsCfg, ownerLabel, vocab } from "../config";
 import type { Customer, ListFilter } from "../crm/customers";
 import type { Stage } from "../crm/stages";
 import { Layout } from "./layout";
-import { controlClass, DueMark, Field, MESSAGES, primaryClass, stageOptions, timeZone } from "./ui";
+import { buttonClass, controlClass, DueMark, Field, MESSAGES, primaryClass, stageOptions, timeZone } from "./ui";
+import { ownerOptions, personName } from "../crm/people";
 
 /** Each row's next task (by customer id), who is still in play, and today in the business's zone: what the Next column says. */
 export type NextOf = { next: Map<string, { due_on: string; due_time: string | null }>; inPlay: Set<string>; today: string };
@@ -46,8 +47,8 @@ export function customerSpec(stages: Stage[], n: NextOf): TableSpec<Customer> {
           </span>
         ),
       },
-      { label: ownerLabel, class: "hidden lg:table-cell", cell: (r) => r.owner ?? "" },
-      { label: "Last contact", class: "hidden lg:table-cell", cell: (r) => <When at={r.last_contact_at} timeZone={timeZone} day /> },
+      { label: ownerLabel, class: "hidden lg:table-cell", cell: (r) => personName(r.owner) },
+      { label: "Last contact", class: "hidden lg:table-cell", cell: (r) => (r.last_contact_at ? <When at={r.last_contact_at} timeZone={timeZone} day /> : <span class="text-ink-3">Added <When at={r.created_at} timeZone={timeZone} day /></span>) },
     ],
   };
 }
@@ -71,7 +72,7 @@ export function Results(p: { stages: Stage[]; filter: ListFilter; rows: Customer
         more={(cur) => listUrl("/customers", { ...params, after: cur })}
         empty={
           p.filter.unplanned && !narrowed ? (
-            <EmptyState title="Everyone has a next step.">Every open lead and {dealsCfg.one.toLowerCase()} has a task or a {visitsCfg ? visitsCfg.one.toLowerCase() : "visit"} planned.</EmptyState>
+            <EmptyState title="Everyone has something planned.">Every open lead and {dealsCfg.one.toLowerCase()} has a task or a {eventsCfg ? eventsCfg.one.toLowerCase() : "event"} planned.</EmptyState>
           ) : narrowed || p.filter.unplanned ? (
             <NoMatches clear="/customers" />
           ) : p.filter.archived ? (
@@ -101,10 +102,9 @@ export function CustomersPage(p: {
   nextOf: NextOf;
   flash: { code?: string | null; n?: string | null };
 }) {
-  const owners = [...new Set([p.user, ...p.facets.owners])];
   return (
     <Layout title={vocab.many} user={p.user} section="customers"
-      actions={<a href="/customers/new" class={primaryClass}>New {vocab.one.toLowerCase()}</a>}>
+      actions={<><a href="/stages#customers-list" class={buttonClass}>Edit statuses</a><a href="/customers/new" class={primaryClass}>New {vocab.one.toLowerCase()}</a></>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <SearchBar
         action="/customers"
@@ -117,12 +117,12 @@ export function CustomersPage(p: {
           {
             name: "owner",
             label: ownerLabel,
-            options: owners.map((o) => ({ value: o, label: o === p.user ? `${o} (me)` : o })),
+            options: ownerOptions(p.user, p.facets.owners),
             value: p.filter.owner,
             any: "Anyone",
           },
           // As Pipedrive marks a deal with no activity: the ones in play with nothing planned next.
-          { name: "next", label: "Next step", options: [{ value: "none", label: "No next step" }], value: p.filter.unplanned ? "none" : null, any: "Any next step" },
+          { name: "next", label: "Next task", options: [{ value: "none", label: "Nothing planned" }], value: p.filter.unplanned ? "none" : null, any: "Any next task" },
           { name: "show", label: "Show", options: [{ value: "archived", label: "Archived" }], value: p.filter.archived ? "archived" : null, any: "Active" },
         ]}
       />
@@ -150,10 +150,14 @@ export function NewCustomerPage({ user, stages, flash }: { user: string; stages:
         <Field label="Phone">
           <input name="phone" type="tel" maxlength={40} autocomplete="off" class={controlClass} />
         </Field>
+        <Field label="Address">
+          <input name="address" maxlength={500} autocomplete="off" class={controlClass} />
+        </Field>
         <Field label="Status">
+          {/* Every status, the first open one chosen: someone already a customer can be added as one. */}
           <select name="stage" class={controlClass}>
-            {(open.length ? open : stages).map((s) => (
-              <option value={s.key}>{s.label}</option>
+            {stages.map((s) => (
+              <option value={s.key} selected={s.key === (open[0] ?? stages[0])?.key}>{s.label}</option>
             ))}
           </select>
         </Field>

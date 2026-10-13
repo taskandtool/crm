@@ -7,7 +7,7 @@ import { Hono } from "hono";
 import { html as markup } from "hono/html";
 import { applySchema } from "../../data/migrate";
 import { scratch, why } from "../../data/test/scratch";
-import { bookingAdmin } from "../admin";
+import { bookingAdmin, peopleRoutes, typeRoutes } from "../admin";
 import { addWindow, createPerson, createType, setHosts } from "../hours";
 import { bookingPages, type BookingEvent } from "../public";
 import { makeStamp } from "../../data/spam";
@@ -15,6 +15,7 @@ import type { Scratch } from "../../data/test/scratch";
 
 const schema = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "schema.sql"), "utf8");
 const team = { "x-tasktool-user": "owner@example.com" };
+const sections = { schedule: "/admin/schedule", services: "/admin/services", team: "/admin/team" };
 const form = (data: Record<string, string>, headers: Record<string, string> = {}) => ({
   method: "POST", body: new URLSearchParams(data), headers: { "Content-Type": "application/x-www-form-urlencoded", ...headers },
 });
@@ -37,7 +38,9 @@ test("a visitor books, sees the time in their zone, downloads the invite, and ca
     const events: BookingEvent[] = [];
     const app = new Hono();
     app.route("/book", bookingPages(() => s.db, { base: "/book", domain: "acme.com", css: "/site.css", source: "website", onBooked: (_c, e) => void events.push(e) }));
-    app.route("/admin/bookings", bookingAdmin(() => s.db, { base: "/admin/bookings", css: "/site.css", source: "website" }));
+    app.route("/admin/schedule", bookingAdmin(() => s.db, { base: "/admin/schedule", css: "/site.css", source: "website", sections }));
+    app.route("/admin/services", typeRoutes(() => s.db, { base: "/admin/services", css: "/site.css", source: "website", sections }));
+    app.route("/admin/team", peopleRoutes(() => s.db, { base: "/admin/team", css: "/site.css", source: "website", sections }));
 
     // The list of what can be booked, then the type's page.
     let res = await app.request("/book");
@@ -107,18 +110,16 @@ test("a visitor books, sees the time in their zone, downloads the invite, and ca
     assert.equal(events[0].type.name, "Intro call");
     assert.equal(events[0].host.name, "Pat");
 
-    // The team sees it; a stranger gets a 404.
-    assert.equal((await app.request("/admin/bookings")).status, 404);
-    res = await app.request("/admin/bookings", { headers: team });
-    html = await res.text();
-    assert.match(html, /ann@example\.com/);
-    assert.match(html, /Intro call/);
-    // With the business's zone given, the list shows its times in it, not the host's (Pat is in New York).
+    // The team sees it on the week; a stranger gets a 404.
+    const week = `/admin/schedule?week=${start.slice(0, 10)}`;
+    assert.equal((await app.request(week)).status, 404);
+    html = await (await app.request(week, { headers: team })).text();
+    assert.match(html, /Ann<\/span><span class="text-ink-2"> · Intro call with Pat/);
+    assert.match(html, /Times are in New York/, "the first person's zone");
+    // With the business's zone given, the week shows its times in it, not the host's (Pat is in New York).
     const zoned = new Hono();
-    zoned.route("/admin/bookings", bookingAdmin(() => s.db, { base: "/admin/bookings", css: "/site.css", source: "website", timeZone: "Asia/Tokyo" }));
-    const whenOf = (page: string) => /<time[^>]*>([^<]+)<\/time>/.exec(page)?.[1];
-    const tokyo = await (await zoned.request("/admin/bookings", { headers: team })).text();
-    assert.ok(whenOf(html) && whenOf(tokyo) && whenOf(html) !== whenOf(tokyo), `${whenOf(html)} vs ${whenOf(tokyo)}`);
+    zoned.route("/admin/schedule", bookingAdmin(() => s.db, { base: "/admin/schedule", css: "/site.css", source: "website", timeZone: "Asia/Tokyo", sections }));
+    assert.match(await (await zoned.request(week, { headers: team })).text(), /Times are in Tokyo/);
 
     res = await app.request(`/book/manage/${token}/cancel`, form({ tz: "Asia/Kolkata" }));
     assert.equal(res.status, 303);
@@ -134,35 +135,51 @@ test("a visitor books, sees the time in their zone, downloads the invite, and ca
     await s.db.sql`update resources set email = null where id = ${r.value.id}::bigint`;
     assert.equal((await app.request(`/book/manage/${token}/invite.ics`)).status, 404);
 
-    // The hours editor: a window that ends before it starts is refused next to the field.
-    res = await app.request(`/admin/bookings/people/${r.value.id}/hours`, form({ weekday: "1", start: "17:00", end: "09:00" }, team));
+    // Hours: a window that ends before it starts is refused next to the field; time off is added and shown.
+    res = await app.request(`/admin/team/${r.value.id}/hours`, form({ weekday: "1", start: "17:00", end: "09:00" }, team));
     assert.equal(res.status, 422);
     assert.match(await res.text(), /End after the start/);
-    res = await app.request(`/admin/bookings/people/${r.value.id}/hours`, form({ weekday: "6", start: "18:00", end: "20:00" }, team));
+    res = await app.request(`/admin/team/${r.value.id}/hours`, form({ weekday: "6", start: "18:00", end: "20:00" }, team));
     assert.equal(res.status, 303);
-    html = await (await app.request(`/admin/bookings/people/${r.value.id}`, { headers: team })).text();
+    html = await (await app.request(`/admin/team/${r.value.id}`, { headers: team })).text();
     assert.match(html, /6:00 PM – 8:00 PM/);
-    assert.match(html, /href="\/admin\/bookings\/types\/\d+">Intro call</, "what they take");
+    res = await app.request(`/admin/team/${r.value.id}/time-off`, form({ starts: "2030-01-02T00:00", ends: "2030-01-02T23:59", note: "Dentist" }, team));
+    assert.equal(res.headers.get("location"), `/admin/team/${r.value.id}?saved=time-off`);
+    assert.match(await (await app.request(`/admin/team/${r.value.id}`, { headers: team })).text(), /Dentist/);
+    html = await (await app.request("/admin/team", { headers: team })).text();
+    assert.match(html, /Pat<\/span>/);
+    assert.match(html, /href="\/admin\/team\/new"/, "Add person");
 
-    // The types editor: a new type, refused without its address, then given hosts.
-    res = await app.request("/admin/bookings/types", form({
+    // Services: a new one, listed once someone takes it; renamed; refused without the address people come to.
+    res = await app.request("/admin/services", form({
       name: "Estimate visit", slug: "estimate", location_kind: "their_place", duration_min: "60", interval_min: "60",
       buffer_before_min: "30", buffer_after_min: "30", min_notice_min: "1440", horizon_days: "30", active: "1",
     }, team));
     assert.equal(res.status, 303);
     const typeUrl = res.headers.get("location")!.split("?")[0];
     assert.equal((await app.request("/book/estimate")).status, 200);
-    assert.match(await (await app.request("/book")).text(), /Intro call/);
     assert.doesNotMatch(await (await app.request("/book")).text(), /Estimate visit/, "nobody takes it yet");
     res = await app.request(`${typeUrl}/hosts`, form({ host: r.value.id }, team));
     assert.equal(res.status, 303);
     assert.match(await (await app.request("/book")).text(), /Estimate visit/);
-    res = await app.request("/admin/bookings/types", form({
+    res = await app.request(typeUrl, form({
+      name: "Free estimate", slug: "estimate", location_kind: "their_place", duration_min: "60", interval_min: "60",
+      buffer_before_min: "30", buffer_after_min: "30", min_notice_min: "1440", horizon_days: "30", active: "1",
+    }, team));
+    assert.equal(res.status, 303);
+    assert.match(await (await app.request("/book")).text(), /Free estimate/, "renamed");
+    assert.match(await (await app.request(`/admin/team/${r.value.id}`, { headers: team })).text(), /Free estimate</, "on the person's services");
+    res = await app.request("/admin/services", form({
       name: "Showroom", slug: "showroom", location_kind: "our_place", location: "", duration_min: "30", interval_min: "30",
       buffer_before_min: "0", buffer_after_min: "0", min_notice_min: "0", horizon_days: "30",
     }, team));
     assert.equal(res.status, 422);
     assert.match(await res.text(), /Enter the address people come to/);
+
+    // The team: a new person, then their hours.
+    res = await app.request("/admin/team", form({ name: "Sam", email: "sam@example.com", time_zone: "America/Denver", active: "1" }, team));
+    assert.equal(res.status, 303);
+    assert.match(res.headers.get("location")!, /^\/admin\/team\/\d+\?saved=created$/);
   } finally {
     await s.drop();
   }
@@ -272,27 +289,30 @@ test("afterBook can send the booker on (a deposit); the manage page shows the de
   }
 });
 
-test("in an app's own frame, the booking pages keep their sections and the extra beside a booking", async (t) => {
+test("in an app's own frame, a booking opens on the app's page, and an event the team scheduled shows by its title", async (t) => {
   const s = await scratch();
   if (!s) return t.skip(why);
   try {
     await intro(s);
+    const after: string[] = [];
     const app = new Hono();
-    app.route("/bookings", bookingAdmin(() => s.db, {
-      base: "/bookings", css: "/crm.css", source: "crm",
+    app.route("/schedule", bookingAdmin(() => s.db, {
+      base: "/schedule", css: "/crm.css", source: "crm", sections,
       Frame: ({ title, user, children }) => markup`<main data-frame="crm"><h1>${title}</h1><p>${user}</p>${children}</main>`,
-      extra: (_c, b) => markup`<p data-extra="">Customer ${b.email}</p>`,
+      returnTo: (b) => ({ href: `/events/${b.id}`, label: "Event" }),
+      afterStatus: (_c, b) => void after.push(b.status),
     }));
-    app.route("/book", bookingPages(() => s.db, { base: "/book", domain: "acme.com", css: "/site.css", source: "website" }));
-    const { start } = await firstSlot(app);
-    const _started = await makeStamp("booking:intro", Date.now() - 10_000);
-    await app.request("/book/intro", form({ start, tz: "UTC", name: "Ann", email: "ann@example.com", phone: "555 010 0001", _started }));
-    const html = await (await app.request("/bookings/types", { headers: team })).text();
-    assert.match(html, /^<main data-frame="crm"><h1>Services<\/h1><p>owner@example\.com<\/p><nav aria-label="Booking"/);
-    assert.match(html, /href="\/bookings\/people"/);
+    const html = await (await app.request("/schedule", { headers: team })).text();
+    assert.match(html, /^<main data-frame="crm"><h1>Schedule<\/h1><p>owner@example\.com<\/p>/);
     assert.doesNotMatch(html, /<html/, "no second document inside the app's");
-    const [{ id }] = await s.db.sql`select id::text as id from bookings`;
-    assert.match(await (await app.request(`/bookings/${id}`, { headers: team })).text(), /<p data-extra="">Customer ann@example\.com<\/p>/);
+    // No service, nobody assigned, no email: it shows by its title, and opens the app's page.
+    const [{ id }] = await s.db.sql<{ id: string }>`
+      insert into bookings (starts_at, ends_at, title, name, location_kind) values (now() + interval '1 hour', now() + interval '2 hours', 'Walk-in cooler check', 'Hank', 'their_place')
+      returning id::text as id`;
+    assert.match(await (await app.request("/schedule", { headers: team })).text(), new RegExp(`href="/events/${id}"[^>]*>Hank</a><span class="text-ink-2"> · Walk-in cooler check</span>`));
+    const res = await app.request(`/schedule/${id}/status`, form({ status: "cancelled" }, team));
+    assert.match(res.headers.get("location")!, new RegExp(`^/events/${id}\\?saved=cancelled$`));
+    assert.deepEqual(after, ["cancelled"], "the app hears of the change");
   } finally {
     await s.drop();
   }
@@ -307,6 +327,7 @@ test("the team books for someone: carried details, a time, the confirmation sent
     const app = new Hono();
     app.route("/bookings", bookingAdmin(() => s.db, {
       base: "/bookings", css: "/crm.css", source: "crm", timeZone: "UTC", manageBase: "https://acme.example/book",
+      sections: { schedule: "/bookings", services: "/services", team: "/team" },
       onBooked: (_c, e) => void sent.push(e),
     }));
     const who = "name=Joy%20Park&email=joy%40example.com&phone=555%20202%203030";
@@ -329,7 +350,7 @@ test("the team books for someone: carried details, a time, the confirmation sent
     assert.match(await res.text(), /Enter the number we should call/);
     res = await app.request(`/bookings/new/${typeId}`, form({ start, name: "Joy Park", email: "joy@example.com", phone: "555 202 3030", notes: "Prefers mornings" }, team));
     assert.equal(res.status, 303);
-    assert.match(res.headers.get("location")!, /^\/bookings\/\d+\?saved=booked$/);
+    assert.equal(res.headers.get("location"), "/bookings?saved=booked", "with nowhere else to file it, back to the week");
     const [b] = await s.db.sql`select source, location, answers from bookings`;
     assert.deepEqual([b.source, b.location, b.answers], ["crm", "555 202 3030", { notes: "Prefers mornings" }]);
     const e = sent[0] as { host: { id: string }; manageUrl: string };
@@ -340,23 +361,21 @@ test("the team books for someone: carried details, a time, the confirmation sent
     assert.match(await res.text(), /just taken/);
 
     const week = start.slice(0, 10);
-    html = await (await app.request(`/bookings/calendar?week=${week}`, { headers: team })).text();
-    assert.match(html, /Joy Park<\/a><span class="text-ink-2"> · Intro call with Pat/);
+    html = await (await app.request(`/bookings?week=${week}`, { headers: team })).text();
+    assert.match(html, /Joy Park<\/span><span class="text-ink-2"> · Intro call with Pat/);
     assert.equal((html.match(/<h3 class=/g) ?? []).length, 7, "seven days");
-    assert.match(html, /We will call you on 555 202 3030/);
-    const nextWeek = /href="(\/bookings\/calendar\?week=[\d-]+)"[^>]*aria-label="Week after"/.exec(html)![1];
+    assert.match(html, /Phone call: 555 202 3030/, "the team's own words for where");
+    const nextWeek = /href="(\/bookings\?week=[\d-]+)"[^>]*aria-label="Week after"/.exec(html)![1];
     assert.doesNotMatch(await (await app.request(nextWeek, { headers: team })).text(), /Joy Park/);
 
-    // The team reschedules: the booking's page offers it, the calendar leaves out its own time, a time moves it and the booker is told.
+    // The team reschedules: the calendar leaves out its own time, a time moves it and the booker is told.
     const [joy] = await s.db.sql`select id::text as id, starts_at from bookings where email = 'joy@example.com' and status = 'confirmed'`;
-    html = await (await app.request(`/bookings/${joy.id}`, { headers: team })).text();
-    assert.match(html, new RegExp(`href="/bookings/${joy.id}/reschedule"[^>]*>Reschedule<`));
     html = await (await app.request(`/bookings/${joy.id}/reschedule`, { headers: team })).text();
     assert.match(html, /Reschedule Joy Park/);
     const later = [...html.matchAll(/name="start" value="([^"]+)"/g)].map((m) => m[1]).find((v) => v !== start)!;
     assert.equal((await app.request(`/bookings/${joy.id}/reschedule`, form({ start: later }))).status, 404, "team only");
     res = await app.request(`/bookings/${joy.id}/reschedule`, form({ start: later }, team));
-    assert.equal(res.headers.get("location"), `/bookings/${joy.id}?saved=rescheduled`);
+    assert.equal(res.headers.get("location"), "/bookings?saved=rescheduled");
     const [moved] = await s.db.sql`select starts_at, sequence, updated_by from bookings where id = ${joy.id}::bigint`;
     assert.equal(new Date(moved.starts_at).toISOString(), later);
     assert.equal(moved.updated_by, "owner@example.com");
@@ -376,37 +395,17 @@ test("the team books for someone: carried details, a time, the confirmation sent
     const withSam = [...html.matchAll(/name="start" value="([^"]+)"/g)][0][1];
     assert.match(html, new RegExp(`name="host" value="${sam.value.id}"`));
     res = await app.request(`/bookings/${joy.id}/reschedule`, form({ start: withSam, host: sam.value.id }, team));
-    assert.equal(res.headers.get("location"), `/bookings/${joy.id}?saved=rescheduled`);
+    assert.equal(res.headers.get("location"), "/bookings?saved=rescheduled");
     const [handed] = await s.db.sql`select resource_id::text as r from bookings where id = ${joy.id}::bigint`;
     assert.equal(handed.r, sam.value.id);
     assert.equal((sent.at(-1) as { host: { id: string } }).host.id, sam.value.id, "the message names who they now see");
 
     // The team cancels: the booker is told, as when they cancel themselves.
     res = await app.request(`/bookings/${joy.id}/status`, form({ status: "cancelled" }, team));
-    assert.equal(res.headers.get("location"), `/bookings/${joy.id}?saved=cancelled`);
+    assert.equal(res.headers.get("location"), "/bookings?saved=cancelled");
     assert.equal((sent.at(-1) as { event: string }).event, "cancelled");
   } finally {
     await s.drop();
   }
 });
 
-test("an app without the calendar sync shows no calendars to add, and refuses one posted anyway", async (t) => {
-  const s = await scratch();
-  if (!s) return t.skip(why);
-  try {
-    const pat = await intro(s);
-    const app = new Hono();
-    app.route("/admin/bookings", bookingAdmin(() => s.db, { base: "/admin/bookings", css: "/site.css", source: "website", calendars: false }));
-    const people = await (await app.request(`/admin/bookings/people/${pat.id}`, { headers: team })).text();
-    assert.match(people, /Weekly hours|Time off/);
-    assert.doesNotMatch(people, /id="calendars"|Add calendar/);
-    assert.doesNotMatch(await (await app.request("/admin/bookings", { headers: team })).text(), /href="\/admin\/bookings\/calendars"/);
-    assert.equal((await app.request("/admin/bookings/calendars", { headers: team })).status, 404);
-    const res = await app.request(`/admin/bookings/people/${pat.id}/calendars`, form({ provider: "google", external_id: "primary" }, team));
-    assert.equal(res.status, 404);
-    const [{ n }] = await s.db.sql<{ n: number }>`select count(*)::int as n from calendars`;
-    assert.equal(n, 0);
-  } finally {
-    await s.drop();
-  }
-});

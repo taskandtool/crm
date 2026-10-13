@@ -39,7 +39,7 @@ export type FormRoutesOptions = {
   /** This app's slug, stored as the submission's source. */
   source: string;
   page: PageRenderer;
-  /** Where the private submission views are mounted, for the link in the owner's email. */
+  /** Where formsAdmin is mounted, for the link in the owner's email. Default "/admin/submissions". */
   adminPath?: string;
   /** Email the form's notify_emails through the connected sender (data/send.ts). Default true. */
   notify?: boolean;
@@ -126,7 +126,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
   /** Tell the form's notify_emails, through the owner's sender, after the response. */
   function notifyOwner(c: Context, form: Form, id: number | string, sub: Submission, page: string | null, origin: Origin) {
     if (opts.notify === false || !form.notify_emails.length) return;
-    const link = `${new URL(c.req.url).origin}${opts.adminPath ?? "/admin/forms"}/submissions/${id}`;
+    const link = `${new URL(c.req.url).origin}${opts.adminPath ?? "/admin/submissions"}/${id}`;
     afterResponse(
       c,
       sendEmail(envOf(c), {
