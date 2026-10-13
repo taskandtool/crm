@@ -239,7 +239,7 @@ export function TasksSection(p: {
   user: string;
   today: string;
   returnTo: string;
-  /** False on a won or lost deal: no "No task scheduled", and the form starts closed. */
+  /** False on a won or lost deal: no "No task scheduled". */
   prompt?: boolean;
 }) {
   const prompt = p.prompt !== false;
@@ -256,7 +256,7 @@ export function TasksSection(p: {
       ) : prompt ? (
         <p class="font-semibold">No task scheduled.</p>
       ) : null}
-      <AddToggle label="Add task" open={prompt && !p.open.length}>
+      <AddToggle label="Add task">
         <TaskForm customerId={p.customerId} deals={p.deals} dealId={p.dealId} owners={p.owners} user={p.user} today={p.today} returnTo={p.returnTo} />
       </AddToggle>
       {p.done.length ? (

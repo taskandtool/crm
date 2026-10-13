@@ -91,7 +91,7 @@ export function Layout(props: {
         <header class="border-b border-line bg-surface">
           {/* One row: it scrolls sideways on a phone rather than wrapping. */}
           {/* The same width as the page below, so the nav and the title line up. */}
-          <div class={"mx-auto flex min-w-0 items-center gap-1 overflow-x-auto px-4 py-2 " + (wide ? "max-w-7xl" : "max-w-6xl")}>
+          <div class="mx-auto flex min-w-0 max-w-6xl items-center gap-1 overflow-x-auto px-4 py-2">
             <nav aria-label="CRM" class="flex items-center gap-1">
               {nav.map((n) => link(n))}
             </nav>

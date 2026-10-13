@@ -110,7 +110,7 @@ export function CustomersPage(p: {
         action="/customers"
         target="#results"
         q={p.filter.q}
-        placeholder="Name, email, phone or company"
+        placeholder={`Search ${vocab.many.toLowerCase()}`}
         filters={[
           { name: "stage", label: "Status", options: p.stages.map((s) => ({ value: s.key, label: s.label })), value: p.filter.stage, any: "Any status" },
           ...(p.facets.tags.length ? [{ name: "tag", label: "Tag", options: p.facets.tags.map((t) => ({ value: t, label: t })), value: p.filter.tag, any: "Any tag" }] : []),

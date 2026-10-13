@@ -94,14 +94,15 @@ function Totals({ totals, currency, base }: { totals: Awaited<ReturnType<typeof 
   const whole = (cents: string) => formatMoney(cents, currency).replace(/\.00$/, "");
   const count = (n: number) => (n === 1 ? "1 invoice" : `${n} invoices`);
   const figure = (href: string, value: string, label: string, sub: string) => (
-    <a href={href} class="flex flex-col rounded-card border border-line bg-surface px-4 py-3 no-underline shadow-card hover:border-line-strong">
-      <span class="text-title font-semibold text-ink">{value}</span>
+    <a href={href} class="flex min-w-0 flex-col rounded-card border border-line bg-surface px-3 py-3 no-underline shadow-card hover:border-line-strong sm:px-4">
+      <span class="break-words font-semibold text-ink sm:text-title">{value}</span>
       <span class="text-label text-ink-2">{label}</span>
-      <span class="text-label text-ink-3">{sub}</span>
+      <span class="hidden text-label text-ink-3 sm:block">{sub}</span>
     </a>
   );
+  // One row on a phone too, as Stripe's own figures, so the list starts on the first screen.
   return (
-    <div class="mb-5 grid gap-3 sm:grid-cols-3">
+    <div class="mb-5 grid grid-cols-3 gap-2 sm:gap-3">
       {figure(listUrl(base, { status: "open" }), whole(totals.open.cents), "Outstanding", count(totals.open.count))}
       {figure(listUrl(base, { status: "due" }), whole(totals.due.cents), "Past due", totals.due.count ? count(totals.due.count) : "None late")}
       {figure(listUrl(base, { status: "paid" }), whole(totals.paid.cents), "Paid this month", "Through Stripe and marked paid")}
@@ -236,7 +237,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     id: "quotes",
     href: (r) => `${qbase}/${r.id}`,
     columns: [
-      { label: "Quote", cell: (r) => r.number },
+      { label: "Quote", cell: (r) => <span class="whitespace-nowrap">{r.number}</span> },
       { label: "Customer", cell: (r) => r.name ?? r.email },
       { label: "Email", cell: (r) => r.email, class: "hidden md:table-cell" },
       { label: "Total", cell: (r) => money(r.total_cents, r.currency), class: "text-right" },
@@ -271,7 +272,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       <>
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
         {emailReady(c) ? null : needEmail}
-        <SearchBar action={qbase} target="#results" q={q} placeholder="Number, name or email"
+        <SearchBar action={qbase} target="#results" q={q} placeholder="Search quotes"
           filters={[{ name: "status", label: "Status", options: QUOTE_OPTIONS, value: status, any: "Any status" }]} />
         {results}
       </>
@@ -554,12 +555,12 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     id: "invoices",
     href: (r) => `${base}/${r.id}`,
     columns: [
-      { label: "Invoice", cell: (r) => r.number ?? `Draft ${r.id}` },
+      { label: "Invoice", cell: (r) => <span class="whitespace-nowrap">{r.number ?? `Draft ${r.id}`}</span> },
       { label: "Customer", cell: (r) => r.name ?? r.email },
       { label: "Total", cell: (r) => money(r.total_cents, r.currency), class: "text-right" },
       { label: "Status", cell: (r) => <><StatusBadge value={r.past_due ? "due" : r.status} options={SHOWN_INVOICE} />{r.livemode === false ? <span class="ml-1 text-label text-ink-3">test</span> : null}</> },
       // When it was paid once it is; when it is due while it is open; nothing for a draft or a void.
-      { label: "Due", cell: (r) => (r.status === "paid" && r.paid_at ? <>Paid <When at={r.paid_at} timeZone={opts.timeZone} day /></> : r.status === "open" && r.due_date ? dayText(r.due_date) : ""), class: "hidden sm:table-cell" },
+      { label: "Due", cell: (r) => (r.status === "paid" && r.paid_at ? <>Paid <When at={r.paid_at} timeZone={opts.timeZone} day /></> : r.status === "open" && r.due_date ? <When at={`${r.due_date}T00:00:00Z`} timeZone="UTC" day /> : ""), class: "hidden sm:table-cell" },
     ],
   };
 
@@ -593,7 +594,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
         <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
         {(await stripeReady(c)) ? null : needStripe}
         {totals ? <Totals totals={totals} currency={currency} base={base} /> : null}
-        <SearchBar action={base} target="#results" q={q} placeholder="Number, name or email"
+        <SearchBar action={base} target="#results" q={q} placeholder="Search invoices"
           filters={[{ name: "status", label: "Status", options: SHOWN_INVOICE, value: params.status, any: "Any status" }]} />
         {results}
       </>
