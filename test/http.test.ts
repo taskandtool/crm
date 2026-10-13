@@ -387,7 +387,7 @@ test("a quote made for a deal: its value stands in, its page names the deal, and
   body.append("description", "Cabinets"); body.append("quantity", "1"); body.append("unit", "8000");
   const res = await app.request(HOST + "/invoices/quotes", { method: "POST", body, headers: { ...ME, origin: HOST, "content-type": "application/x-www-form-urlencoded" } }, { runtime });
   const qid = res.headers.get("location")!.match(/\/invoices\/quotes\/(\d+)/)![1];
-  assert.match(await (await get(`/invoices/quotes/${qid}`)).text(), new RegExp(`For <a href="/deals/${did}">Kitchen remodel</a>; a yes wins the deal`));
+  assert.match(await (await get(`/invoices/quotes/${qid}`)).text(), new RegExp(`<dd[^>]*><a href="/deals/${did}">Kitchen remodel</a><span[^>]*>A yes wins the deal\\.</span>`));
   const board = await (await get("/deals")).text();
   assert.match(board.split('<section data-stage="new"')[1].split("</section>")[0], /Kitchen remodel[\s\S]*\$8,000</, "the quote's total stands in for a blank value");
 
@@ -613,8 +613,10 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Create job once
   const qid = res.headers.get("location")!.match(/\/invoices\/quotes\/(\d+)/)![1];
   html = await (await get(`/invoices/quotes/${qid}`)).text();
   assert.match(html, /\$1,200\.00/);
-  assert.match(html, new RegExp(`<a href="/customers/${cid}">Quin Quote</a>`));
-  assert.match(html, new RegExp(`<a href="/visits/${vid}">The visit</a>`));
+  // In Details, as Stripe and Jobber show them: the customer once, as a link, then the job.
+  assert.match(html, new RegExp(`<dd[^>]*><a href="/customers/${cid}">Quin Quote</a>`));
+  assert.match(html, new RegExp(`<dt[^>]*>Visit</dt><dd[^>]*><a href="/visits/${vid}">`));
+  assert.doesNotMatch(html, /<h2[^>]*>Customer<\/h2>/, "no card of its own");
 
   // No sender connected here: nothing goes, and the page says to send it yourself.
   const send = await post(`/invoices/quotes/${qid}/send`, {});
@@ -631,7 +633,7 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Create job once
   const q2 = r2.headers.get("location")!.match(/\/invoices\/quotes\/(\d+)/)![1];
   assert.equal((await post(`/invoices/quotes/${q2}/job`, {})).headers.get("location"), `/invoices/quotes/${q2}?saved=not-now`, "only an accepted quote");
   await post(`/invoices/quotes/${q2}/decide`, { answer: "accepted" });
-  assert.match(await (await get(`/invoices/quotes/${q2}`)).text(), /Not a customer yet\.[\s\S]*Create visit/);
+  assert.match(await (await get(`/invoices/quotes/${q2}`)).text(), /Create visit<\/button><span[^>]*>Not a customer yet; this adds them\./);
   const [one, two] = await Promise.all([post(`/invoices/quotes/${q2}/job`, {}), post(`/invoices/quotes/${q2}/job`, {})]);
   assert.equal(one.headers.get("location"), two.headers.get("location"));
   const jobUrl = one.headers.get("location")!;
@@ -652,8 +654,10 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Create job once
   const iid = inv.headers.get("location")!.match(/^\/invoices\/(\d+)\?saved=invoice-created$/)![1];
   html = await (await get(`/invoices/${iid}`)).text();
   assert.match(html, /<a href="\/invoices" aria-current="page"[^>]*>Invoices<\/a>/, "the CRM's nav");
-  assert.match(html, new RegExp(`<a href="/customers/${cid}">Quin Quote</a>`));
-  assert.match(html, new RegExp(`<a href="/visits/${vid}">The visit</a>`));
+  // In Details, as Stripe and Jobber show them: the customer once, as a link, then the job.
+  assert.match(html, new RegExp(`<dd[^>]*><a href="/customers/${cid}">Quin Quote</a>`));
+  assert.match(html, new RegExp(`<dt[^>]*>Visit</dt><dd[^>]*><a href="/visits/${vid}">`));
+  assert.doesNotMatch(html, /<h2[^>]*>Customer<\/h2>/, "no card of its own");
 
   // What is quoted, owed and paid: on the customer's page and the job's, and paid by month on the list.
   html = await (await get(`/customers/${cid}`)).text();
@@ -664,7 +668,7 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Create job once
   await db.sql`update invoices set status = 'open', livemode = true, number = 'ACME-0042', due_date = '2099-01-31' where id = ${iid}::bigint`;
   html = await (await get(`/customers/${cid}`)).text();
   assert.match(html, /Owes \$1,200\.00 on an open invoice\./);
-  assert.match(html, /Invoice ACME-0042<\/a>[\s\S]*?due January 31, 2099/);
+  assert.match(html, /Invoice ACME-0042<\/a>[\s\S]*?due <time[^>]*>Jan 31, 2099<\/time>/);
   assert.doesNotMatch(html, />Past due</, "not yet due");
   assert.match(html, /<h3[^>]*>[A-Z][a-z]+( \d{4})?<\/h3>/, "the timeline under month headings");
   await db.sql`update invoices set due_date = '2000-01-31' where id = ${iid}::bigint`;

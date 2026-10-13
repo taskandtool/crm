@@ -139,7 +139,7 @@ test("the inbox cursor round-trips and refuses anything else", () => {
 });
 
 test("one sentence for the tables a project lacks", () => {
-  const none = { submissions: false, forms: false, bookings: false, resources: false, payments: false, quotes: false, invoices: false };
+  const none = { submissions: false, forms: false, bookings: false, resources: false, payments: false, quotes: false, invoices: false, comments: false };
   assert.match(missingSentence(none, { bookings: true, payments: true })!, /no form submissions, bookings or payments yet/);
   assert.match(missingSentence({ ...none, submissions: true, forms: true }, { bookings: false, payments: true })!, /no payments yet/);
   assert.equal(missingSentence({ ...none, submissions: true, bookings: true, payments: true }, { bookings: true, payments: true }), null);

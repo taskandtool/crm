@@ -196,7 +196,7 @@ test("stages: add, rename, kind, move, archive (refused while in use or last ope
 test("the inbox, with none of the other apps' tables", async (t) => {
   if (skip) return t.skip(skip);
   const p = await present(db);
-  assert.deepEqual(p, { submissions: false, forms: false, bookings: false, resources: false, payments: false, quotes: false, invoices: false });
+  assert.deepEqual(p, { submissions: false, forms: false, bookings: false, resources: false, payments: false, quotes: false, invoices: false, comments: false });
   const page = await inboxPage(db, { inbox: INBOX }, null, 10);
   assert.deepEqual(page.rows, []);
   assert.match(missingSentence(page.present, { bookings: true, payments: true })!, /no form submissions, bookings or payments/);
@@ -283,9 +283,17 @@ test("Add as customer from a submission, and Mark done", async (t) => {
   assert.deepEqual(done, { status: "done", by: ME });
 
   const history = await everythingFrom(db, added!.customer);
-  assert.deepEqual(history.items.map((i) => `${i.kind}:${i.status}`), ["submission:read", "submission:done"]);
+  assert.deepEqual(history.items.map((i) => `${i.kind}:${"status" in i ? i.status : ""}`), ["submission:read", "submission:done"]);
   const ann = (await findCustomer(db, "ann.lee@example.com"))!;
   assert.deepEqual((await everythingFrom(db, ann)).items.map((i) => i.kind), ["booking"]);
+
+  // A comment the team wrote about Ann in the Website is on her timeline, by her email in any case; nobody else's.
+  await db.sql`insert into person_comments (email, body, author, source, created_at)
+    values ('Ann.Lee@example.com', 'Prefers mornings', 'owner@example.com', 'website', '2026-10-06 09:00+00')`;
+  const annNow = (await everythingFrom(db, ann)).items;
+  assert.deepEqual(annNow.map((i) => i.kind), ["comment", "booking"]);
+  assert.deepEqual(annNow[0], { kind: "comment", id: annNow[0].id, at: new Date("2026-10-06T09:00:00Z"), body: "Prefers mornings", author: "owner@example.com", source: "website" });
+  assert.ok((await everythingFrom(db, added!.customer)).items.every((i) => i.kind !== "comment"));
 });
 
 test("Add as customer keeps what the person gave: address, custom fields, a phone from their other rows", async (t) => {

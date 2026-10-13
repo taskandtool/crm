@@ -336,6 +336,18 @@ function BookingItem({ i, customerId }: { i: Extract<HistoryItem, { kind: "booki
 }
 
 function HistoryEntry({ i, customerId }: { i: HistoryItem; customerId: string }) {
+  // A comment the team wrote in another app reads like a note: who and when, then the text.
+  if (i.kind === "comment") {
+    return (
+      <>
+        <p class="text-label text-ink-3">
+          <span class="font-semibold text-ink-2">Comment</span> · <When at={i.at} timeZone={timeZone} />
+          {i.author ? ` · ${i.author}` : ""} · from the {i.source}
+        </p>
+        <p class="whitespace-pre-wrap break-words">{i.body}</p>
+      </>
+    );
+  }
   const kindName =
     i.kind === "submission" ? i.form_title || i.form_key : i.kind === "booking" ? "Booking" : i.kind === "payment" ? "Payment" : i.kind === "quote" ? `Quote ${i.number}` : i.number ? `Invoice ${i.number}` : "Invoice";
   return (

@@ -77,7 +77,7 @@ revenue work as for any payment.
   `scripts/quotes.mjs` and `scripts/invoices.mjs` run with its settings.
 - `webhook.ts`: `invoiceEvents` for the payments webhook.
 - `admin.tsx`: `invoicesAdmin(getDb, { base, css, source, timeZone,
-  business, Frame?, send?, print?, stripe?, quoteExtra?, invoiceExtra?,
+  business, Frame?, send?, print?, stripe?, links?,
   afterDecide?, afterSend? })`, the team's pages, the invoices list opening on
   what is outstanding, past due and paid this month (`invoiceTotals`); every
   change is a POST from a page that says what will happen. Tax is one choice

@@ -28,7 +28,7 @@ import { envOf } from "../data/env";
 import { senderOf, sendEmail, type Email, type Sent } from "../data/send";
 import { formatMoney } from "../payments/money";
 import { stripeConnected, stripeFrom, type Stripe } from "../payments/stripe";
-import { addDays, dayText, invoiceHtml, quoteHtml, quoteMessage, sendQuote, taxSummary, todayIn } from "./document";
+import { addDays, invoiceHtml, quoteHtml, quoteMessage, sendQuote, taxSummary, todayIn } from "./document";
 import { createTaxRate, percentText, setTaxRateActive, taxRates, type TaxRate } from "../payments/tax";
 import { amountInput, type Errors, type SavedLine } from "./lines";
 import {
@@ -67,10 +67,13 @@ export type InvoicesAdminOptions = {
   send?: (c: Ctx, mail: Email) => Promise<Sent>;
   /** A PDF of the document's HTML, or null when this runtime cannot print (production). */
   print?: (c: Ctx, html: string) => Promise<Uint8Array | null>;
-  /** More on a quote's page: the CRM's customer, its job, "Create job". */
-  quoteExtra?: (c: Ctx, qt: Quote) => Child | Promise<Child>;
-  /** More on an invoice's page: the CRM's customer and job. */
-  invoiceExtra?: (c: Ctx, inv: Invoice) => Child | Promise<Child>;
+  /**
+   * The app's own records in a quote's or an invoice's Details, as Stripe and
+   * Jobber show them: the customer's name links to their record, and the lines
+   * after it (the CRM's request, its job or "Create job"). No card of its own,
+   * so the customer shows once.
+   */
+  links?: (c: Ctx, doc: { kind: "quote"; quote: Quote } | { kind: "invoice"; invoice: Invoice }) => Promise<DocLinks>;
   /** After a quote or an invoice goes to its customer (sent, or marked sent): the CRM counts it as contact. Throwing shows nothing; the send stands. */
   afterSend?: (c: Ctx, doc: SentDoc) => Promise<void>;
   /** After a person marks a quote accepted or declined here: the CRM wins the deal it is for. Throwing shows nothing; the answer stands. */
@@ -87,6 +90,21 @@ const INVOICE_OPTIONS: StatusOption[] = INVOICE_STATUSES.map((s) => ({
   tone: s === "paid" ? "accent" : s === "open" ? "strong" : s === "draft" ? "neutral" : "muted",
 }));
 /** An open invoice past its due date shows as Past due ("due"), as the list's filter names it. */
+/** What `links` gives a document's Details. */
+export type DocLinks = { customer?: string | null; more?: { label: string; value: Child }[] };
+
+/** Who a document is for, as Details lists them: the name (a link to their record, when the app has one), email, phone. */
+function Party({ doc, href }: { doc: { name: string | null; email: string; phone: string | null }; href?: string | null }) {
+  const first = doc.name ?? doc.email;
+  return (
+    <>
+      {href ? <a href={href}>{first}</a> : first}
+      {doc.name ? <><br /><span class="break-all">{doc.email}</span></> : null}
+      {doc.phone ? <><br />{doc.phone}</> : null}
+    </>
+  );
+}
+
 export const SHOWN_INVOICE: StatusOption[] = [...INVOICE_OPTIONS, { value: "due", label: "Past due", tone: "strong" }];
 
 /** What is owed, how much of it is late, and what came in this month: each a link to the invoices behind it. */
@@ -315,7 +333,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const self = `${qbase}/${qt.id}`;
     const shown = shownStatus(qt, todayIn(opts.timeZone));
     const open = qt.status === "draft" || qt.status === "sent" || qt.status === "expired";
-    const extra = opts.quoteExtra ? await opts.quoteExtra(c, qt) : null;
+    const linked = opts.links ? await opts.links(c, { kind: "quote", quote: qt }) : {};
     const invoices = (await invoicesFor(getDb(c), { quoteId: qt.id })).filter((i) => i.status !== "void");
     return framed(c, qbase, {
       title: `Quote ${qt.number}`,
@@ -373,14 +391,14 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             ) : null}
             <Section title="Details">
               <FieldList fields={[
-                { label: "Customer", value: <>{qt.name ? <>{qt.name}<br /></> : null}<span class="break-all">{qt.email}</span>{qt.phone ? <><br />{qt.phone}</> : null}</> },
+                { label: "Customer", value: <Party doc={qt} href={linked.customer} /> },
                 { label: "Address", value: qt.address },
-                { label: "Valid until", value: qt.valid_until ? dayText(qt.valid_until) : null },
+                { label: "Valid until", value: qt.valid_until ? <When at={`${qt.valid_until}T00:00:00Z`} timeZone="UTC" day /> : null },
                 { label: "Sent", value: qt.sent_at ? <When at={qt.sent_at} timeZone={opts.timeZone} /> : null },
                 { label: QUOTE_STATUS_LABELS[qt.status], value: qt.decided_at ? <><When at={qt.decided_at} timeZone={opts.timeZone} />{qt.decided_by ? ` by ${qt.decided_by}` : ""}</> : null },
+                ...(linked.more ?? []),
               ]} />
             </Section>
-            {extra}
           </div>
         </div>
         <RecordFoot made={qt.created_at} by={qt.created_by} timeZone={opts.timeZone}>
@@ -642,7 +660,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const rates = await taxRates(getDb(c));
     const self = `${base}/${inv.id}`;
     const draft = inv.status === "draft" && !inv.stripe_invoice_id;
-    const extra = opts.invoiceExtra ? await opts.invoiceExtra(c, inv) : null;
+    const linked = opts.links ? await opts.links(c, { kind: "invoice", invoice: inv }) : {};
     const quote = inv.quote_id ? await quoteById(getDb(c), inv.quote_id) : null;
     return framed(c, base, {
       title: inv.number ? `Invoice ${inv.number}` : "Draft invoice",
@@ -684,14 +702,14 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
           <div class="flex flex-col gap-4">
             <Section title="Details">
               <FieldList fields={[
-                { label: "Bill to", value: <>{inv.name ? <>{inv.name}<br /></> : null}<span class="break-all">{inv.email}</span>{inv.phone ? <><br />{inv.phone}</> : null}</> },
-                inv.due_date ? { label: "Due", value: dayText(inv.due_date) } : { label: "Days to pay", value: String(inv.days_until_due) },
+                { label: "Bill to", value: <Party doc={inv} href={linked.customer} /> },
+                inv.due_date ? { label: "Due", value: <When at={`${inv.due_date}T00:00:00Z`} timeZone="UTC" day /> } : { label: "Days to pay", value: String(inv.days_until_due) },
                 { label: "Sent", value: inv.sent_at ? <When at={inv.sent_at} timeZone={opts.timeZone} /> : null },
                 { label: "Paid", value: inv.paid_at ? <When at={inv.paid_at} timeZone={opts.timeZone} /> : null },
                 { label: "Quote", value: quote ? <a href={`${qbase}/${quote.id}`}>Quote {quote.number}</a> : null },
+                ...(linked.more ?? []),
               ]} />
             </Section>
-            {extra}
           </div>
         </div>
         <RecordFoot made={inv.created_at} by={inv.created_by} timeZone={opts.timeZone}>

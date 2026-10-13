@@ -7,7 +7,7 @@ import { listUrl } from "../admin/query";
 import type { Customer } from "../crm/customers";
 import { QUOTE_OPTIONS, SHOWN_INVOICE } from "../invoices/admin";
 import { todayIn } from "../reports/sql";
-import { dayText } from "../invoices/document";
+import { When } from "../admin/list";
 import { pastDue, type Invoice } from "../invoices/invoices";
 import { shownStatus, type Quote } from "../invoices/quotes";
 import { formatMoney } from "../payments/money";
@@ -32,7 +32,7 @@ export function Docs({ quotes, invoices }: { quotes: Quote[]; invoices: Invoice[
           <a href={`/invoices/${i.id}`}>{i.number ? `Invoice ${i.number}` : "Draft invoice"}</a>
           <StatusBadge value={pastDue(i, today, quotes.find((q) => q.id === i.quote_id) ?? null) ? "due" : i.status} options={SHOWN_INVOICE} />
           <span class="whitespace-nowrap">{formatMoney(i.total_cents, i.currency)}</span>
-          {i.status === "open" && i.due_date ? <span class="text-label text-ink-3">due {dayText(i.due_date)}</span> : null}
+          {i.status === "open" && i.due_date ? <span class="text-label text-ink-3">due <When at={`${i.due_date}T00:00:00Z`} timeZone="UTC" day /></span> : null}
           {i.livemode === false ? <span class="text-label text-ink-3">test mode</span> : null}
         </li>
       ))}

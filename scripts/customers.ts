@@ -112,7 +112,9 @@ await withDb(async (db) => {
               : `no ${visitsCfg.many.toLowerCase()}`
             : "",
           history.items.length
-            ? "from this person:\n" + history.items.map((i) => `  ${local(i.at)} ${i.kind === "submission" ? i.form_title || i.form_key : i.kind} (${i.status})`).join("\n")
+            ? "from this person:\n" + history.items.map((i) => (i.kind === "comment"
+                ? `  ${local(i.at)} comment${i.author ? " " + i.author : ""} (in the ${i.source}): ${i.body}`
+                : `  ${local(i.at)} ${i.kind === "submission" ? i.form_title || i.form_key : i.kind} (${i.status})`)).join("\n")
             : "nothing from this person in forms, bookings or payments",
         ].filter(Boolean),
       });

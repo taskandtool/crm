@@ -6,6 +6,7 @@
 // checked same-origin by the same guard, and records who made it.
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
+import type { Child } from "hono/jsx";
 import { csvResponse } from "./admin/csv";
 import { withFlash } from "./admin/flash";
 import { teamOnly } from "./admin/guard";
@@ -791,38 +792,28 @@ if (invoicesCfg) {
       // A yes on the quote's page wins the deal it is for.
       afterDecide: async (c) => void (await winFromQuotes(dbOf(c), (c as unknown as C).var.user)),
       nav: INVOICE_TABS,
-      // Beside an invoice: whose it is here, and its job.
-      invoiceExtra: async (c, inv) => {
-        const customer = await findMatch(dbOf(c), inv.email, inv.phone);
-        if (!customer && !inv.visit_id) return null;
-        return (
-          <Section title={cfg.vocabulary.one}>
-            {customer ? <p class="mb-2"><a href={`/customers/${customer.id}`}>{customer.name}</a></p> : null}
-            {inv.visit_id && visitsCfg ? <p><a href={`/visits/${inv.visit_id}`}>The {visitsCfg.one.toLowerCase()}</a></p> : null}
-          </Section>
-        );
-      },
-      // Beside a quote: whose it is here, the deal it is for, and its job.
-      quoteExtra: async (c, qt) => {
+      // In a quote's or an invoice's Details, as Stripe and Jobber: the customer's name opens their
+      // record, then the request it is for and its job (or Create job once the quote is accepted).
+      links: async (c, linked) => {
         const db = dbOf(c);
-        const customer = await findMatch(db, qt.email, qt.phone);
-        const job = visitsCfg?.one.toLowerCase();
-        const deal = qt.deal_id ? await getDeal(db, qt.deal_id) : null;
-        return (
-          <Section title={cfg.vocabulary.one}>
-            {customer ? <p class="mb-3"><a href={`/customers/${customer.id}`}>{customer.name}</a></p> : <p class="mb-3 text-ink-2">Not a {cfg.vocabulary.one.toLowerCase()} yet.</p>}
-            {deal ? <p class="mb-3">For <a href={`/deals/${deal.id}`}>{deal.title}</a>{qt.status === "accepted" ? "" : `; a yes wins the ${dealsCfg.one.toLowerCase()}`}.</p> : null}
-            {visitsCfg ? (
-              qt.visit_id ? (
-                <p><a href={`/visits/${qt.visit_id}`}>The {job}</a></p>
-              ) : qt.status === "accepted" ? (
-                <form method="post" action={`/invoices/quotes/${qt.id}/job`}>
-                  <button class={buttonClass}>Create {job}</button>
-                </form>
-              ) : null
-            ) : null}
-          </Section>
-        );
+        const doc = linked.kind === "quote" ? linked.quote : linked.invoice;
+        const quote = linked.kind === "quote" ? linked.quote : null;
+        const [customer, deal, visit] = await Promise.all([
+          findMatch(db, doc.email, doc.phone),
+          quote?.deal_id ? getDeal(db, quote.deal_id) : null,
+          visitsCfg && doc.visit_id ? getVisit(db, doc.visit_id) : null,
+        ]);
+        const more: { label: string; value: Child }[] = [];
+        if (deal) {
+          const hint = quote && quote.status !== "accepted" ? <span class="block text-label text-ink-3">A yes wins the {dealsCfg.one.toLowerCase()}.</span> : null;
+          more.push({ label: dealsCfg.one, value: <><a href={`/deals/${deal.id}`}>{deal.title}</a>{hint}</> });
+        }
+        if (visitsCfg && visit) more.push({ label: visitsCfg.one, value: <a href={`/visits/${visit.id}`}>{visit.title}</a> });
+        else if (visitsCfg && quote?.status === "accepted") {
+          const adds = customer ? null : <span class="mt-1 block text-label text-ink-3">Not a {cfg.vocabulary.one.toLowerCase()} yet; this adds them.</span>;
+          more.push({ label: visitsCfg.one, value: <form method="post" action={`/invoices/quotes/${quote.id}/job`}><button class={buttonClass}>Create {visitsCfg.one.toLowerCase()}</button>{adds}</form> });
+        }
+        return { customer: customer ? `/customers/${customer.id}` : null, more };
       },
     }),
   );

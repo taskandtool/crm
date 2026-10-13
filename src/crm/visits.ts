@@ -311,8 +311,19 @@ export function bookingsWithoutJob(db: Db, limit = 20): Promise<OpenBooking[]> {
 }
 
 /** Who has done or is down for any, for the owner filter. */
+/**
+ * Whom a job can be for: the team who take bookings first (one list, as
+ * Jobber's, so the Calendar's names and its person filter agree), then any
+ * other name a job already carries.
+ */
 export async function visitOwners(db: Db): Promise<string[]> {
-  return (await db.sql<{ owner: string }>`select distinct owner::text as owner from customer_visits where owner is not null order by 1 limit 200`).map((r) => r.owner);
+  const [{ has }] = await db.sql<{ has: boolean }>`select to_regclass('resources') is not null as has`;
+  const [team, used] = await Promise.all([
+    has ? db.sql<{ name: string }>`select name from resources where active order by name` : [],
+    db.sql<{ owner: string }>`select distinct owner::text as owner from customer_visits where owner is not null order by 1 limit 200`,
+  ]);
+  const seen = new Set(team.map((r) => r.name.toLowerCase()));
+  return [...team.map((r) => r.name), ...used.map((r) => r.owner).filter((o) => !seen.has(o.toLowerCase()))];
 }
 
 /** The CSV of a list: times in the business's zone (a spreadsheet of jobs is read by the day), amounts as plain numbers. */

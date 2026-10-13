@@ -258,3 +258,14 @@ create table if not exists stripe_events (
 create index if not exists stripe_events_payment on stripe_events (payment_id);
 
 comment on table stripe_events is 'Stripe events already handled, by event id, so a redelivery is a no-op for every app on the project.';
+
+-- The Website's comments about a person, by email.
+create table if not exists person_comments (
+  id         bigserial primary key,
+  email      citext not null,
+  body       text not null check (length(body) between 1 and 4000),
+  author     citext,
+  source     text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists person_comments_email on person_comments (email, created_at desc, id desc);
