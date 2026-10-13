@@ -10,6 +10,7 @@
 // nobody should be on for long, quietest first.
 import { q, type Db } from "../data/db";
 import { sameAs } from "./people";
+import { NOTHING_PLANNED, spliced } from "./sql";
 import { addDays } from "../reports/sql";
 
 export { addDays };
@@ -105,17 +106,11 @@ const SELECT = `t.id::text as id, t.customer_id::text as customer_id, t.deal_id:
   c.name as customer_name, c.phone as customer_phone, c.email::text as customer_email, d.title as deal_title`;
 const FROM = `from follow_ups t join customers c on c.id = t.customer_id left join deals d on d.id = t.deal_id`;
 
-// SELECT and FROM are fixed texts of this file, spliced into each statement's
-// text; values stay parameters.
-function withCols(strings: TemplateStringsArray): TemplateStringsArray {
-  const out = strings.map((s) => s.replaceAll("{select}", SELECT).replaceAll("{from}", FROM));
-  return Object.assign(out, { raw: out });
-}
-const sql = <T extends Record<string, any>>(db: Db) => (strings: TemplateStringsArray, ...values: unknown[]) => db.sql<T>(withCols(strings), ...values);
+const { sql } = spliced({ select: SELECT, from: FROM, nothing_planned: NOTHING_PLANNED });
 
 export async function getTask(db: Db, id: string): Promise<Task | null> {
   if (!ID.test(id)) return null;
-  const [task] = await sql<Task>(db)`select {select} {from} where t.id = ${id}::bigint`;
+  const [task] = await sql(db)<Task>`select {select} {from} where t.id = ${id}::bigint`;
   return task ?? null;
 }
 
@@ -185,7 +180,7 @@ export async function moveTask(db: Db, id: string, dueOn: string, dueTime: strin
  */
 export async function listTasks(db: Db, view: TaskView, today: string, owner: string | null, limit = 100): Promise<Task[]> {
   const until = addDays(today, UPCOMING_DAYS);
-  return sql<Task>(db)`
+  return sql(db)<Task>`
     select {select} {from}
     where t.done_at is null and c.archived_at is null
       and (${owner}::text is null or t.owner = any(${owner ? sameAs(owner) : null}::citext[]))
@@ -211,8 +206,8 @@ export async function taskCounts(db: Db, today: string, owner: string | null): P
 export async function customerTasks(db: Db, customerId: string): Promise<{ open: Task[]; done: Task[] }> {
   if (!ID.test(customerId)) return { open: [], done: [] };
   const [open, done] = await Promise.all([
-    sql<Task>(db)`select {select} {from} where t.customer_id = ${customerId}::bigint and t.done_at is null order by t.due_on, t.due_time nulls last, t.id`,
-    sql<Task>(db)`select {select} {from} where t.customer_id = ${customerId}::bigint and t.done_at is not null order by t.done_at desc, t.id desc limit 5`,
+    sql(db)<Task>`select {select} {from} where t.customer_id = ${customerId}::bigint and t.done_at is null order by t.due_on, t.due_time nulls last, t.id`,
+    sql(db)<Task>`select {select} {from} where t.customer_id = ${customerId}::bigint and t.done_at is not null order by t.done_at desc, t.id desc limit 5`,
   ]);
   return { open, done };
 }
@@ -271,7 +266,7 @@ export type Unplanned = {
  * `timeZone`: someone added late yesterday was added yesterday.
  */
 export async function nothingPlanned(db: Db, owner: string | null, limit = 100, timeZone = "UTC"): Promise<Unplanned[]> {
-  return db.sql<Unplanned>`
+  return sql(db)<Unplanned>`
     select c.id::text as id, c.name, c.phone, c.email::text as email, c.owner::text as owner,
            ((now() at time zone ${timeZone})::date - (coalesce(c.last_contact_at, c.created_at) at time zone ${timeZone})::date)::int as quiet_days,
            c.last_contact_at is not null as contacted,
@@ -279,11 +274,7 @@ export async function nothingPlanned(db: Db, owner: string | null, limit = 100, 
                      where d.customer_id = c.id and d.archived_at is null and s.kind = 'open'), '{}') as deals
     from customers c
     where c.archived_at is null
-      and (exists (select 1 from pipeline_stages s where s.key = c.stage and s.kind = 'open')
-           or exists (select 1 from deals d join deal_stages s on s.key = d.stage where d.customer_id = c.id and d.archived_at is null and s.kind = 'open'))
-      and not exists (select 1 from follow_ups t where t.customer_id = c.id and t.done_at is null)
-      and not exists (select 1 from bookings b where b.status = 'confirmed' and b.starts_at >= now()
-                      and (b.customer_id = c.id or (b.customer_id is null and b.email is not null and (b.email = c.email or c.other_emails @> array[lower(b.email::text)]))))
+      and {nothing_planned}
       and (${owner}::text is null or c.owner = any(${owner ? sameAs(owner) : null}::citext[])
            or exists (select 1 from deals d join deal_stages s on s.key = d.stage
                       where d.customer_id = c.id and d.archived_at is null and s.kind = 'open' and d.owner = any(${owner ? sameAs(owner) : null}::citext[])))

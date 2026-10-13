@@ -1,9 +1,12 @@
 // Bringing the database up to what this CRM needs: the two extensions every
-// project database has (made here too, for a Postgres off Task & Tool),
-// the forms skill's tables, the booking and customers skills' tables, schema.sql, the payments and invoices skills' tables when quotes and invoices are on, through applySchema (additive only, safe to run by every app at
-// any version, behind the lock every app shares), and the configured
-// statuses and deal stages on the very first run. Machine only: the service runs it at start and
-// `npm run deploy` runs it before production sees new code. Never per request.
+// project database has (made here too, for a Postgres off Task & Tool), the
+// forms, booking and customers skills' tables, schema.sql, and the payments
+// and invoices skills' tables when quotes and invoices are on, through
+// applySchema (additive only, safe to run by every app at any version,
+// behind the lock every app shares), and the configured statuses and deal
+// stages on the very first run. Machine only: the service runs it at start
+// and `npm run deploy` runs it before production sees new code. Never per
+// request.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

@@ -114,7 +114,8 @@ test("a visitor books, sees the time in their zone, downloads the invite, and ca
     const week = `/admin/schedule?week=${start.slice(0, 10)}`;
     assert.equal((await app.request(week)).status, 404);
     html = await (await app.request(week, { headers: team })).text();
-    assert.match(html, /Ann<\/span><span class="text-ink-2"> · Intro call with Pat/);
+    // No page of the app's for it: its name opens its Reschedule, where it can be cancelled too.
+    assert.match(html, /href="\/admin\/schedule\/\d+\/reschedule"[^>]*>Ann<\/a><span class="text-ink-2"> · Intro call with Pat/);
     assert.match(html, /Times are in New York/, "the first person's zone");
     // With the business's zone given, the week shows its times in it, not the host's (Pat is in New York).
     const zoned = new Hono();
@@ -362,7 +363,7 @@ test("the team books for someone: carried details, a time, the confirmation sent
 
     const week = start.slice(0, 10);
     html = await (await app.request(`/bookings?week=${week}`, { headers: team })).text();
-    assert.match(html, /Joy Park<\/span><span class="text-ink-2"> · Intro call with Pat/);
+    assert.match(html, /Joy Park<\/a><span class="text-ink-2"> · Intro call with Pat/);
     assert.equal((html.match(/<h3 class=/g) ?? []).length, 7, "seven days");
     assert.match(html, /Phone call: 555 202 3030/, "the team's own words for where");
     const nextWeek = /href="(\/bookings\?week=[\d-]+)"[^>]*aria-label="Week after"/.exec(html)![1];
@@ -372,10 +373,12 @@ test("the team books for someone: carried details, a time, the confirmation sent
     const [joy] = await s.db.sql`select id::text as id, starts_at from bookings where email = 'joy@example.com' and status = 'confirmed'`;
     html = await (await app.request(`/bookings/${joy.id}/reschedule`, { headers: team })).text();
     assert.match(html, /Reschedule Joy Park/);
+    assert.match(html, new RegExp(`action="/bookings/${joy.id}/status"`), "it can be cancelled from there");
     const later = [...html.matchAll(/name="start" value="([^"]+)"/g)].map((m) => m[1]).find((v) => v !== start)!;
     assert.equal((await app.request(`/bookings/${joy.id}/reschedule`, form({ start: later }))).status, 404, "team only");
     res = await app.request(`/bookings/${joy.id}/reschedule`, form({ start: later }, team));
     assert.equal(res.headers.get("location"), "/bookings?saved=rescheduled");
+    assert.match(await (await app.request("/bookings?saved=rescheduled", { headers: team })).text(), /Booking moved\. They have been told the new time\./, "the Schedule says so");
     const [moved] = await s.db.sql`select starts_at, sequence, updated_by from bookings where id = ${joy.id}::bigint`;
     assert.equal(new Date(moved.starts_at).toISOString(), later);
     assert.equal(moved.updated_by, "owner@example.com");

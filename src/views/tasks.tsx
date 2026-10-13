@@ -62,7 +62,7 @@ export function TasksPage(p: TasksProps) {
           title={p.view === "today" ? "Nothing to do today." : `Nothing in the next ${UPCOMING_DAYS} days.`}
           action={<a href="/tasks/new" class={primaryClass}>New task</a>}
         >
-          A task is a call, email, visit or to-do for one of your {vocab.many.toLowerCase()}, on a day. Add one here or from their page.
+          A task is a call, email, meeting or to-do for one of your {vocab.many.toLowerCase()}, on a day. Add one here or from their page.
         </EmptyCard>
       )}
       {p.more ? <p class="mt-3 text-label text-ink-3">The first {p.rows.length}; tick some off to see the rest.</p> : null}

@@ -6,8 +6,6 @@
 //   <Section title="Details"><FieldList fields={[{ label: "Email", value: r.email }]} /></Section>
 //   <Section title="Answers"><JsonData data={r.data} /></Section>
 import type { Child } from "hono/jsx";
-import { When } from "./list";
-import { buttonClass, inputClass } from "./status";
 
 export type Field = { label: string; value: Child };
 
@@ -71,45 +69,5 @@ function value(v: unknown, depth: number): Child {
         </>
       ))}
     </dl>
-  );
-}
-
-export type ActivityEntry = { at: Date | string; by?: string | null; text: string };
-
-/** What happened to the record, newest first, and a note box that posts `text`. */
-export function Activity(props: {
-  entries: ActivityEntry[];
-  timeZone: string;
-  note?: { action: string; returnTo: string };
-}) {
-  const { entries, timeZone, note } = props;
-  return (
-    <div class="flex flex-col gap-3">
-      {note ? (
-        <form method="post" action={note.action} class="flex flex-col gap-2">
-          <input type="hidden" name="return" value={note.returnTo} />
-          <label class="flex flex-col gap-1 text-label text-ink-2">
-            Add a note
-            <textarea name="text" rows={3} maxlength={4000} required class={inputClass}></textarea>
-          </label>
-          <button class={buttonClass + " self-start"}>Add note</button>
-        </form>
-      ) : null}
-      {entries.length ? (
-        <ol class="flex flex-col gap-3">
-          {entries.map((e) => (
-            <li class="border-l-2 border-line pl-3">
-              <p class="text-label text-ink-3">
-                <When at={e.at} timeZone={timeZone} />
-                {e.by ? ` · ${e.by}` : ""}
-              </p>
-              <p class="whitespace-pre-wrap break-words">{e.text}</p>
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p class="text-ink-3">Nothing yet.</p>
-      )}
-    </div>
   );
 }

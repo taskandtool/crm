@@ -35,7 +35,8 @@ and who takes each) and `peopleRoutes` (Team: each person's hours, time
 off and, where the app runs the sync, calendars). `Frame` puts the pages in
 the app's own layout. `returnTo` sends every link to a booking to the
 app's own page for it (the Website's submission, the CRM's event), and
-Reschedule and Cancel come back there; `afterStatus` runs after a status
+Reschedule and Cancel come back there; one it has no page for opens on
+its Reschedule, which can cancel it too; `afterStatus` runs after a status
 change; `scheduleActions` replaces Book for someone (the CRM's New event);
 `timeZone` is the Schedule's; `manageBase` is the Website's `/book`
 address, so a team booking's confirmation carries a manage link. Every app

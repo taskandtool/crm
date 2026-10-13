@@ -49,7 +49,7 @@ runs anywhere with Node 20 and a Postgres.
   Job, Appointment), whether a customer booked it online or the team put
   it on the schedule. Scheduled, then completed, no-show or cancelled,
   with who takes it, where, an amount and its own fields (which truck,
-  which room). A Calendar of the week by person, the list (upcoming, past,
+  which room). The Schedule (the week by person), the list (upcoming, past,
   all, exported as CSV), Services (what customers can book online, with
   online booking on) and the Team (everyone's hours, time off and Google
   or Outlook calendar). The public booking page is the Website's; both use
@@ -105,10 +105,11 @@ Edit stages on the board. A field that deserves a real column is an additive lin
 crm.config.json          the levers: words, statuses, deals, sources, fields, zone, inbox
 schema.sql               the tables, additive only, applied at start and deploy
 src/app.tsx              the Hono app: the team-only gate, the routes
-src/crm/                 customers, stages, deals, tasks, notes, events, the inbox, history, merge, import
+src/crm/                 customers, stages, deals, tasks, events, the inbox, history, merge, import
 src/views/               inbox, tasks, deals, customers, a customer, events, stages
-src/booking/             a copy of the booking skill: the Calendar, Services and Team, the calendar sync job
-src/forms/               a copy of the forms skill: submissions by form, the form editor
+src/booking/             a copy of the booking skill: the Schedule, Services and Team, the calendar sync job
+src/customers/           a copy of the customers skill: the customers and notes tables, the note box
+src/forms/               a copy of the forms skill: the submissions inbox, the form editor
 src/invoices/            a copy of the invoices skill: quotes, invoices, tax rates, Stripe
 src/data/  src/admin/    copies of the data and admin business skills, and what is
 src/payments/ src/reports/   used of payments and reports

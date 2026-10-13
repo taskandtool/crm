@@ -8,6 +8,9 @@ import { readCursor, type Cursor, type Keyed } from "../admin/keyset";
 import { likePattern } from "../admin/query";
 import { sameAs } from "./people";
 import { cleanPhone, phoneKey } from "./phone";
+import { NOTHING_PLANNED, spliced } from "./sql";
+
+const { sql: planned } = spliced({ nothing_planned: NOTHING_PLANNED });
 
 export type Customer = Keyed & {
   id: string;
@@ -81,7 +84,7 @@ export function listPage(db: Db, f: ListFilter, after: Cursor | null, size: numb
   // nothing but phone punctuation also matches the stored digits.
   const digits = f.q && /^[\d\s()+.-]+$/.test(f.q) ? f.q.replace(/\D/g, "") : "";
   const digitPat = digits.length >= 4 ? `%${digits}%` : null;
-  return db.sql<Customer>`
+  return planned(db)<Customer>`
     select c.*, to_char(coalesce(c.last_contact_at, c.created_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k
     from customers c
     where (${pat}::text is null or c.name ilike ${pat} or c.email::text ilike ${pat} or c.phone ilike ${pat} or c.company ilike ${pat}
@@ -90,12 +93,7 @@ export function listPage(db: Db, f: ListFilter, after: Cursor | null, size: numb
       and (${f.tag}::text is null or c.tags @> array[${f.tag}::text])
       and (${f.owner}::text is null or c.owner = any(${f.owner ? sameAs(f.owner) : null}::citext[]))
       and ((c.archived_at is not null) = ${f.archived}::boolean)
-      and (not ${f.unplanned}::boolean or (
-            (exists (select 1 from pipeline_stages s where s.key = c.stage and s.kind = 'open')
-             or exists (select 1 from deals d join deal_stages s on s.key = d.stage where d.customer_id = c.id and d.archived_at is null and s.kind = 'open'))
-            and not exists (select 1 from follow_ups t where t.customer_id = c.id and t.done_at is null)
-            and not exists (select 1 from bookings b where b.status = 'confirmed' and b.starts_at >= now()
-                            and (b.customer_id = c.id or (b.customer_id is null and b.email is not null and (b.email = c.email or c.other_emails @> array[lower(b.email::text)]))))))
+      and (not ${f.unplanned}::boolean or ({nothing_planned}))
       and (${after?.k ?? null}::timestamptz is null
            or (coalesce(c.last_contact_at, c.created_at), c.id) < (${after?.k ?? null}::timestamptz, ${after?.id ?? null}::bigint))
     order by coalesce(c.last_contact_at, c.created_at) desc, c.id desc
@@ -278,14 +276,18 @@ export type Details = {
 export async function saveDetails(db: Db, id: string, d: Details, user: string): Promise<{ ok: true; customer: Customer } | { ok: false; reason: "missing" | "email-taken" }> {
   const email = normalizeEmail(d.email);
   try {
+    // Their events carry their name, email and phone (the booking skill's confirmations and the invoices read them there): changed with them.
     const [c] = await db.sql<Customer>`
-      update customers set
-        name = ${d.name}, email = ${email}::citext, phone = ${cleanPhone(d.phone)}, company = ${d.company}, address = ${d.address},
-        source = ${d.source}, tags = ${d.tags}::text[], owner = ${d.owner}::citext, notes = ${d.notes},
-        fields = (fields - ${d.unset}::text[]) || ${JSON.stringify(d.fields)}::jsonb,
-        updated_at = now(), updated_by = ${user}
-      where id = ${id}::bigint
-      returning *, updated_at::text as k`;
+      with c as (
+        update customers set
+          name = ${d.name}, email = ${email}::citext, phone = ${cleanPhone(d.phone)}, company = ${d.company}, address = ${d.address},
+          source = ${d.source}, tags = ${d.tags}::text[], owner = ${d.owner}::citext, notes = ${d.notes},
+          fields = (fields - ${d.unset}::text[]) || ${JSON.stringify(d.fields)}::jsonb,
+          updated_at = now(), updated_by = ${user}
+        where id = ${id}::bigint
+        returning *),
+      e as (update bookings b set name = c.name, email = c.email, phone = c.phone from c where b.customer_id = c.id)
+      select *, updated_at::text as k from c`;
     return c ? { ok: true, customer: c } : { ok: false, reason: "missing" };
   } catch (e) {
     if ((e as { code?: string }).code === "23505") return { ok: false, reason: "email-taken" };

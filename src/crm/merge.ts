@@ -10,6 +10,9 @@
 // transaction; not undone.
 import { q, type Db } from "../data/db";
 import { getCustomer, type Customer } from "./customers";
+import { EVENT_OF, spliced } from "./sql";
+
+const { sql } = spliced({ event_of: EVENT_OF });
 
 export type MergePreview = {
   keep: Customer;
@@ -29,10 +32,9 @@ export async function mergePreview(db: Db, keepId: string, otherId: string): Pro
   const [keep, other] = await Promise.all([getCustomer(db, keepId), getCustomer(db, otherId)]);
   if (!keep || !other) return null;
   // Their events: the ones that name them, and the online bookings under their email (those follow the email, which the kept record takes).
-  const [n] = await db.sql<{ notes: number; events: number; deals: number; follow_ups: number }>`
+  const [n] = await sql(db)<{ notes: number; events: number; deals: number; follow_ups: number }>`
     select (select count(*) from customer_notes where customer_id = ${otherId}::bigint)::int as notes,
-           (select count(*) from bookings b, customers o where o.id = ${otherId}::bigint
-              and (b.customer_id = o.id or (b.customer_id is null and b.email is not null and (b.email = o.email or o.other_emails @> array[lower(b.email::text)]))))::int as events,
+           (select count(*) from bookings b, customers c where c.id = ${otherId}::bigint and {event_of})::int as events,
            (select count(*) from deals where customer_id = ${otherId}::bigint)::int as deals,
            (select count(*) from follow_ups where customer_id = ${otherId}::bigint)::int as follow_ups`;
   const blank = (v: unknown) => v === null || v === undefined || v === "";

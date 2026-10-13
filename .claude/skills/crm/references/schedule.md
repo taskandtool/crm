@@ -39,8 +39,9 @@ where and who does it: add the people first, then the services.
 
 **Messages.** An online booker gets a confirmation, and the reminder job
 reminds them a day and an hour before (only for a booking of a service,
-with someone taking it, to someone with an email). A cancel on an event's
-page tells them. All go through the owner's email sender, which needs
+with someone taking it, to someone with an email). Reschedule and Cancel
+on an event's page tell them; a time typed into its details, or
+`events.mjs cancel`, does not, so move or cancel an online booking there. All go through the owner's email sender, which needs
 Resend or Postmark granted to this app (if
 `python3 ~/tools/taskandtool.py list-connections` shows neither, ask with
 `python3 ~/tools/taskandtool.py request-connection resend --why "send booking confirmations and reminders"`),

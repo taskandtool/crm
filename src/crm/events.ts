@@ -10,9 +10,11 @@ import type { CsvColumn } from "../admin/csv";
 import { likePattern } from "../admin/query";
 import { setStatus, type Booking } from "../booking/book";
 import type { CustomField } from "../config-schema";
-import { q, type Db } from "../data/db";
+import type { Db } from "../data/db";
+import { EVENT_OF, spliced } from "./sql";
 import { fieldText } from "./fields";
-import { amountText } from "./text";
+import { wallTime } from "../customers/notes";
+import { amountText, nowIn } from "./text";
 
 export type EventStatus = Booking["status"];
 
@@ -51,7 +53,7 @@ export type Event = Keyed & {
 export type EventInput = {
   title: string | null;
   type_id: string | null;
-  /** A wall time ("2026-10-02 14:30:00", text.ts's wallTime) in `timeZone`. */
+  /** A wall time ("2026-10-02 14:30:00", customers/notes.ts's wallTime) in `timeZone`. */
   at: string;
   timeZone: string;
   minutes: number;
@@ -70,6 +72,12 @@ export type EventFilter = { view: EventView; host: string | null; q: string | nu
 /** How long one can be, in minutes. */
 export const LENGTHS = [15, 30, 45, 60, 90, 120, 180, 240, 480];
 
+/** How long it runs, in minutes. */
+export const minutesOf = (e: Pick<Event, "starts_at" | "ends_at">) => Math.round((new Date(e.ends_at).getTime() - new Date(e.starts_at).getTime()) / 60_000);
+
+/** When it starts, as the wall time in `tz` an EventInput's `at` takes. */
+export const startWall = (e: Pick<Event, "starts_at">, tz: string) => wallTime(nowIn(tz, new Date(e.starts_at)))!;
+
 // Every read joins the same way: its service and person, and its customer
 // (the one it names, else the one whose email or other address it carries).
 // Fixed texts of this file, spliced into each statement; values stay parameters.
@@ -84,30 +92,26 @@ const FROM = `from bookings b
   left join lateral (
     select c.id, c.name from customers c
     where c.id = b.customer_id
-       or (b.customer_id is null and b.email is not null and (c.email = b.email or c.other_emails @> array[lower(b.email::text)]))
+       or ${EVENT_OF}
     order by c.id = b.customer_id desc nulls last, c.archived_at nulls first, c.id
     limit 1) c on true`;
 
-function withCols(strings: TemplateStringsArray): TemplateStringsArray {
-  const out = strings.map((s) => s.replaceAll("{select}", SELECT).replaceAll("{from}", FROM));
-  return Object.assign(out, { raw: out });
-}
-const sql = <T extends Record<string, any>>(db: Db) => (strings: TemplateStringsArray, ...values: unknown[]) => db.sql<T>(withCols(strings), ...values);
+const { sql, q: qOf } = spliced({ select: SELECT, from: FROM, event_of: EVENT_OF });
 
 // The customer's last contact moves to their latest completed event, as a
 // call's does, and never back.
-const touch = (customerId: string, user: string) => q`
+const touch = (customerId: string, user: string) => qOf`
   update customers c set
     last_contact_at = greatest(c.last_contact_at,
       (select max(b.starts_at) from bookings b
        where b.status = 'completed' and b.starts_at <= now()
-         and (b.customer_id = c.id or (b.customer_id is null and b.email is not null and (b.email = c.email or c.other_emails @> array[lower(b.email::text)]))))),
+         and {event_of})),
     updated_at = now(), updated_by = ${user}
   where c.id = ${customerId}::bigint`;
 
 export async function getEvent(db: Db, id: string): Promise<Event | null> {
   if (!/^\d{1,18}$/.test(id)) return null;
-  const [e] = await sql<Event>(db)`select {select} {from} where b.id = ${id}::bigint`;
+  const [e] = await sql(db)<Event>`select {select} {from} where b.id = ${id}::bigint`;
   return e ?? null;
 }
 
@@ -173,7 +177,7 @@ export async function touchFor(db: Db, id: string, user: string): Promise<void> 
 
 /** One customer's: the scheduled ones first, soonest first, then the rest newest first. */
 export function customerEvents(db: Db, customerId: string, limit = 100): Promise<Event[]> {
-  return sql<Event>(db)`
+  return sql(db)<Event>`
     select {select} {from}
     where c.id = ${customerId}::bigint
     order by (b.status = 'confirmed') desc,
@@ -192,7 +196,7 @@ export function eventsPage(db: Db, f: EventFilter, after: Cursor | null, size: n
   const k = after?.k ?? null;
   const id = after?.id ?? null;
   const pat = likePattern(f.q);
-  const filters = sql<Event>(db);
+  const filters = sql(db)<Event>;
   if (f.view === "upcoming") {
     return filters`
       select {select} {from}

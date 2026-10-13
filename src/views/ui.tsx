@@ -3,6 +3,7 @@
 // label, a custom field's input, the record's "added by" line.
 import type { Child } from "hono/jsx";
 import type { FlashMessages } from "../admin/flash";
+import { BOOKING_MESSAGES } from "../booking/admin";
 import { buttonClass, controlClass, fieldClass, primaryClass, type StatusOption } from "../admin/status";
 import { cfg, dealsCfg, eventsCfg, vocab } from "../config";
 import type { CustomField } from "../config-schema";
@@ -158,7 +159,7 @@ export function AddToggle({ label, open, children }: { label: string; open?: boo
 }
 
 /**
- * Who a new task, job or request is for, as Jobber's "Select a client": a
+ * Who a new task, event or deal is for, as Jobber's "Select a client": a
  * customer already here, or "Someone new", which opens their name, email and
  * phone (matched by email or phone, or added). Spans the whole form's grid.
  */
@@ -252,6 +253,11 @@ const one = vocab.one.toLowerCase();
 const eventWord = (eventsCfg ?? { one: "Event" }).one;
 
 export const MESSAGES: FlashMessages = {
+  // What the booking skill's routes (an event's buttons, Reschedule) come back with, in this CRM's word.
+  ...BOOKING_MESSAGES,
+  rescheduled: `${eventWord} moved. They have been told the new time.`,
+  cancelled: `${eventWord} cancelled.`,
+  unchanged: { error: `Nothing changed. A cancelled ${eventWord.toLowerCase()} stays cancelled, and one is marked completed or no-show only once it has started.` },
   added: `${vocab.one} added.`,
   exists: `That ${one} is already here, so their record opened.`,
   saved: "Saved.",
@@ -291,10 +297,6 @@ export const MESSAGES: FlashMessages = {
   "pick-status": { error: "Choose one of the statuses." },
   "event-added": `${eventWord} added.`,
   "event-incomplete": { error: `Give the ${eventWord.toLowerCase()} a title or a service, and a time.` },
-  // What the booking pages' status route (an event's buttons post there) comes back with.
-  status: "Status saved.",
-  cancelled: `${eventWord} cancelled.`,
-  unchanged: { error: `Nothing changed. A cancelled ${eventWord.toLowerCase()} stays cancelled, and one is marked completed or no-show only once it has started.` },
 };
 
 export const timeZone = cfg.time_zone;

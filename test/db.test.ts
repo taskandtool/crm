@@ -603,6 +603,17 @@ test("events: scheduled, then completed, no-show or cancelled; completed is cont
   assert.deepEqual(seen, ["Batch 0", "Batch 1", "Batch 2", "Batch 3", "Batch 4"]);
 });
 
+test("an event carries its customer's details as they change", async (t) => {
+  if (skip) return t.skip(skip);
+  const { customer } = await createCustomer(db, { name: "Pho Only", email: null, phone: "555 919 7002", stage: "new" }, ME);
+  const e = await addEvent(db, customer, { title: "Visit", type_id: null, at: "2099-02-01 09:00:00", timeZone: "UTC", minutes: 60, resource_id: null, location: null, amount_cents: null, currency: "USD", notes: null, fields: {} }, ME);
+  assert.equal(e!.email, null);
+  const r = await patchCustomer(db, customer.id, { name: "Pho Found", email: "found@example.com" }, ME);
+  assert.ok(r.ok);
+  const [b] = await db.sql`select name, email::text as email, phone from bookings where id = ${e!.id}::bigint`;
+  assert.deepEqual({ ...b }, { name: "Pho Found", email: "found@example.com", phone: "555 919 7002" }, "the invoice and the booker's emails reach the new address");
+});
+
 test("an online booking is an event of the customer its email belongs to; added from the Inbox, it brings their address", async (t) => {
   if (skip) return t.skip(skip);
   const [type] = await db.sql<{ id: string }>`insert into booking_types (slug, name, location_kind) values ('install', 'Installation', 'their_place') returning id::text as id`;

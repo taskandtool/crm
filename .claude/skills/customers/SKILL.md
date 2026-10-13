@@ -10,7 +10,7 @@ their timeline in `customer_notes`. The CRM lists and edits them; any other
 app (the Website's submission page) reads them and adds notes, and both see
 the same rows.
 
-Version: 0.1.0 (taskandtool/skills)
+Version: 0.1.1 (taskandtool/skills)
 
 ## The rules
 
@@ -29,3 +29,4 @@ Version: 0.1.0 (taskandtool/skills)
 | `schema.sql` | `customers`, `customer_notes`; the CRM adds its own tables beside them |
 | `customer.ts` | `customerByEmail`, `customerFor` |
 | `notes.ts` | `addNote`, `listNotes`, `NOTE_KINDS`, `NOTE_LABELS`, `pickNoteKind`, `wallTime` |
+| `note-form.tsx` | `NoteForm`: the box a note is written in, posting `body`, `kind`, `at` (the `admin` skill's controls) |

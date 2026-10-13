@@ -69,8 +69,6 @@ export type BookingAdminOptions = {
   currency?: string;
 };
 
-export type { Head } from "../admin/layout";
-
 type Team = Context<{ Variables: TeamVars }>;
 
 /** The page in AdminLayout, with the app's nav. */
@@ -85,8 +83,17 @@ export const BOOKING_STATUSES: StatusOption[] = [
   { value: "cancelled", label: "Cancelled", tone: "muted" },
 ];
 
-const MESSAGES: FlashMessages = {
+/** What a booking's Book, Reschedule and status routes say on the page they come back to: the Schedule, or the app's own page for it. */
+export const BOOKING_MESSAGES: FlashMessages = {
+  booked: "Booked. They are sent a confirmation if email is on.",
+  rescheduled: "Booking moved. They have been told the new time.",
+  cancelled: "Booking cancelled. They have been told.",
+  status: "Status saved.",
   unchanged: { error: "Nothing changed. A cancelled or past booking cannot be moved." },
+};
+
+const MESSAGES: FlashMessages = {
+  ...BOOKING_MESSAGES,
   saved: "Saved.",
   hours: "Hours saved.",
   "time-off": "Time off saved.",
@@ -112,7 +119,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
 
   // ---- the week, and booking for someone ------------------------------------------
 
-  const zoneOf = async (c: Context<{ Variables: TeamVars }>) => opts.timeZone ?? (await allPeople(getDb(c)))[0]?.time_zone ?? "UTC";
+  const zoneOf = async (c: Team) => opts.timeZone ?? (await allPeople(getDb(c)))[0]?.time_zone ?? "UTC";
 
   app.get("/", async (c) => {
     const d = getDb(c);
@@ -143,8 +150,12 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     const time = (t: Date) => formatTime(new Date(t), zone);
     const thisWeek = addDays(today, -((weekdayOf(today) + 6) % 7));
     const arrow = buttonClass + " w-9 px-0";
+    // A booking opens on the app's page for it; one without (the Website's, made elsewhere) opens on its Reschedule, which can also cancel it.
+    const opened = (r: (typeof rows)[number]) =>
+      opts.returnTo?.(r)?.href ?? (r.booked && r.status === "confirmed" && new Date(r.starts_at) > new Date() ? `${base}/${r.id}/reschedule` : null);
     return framed(c, opts, links, base, { title: "Schedule", actions: opts.scheduleActions ?? <a href={`${base}/new`} class={primaryClass}>Book for someone</a> }, (
       <>
+        <Flash code={c.req.query("saved")} messages={MESSAGES} />
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div class="flex flex-wrap items-center gap-2">
             <a href={self(addDays(monday, -7))} class={arrow} aria-label="Week before">&lsaquo;</a>
@@ -187,7 +198,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
                       <li class="flex flex-wrap gap-x-4">
                         <span class="w-44 shrink-0 whitespace-nowrap tabular-nums text-ink-2">{time(r.starts_at)} – {time(r.ends_at)}</span>
                         <span class="min-w-0">
-                          {opts.returnTo?.(r) ? <a href={opts.returnTo(r)!.href} class="font-semibold no-underline hover:underline">{r.name}</a> : <span class="font-semibold">{r.name}</span>}
+                          {opened(r) ? <a href={opened(r)!} class="font-semibold no-underline hover:underline">{r.name}</a> : <span class="font-semibold">{r.name}</span>}
                           {r.what || r.host ? <span class="text-ink-2"> · {[r.what, r.host ? `with ${r.host}` : null].filter(Boolean).join(" ")}</span> : null}
                           {r.status !== "confirmed" ? <> <StatusBadge value={r.status} options={BOOKING_STATUSES} /></> : null}
                           {r.location || r.booked ? (
@@ -209,7 +220,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
 
   // Who it is for travels with every link of the flow, so a team member who
   // starts from someone's page (the CRM's customer) never types them again.
-  const forWhom = (c: Context<{ Variables: TeamVars }>, body?: Record<string, unknown>) => {
+  const forWhom = (c: Team, body?: Record<string, unknown>) => {
     const read = (k: string) => (body ? str(body[k]) : c.req.query(k) ?? "").slice(0, k === "address" || k === "notes" ? 2000 : 200);
     return { name: read("name"), email: read("email"), phone: read("phone"), address: read("address") };
   };
@@ -241,7 +252,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     ));
   });
 
-  async function pickTime(c: Context<{ Variables: TeamVars }>, t: BookingType) {
+  async function pickTime(c: Team, t: BookingType) {
     const d = getDb(c);
     const w = forWhom(c);
     const hosts = await hostsOf(d, t.id);
@@ -285,7 +296,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     ));
   }
 
-  async function confirmTeam(c: Context<{ Variables: TeamVars }>, t: BookingType, values: Record<string, string>, errors: Errors = {}, notice?: string) {
+  async function confirmTeam(c: Team, t: BookingType, values: Record<string, string>, errors: Errors = {}, notice?: string) {
     const hosts = await hostsOf(getDb(c), t.id);
     const host = hosts.find((h) => h.id === values.host) ?? null;
     const zone = opts.timeZone ?? host?.time_zone ?? hosts[0]?.time_zone ?? "UTC";
@@ -321,7 +332,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     ), Object.keys(errors).length || notice ? 422 : 200);
   }
 
-  const loadType = async (c: Context<{ Variables: TeamVars }>) => {
+  const loadType = async (c: Team) => {
     const id = idParam(c.req.param("type"));
     const t = id ? await typeById(getDb(c), id) : null;
     return t?.active ? t : null;
@@ -418,6 +429,10 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
           </DayAndTimes>
         ) : <p class="text-ink-2">{host.name} has no other open times in the next weeks.</p>}
         <p class={`mt-5 ${smallText} text-ink-3`}>Times are in {zoneName(zone)}. {b.name} is told the new time.</p>
+        <form method="post" action={`${self}/status`} class="mt-5 border-t border-line pt-5" onsubmit={`return confirm(${JSON.stringify("Cancel this booking? They are told, and it cannot be undone.")})`}>
+          <input type="hidden" name="status" value="cancelled" />
+          <button class={buttonClass}>Cancel booking</button>
+        </form>
       </div>
     ), notice ? 409 : 200);
   }
@@ -847,7 +862,7 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
           <ul class="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface shadow-card">
             {all.map((r, i) => (
               <li>
-                <a href={`${base}/${r.id}`} class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 no-underline hover:bg-panel/60">
+                <a href={`${base}/${r.id}`} class={rowCard}>
                   <span class="min-w-0">
                     <span class="block font-semibold">{r.name}</span>
                     <span class={`block ${smallText} text-ink-2`}>{hoursLine(hours[i]) || "No hours set"} · {zoneName(r.time_zone)}</span>

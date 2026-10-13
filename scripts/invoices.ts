@@ -15,9 +15,9 @@ import { cliSettings, done, fail, flag, has, local, misused, out, resolveCustome
 type Outcome = "drafted" | "took_draft" | "sent" | "left_alone";
 
 const word = () => eventsCfg!.one.toLowerCase();
-const billable = (v: Event) => v.amount_cents !== null && Number(v.amount_cents) > 0;
+const billable = (e: Event) => e.amount_cents !== null && Number(e.amount_cents) > 0;
 /** The event's invoices that still count: every one but a void one. */
-const liveFor = async (db: Db, v: Event) => (await invoicesFor(db, { visitId: v.id })).filter((i) => i.status !== "void");
+const liveFor = async (db: Db, e: Event) => (await invoicesFor(db, { visitId: e.id })).filter((i) => i.status !== "void");
 const sentWhen = (i: Invoice) => (i.sent_at ? ` (sent ${local(i.sent_at)})` : "");
 
 /**
@@ -51,7 +51,7 @@ async function invoiceForEvent(db: Db, event: Event, by: string, at: string): Pr
 
 const about = (inv: Invoice, event: Event) =>
   `invoice #${inv.id} to ${inv.name ?? ""} <${inv.email}>: ${event.what}${inv.quote_id ? ` (quote #${inv.quote_id})` : ""}, ${formatMoney(inv.total_cents, inv.currency)}, due ${inv.days_until_due} days after it is sent`;
-const listEvents = (events: Event[]) => events.map((v) => `#${v.id} ${v.what} ${formatMoney(v.amount_cents ?? 0, v.currency ?? cliSettings("invoices").currency)}`);
+const listEvents = (events: Event[]) => events.map((e) => `#${e.id} ${e.what} ${formatMoney(e.amount_cents ?? 0, e.currency ?? cliSettings("invoices").currency)}`);
 
 await invoicesCli(process.argv.slice(2), {
   ...cliSettings("invoices"),
@@ -86,13 +86,13 @@ await invoicesCli(process.argv.slice(2), {
             const c = await resolveCustomer(db, rest[0], at);
             if (!c.email) fail(`${at}: ${c.name} has no email, and Stripe emails the invoice`, `node scripts/customers.mjs update ${c.id} --email <address>`);
             const json = has(a, "json");
-            const finished = (await customerEvents(db, c.id)).filter((v) => v.status === "completed");
+            const finished = (await customerEvents(db, c.id)).filter((e) => e.status === "completed");
             const unbilled: Event[] = [];
-            for (const v of finished) if (billable(v) && !(await liveFor(db, v)).some((i) => i.status !== "draft")) unbilled.push(v);
+            for (const e of finished) if (billable(e) && !(await liveFor(db, e)).some((i) => i.status !== "draft")) unbilled.push(e);
 
             let event: Event;
             if (has(a, "event")) {
-              event = finished.find((v) => v.id === flag(a, "event")) ?? fail(`${at}: ${c.name} has no finished ${word()} #${flag(a, "event")}`, `node scripts/events.mjs list --customer ${c.email}`);
+              event = finished.find((e) => e.id === flag(a, "event")) ?? fail(`${at}: ${c.name} has no finished ${word()} #${flag(a, "event")}`, `node scripts/events.mjs list --customer ${c.email}`);
               if (!billable(event)) fail(`${at}: ${word()} #${event.id} has no amount`, `node scripts/events.mjs update ${event.id} --amount <price>`);
             } else {
               // A retry of a send that went through must not bill the next one:
@@ -107,7 +107,7 @@ await invoicesCli(process.argv.slice(2), {
               }
               if (!unbilled.length) {
                 fail(`${at}: ${c.name} has no finished ${word()} with an amount that is not invoiced yet` +
-                  (finished.length ? `; their finished ${word()}s: ${finished.map((v) => `#${v.id} ${v.what}`).join(", ")}` : ""),
+                  (finished.length ? `; their finished ${word()}s: ${finished.map((e) => `#${e.id} ${e.what}`).join(", ")}` : ""),
                   `node scripts/invoices.mjs list --customer ${c.email}`);
               }
               if (unbilled.length > 1) {

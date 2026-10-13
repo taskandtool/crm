@@ -12,7 +12,7 @@ export type CustomerRef = { id: string; name: string; stage: string };
 /** The stage a new customer starts in when the CRM has not set up its statuses: its default first one. */
 const DEFAULT_STAGE = "lead";
 
-/** The live customer with this email, or one that goes by it after a merge; null when there is none. */
+/** The customer with this email (not one merged away), or one that goes by it after a merge; null when there is none. */
 export async function customerByEmail(db: Db, email: string): Promise<CustomerRef | null> {
   const [c] = await db.sql<CustomerRef>`
     select id::text as id, name, stage from customers

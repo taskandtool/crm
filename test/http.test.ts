@@ -548,6 +548,7 @@ test("the schedule in the CRM: its own frame, a service and a person; an online 
   html = await (await get(`/events/${b.id}`)).text();
   assert.match(html, /<h1[^>]*>Estimate visit<\/h1>/);
   assert.match(html, /Lee Wong/);
+  assert.match(html, new RegExp(`href="/schedule/${b.id}/reschedule"`), "moved on the Schedule's Reschedule, which tells them");
   const [{ week }] = await db.sql<{ week: string }>`select to_char(starts_at at time zone 'UTC', 'YYYY-MM-DD') as week from bookings where id = ${b.id}::bigint`;
   await post("/events", { name: "Mo Job", email: "mo@example.com", title: "Fix the boiler", at: `${week}T15:00` });
   const cal = await (await get(`/schedule?week=${week}`)).text();
@@ -684,6 +685,7 @@ test("forms in the CRM: submissions by form, an order with its payment, the Inbo
     returning id::text as id`;
   html = await (await get(`/forms/submissions/${order.id}`)).text();
   assert.match(html, new RegExp(`href="/schedule/${bk.id}/reschedule"`));
+  assert.match(await (await get(`/events/${bk.id}?saved=rescheduled`)).text(), /moved\. They have been told the new time\./, "a move from there says so on the event");
   const cancelled = await post(`/schedule/${bk.id}/status`, { status: "cancelled" });
   assert.equal(cancelled.headers.get("location"), `/events/${bk.id}?saved=cancelled`);
 

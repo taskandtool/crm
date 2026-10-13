@@ -1,5 +1,5 @@
 // Quotes and invoices where the team already looks: a customer's page (what
-// was quoted, what is owed now, what was paid) and a job's page (its quote and
+// was quoted, what is owed now, what was paid) and an event's page (its quote and
 // invoice). An overdue one says Past due, as on the invoices page.
 import { Section } from "../admin/detail";
 import { StatusBadge } from "../admin/status";

@@ -12,6 +12,7 @@
 import type { Keyed } from "../admin/keyset";
 import { q, type Db, type Query } from "../data/db";
 import type { StageKind } from "../config-schema";
+import { spliced } from "./sql";
 
 export type Deal = Keyed & {
   id: string;
@@ -71,13 +72,9 @@ async function hasQuotes(db: Db): Promise<boolean> {
 async function dealSql(db: Db) {
   const quotes = await hasQuotes(db);
   const cols = COLUMNS(quotes);
-  const fill = (strings: TemplateStringsArray) => {
-    const out = strings.map((s) => s.replaceAll("{deal}", cols));
-    return Object.assign(out, { raw: out }) as TemplateStringsArray;
-  };
   return {
     quotes,
-    sql: <T extends Record<string, any>>(strings: TemplateStringsArray, ...values: unknown[]) => db.sql<T>(fill(strings), ...values),
+    sql: spliced({ deal: cols }).sql(db),
   };
 }
 

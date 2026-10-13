@@ -25,17 +25,18 @@ import { cut, everyPage, readCursor, type Cursor, type Keyed } from "../admin/ke
 import { SectionPage, SectionTabs, type Frame, type Head, type NavItem } from "../admin/layout";
 import { DataTable, EmptyCard, rowClick, rowLink, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { formIds, idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
-import { buttonClass, controlClass, fieldClass, inputClass, pickStatus, primaryClass, Select, smallText, StatusBadge, type StatusOption } from "../admin/status";
+import { buttonClass, controlClass, fieldClass, pickStatus, primaryClass, Select, smallText, StatusBadge, type StatusOption } from "../admin/status";
 import { customerByEmail, customerFor } from "../customers/customer";
-import { addNote, listNotes, NOTE_KINDS, NOTE_LABELS, pickNoteKind, wallTime, type Note } from "../customers/notes";
+import { NoteForm } from "../customers/note-form";
+import { addNote, listNotes, NOTE_LABELS, pickNoteKind, wallTime, type Note } from "../customers/notes";
 import { checkFields, FIELD_TYPES, FORM_KEY, formKeyFrom, PHOTO_PATH, sitePath, type Errors, type Field, type Form } from "./fields";
 import { cameFrom } from "./origin";
 import { linkedTo, linkKinds, type Linked } from "./linked";
 import { priceOf } from "./price";
 import { formatMoney } from "../payments/money";
-import { refundable, type Payment } from "../payments/admin";
-import { BOOKING_STATUSES } from "../booking/admin";
-import { BOOKING_PAGE, CONTACT_FORM, toForm } from "./store";
+import { PAYMENT_MESSAGES, refundable, type Payment } from "../payments/admin";
+import { BOOKING_MESSAGES, BOOKING_STATUSES } from "../booking/admin";
+import { BOOKING_PAGE, CONTACT_FORM, formTitle, toForm } from "./store";
 
 export type FormsAdminOptions = {
   base: string;
@@ -45,7 +46,7 @@ export type FormsAdminOptions = {
   pageSize?: number;
   /** The app's own page frame (the CRM's layout and nav) instead of AdminLayout. */
   Frame?: Frame;
-  /** A booking's address where bookingAdmin is mounted (`/admin/schedule/42`: its Reschedule and Cancel) and a payment's where paymentsAdmin is. */
+  /** Where a booking's Reschedule and Cancel are (bookingAdmin's base and its id: `/admin/schedule/42`), and a payment's page where paymentsAdmin is. */
   links?: { booking?: (id: string) => string; payment?: (id: string) => string };
 };
 
@@ -72,11 +73,8 @@ const MESSAGES: FlashMessages = {
   spam: "Marked as spam.",
   bulk: (n) => (n === 1 ? "Moved 1 submission." : `Moved ${n} submissions.`),
   "none-selected": { error: "Select at least one submission first." },
-  booked: "Booked. They are sent a confirmation if email is on.",
-  cancelled: "Booking cancelled. They have been told.",
-  rescheduled: "Booking moved. They have been told the new time.",
-  unchanged: { error: "The booking was not changed. A cancelled or past booking cannot be moved." },
-  refund: "Refund requested. The payment changes when Stripe confirms it, usually within a minute.",
+  ...BOOKING_MESSAGES,
+  ...PAYMENT_MESSAGES,
   note: "Added to their notes.",
   "note-empty": { error: "Write something in the note first." },
 };
@@ -132,7 +130,7 @@ async function formsAndKeys(db: Db): Promise<{ forms: FormInfo[]; titles: Map<st
       select form_key, count(*) filter (where status = 'new')::int as fresh from submissions group by form_key order by form_key`,
   ]);
   const titles = new Map(forms.map((f) => [f.key, f.title]));
-  for (const k of keys) if (!titles.has(k.form_key)) titles.set(k.form_key, k.form_key === BOOKING_PAGE.key ? BOOKING_PAGE.title : k.form_key);
+  for (const k of keys) if (!titles.has(k.form_key)) titles.set(k.form_key, formTitle(k.form_key));
   return { forms, titles, fresh: keys.reduce((n, k) => n + k.fresh, 0) };
 }
 
@@ -325,7 +323,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active
       from forms where key = ${r.form_key}`;
     const form = formRow ? toForm(formRow) : null;
-    const formTitle = form?.title ?? (r.form_key === BOOKING_PAGE.key ? BOOKING_PAGE.title : r.form_key);
+    const title = formTitle(r.form_key, form?.title);
     const data = { ...(r.data ?? {}) };
     // The person is on the Contact card, not repeated as answers.
     for (const k of ["name", "email", "phone"] as const) if (r[k]) delete data[k];
@@ -432,7 +430,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
               {r.email ? <NotesCard action={`${self}/notes`} email={r.email} notes={notes} timeZone={tz} /> : null}
             </div>
             <div class="flex flex-col gap-4">
-              {booking ? <BookingCard b={booking} held={linked.booking!.held && !linked.payment?.label.startsWith("Paid")} timeZone={tz} at={opts.links?.booking} /> : null}
+              {booking ? <BookingCard b={booking} held={linked.booking!.held && !r.completed_at} timeZone={tz} at={opts.links?.booking} /> : null}
               {payment ? <PaymentCard p={payment} label={linked.payment!.label} at={opts.links?.payment} /> : null}
               {r.completed_at ? null : (
                 <Section title="Not finished">
@@ -442,7 +440,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
               <Section title="Where it came from">
                 <FieldList
                   fields={[
-                    { label: "Form", value: formTitle },
+                    { label: "Form", value: title },
                     { label: "Page", value: r.page },
                     { label: "Found you through", value: from },
                     { label: "Last changed by", value: r.updated_by ? <>{r.updated_by}, <When at={r.updated_at} timeZone={tz} /></> : null },
@@ -480,12 +478,13 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     if (!id) return c.notFound();
     const status = pickStatus((await c.req.parseBody()).status, STATUSES);
     if (!status) return c.text("Choose one of the listed statuses.", 400);
-    const [row] = await getDb(c).sql`
-      update submissions set status = ${status}, updated_at = now(), updated_by = ${c.get("user")}
-      where id = ${id}::bigint returning id`;
+    const [row] = await getDb(c).sql<{ was: string }>`
+      with was as (select status from submissions where id = ${id}::bigint for update)
+      update submissions s set status = ${status}, updated_at = now(), updated_by = ${c.get("user")}
+      from was where s.id = ${id}::bigint returning was.status as was`;
     if (!row) return c.notFound();
     // Archiving or marking spam is done with it: back to the list it left. Back to the Inbox stays on it.
-    return c.redirect(withFlash(status === "read" ? subUrl(id) : base || "/", status), 303);
+    return c.redirect(withFlash(status === "read" ? subUrl(id) : base + VIEWS[viewOf(row.was)].path || "/", status), 303);
   });
 
   return app;
@@ -501,22 +500,7 @@ function NotesCard({ action, email, notes, timeZone }: { action: string; email: 
   return (
     <Section title="Notes">
       <p class={`mb-4 ${smallText} text-ink-3`}>About {email}: on every submission from them, and on their customer page in the CRM.</p>
-      <form method="post" action={action} aria-label="Log activity" class="flex flex-col gap-2">
-        <textarea name="body" rows={2} required maxlength={10000} placeholder="Add a note, or log a call" aria-label="Note" class={inputClass}></textarea>
-        <div class="flex flex-wrap items-center gap-2">
-          <Select name="kind" aria-label="Type" class="w-32">
-            {NOTE_KINDS.map((k) => (
-              <option value={k}>{NOTE_LABELS[k]}</option>
-            ))}
-          </Select>
-          <button class={buttonClass}>Log activity</button>
-          {/* Now, unless it happened earlier: the time is there when it is needed. */}
-          <details class="open:basis-full">
-            <summary class="w-fit cursor-pointer list-none px-1 text-sm/6 font-semibold text-ink-2 no-underline hover:text-ink">Another time</summary>
-            <input name="at" type="datetime-local" aria-label="When it happened" class={inputClass + " mt-2"} />
-          </details>
-        </div>
-      </form>
+      <NoteForm action={action} />
       {notes.length ? (
         <ol class="mt-6 flex flex-col gap-4">
           {notes.map((n) => (
@@ -644,7 +628,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
               </thead>
               <tbody>
                 {forms.map((f) => (
-                  <tr class="cursor-pointer border-b border-line last:border-b-0 hover:bg-canvas" {...rowClick(`${base}/form/${f.key}`)}>
+                  <tr class="cursor-pointer border-b border-line last:border-b-0 hover:bg-panel/60" {...rowClick(`${base}/form/${f.key}`)}>
                     <td class="px-4 py-3">
                       <a href={`${base}/form/${f.key}`} class={rowLink}>
                         {f.title}
@@ -900,7 +884,7 @@ function carried(json: string): Record<string, unknown> {
   }
 }
 
-export function readEditor(body: Record<string, unknown>): Draft {
+function readEditor(body: Record<string, unknown>): Draft {
   const s = (k: string) => {
     const v = body[k];
     return (Array.isArray(v) ? str(v[0]) : str(v)).trim();
@@ -1072,13 +1056,13 @@ function Editor(props: {
                     </label>
                     <label class={fieldClass}>
                       Type
-                      <select name={`f.${i}.type`} class={controlClass}>
+                      <Select name={`f.${i}.type`}>
                         {FIELD_TYPES.map((t) => (
                           <option value={t} selected={t === type}>
                             {TYPE_LABELS[t]}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                     </label>
                     {/* Only a dropdown, multiple choice or checkboxes takes options. */}
                     <label class={fieldClass + " hidden sm:col-span-2 [fieldset:has(option[value=select]:checked)_&]:flex [fieldset:has(option[value=radio]:checked)_&]:flex [fieldset:has(option[value=checkbox]:checked)_&]:flex"}>
@@ -1097,7 +1081,7 @@ function Editor(props: {
                       <label class={fieldClass + " mt-2"}>
                         Saved as
                         <input name={`f.${i}.name`} value={text(f.name)} pattern="[a-z][a-z0-9_]*" class={controlClass} />
-                        <span class="text-label font-normal text-ink-3">Lowercase letters, digits and underscores. Changing it keeps earlier answers under the old name.</span>
+                        <span class={`${smallText} text-ink-3`}>Lowercase letters, digits and underscores. Changing it keeps earlier answers under the old name.</span>
                       </label>
                     </details>
                     {type === "booking" ? (

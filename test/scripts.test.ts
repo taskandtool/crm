@@ -211,9 +211,9 @@ test("forms.mjs saves, lists and shows a form, and refuses a broken one", { skip
   }
 });
 
-// invoices.mjs bill, short of Stripe: it drafts from the one finished visit
+// invoices.mjs bill, short of Stripe: it drafts from the one finished event
 // worth something, takes that draft again rather than making a second,
-// asks rather than choosing between two, never bills another visit on a
+// asks rather than choosing between two, never bills another event on a
 // retry after a send, and refuses --confirm plainly with no Stripe here.
 // migrate.mjs applies every file even when the scripts' record says current.
 test("invoices.mjs bill and migrate.mjs, against a scratch database", { skip: !process.env.TEST_DATABASE_URL && "TEST_DATABASE_URL is not set" }, async () => {
@@ -255,11 +255,11 @@ test("invoices.mjs bill and migrate.mjs, against a scratch database", { skip: !p
     assert.match(r.stderr, /no finished event with an amount/);
 
     event("ann@example.com", "Free check", "0");
-    const job = event("ann@example.com", "Boiler service", "245.00");
+    const boiler = event("ann@example.com", "Boiler service", "245.00");
     r = sh("invoices.mjs", "bill", "ann@example.com");
     assert.equal(r.status, 0, r.stderr + " (a $0 event is not a second candidate)");
     assert.match(r.stdout, /^invoices bill: drafted invoice #\d+ to Ann Lee <ann@example\.com>: Boiler service, \$245\.00/);
-    assert.match(r.stdout, new RegExp(`If the owner asked for it: node scripts/invoices\\.mjs bill ann@example\\.com --event ${job} --confirm$`, "m"));
+    assert.match(r.stdout, new RegExp(`If the owner asked for it: node scripts/invoices\\.mjs bill ann@example\\.com --event ${boiler} --confirm$`, "m"));
     r = sh("invoices.mjs", "bill", "ann@example.com");
     assert.match(r.stdout, /^invoices bill: took the draft invoice #\d+/, "a second call takes the same draft");
     assert.equal(JSON.parse(sh("invoices.mjs", "list", "--customer", "ann@example.com", "--json").stdout).length, 1);
@@ -273,22 +273,22 @@ test("invoices.mjs bill and migrate.mjs, against a scratch database", { skip: !p
     r = sh("invoices.mjs", "bill", "ann@example.com");
     assert.equal(r.status, 2, "two to choose from is a misuse");
     assert.match(r.stderr, /ask the owner which/);
-    assert.match(r.stderr, /Try: node scripts\/invoices\.mjs bill ann@example\.com --event <id>$/m, "names no job the owner did not choose");
+    assert.match(r.stderr, /Try: node scripts\/invoices\.mjs bill ann@example\.com --event <id>$/m, "names no event the owner did not choose");
     assert.doesNotMatch(r.stderr, /--confirm/, "a hint never sends");
 
     // As if the Boiler service invoice had just gone through Stripe: a retry without --event bills nothing else.
-    await db.query(`update invoices set status = 'open', sent_at = now(), stripe_invoice_id = 'in_test' where visit_id = $1`, [job]);
+    await db.query(`update invoices set status = 'open', sent_at = now(), stripe_invoice_id = 'in_test' where visit_id = $1`, [boiler]);
     r = sh("invoices.mjs", "bill", "ann@example.com", "--confirm");
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /^invoices bill: nothing new was sent: invoice #\d+ went to ann@example\.com \(sent .*\), so this looks like a repeat; left alone/);
-    assert.match(r.stdout, /not invoiced yet:\n    #\d+ Radiator bleed/, "names the job still to bill");
+    assert.match(r.stdout, /not invoiced yet:\n    #\d+ Radiator bleed/, "names the event still to bill");
     assert.doesNotMatch(r.stdout, /--confirm/, "a hint never sends");
     assert.equal(JSON.parse(sh("invoices.mjs", "bill", "ann@example.com", "--json").stdout).outcome, "left_alone");
     assert.equal(JSON.parse(sh("invoices.mjs", "list", "--customer", "ann@example.com", "--json").stdout).length, 1, "no second invoice");
     // A voided invoice is not the one they asked for: the guard passes it by.
-    await db.query(`update invoices set status = 'void' where visit_id = $1`, [job]);
+    await db.query(`update invoices set status = 'void' where visit_id = $1`, [boiler]);
     r = sh("invoices.mjs", "bill", "ann@example.com");
-    assert.equal(r.status, 2, "two jobs to bill again once the sent one is void");
+    assert.equal(r.status, 2, "two events to bill again once the sent one is void");
 
     await db.query("drop table customer_notes");
     r = sh("migrate.mjs");

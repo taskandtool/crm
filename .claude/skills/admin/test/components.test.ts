@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hono } from "hono";
-import { Activity, FieldList, JsonData } from "../detail";
+import { FieldList, JsonData } from "../detail";
 import { Flash, withFlash } from "../flash";
 import { AdminLayout } from "../layout";
 import { DataTable, SearchBar, TableRows, When, type TableSpec } from "../list";
@@ -95,11 +95,10 @@ test("JSON a visitor sent is readable and escaped", async () => {
   assert.ok(!fields.includes(">Email<") && fields.includes(">Phone<"), "an empty value leaves its row out");
 });
 
-test("activity shows times in the business's zone, not the server's", async () => {
-  const html = await render(Activity({ entries: [{ at: new Date("2026-01-01T03:30:00Z"), by: "ann@example.com", text: HOSTILE }], timeZone: "America/Chicago" }));
+test("a time shows in the business's zone, not the server's", async () => {
+  const html = await render(When({ at: new Date("2026-01-01T03:30:00Z"), timeZone: "America/Chicago" }));
   assert.ok(html.includes("9:30") && html.includes("Dec 31, 2025"), html);
   assert.ok(html.includes('datetime="2026-01-01T03:30:00.000Z"'));
-  assert.ok(!html.includes("<script>alert"));
   assert.equal(await render(When({ at: "not a date", timeZone: "UTC" }) ?? ""), "");
 });
 

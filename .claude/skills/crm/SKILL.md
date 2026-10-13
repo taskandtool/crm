@@ -20,8 +20,10 @@ the business skills' code in `src/` are kept.
 
 ## The tables
 
-- **The CRM's own** are in `schema.sql`. Booking and the Board read
-  `customers` too, so its columns keep their names and meanings.
+- **The CRM's own** are in `schema.sql`. `customers` and
+  `customer_notes` are the customers skill's (`src/customers/schema.sql`),
+  set up before them; booking, the Website and the Board read `customers`
+  too, so its columns keep their names and meanings.
 - **The skills' tables it sets up and writes** (`src/db/setup.ts`): the
   forms tables (it shows submissions and edits forms), the booking tables
   (always: the schedule's events are bookings), and, when invoices are on, the payments and invoices

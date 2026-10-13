@@ -32,10 +32,10 @@ import { overview } from "./crm/overview";
 import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
 import { addNote, listNotes, pickNoteKind, wallTime } from "./customers/notes";
 import { phoneKey } from "./crm/phone";
-import { addEvent, customerEvents, eventCsvColumns, eventsPage, getEvent, saveEvent, touchFor, type Event, type EventFilter, type EventInput } from "./crm/events";
+import { addEvent, customerEvents, eventCsvColumns, eventsPage, getEvent, saveEvent, startWall, touchFor, type Event, type EventFilter, type EventInput } from "./crm/events";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, pickKind, pickPipeline, restoreStage, stagesWithCounts, type Pipeline, type StageResult } from "./crm/stages";
 import { missingSentence } from "./crm/tables";
-import { clean, nowIn, parseAmount, parseTags, slugify } from "./crm/text";
+import { clean, parseAmount, parseTags, slugify } from "./crm/text";
 
 import type { AppEnv } from "./runtime";
 import { CustomerPage } from "./views/customer";
@@ -47,7 +47,7 @@ import { Board, CLOSED_DAYS, DealPage, DealsPage, NewDealPage, PER_COLUMN, type 
 import { NewTaskPage, TasksPage } from "./views/tasks";
 import { MergePage } from "./views/merge";
 import { StagesPage } from "./views/stages";
-import { bookingAdmin, BOOKING_STATUSES, peopleRoutes, typeRoutes } from "./booking/admin";
+import { bookingAdmin, peopleRoutes, typeRoutes } from "./booking/admin";
 import { allPeople, allTypes } from "./booking/hours";
 import { confirmFormBooking } from "./booking/confirm";
 import { emailSend, emailSender, notifyBooking } from "./booking/notify";
@@ -65,7 +65,7 @@ import { stripeWebhook } from "./payments/webhook";
 import { quotesFor } from "./invoices/quotes";
 import { invoicesFor, owed } from "./invoices/invoices";
 import { loadTeam } from "./crm/people";
-import { CUSTOMER_EVENTS, EventPage, eventParams, EventResults, EventsPage, eventSpec, NewEventPage, type Choices } from "./views/events";
+import { CUSTOMER_EVENTS, EventPage, eventParams, EventResults, EventsPage, eventSpec, NewEventPage, statusLabel, type Choices } from "./views/events";
 
 type C = Context<AppEnv>;
 
@@ -308,12 +308,12 @@ function personOf(body: Record<string, unknown>) {
 }
 
 /**
- * Who a new task, job or request is for (CustomerPicker): the customer
+ * Who a new task, event or deal is for (CustomerPicker): the customer
  * picked (or the record it was merged into since the page loaded), or
  * someone new, matched by email or phone or added as a lead. A flash code
  * when neither works.
  */
-async function customerFor(c: C, body: Record<string, unknown>): Promise<{ id: string } | { error: "name-needed" | "gone" | "last-open" }> {
+async function pickedCustomer(c: C, body: Record<string, unknown>): Promise<{ id: string } | { error: "name-needed" | "gone" | "last-open" }> {
   const db = c.var.db;
   const picked = idParam(str(body.customer));
   if (picked) {
@@ -528,7 +528,7 @@ function readEventForm(body: Record<string, unknown>, current?: Event): { event:
   const ev = eventsCfg!;
   let invalid = false;
   const at = str(body.at).trim();
-  const wall = (at ? wallTime(at) : null) ?? (current ? wallTime(nowIn(cfg.time_zone, new Date(current.starts_at))) : null);
+  const wall = (at ? wallTime(at) : null) ?? (current ? startWall(current, cfg.time_zone) : null);
   if (at && !wallTime(at)) invalid = true;
   const title = clean(body.title, 200);
   // A form with no Service choice (no services offered) leaves the one it has.
@@ -578,8 +578,7 @@ app.get("/events/export.csv", async (c) => {
   const f = readEventFilter(c);
   const ev = eventsCfg!;
   const day = new Date().toISOString().slice(0, 10);
-  const label = (s: string) => BOOKING_STATUSES.find((o) => o.value === s)?.label ?? s;
-  const columns = eventCsvColumns(ev.fields, cfg.time_zone, ownerLabel, ev.currency, label);
+  const columns = eventCsvColumns(ev.fields, cfg.time_zone, ownerLabel, ev.currency, statusLabel);
   return csvResponse(`${slugify(ev.many)}-${day}.csv`, columns, everyPage((after, size) => eventsPage(db, f, after, size)));
 });
 
@@ -606,7 +605,7 @@ app.post("/events", async (c) => {
   const body = await c.req.parseBody();
   const form = readEventForm(body);
   if (!form) return back(c, "/events/new", "event-incomplete");
-  const who = await customerFor(c, body);
+  const who = await pickedCustomer(c, body);
   if ("error" in who) return back(c, who.error === "last-open" ? "/stages" : "/events/new", who.error);
   const customer = await getCustomer(db, who.id);
   const r = customer ? await addEvent(db, customer, form.event, c.var.user) : null;
@@ -662,12 +661,12 @@ if (eventsCfg) {
       ...team,
       base: "/schedule",
       manageBase: cfg.booking_page,
-      // A cancel tells an online booker, through the owner's sender (none: nothing is sent).
+      // Booked, moved or cancelled here tells an online booker, through the owner's sender (none: nothing is sent).
       onBooked: (c, e) =>
         afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain: new URL(cfg.booking_page ?? c.req.url).host })),
       returnTo: (b) => ({ href: `/events/${b.id}`, label: one }),
       afterStatus: (c, b) => touchFor(dbOf(c), b.id, (c as unknown as C).var.user),
-      scheduleActions: <a href="/events/new" class={primaryClass}>New {eventsCfg.one.toLowerCase()}</a>,
+      scheduleActions: <a href="/events/new" class={primaryClass}>New {one.toLowerCase()}</a>,
     }),
   );
   app.route("/services", typeRoutes(dbOf, { ...team, base: "/services" }));
@@ -788,14 +787,14 @@ app.get("/tasks/new", async (c) => {
 });
 
 // A task from the Tasks page: for the customer picked, or for someone new
-// (matched by email or phone, or added, as a new job does).
+// (matched by email or phone, or added, as a new event does).
 app.post("/tasks", async (c) => {
   const db = c.var.db;
   const body = await c.req.parseBody();
   const title = clean(body.title, 200);
   const on = readDay(body.on);
   if (!title || !on) return back(c, "/tasks/new", "task-needs");
-  const who = await customerFor(c, body);
+  const who = await pickedCustomer(c, body);
   if ("error" in who) return back(c, who.error === "last-open" ? "/stages" : "/tasks/new", who.error);
   const t = await addTask(db, who.id, {
     kind: pickTaskKind(body.kind) ?? "call", title, due_on: on, due_time: readTime(body.at), owner: clean(body.owner, 200) ?? c.var.user, deal_id: null,
@@ -892,7 +891,7 @@ app.post("/deals", async (c) => {
   if (!input.deal.title) return back(c, "/deals/new", "deal-title-needed");
   const stage = await dealStageOf(db, body.stage);
   if (!stage) return back(c, "/stages", "last-open");
-  const who = await customerFor(c, body);
+  const who = await pickedCustomer(c, body);
   if ("error" in who) return back(c, who.error === "last-open" ? "/stages" : "/deals/new", who.error);
   const deal = await createDeal(db, who.id, { ...input.deal, owner: input.deal.owner ?? c.var.user }, stage, c.var.user);
   return deal ? back(c, `/deals/${deal.id}`, input.invalid ? "invalid" : "deal-added") : back(c, "/deals", "gone");

@@ -17,7 +17,8 @@ import { TasksSection } from "./tasks";
 import { listUrl } from "../admin/query";
 import type { Customer } from "../crm/customers";
 import type { HistoryItem } from "../crm/history";
-import { NOTE_KINDS, NOTE_LABELS, type Note } from "../customers/notes";
+import { NoteForm } from "../customers/note-form";
+import { NOTE_LABELS, type Note } from "../customers/notes";
 import type { Stage } from "../crm/stages";
 import type { Event } from "../crm/events";
 import { missingSentence, type Present } from "../crm/tables";
@@ -238,22 +239,7 @@ function Activity({ c, notes, history, missing }: { c: Customer; notes: Note[]; 
   const row = (e: Entry) => (e.note ? <NoteEntry n={e.note} /> : <HistoryEntry i={e.item!} />);
   return (
     <div class="flex flex-col gap-4">
-      <form method="post" action={`/customers/${c.id}/notes`} aria-label="Log activity" class="flex flex-col gap-2">
-        <textarea name="body" rows={2} required maxlength={10000} placeholder="Add a note, or log a call" aria-label="Note" class={controlClass}></textarea>
-        <div class="flex flex-wrap items-center gap-2">
-          <select name="kind" aria-label="Type" class={controlClass}>
-            {NOTE_KINDS.map((k) => (
-              <option value={k}>{NOTE_LABELS[k]}</option>
-            ))}
-          </select>
-          <button class={buttonClass}>Log activity</button>
-          {/* Now, unless it happened earlier: the time is there when it is needed. */}
-          <details class="text-label text-ink-2">
-            <summary class="cursor-pointer list-none underline decoration-line-strong underline-offset-2 hover:decoration-current">Set date and time</summary>
-            <input name="at" type="datetime-local" aria-label="When it happened" class={controlClass + " mt-2"} />
-          </details>
-        </div>
-      </form>
+      <NoteForm action={`/customers/${c.id}/notes`} />
       {missing && (c.email || c.phone) ? <p class="text-label text-ink-3">{missing}</p> : null}
       {entries.length ? (
         <>

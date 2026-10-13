@@ -152,6 +152,10 @@ test("the private views need the team header; opening reads, Archive and spam mo
     inbox = await (await app.request("https://site.example/admin/submissions", { headers: team })).text();
     assert.doesNotMatch(inbox, /ann@example.com/);
     assert.match(await (await app.request("https://site.example/admin/submissions/archived", { headers: team })).text(), /ann@example.com/);
+    // Marked as spam from Archived: back to Archived, the list it left.
+    res = await post(app, `/admin/submissions/${id}/status`, { status: "spam" }, team);
+    assert.equal(res.headers.get("location"), "/admin/submissions/archived?saved=spam");
+    await post(app, `/admin/submissions/${id}/status`, { status: "done" }, team);
 
     res = await post(app, "/admin/submissions/bulk", { id, status: "spam", return: "/admin/submissions/archived" }, team);
     assert.equal(res.headers.get("location"), "/admin/submissions/archived?saved=bulk&n=1");

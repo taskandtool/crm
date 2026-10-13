@@ -10,7 +10,8 @@
 //
 // Link to one booking's payments with `?ref_type=booking&ref_id=42`. An app
 // that shows a payment on its own page (the Website: on its submission) passes
-// `returnTo: (p) => ({ href, label })`, and a refund goes back there.
+// `returnTo: (p) => ({ href, label })` (null for one it does not), and a
+// refund goes back there.
 //
 // A refund here is a person acting, not the AI: the guard puts a signed-in
 // team member behind every request, the amount is confirmed on its own page,
@@ -46,8 +47,8 @@ export type PaymentsAdminOptions = {
   pageSize?: number;
   /** The app's own page frame (the CRM's layout and nav) instead of AdminLayout. */
   Frame?: Frame;
-  /** Where a refund goes back to, and its name, when the app shows the payment elsewhere (the Website: its submission). Default: the payment's page. */
-  returnTo?: (p: Payment) => { href: string; label: string };
+  /** Where a refund goes back to, and its name, when the app shows the payment elsewhere (the Website: its submission). Null, or absent, is the payment's page. */
+  returnTo?: (p: Payment) => { href: string; label: string } | null;
 };
 
 export type Payment = {
@@ -94,13 +95,14 @@ const KINDS: StatusOption[] = [
 const paidFor = (p: { ref_type: string | null; ref_id: string | null }) =>
   p.ref_type ? `${p.ref_type.charAt(0).toUpperCase()}${p.ref_type.slice(1).replace(/_/g, " ")}${p.ref_id ? ` ${p.ref_id}` : ""}` : "";
 
-const MESSAGES: FlashMessages = {
-  refund: "Refund requested. The status changes when Stripe confirms it, usually within a minute.",
+/** What a refund says on the page it comes back to: the payment's, or the app's own page for it. */
+export const PAYMENT_MESSAGES: FlashMessages = {
+  refund: "Refund requested. The payment changes when Stripe confirms it, usually within a minute.",
 };
 
-export type Filters = { q: string | null; status: string | null; kind: string | null; refType: string | null; refId: string | null };
+type Filters = { q: string | null; status: string | null; kind: string | null; refType: string | null; refId: string | null };
 
-export function readFilters(c: Context): Filters {
+function readFilters(c: Context): Filters {
   const text = (name: string) => (c.req.query(name) ?? "").trim().slice(0, 200) || null;
   return {
     q: text("q"),
@@ -114,7 +116,7 @@ export function readFilters(c: Context): Filters {
 const params = (f: Filters) => ({ q: f.q, status: f.status, kind: f.kind, ref_type: f.refType, ref_id: f.refId });
 
 /** One page plus one row, newest first, after the cursor. */
-export function listPayments(db: Db, f: Filters, after: Cursor | null, size: number): Promise<Payment[]> {
+function listPayments(db: Db, f: Filters, after: Cursor | null, size: number): Promise<Payment[]> {
   const pat = likePattern(f.q);
   return db.sql<Payment>`
     select p.*, p.created_at::text as k from payments p
@@ -277,7 +279,7 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
       select id, type, received_at from stripe_events where payment_id = ${p.id}::bigint order by received_at`;
     return c.html(
       frame(c, { title: `Payment ${p.id}`, back: { href: base, label: "Payments" } }, <>
-        <Flash code={c.req.query("saved")} messages={MESSAGES} />
+        <Flash code={c.req.query("saved")} messages={PAYMENT_MESSAGES} />
         <div class="grid gap-4 md:grid-cols-3">
           <Section title="Details" class="md:col-span-2">
             <FieldList

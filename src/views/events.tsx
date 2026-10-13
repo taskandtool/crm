@@ -11,10 +11,10 @@ import { StatusBadge } from "../admin/status";
 import { BOOKING_STATUSES } from "../booking/admin";
 import { whereText, type BookingType, type Resource } from "../booking/book";
 import { durationText } from "../booking/slots";
-import { cfg, eventsCfg, invoicesCfg, ownerLabel, vocab } from "../config";
+import { eventsCfg, invoicesCfg, ownerLabel, vocab } from "../config";
 import type { CustomField } from "../config-schema";
 import type { Customer } from "../crm/customers";
-import { LENGTHS, type Event, type EventFilter } from "../crm/events";
+import { LENGTHS, minutesOf, type Event, type EventFilter } from "../crm/events";
 import { amountText, nowIn } from "../crm/text";
 import type { Invoice } from "../invoices/invoices";
 import type { Quote } from "../invoices/quotes";
@@ -36,11 +36,16 @@ export type Choices = { team: Resource[]; services: BookingType[] };
 /** A scheduled one whose time is over: still says Scheduled, and says it was not marked. */
 const late = (r: Event, now = Date.now()) => r.status === "confirmed" && new Date(r.ends_at).getTime() < now;
 
+const Late = ({ r }: { r: Event }) => (late(r) ? <span class="block text-label font-semibold text-late">Late</span> : null);
+
+/** A status as the team reads it: "Scheduled", "No-show". */
+export const statusLabel = (s: string) => BOOKING_STATUSES.find((o) => o.value === s)?.label ?? s;
+
 function WhenOf({ r }: { r: Event }) {
   return (
     <>
       <When at={r.starts_at} timeZone={timeZone} />
-      {late(r) ? <span class="block text-label font-semibold text-late">Late</span> : null}
+      <Late r={r} />
     </>
   );
 }
@@ -54,7 +59,6 @@ const fieldsLine = (r: Event) =>
     .filter(Boolean)
     .join(" · ");
 
-const minutesOf = (r: Event) => Math.round((new Date(r.ends_at).getTime() - new Date(r.starts_at).getTime()) / 60_000);
 
 /** Who it is for: their record when they are a customer, else the name the booking holds. */
 function Who({ r }: { r: Event }) {
@@ -167,7 +171,7 @@ export function eventSpec(): TableSpec<Event> {
         cell: (r) => (
           <span class="whitespace-nowrap">
             <WhenOf r={r} />
-            {r.status !== "confirmed" ? <span class="block text-label font-normal text-ink-2 sm:hidden">{BOOKING_STATUSES.find((s) => s.value === r.status)?.label}</span> : null}
+            {r.status !== "confirmed" ? <span class="block text-label font-normal text-ink-2 sm:hidden">{statusLabel(r.status)}</span> : null}
           </span>
         ),
       },
@@ -180,7 +184,7 @@ export function eventSpec(): TableSpec<Event> {
           </>
         ),
       },
-      { label: cfg.vocabulary.one, cell: (r) => <Who r={r} /> },
+      { label: vocab.one, cell: (r) => <Who r={r} /> },
       { label: "Status", class: "hidden sm:table-cell", cell: (r) => <StatusBadge value={r.status} options={BOOKING_STATUSES} /> },
       { label: ownerLabel, class: "hidden md:table-cell", cell: (r) => r.host_name ?? "" },
       { label: "Amount", class: "hidden sm:table-cell text-right", cell: (r) => <span class="whitespace-nowrap">{amountOf(r)}</span> },
@@ -246,7 +250,7 @@ export function EventsPage(p: {
         action="/events"
         target="#results"
         q={p.filter.q}
-        placeholder={`Search ${many} or ${cfg.vocabulary.many.toLowerCase()}`}
+        placeholder={`Search ${many} or ${vocab.many.toLowerCase()}`}
         keep={{ view: p.filter.view === "upcoming" ? null : p.filter.view }}
         filters={[{ name: "host", label: ownerLabel, options: p.team.map((t) => ({ value: t.id, label: t.name })), value: p.filter.host, any: "Anyone" }]}
       />
@@ -317,6 +321,8 @@ export function EventPage(p: {
           {invoicesCfg && r.email && r.status === "completed" && !billed ? <a href={listUrl("/invoices/new", doc)} class={primaryClass}>Invoice</a> : null}
           {r.status === "confirmed" && started ? <StatusButton id={r.id} status="completed" label="Mark completed" primary /> : null}
           {started && r.status === "confirmed" ? <StatusButton id={r.id} status="no_show" label="No-show" /> : null}
+          {/* One of a service, with someone taking it: another of their open times, the booker told. */}
+          {r.status === "confirmed" && !started && r.type_id && r.resource_id ? <a href={`/schedule/${r.id}/reschedule`} class={buttonClass}>Reschedule</a> : null}
           {r.status === "confirmed" ? <StatusButton id={r.id} status="cancelled" label="Cancel" ask={`Cancel this ${one}?${r.source !== "crm" && r.email ? " They are told." : ""}`} /> : null}
         </>
       }
@@ -327,7 +333,7 @@ export function EventPage(p: {
           <Section title="Details">
             <ReadThenEdit
               fields={[
-                { label: "When", value: <><When at={r.starts_at} timeZone={timeZone} /> for {durationText(minutesOf(r))}{late(r) ? <span class="block text-label font-semibold text-late">Late</span> : null}</> },
+                { label: "When", value: <><When at={r.starts_at} timeZone={timeZone} /> for {durationText(minutesOf(r))}<Late r={r} /></> },
                 ...(r.type_name && r.title ? [{ label: "Service", value: r.type_name }] : []),
                 { label: ownerLabel, value: r.host_name },
                 { label: "Where", value: r.location ? whereText(r, { link: true, team: true }) : null },

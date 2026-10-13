@@ -4,8 +4,8 @@
 import { cut } from "../src/admin/keyset";
 import { allPeople, allTypes } from "../src/booking/hours";
 import { cfg, eventsCfg, ownerLabel } from "../src/config";
-import { addEvent, customerEvents, eventsPage, getEvent, LENGTHS, saveEvent, setEventStatus, type Event, type EventInput } from "../src/crm/events";
-import { amountText, clean, nowIn, parseAmount, relativeWall } from "../src/crm/text";
+import { addEvent, customerEvents, eventsPage, getEvent, LENGTHS, minutesOf, saveEvent, setEventStatus, startWall, type Event, type EventInput } from "../src/crm/events";
+import { amountText, clean, parseAmount, relativeWall } from "../src/crm/text";
 import { wallTime } from "../src/customers/notes";
 import type { Db } from "../src/data/db";
 import { done, fieldFlags, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, resolveCustomer, usage, who, withDb } from "./lib";
@@ -162,10 +162,10 @@ await withDb(async (db) => {
       const title = has(a, "what") ? clean(flag(a, "what"), 200) : r.title;
       const type = await serviceFlag(db, r.type_id);
       if (!title && !type) misused(`${at}: it needs what it is, or a service`, `node scripts/events.mjs update ${r.id} --what "Annual tune-up"`);
-      const startWall = wallTime(nowIn(cfg.time_zone, new Date(r.starts_at))) ?? nowIn(cfg.time_zone, new Date(r.starts_at));
+      const start = startWall(r, cfg.time_zone);
       const input: EventInput = {
-        title, type_id: type, at: atFlag(startWall) ?? startWall, timeZone: cfg.time_zone,
-        minutes: lengthFlag(Math.round((new Date(r.ends_at).getTime() - new Date(r.starts_at).getTime()) / 60_000)),
+        title, type_id: type, at: atFlag(start) ?? start, timeZone: cfg.time_zone,
+        minutes: lengthFlag(minutesOf(r)),
         resource_id: await hostFlag(db, r.resource_id), location: has(a, "where") ? clean(flag(a, "where"), 500) : r.location,
         amount_cents: amount, currency: (amount !== null && r.currency) || ev.currency,
         notes: has(a, "notes") ? clean(flag(a, "notes"), 10_000) : r.notes, fields: fr.set,

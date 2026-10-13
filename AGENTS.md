@@ -60,22 +60,22 @@ node scripts/export.mjs --out customers.csv     # the list out
   `booking` (online booking: the Services customers book, or off) and
   `invoices` (the name on quotes, the currency, or off).
   `examples/` holds five worked configs to read, not a switch.
-- `schema.sql` is the CRM's tables (`customers`, `pipeline_stages` (the
-  customer statuses), `deals`, `deal_stages`, `follow_ups` (tasks), `customer_notes`,
-  and `crm_setup`, which records the schema last applied so a script skips
+- `schema.sql` is the CRM's tables (`pipeline_stages` (the customer
+  statuses), `deals`, `deal_stages`, `follow_ups` (tasks), and `crm_setup`, which records the schema last applied so a script skips
   setup while it is current) and the CRM's columns on the booking skill's
   `bookings` (each event's customer, amount and fields), applied at every
-  start and every deploy.
+  start and every deploy. `customers` and `customer_notes` are the
+  customers skill's (`src/customers/schema.sql`), which the Website reads too.
 - `src/crm/` is every query and rule, named: customers, stages, deals,
-  tasks (and `digest-job.ts`, the morning email), notes, events (the
+  tasks (and `digest-job.ts`, the morning email), events (the
   schedule), the inbox, everything from one person, merging, the import. Routes, scripts and
   tests all go through it.
 - `src/app.tsx` is the Hono app: the team-only gate, the routes.
   `src/views/` are the pages. `src/server.ts` is dev's entry (Node, with
   `src/db/client.ts`); `src/worker.ts` is production's (Cloudflare).
   `src/runtime.ts` is all that differs between them.
-- `src/<skill>/` (`booking`, `forms`, `invoices`, `payments`, `reports`,
-  `data`, `admin`) are copies of the business skills' code.
+- `src/<skill>/` (`booking`, `customers`, `forms`, `invoices`, `payments`,
+  `reports`, `data`, `admin`) are copies of the business skills' code.
 - `scripts/customers.mjs`, `deals.mjs`, `tasks.mjs`, `events.mjs`, `forms.mjs`, `quotes.mjs`, `invoices.mjs`,
   `inbox.mjs` and `stages.mjs` are how you work on the data from chat; `import.mjs` and `export.mjs` move CSV
   in and out. Every one answers `--help`.

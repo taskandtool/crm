@@ -5,9 +5,10 @@
 // each on the very first run only, and after that the rows are the truth. A
 // stage is never deleted, only archived, and only once nothing is in it.
 // Each list always keeps at least one open stage, where new rows land.
-import { q, type Db, type Query } from "../data/db";
+import { q, type Db } from "../data/db";
 import type { StageConfig, StageKind } from "../config-schema";
 import { STAGE_KINDS } from "../config-schema";
+import { spliced } from "./sql";
 import { slugify } from "./text";
 
 /** Which list: a customer's statuses, or the deal pipeline. */
@@ -29,13 +30,8 @@ const TABLES: Record<Pipeline, { stages: string; items: string }> = {
   deals: { stages: "deal_stages", items: "deals" },
 };
 
-function fill(p: Pipeline, strings: TemplateStringsArray): TemplateStringsArray {
-  const t = TABLES[p];
-  const out = strings.map((s) => s.replaceAll("{stages}", t.stages).replaceAll("{items}", t.items));
-  return Object.assign(out, { raw: out });
-}
-const sqlOn = (db: Db, p: Pipeline) => <T extends Record<string, any>>(strings: TemplateStringsArray, ...values: unknown[]) => db.sql<T>(fill(p, strings), ...values);
-const qOn = (p: Pipeline) => (strings: TemplateStringsArray, ...values: unknown[]): Query => q(fill(p, strings), ...values);
+const sqlOn = (db: Db, p: Pipeline) => spliced(TABLES[p]).sql(db);
+const qOn = (p: Pipeline) => spliced(TABLES[p]).q;
 
 export async function listStages(db: Db, p: Pipeline, opts: { archived?: boolean } = {}): Promise<Stage[]> {
   return sqlOn(db, p)<Stage>`
