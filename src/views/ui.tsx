@@ -84,6 +84,14 @@ export function ViewLink({ href, on, children }: { href: string; on: boolean; ch
   );
 }
 
+/** A custom field's value as a page shows it: a date as the rest of the CRM writes one ("Nov 4"), the rest as typed. */
+export function shownField(f: CustomField, value: unknown): string {
+  const text = fieldText(value);
+  if (f.type !== "date" || !/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const year = text.slice(0, 4) === String(new Date().getUTCFullYear()) ? undefined : "numeric";
+  return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric", year }).format(new Date(`${text}T00:00:00Z`));
+}
+
 /** A phone number as a link that dials it. */
 export const telHref = (phone: string) => `tel:${phone.replace(/[^0-9+]/g, "")}`;
 

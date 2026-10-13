@@ -10,7 +10,6 @@ import { StatusBadge, type StatusOption } from "../admin/status";
 import { cfg, invoicesCfg, ownerLabel, visitsCfg, vocab } from "../config";
 import type { CustomField } from "../config-schema";
 import type { Customer } from "../crm/customers";
-import { fieldText } from "../crm/fields";
 import { nowIn } from "../crm/text";
 import { formatMoney } from "../payments/money";
 import { amountText, VISIT_STATUS_LABELS, VISIT_STATUSES, type OpenBooking, type Visit, type VisitFilter } from "../crm/visits";
@@ -18,7 +17,7 @@ import { Layout, ScheduleTabs } from "./layout";
 import { VisitMoney } from "./money";
 import type { Quote } from "../invoices/quotes";
 import type { Invoice } from "../invoices/invoices";
-import { AddToggle, buttonClass, controlClass, CustomInput, CustomerPicker, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, telHref, timeZone, ViewLink } from "./ui";
+import { AddToggle, buttonClass, controlClass, CustomInput, CustomerPicker, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, shownField, telHref, timeZone, ViewLink } from "./ui";
 
 /** How many a customer's page shows. */
 export const CUSTOMER_VISITS = 100;
@@ -61,7 +60,7 @@ const amountOf = (r: Visit) => (r.amount_cents === null ? "" : formatMoney(r.amo
 /** The custom fields that have a value, as "Truck 2 · North". */
 const fieldsLine = (r: Visit) =>
   v.fields
-    .map((f) => fieldText(r.fields?.[f.key]))
+    .map((f) => shownField(f, r.fields?.[f.key]))
     .filter(Boolean)
     .join(" · ");
 
@@ -333,7 +332,7 @@ export function VisitPage(p: {
     unit: r.amount_cents === null ? null : amountText(r.amount_cents, r.currency ?? v.currency),
     currency: r.amount_cents === null ? null : r.currency,
   };
-  const custom = v.fields.map((f) => ({ label: f.label, value: fieldText(r.fields?.[f.key]) || null }));
+  const custom = v.fields.map((f) => ({ label: f.label, value: shownField(f, r.fields?.[f.key]) || null }));
   // Invoiced already (a void one does not count): no second "Invoice this job".
   const billed = !!p.money?.invoices.some((i) => i.status !== "void");
   return (

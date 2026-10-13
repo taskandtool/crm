@@ -11,7 +11,6 @@ import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
 import { cfg, dealsCfg, invoicesCfg, ownerLabel, showBooking, visitsCfg, vocab } from "../config";
 import type { Deal } from "../crm/deals";
-import { fieldText } from "../crm/fields";
 import type { Task } from "../crm/tasks";
 import { CustomerDeals } from "./deals";
 import { TasksSection } from "./tasks";
@@ -26,7 +25,7 @@ import { formatMoney } from "../payments/money";
 import { whereText, type Booking } from "../booking/book";
 import { firstText } from "./inbox";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, stageOptions, telHref, timeZone } from "./ui";
+import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, shownField, stageOptions, telHref, timeZone } from "./ui";
 import { CustomerVisits, JobFromBooking } from "./visits";
 import { CustomerMoney, type Owed } from "./money";
 import type { Quote } from "../invoices/quotes";
@@ -152,7 +151,7 @@ function Reach({ c }: { c: Customer }) {
 
 /** Their details as values, then Edit for the form. */
 function Details({ c, owners }: { c: Customer; owners: string[] }) {
-  const custom = cfg.fields.map((f) => ({ label: f.label, value: fieldText(c.fields?.[f.key]) || null }));
+  const custom = cfg.fields.map((f) => ({ label: f.label, value: shownField(f, c.fields?.[f.key]) || null }));
   return (
     <ReadThenEdit
       fields={[
