@@ -8,7 +8,7 @@ import { amountText, customerVisits, getVisit, type Visit } from "../src/crm/vis
 import { createInvoice, invoiceById, invoiceFromQuote, invoicesFor, type Invoice } from "../src/invoices/invoices";
 import { quotesFor } from "../src/invoices/quotes";
 import { sendInvoice } from "../src/invoices/stripe";
-import { formatMoney as money } from "../src/payments/money";
+import { formatMoney } from "../src/payments/money";
 import { cliSettings, done, fail, flag, has, local, misused, out, resolveCustomer } from "./lib";
 
 type Outcome = "drafted" | "took_draft" | "sent" | "left_alone";
@@ -48,8 +48,8 @@ async function invoiceForJob(db: Db, job: Visit, by: string, at: string): Promis
 }
 
 const about = (inv: Invoice, job: Visit) =>
-  `invoice #${inv.id} to ${inv.name ?? ""} <${inv.email}>: ${job.title}${inv.quote_id ? ` (quote #${inv.quote_id})` : ""}, ${money(inv.total_cents, inv.currency)}, due ${inv.days_until_due} days after it is sent`;
-const listJobs = (jobs: Visit[]) => jobs.map((v) => `#${v.id} ${v.title} ${money(v.amount_cents ?? 0, v.currency ?? cliSettings("invoices").currency)}`);
+  `invoice #${inv.id} to ${inv.name ?? ""} <${inv.email}>: ${job.title}${inv.quote_id ? ` (quote #${inv.quote_id})` : ""}, ${formatMoney(inv.total_cents, inv.currency)}, due ${inv.days_until_due} days after it is sent`;
+const listJobs = (jobs: Visit[]) => jobs.map((v) => `#${v.id} ${v.title} ${formatMoney(v.amount_cents ?? 0, v.currency ?? cliSettings("invoices").currency)}`);
 
 await invoicesCli(process.argv.slice(2), {
   ...cliSettings("invoices"),

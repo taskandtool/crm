@@ -1,4 +1,5 @@
 // Small input helpers shared by the routes and the scripts.
+import { decimals } from "../payments/money";
 
 /** Trimmed text up to `max` characters, or null when empty. */
 export function clean(v: unknown, max = 200): string | null {
@@ -107,26 +108,13 @@ export function wallToInstant(wall: string, tz: string): Date {
   return new Date(guess - offset(first));
 }
 
-/** Money in minor units, in its currency's own decimals. */
 /** A total at a glance, to the whole unit: "$14,500" on a board column or a card. */
 export function cash(cents: number | string, currency: string, locale = "en-US"): string {
   const code = currency.toUpperCase();
   try {
-    const f = new Intl.NumberFormat(locale, { style: "currency", currency: code, maximumFractionDigits: 0 });
-    const digits = new Intl.NumberFormat(locale, { style: "currency", currency: code }).resolvedOptions().maximumFractionDigits ?? 2;
-    return f.format(Number(cents) / 10 ** digits);
+    return new Intl.NumberFormat(locale, { style: "currency", currency: code, maximumFractionDigits: 0 }).format(Number(cents) / 10 ** decimals(currency));
   } catch {
     return `${Math.round(Number(cents) / 100)} ${code}`;
   }
 }
 
-export function money(cents: number | string, currency: string, locale = "en-US"): string {
-  const code = currency.toUpperCase();
-  try {
-    const f = new Intl.NumberFormat(locale, { style: "currency", currency: code });
-    const digits = f.resolvedOptions().maximumFractionDigits ?? 2;
-    return f.format(Number(cents) / 10 ** digits);
-  } catch {
-    return `${(Number(cents) / 100).toFixed(2)} ${code}`;
-  }
-}

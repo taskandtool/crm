@@ -19,7 +19,7 @@ import {
   NO_FILTER, type Customer, type ListFilter,
 } from "./crm/customers";
 import { csvColumns } from "./crm/columns";
-import { readFields } from "./crm/fields";
+import { postedFields, readFields } from "./crm/fields";
 import { everythingFrom } from "./crm/history";
 import { addFromInbox, formChoices, inboxPage, markDone, readInboxCursor, type InboxKind } from "./crm/inbox";
 import { board, createDeal, customerDeals, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
@@ -63,7 +63,7 @@ import { stripeWebhook } from "./payments/webhook";
 import { quoteById, quotesFor } from "./invoices/quotes";
 import { invoicesFor, owed } from "./invoices/invoices";
 import { jobFromQuote } from "./crm/quotes";
-import { CUSTOMER_VISITS, NewVisitPage, VISIT_OPTIONS, visitParams, VisitPage, VisitResults, VisitsPage, visitSpec } from "./views/visits";
+import { CUSTOMER_VISITS, JobFromBooking, NewVisitPage, VISIT_OPTIONS, visitParams, VisitPage, VisitResults, VisitsPage, visitSpec } from "./views/visits";
 import { StatusBadge } from "./admin/status";
 
 type C = Context<AppEnv>;
@@ -178,18 +178,18 @@ app.get("/", async (c) => {
   const after = readInboxCursor(c.req.query("after"));
   const [{ rows, next, present }, numbers] = await Promise.all([
     inboxPage(c.var.db, { inbox: cfg.inbox, todo: !all, form }, after, PAGE),
-    after || isPartial(c) ? null : overview(c.var.db, { timeZone: cfg.time_zone, currency: dealsCfg.currency, user: c.var.user }),
+    isPartial(c) ? null : overview(c.var.db, { timeZone: cfg.time_zone, currency: dealsCfg.currency, user: c.var.user }),
   ]);
   const filter = { view: all ? "all" : null, form };
   const self = listUrl("/", filter);
   const more = (cur: string) => listUrl("/", { ...filter, after: cur });
   if (isPartial(c) && after) return c.html(<InboxRows rows={rows} next={next} more={more} self={self} />);
-  const missing = missingSentence(present, { submissions: true, bookings: cfg.inbox.bookings !== false, payments: cfg.inbox.payments !== false });
+  const missing = missingSentence(present, { bookings: cfg.inbox.bookings !== false, payments: cfg.inbox.payments !== false });
   // The filter box (htmx): everything under it.
   if (isPartial(c)) return c.html(<InboxResults rows={rows} next={next} more={more} self={self} all={all} form={form} paged={false} missing={missing} />);
   return c.html(
     <InboxPage user={c.var.user} rows={rows} next={next} more={more} self={self} all={all} form={form} forms={await formChoices(c.var.db, cfg.inbox)}
-      paged={!!after} missing={missing} numbers={numbers ?? await overview(c.var.db, { timeZone: cfg.time_zone, currency: dealsCfg.currency, user: c.var.user })} flash={flashOf(c)} />,
+      paged={!!after} missing={missing} numbers={numbers!} flash={flashOf(c)} />,
   );
 });
 
@@ -395,9 +395,7 @@ app.post("/customers/:id", async (c) => {
     invalid = true;
   }
   const name = clean(body.name, 200) ?? current.name;
-  const input: Record<string, unknown> = {};
-  for (const fd of cfg.fields) if (`f_${fd.key}` in body) input[fd.key] = body[`f_${fd.key}`];
-  const fr = readFields(cfg.fields, input);
+  const fr = readFields(cfg.fields, postedFields(cfg.fields, body));
   if (fr.errors.length) invalid = true;
   const r = await saveDetails(
     db,
@@ -419,8 +417,8 @@ app.post("/customers/:id/stage", async (c) => {
   if (!id) return c.notFound();
   const body = await c.req.parseBody();
   const ret = localPath(str(body.return), "", `/customers/${id}`);
-  // `status` from the select (admin/status.tsx's StatusForm).
-  const changed = await setStage(db, id, str(body.status) || str(body.stage), c.var.user);
+  // `status` from the customer page's SaveOnChange select.
+  const changed = await setStage(db, id, str(body.status), c.var.user);
   return back(c, ret, changed ? "stage" : "pick-status");
 });
 
@@ -524,9 +522,7 @@ function readVisitForm(body: Record<string, unknown>, current?: Visit) {
     invalid = true;
     amount = current?.amount_cents == null ? null : Number(current.amount_cents);
   }
-  const input: Record<string, unknown> = {};
-  for (const fd of v.fields) if (`f_${fd.key}` in body) input[fd.key] = body[`f_${fd.key}`];
-  const fr = readFields(v.fields, input);
+  const fr = readFields(v.fields, postedFields(v.fields, body));
   if (fr.errors.length) invalid = true;
   const visit: VisitInput = {
     title: clean(body.title, 200) ?? "",
@@ -641,7 +637,7 @@ app.post("/visits/:id/status", async (c) => {
 // booking, what can be booked and who takes it, each person's hours, time
 // off and calendars. The Website's /book pages read the same tables.
 
-/** Make it a job: the customer (matched, or added, as from the Inbox), then the job. */
+/** Create job: the customer (matched, or added, as from the Inbox), then the job. */
 app.post("/bookings/:id/job", async (c) => {
   if (!showBooking || !visitsCfg) return c.notFound();
   const db = c.var.db;
@@ -705,10 +701,7 @@ if (showBooking) {
               visit[0] ? (
                 <p><a href={`/visits/${visit[0].id}`}>The {visitsCfg.one.toLowerCase()}</a></p>
               ) : (
-                <form method="post" action={`/bookings/${b.id}/job`}>
-                  {customer ? <input type="hidden" name="customer" value={customer.id} /> : null}
-                  <button class={buttonClass}>Create {visitsCfg.one.toLowerCase()}</button>
-                </form>
+                <JobFromBooking bookingId={b.id} customerId={customer?.id} />
               )
             ) : null}
           </Section>
@@ -748,7 +741,7 @@ app.route(
 // owner's own sender, with a PDF where this runtime can print one (dev); an
 // invoice through the owner's Stripe account, which emails it.
 
-/** Make it a job: an accepted quote's customer (matched, or added), then its job. */
+/** Create job: an accepted quote's customer (matched, or added), then its job. */
 app.post("/invoices/quotes/:id/job", async (c) => {
   if (!invoicesCfg || !visitsCfg) return c.notFound();
   const id = idParam(c.req.param("id"));
@@ -974,13 +967,12 @@ app.get("/deals/:id", async (c) => {
     customerTasks(db, deal.customer_id),
     customerDeals(db, deal.customer_id),
     facets(db),
-    invoicesCfg ? db.sql<{ id: string }>`select id::text as id from quotes where deal_id = ${deal.id}::bigint order by created_at desc, id desc` : null,
+    invoicesCfg ? quotesFor(db, { dealId: deal.id }) : null,
     visitsCfg ? dealVisits(db, deal.id) : [],
   ]);
-  const full = quotes ? (await Promise.all(quotes.map((q) => quoteById(db, q.id)))).filter((q): q is NonNullable<typeof q> => !!q) : null;
   return c.html(
     <DealPage user={c.var.user} deal={deal} stages={stages} tasks={tasks} openDeals={deals.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title }))}
-      quotes={full} jobs={jobs} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} flash={flashOf(c)} />,
+      quotes={quotes} jobs={jobs} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} flash={flashOf(c)} />,
   );
 });
 
@@ -1020,7 +1012,7 @@ app.post("/deals/:id/archive", async (c) => {
   return (await setDealArchived(c.var.db, id, archive, c.var.user)) ? back(c, `/deals/${id}`, archive ? "deal-archived" : "deal-unarchived") : c.notFound();
 });
 
-// Make it a job: a won deal's planned job, once.
+// Create job: a won deal's planned job, once.
 app.post("/deals/:id/job", async (c) => {
   if (!visitsCfg) return c.notFound();
   const id = idParam(c.req.param("id"));

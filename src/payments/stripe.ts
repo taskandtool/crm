@@ -42,10 +42,13 @@ export class StripeError extends Error {
 
 const API = "https://api.stripe.com";
 
+/** A Stripe key here, or the gateway that brokers one. */
+const reachable = (env: Env, slug: string): boolean => !!setting(env, keyName(slug)) || !!(setting(env, "PHOENIX_URL") && setting(env, "MACHINE_TOKEN"));
+
 /** `slug` is the Stripe connection's endpoint slug when it is not `stripe` (list-connections). */
 export function stripeFrom(env: Env, fetchImpl: typeof fetch = fetch, slug = "stripe"): Stripe {
   const key = setting(env, keyName(slug));
-  if (!key && !(setting(env, "PHOENIX_URL") && setting(env, "MACHINE_TOKEN"))) {
+  if (!reachable(env, slug)) {
     throw new Error(
       `No Stripe here: no ${keyName(slug)} binding and no gateway. Ask the owner: python3 ~/tools/taskandtool.py request-connection stripe --why "<what it is for>" --auth api_key --delivery edge`,
     );
@@ -94,15 +97,15 @@ let reach: { slug: string; at: number; ok: boolean } | null = null;
  */
 export async function stripeConnected(env: Env, fetchImpl: typeof fetch = fetch, slug = "stripe"): Promise<boolean | null> {
   if (reach && reach.slug === slug && Date.now() - reach.at < (reach.ok ? 300_000 : 30_000)) return reach.ok;
-  let ok: boolean;
-  try {
-    const quick: typeof fetch = (url, init) => fetchImpl(url, { ...init, signal: AbortSignal.timeout(3000) });
-    await stripeFrom(env, quick, slug)("GET", "/v1/balance");
-    ok = true;
-  } catch (e) {
-    if (!(e instanceof StripeError) && !(e instanceof Error && e.message.startsWith("No Stripe here"))) return null;
-    if (e instanceof StripeError && !e.refusal && e.status !== 401 && e.status !== 403) return null;
-    ok = false;
+  let ok = false;
+  if (reachable(env, slug)) {
+    try {
+      const quick: typeof fetch = (url, init) => fetchImpl(url, { ...init, signal: AbortSignal.timeout(3000) });
+      await stripeFrom(env, quick, slug)("GET", "/v1/balance");
+      ok = true;
+    } catch (e) {
+      if (!(e instanceof StripeError) || (!e.refusal && e.status !== 401 && e.status !== 403)) return null;
+    }
   }
   reach = { slug, at: Date.now(), ok };
   return ok;

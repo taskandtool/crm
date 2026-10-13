@@ -15,7 +15,7 @@ import { amountText, parseAmount } from "../src/crm/visits";
 import type { Stage } from "../src/crm/stages";
 import { resolveStage } from "../src/crm/stages";
 import { missingSentence } from "../src/crm/tables";
-import { money, nowIn, parseTags, relativeWall, slugify, wallTime, wallToInstant } from "../src/crm/text";
+import { cash, nowIn, parseTags, relativeWall, slugify, wallTime, wallToInstant } from "../src/crm/text";
 import { readXlsx } from "../src/crm/xlsx-read";
 
 const STAGES: Stage[] = [
@@ -124,8 +124,8 @@ test("small text helpers", () => {
   assert.equal(wallTime("2026-10-02 14:30:15"), "2026-10-02 14:30:15");
   assert.equal(wallTime("tomorrow"), null);
   assert.equal(nowIn("America/Chicago", new Date("2026-10-02T05:30:00Z")), "2026-10-02T00:30");
-  assert.equal(money(12345, "usd"), "$123.45");
-  assert.equal(money(500, "jpy"), "¥500");
+  assert.equal(cash(1450000, "usd"), "$14,500");
+  assert.equal(cash(500, "jpy"), "¥500");
   assert.equal(resolveStage(STAGES, "WON")?.key, "won");
   assert.equal(resolveStage(STAGES, "new")?.key, "new");
 });
@@ -140,9 +140,9 @@ test("the inbox cursor round-trips and refuses anything else", () => {
 
 test("one sentence for the tables a project lacks", () => {
   const none = { submissions: false, forms: false, bookings: false, resources: false, payments: false, quotes: false, invoices: false };
-  assert.match(missingSentence(none, { submissions: true, bookings: true, payments: true })!, /no form submissions, bookings or payments yet/);
-  assert.match(missingSentence({ ...none, submissions: true, forms: true }, { submissions: true, bookings: false, payments: true })!, /no payments yet/);
-  assert.equal(missingSentence({ ...none, submissions: true, bookings: true, payments: true }, { submissions: true, bookings: true, payments: true }), null);
+  assert.match(missingSentence(none, { bookings: true, payments: true })!, /no form submissions, bookings or payments yet/);
+  assert.match(missingSentence({ ...none, submissions: true, forms: true }, { bookings: false, payments: true })!, /no payments yet/);
+  assert.equal(missingSentence({ ...none, submissions: true, bookings: true, payments: true }, { bookings: true, payments: true }), null);
 });
 
 // Review regressions.

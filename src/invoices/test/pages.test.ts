@@ -100,7 +100,7 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     // Edit while a draft.
     res = await app.request(...post(`/invoices/quotes/${id}`, {
       email: "ann@example.com", name: "Ann Lee", currency: "usd", valid_until: "2026-11-30", visit_id: "12", deal_id: "5", notes: "Gate included.", terms: "Net 30.",
-      description: ["Fence repair"], quantity: ["2"], unit: ["450.00"], tax_rate_id: [""],
+      description: ["Fence repair"], quantity: ["2"], unit: ["450.00"], tax: "",
     }));
     assert.equal(res.status, 303);
     assert.equal((await quoteById(s.db, id))!.total_cents, "90000");
@@ -141,7 +141,7 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
 
     // Sent: no more edits.
     res = await app.request(...post(`/invoices/quotes/${id}`, {
-      email: "ann@example.com", currency: "usd", description: ["Other"], quantity: [""], unit: ["1"], tax_rate_id: [""],
+      email: "ann@example.com", currency: "usd", description: ["Other"], quantity: [""], unit: ["1"], tax: "",
     }));
     assert.equal(res.status, 422);
     assert.match(await res.text(), /Copy it to a new quote/);

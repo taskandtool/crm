@@ -35,7 +35,7 @@ runs anywhere with Node 20 and a Postgres.
 - **Deals**: one piece of work being won, for one customer, who may have
   many. Stages you name, a value (a quote's total until one is typed),
   an owner, an expected close; won makes them a customer, a quote's yes
-  wins it, a lost one keeps why. Make it a job once won.
+  wins it, a lost one keeps why. Create a job once won.
 - **Customers**, keyed by email (a phone alone is fine too), each with a
   status (Lead, Customer, Not a fit): search by name, email, phone or
   company, filter by status, tag and owner, export the filter as CSV,
@@ -43,17 +43,19 @@ runs anywhere with Node 20 and a Postgres.
 - **A customer's page**, laid out as CRMs lay out a record: tasks,
   one Activity timeline (notes and calls, and everything they sent,
   booked, paid and were quoted) with a note box on top, and their visits;
-  beside it About (details and custom fields, Edit), their deals, quotes
+  beside it Details (details and custom fields, Edit), their deals, quotes
   and invoices, possible duplicates, Merge and Archive.
-- **Jobs, visits or events** (the config names them): one per occasion,
-  planned, done or cancelled, with who did it, an amount and its own
-  fields (which truck, which room). A list of what is coming up and what
-  was done, exported as CSV. Turned off for a business that keeps them
-  elsewhere.
-- **Bookings**: what customers can book (an estimate visit, an
-  installation, a video call), who takes each, everyone's hours, time off
-  and Google or Outlook calendar, and every booking, with "Make it a job".
-  The public booking page is the Website's; both use the same tables.
+- **Schedule**: one Calendar of bookings and jobs, day by day, then a
+  tab each for Jobs, Bookings, Services and Team.
+  - **Jobs, visits or events** (the config names them): one per occasion,
+    planned, done or cancelled, with who did it, an amount and its own
+    fields (which truck, which room). A list of what is coming up and what
+    was done, exported as CSV. Turned off for a business that keeps them
+    elsewhere.
+  - **Bookings**: what customers can book (an estimate visit, an
+    installation, a video call), who takes each, everyone's hours, time off
+    and Google or Outlook calendar, and every booking, with "Create job".
+    The public booking page is the Website's; both use the same tables.
 - **Quotes and invoices**: a quote with lines and tax, previewed and
   emailed as a PDF from your own email sender, marked accepted or declined;
   then an invoice made in your Stripe account, which emails it and takes

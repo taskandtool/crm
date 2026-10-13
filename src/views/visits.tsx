@@ -11,13 +11,14 @@ import { cfg, invoicesCfg, ownerLabel, visitsCfg, vocab } from "../config";
 import type { CustomField } from "../config-schema";
 import type { Customer } from "../crm/customers";
 import { fieldText } from "../crm/fields";
-import { money, nowIn } from "../crm/text";
+import { nowIn } from "../crm/text";
+import { formatMoney } from "../payments/money";
 import { amountText, VISIT_STATUS_LABELS, VISIT_STATUSES, type OpenBooking, type Visit, type VisitFilter } from "../crm/visits";
 import { Layout, ScheduleTabs } from "./layout";
 import { VisitMoney } from "./money";
 import type { Quote } from "../invoices/quotes";
 import type { Invoice } from "../invoices/invoices";
-import { AddToggle, buttonClass, controlClass, CustomInput, CustomerPicker, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, timeZone } from "./ui";
+import { AddToggle, buttonClass, controlClass, CustomInput, CustomerPicker, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, telHref, timeZone, ViewLink } from "./ui";
 
 /** How many a customer's page shows. */
 export const CUSTOMER_VISITS = 100;
@@ -25,6 +26,16 @@ export const CUSTOMER_VISITS = 100;
 const v = visitsCfg ?? { one: "Visit", many: "Visits", fields: [] as CustomField[], currency: "USD" };
 const one = v.one.toLowerCase();
 const many = v.many.toLowerCase();
+
+/** A booking's Create job button: the job is for `customerId`, or the booking's own person. */
+export function JobFromBooking({ bookingId, customerId }: { bookingId: string; customerId?: string | null }) {
+  return (
+    <form method="post" action={`/bookings/${bookingId}/job`}>
+      {customerId ? <input type="hidden" name="customer" value={customerId} /> : null}
+      <button class={buttonClass}>Create {one}</button>
+    </form>
+  );
+}
 
 export const VISIT_OPTIONS: StatusOption[] = [
   { value: "planned", label: VISIT_STATUS_LABELS.planned, tone: "strong" },
@@ -45,7 +56,7 @@ function WhenOf({ r }: { r: Visit }) {
   );
 }
 
-const amountOf = (r: Visit) => (r.amount_cents === null ? "" : money(r.amount_cents, r.currency ?? v.currency));
+const amountOf = (r: Visit) => (r.amount_cents === null ? "" : formatMoney(r.amount_cents, r.currency ?? v.currency));
 
 /** The custom fields that have a value, as "Truck 2 · North". */
 const fieldsLine = (r: Visit) =>
@@ -242,10 +253,7 @@ function Booked({ rows }: { rows: OpenBooking[] }) {
               </span>{" "}
               <a href={`/bookings/${b.id}`} class="text-label">The booking</a>
             </span>
-            <form method="post" action={`/bookings/${b.id}/job`}>
-              {b.customer_id ? <input type="hidden" name="customer" value={b.customer_id} /> : null}
-              <button class={buttonClass}>Create {one}</button>
-            </form>
+            <JobFromBooking bookingId={b.id} customerId={b.customer_id} />
           </li>
         ))}
       </ul>
@@ -271,11 +279,9 @@ export function VisitsPage(p: {
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <nav aria-label="Which" class="mb-3 flex flex-wrap gap-1 text-label">
         {VIEWS.map((v) => (
-          <a href={listUrl("/visits", { view: v.value === "upcoming" ? null : v.value, owner: p.filter.owner, q: p.filter.q })}
-            aria-current={p.filter.view === v.value ? "page" : undefined}
-            class={"rounded-control px-2 py-1 no-underline " + (p.filter.view === v.value ? "bg-panel font-semibold" : "text-ink-2 hover:bg-panel")}>
+          <ViewLink href={listUrl("/visits", { view: v.value === "upcoming" ? null : v.value, owner: p.filter.owner, q: p.filter.q })} on={p.filter.view === v.value}>
             {v.label}
-          </a>
+          </ViewLink>
         ))}
       </nav>
       <SearchBar
@@ -340,7 +346,7 @@ export function VisitPage(p: {
         <p class="flex flex-wrap items-center gap-x-2">
           <StatusBadge value={r.status} options={VISIT_OPTIONS} />
           <a href={`/customers/${r.customer_id}`}>{r.customer_name}</a>
-          {r.customer_phone ? <><span aria-hidden="true">·</span><a href={`tel:${r.customer_phone.replace(/[^0-9+]/g, "")}`} class="whitespace-nowrap text-ink-2">{r.customer_phone}</a></> : null}
+          {r.customer_phone ? <><span aria-hidden="true">·</span><a href={telHref(r.customer_phone)} class="whitespace-nowrap text-ink-2">{r.customer_phone}</a></> : null}
         </p>
       }
       // The next step is the blue one, as in Jobber: Mark done while it is planned; once done, the invoice it still needs.

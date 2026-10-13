@@ -166,12 +166,13 @@ export async function quoteById(db: Db, id: string): Promise<(Quote & { lines: S
   return rows[0] ? { ...toQuote(rows[0]), lines: lines.map(toLine) } : null;
 }
 
-/** Quotes for one customer, or for one job, newest first. */
-export async function quotesFor(db: Db, by: { email?: string | null; visitId?: string | null }): Promise<Quote[]> {
-  const email = by.email ?? null, visit = by.visitId ?? null;
+/** Quotes for one customer, one job or one deal, newest first. */
+export async function quotesFor(db: Db, by: { email?: string | null; visitId?: string | null; dealId?: string | null }): Promise<Quote[]> {
+  const email = by.email ?? null, visit = by.visitId ?? null, deal = by.dealId ?? null;
   const rows = await db.sql`
     select *, to_char(valid_until, 'YYYY-MM-DD') as valid_day from quotes
     where (${email}::citext is null or email = ${email}::citext) and (${visit}::bigint is null or visit_id = ${visit}::bigint)
+      and (${deal}::bigint is null or deal_id = ${deal}::bigint)
     order by created_at desc, id desc limit 200`;
   return rows.map(toQuote);
 }

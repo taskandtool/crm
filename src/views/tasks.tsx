@@ -9,7 +9,7 @@ import { listUrl } from "../admin/query";
 import { dealsCfg, vocab } from "../config";
 import { addDays, TASK_KINDS, TASK_LABELS, UPCOMING_DAYS, type Task, type TaskView } from "../crm/tasks";
 import { Layout } from "./layout";
-import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, CustomerPicker, primaryClass, timeText, timeZone } from "./ui";
+import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, CustomerPicker, primaryClass, telHref, timeText, timeZone, ViewLink } from "./ui";
 
 export type TasksProps = {
   user: string;
@@ -27,18 +27,17 @@ export function TasksPage(p: TasksProps) {
   const href = (view: TaskView, all = !p.mine) => listUrl("/tasks", { view: view === "today" ? null : view, who: all ? "all" : null });
   const self = href(p.view);
   const due = p.counts.overdue + p.counts.today;
-  const pill = (on: boolean) => "rounded-control px-2 py-1 no-underline " + (on ? "bg-panel font-semibold" : "text-ink-2 hover:bg-panel");
   return (
     <Layout title="Tasks" user={p.user} section="tasks" actions={<a href="/tasks/new" class={primaryClass}>New task</a>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <div class="mb-4 flex flex-wrap items-center justify-between gap-3 text-label">
         <nav aria-label="Which tasks" class="flex flex-wrap gap-1">
-          <a href={href("today")} aria-current={p.view === "today" ? "page" : undefined} class={pill(p.view === "today")}>{due ? `Today (${due})` : "Today"}</a>
-          <a href={href("upcoming")} aria-current={p.view === "upcoming" ? "page" : undefined} class={pill(p.view === "upcoming")}>Upcoming</a>
+          <ViewLink href={href("today")} on={p.view === "today"}>{due ? `Today (${due})` : "Today"}</ViewLink>
+          <ViewLink href={href("upcoming")} on={p.view === "upcoming"}>Upcoming</ViewLink>
         </nav>
         <nav aria-label="Whose" class="flex gap-1">
-          <a href={href(p.view, false)} aria-current={p.mine ? "page" : undefined} class={pill(p.mine)}>Mine</a>
-          <a href={href(p.view, true)} aria-current={!p.mine ? "page" : undefined} class={pill(!p.mine)}>Everyone</a>
+          <ViewLink href={href(p.view, false)} on={p.mine}>Mine</ViewLink>
+          <ViewLink href={href(p.view, true)} on={!p.mine}>Everyone</ViewLink>
         </nav>
       </div>
       {p.rows.length ? (
@@ -132,7 +131,7 @@ export function TaskItem(p: {
         {p.showCustomer || deal ? (
           <p class="mt-0.5 text-label text-ink-2">
             {p.showCustomer ? <a href={`/customers/${f.customer_id}`}>{f.customer_name}</a> : null}
-            {p.showCustomer && f.kind === "call" && f.customer_phone ? <> · <a href={`tel:${f.customer_phone.replace(/[^0-9+]/g, "")}`}>{f.customer_phone}</a></> : null}
+            {p.showCustomer && f.kind === "call" && f.customer_phone ? <> · <a href={telHref(f.customer_phone)}>{f.customer_phone}</a></> : null}
             {deal ? <>{p.showCustomer ? " · " : ""}<a href={`/deals/${f.deal_id}`}>{f.deal_title}</a></> : null}
           </p>
         ) : null}
@@ -181,7 +180,6 @@ export function TaskForm(p: {
   user: string;
   today: string;
   returnTo: string;
-  title?: string;
 }) {
   return (
     <form method="post" action={`/customers/${p.customerId}/tasks`} aria-label="Add a task" class="grid gap-3 sm:grid-cols-2">
@@ -195,11 +193,11 @@ export function TaskForm(p: {
 }
 
 /** A task's own fields: what, its type, the day (and time), whose, and which open deal it is for. */
-function TaskFields(p: { deals: { id: string; title: string }[]; dealId?: string | null; owners: string[]; user: string; today: string; title?: string }) {
+function TaskFields(p: { deals: { id: string; title: string }[]; dealId?: string | null; owners: string[]; user: string; today: string }) {
   return (
     <>
       <Field label="Task" class="sm:col-span-2">
-        <input name="title" required maxlength={200} value={p.title ?? ""} placeholder="Call back about the quote" class={controlClass} />
+        <input name="title" required maxlength={200} placeholder="Call back about the quote" class={controlClass} />
       </Field>
       <Field label="Type">
         <select name="kind" class={controlClass}>

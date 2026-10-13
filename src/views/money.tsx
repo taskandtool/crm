@@ -5,16 +5,17 @@ import { Section } from "../admin/detail";
 import { StatusBadge } from "../admin/status";
 import { listUrl } from "../admin/query";
 import type { Customer } from "../crm/customers";
-import { QUOTE_OPTIONS, SHOWN_INVOICE, todayIn } from "../invoices/admin";
+import { QUOTE_OPTIONS, SHOWN_INVOICE } from "../invoices/admin";
+import { todayIn } from "../reports/sql";
 import { dayText } from "../invoices/document";
-import type { Invoice } from "../invoices/invoices";
+import { pastDue, type Invoice } from "../invoices/invoices";
 import { shownStatus, type Quote } from "../invoices/quotes";
 import { formatMoney } from "../payments/money";
 import { timeZone } from "./ui";
 
 export type Owed = { currency: string; cents: string; count: number };
 
-function Docs({ quotes, invoices }: { quotes: Quote[]; invoices: Invoice[] }) {
+export function Docs({ quotes, invoices }: { quotes: Quote[]; invoices: Invoice[] }) {
   const today = todayIn(timeZone);
   if (!quotes.length && !invoices.length) return <p class="text-ink-3">No quotes or invoices yet.</p>;
   return (
@@ -29,8 +30,7 @@ function Docs({ quotes, invoices }: { quotes: Quote[]; invoices: Invoice[] }) {
       {invoices.map((i) => (
         <li class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <a href={`/invoices/${i.id}`}>{i.number ? `Invoice ${i.number}` : "Draft invoice"}</a>
-          {/* Past due as the invoices page counts it: open, its day gone, and its quote (if any) accepted. */}
-          <StatusBadge value={i.status === "open" && i.due_date && i.due_date < today && (!i.quote_id || quotes.find((q) => q.id === i.quote_id)?.status === "accepted") ? "due" : i.status} options={SHOWN_INVOICE} />
+          <StatusBadge value={pastDue(i, today, quotes.find((q) => q.id === i.quote_id) ?? null) ? "due" : i.status} options={SHOWN_INVOICE} />
           <span class="whitespace-nowrap">{formatMoney(i.total_cents, i.currency)}</span>
           {i.status === "open" && i.due_date ? <span class="text-label text-ink-3">due {dayText(i.due_date)}</span> : null}
           {i.livemode === false ? <span class="text-label text-ink-3">test mode</span> : null}

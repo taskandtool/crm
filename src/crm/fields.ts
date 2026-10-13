@@ -64,6 +64,13 @@ export function readFields(defs: CustomField[], input: Record<string, unknown>, 
 }
 
 /** A stored custom field value as text, for a page, an input or a CSV cell. */
+/** The custom fields a form posted (each as `f_<key>`), for readFields; a field the form left out stays out. */
+export function postedFields(defs: CustomField[], body: Record<string, unknown>): Record<string, unknown> {
+  const input: Record<string, unknown> = {};
+  for (const fd of defs) if (`f_${fd.key}` in body) input[fd.key] = body[`f_${fd.key}`];
+  return input;
+}
+
 export function fieldText(v: unknown): string {
   if (v === null || v === undefined) return "";
   if (typeof v === "string") return v;

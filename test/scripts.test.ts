@@ -150,9 +150,9 @@ test("import of a file that is not there is refused, before the database", () =>
   assert.match(before.stderr, /^import: cannot read .*no-such-file\.csv/, "--dry-run takes no value, so the file before it is still the file");
 });
 
-test("no database is exit 1 with the ask for one", () => {
+test("no database is exit 1 with the ask for one", (t) => {
   const r = run("customers.mjs", ["list"], { DATABASE_URL: "" });
-  if (!r.stderr.includes("DATABASE_URL is not set")) return; // a machine with /home/sprite/.env has one
+  if (!r.stderr.includes("DATABASE_URL is not set")) return t.skip("this machine's /home/sprite/.env has a database");
   refused(r, 1, "no DATABASE_URL");
   assert.match(r.stderr, /^customers list: the project has no database yet/);
   assert.match(r.stderr, /Try: python3 ~\/tools\/taskandtool\.py request-capability postgres/);

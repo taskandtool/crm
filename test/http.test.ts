@@ -119,6 +119,7 @@ test("the Inbox, then Add as customer and Mark done", async (t) => {
   assert.match(everything, /name="return" value="\/\?view=all"/, "Mark done comes back to the view");
 
   const [sub] = await db.sql<{ id: string }>`select id::text as id from submissions`;
+  assert.match(html, new RegExp(`<li id="submission-${sub.id}" data-href="/forms/submissions/${sub.id}" onclick=`), "a click on the row opens the request");
   const add = await post("/inbox/add", { kind: "submission", id: sub.id });
   assert.equal(add.status, 303);
   const loc = add.headers.get("location")!;
@@ -284,7 +285,7 @@ test("tasks: added, listed for today, the nav's count, done onto the timeline, m
   assert.equal((await post(`/tasks/${f.id}/move`, { on: "2099-01-02", return: "/tasks" })).headers.get("location"), "/tasks?saved=task-moved");
   const [moved] = await db.sql<{ due_on: string; due_time: string }>`select to_char(due_on, 'YYYY-MM-DD') as due_on, to_char(due_time, 'HH24:MI') as due_time from follow_ups where id = ${f.id}::bigint`;
   assert.deepEqual(moved, { due_on: "2099-01-02", due_time: "09:30" }, "a day button keeps the time");
-  assert.match(await (await get("/tasks?view=upcoming")).text(), /Nothing in the next 14 days/);
+  assert.match(await (await get("/tasks?view=upcoming", { ...ME, "x-tasktool-user": "new@team.example" })).text(), /Nothing in the next 14 days/);
 
   const done = await post(`/tasks/${f.id}/done`, { outcome: "Booked the visit", return: "//evil.example" });
   assert.equal(done.headers.get("location"), `/customers/${id}?saved=task-done`);
@@ -307,7 +308,21 @@ test("tasks: added, listed for today, the nav's count, done onto the timeline, m
   await post("/tasks", { customer: gus.id, title: "After the merge", on: today });
   const [merged] = await db.sql<{ customer_id: string }>`select customer_id::text as customer_id from follow_ups where title = 'After the merge'`;
   assert.equal(merged.customer_id, id);
-  assert.match(await (await get("/tasks?view=upcoming")).text(), /New task/, "the empty state offers New task");
+  assert.match(await (await get("/tasks?view=upcoming", { ...ME, "x-tasktool-user": "new@team.example" })).text(), /Nothing in the next \d+ days\.[\s\S]*A task is a call[\s\S]*href="\/tasks\/new"[^>]*>New task<\/a>/, "someone with no tasks: the empty state offers New task");
+});
+
+test("no next step: a customer with an open deal is in play, a planned job is a next step, one done with nothing open is not", async (t) => {
+  if (skip) return t.skip(skip);
+  const made = await post("/customers", { name: "Nan Step", email: "nan@example.com" });
+  const id = made.headers.get("location")!.match(/\/customers\/(\d+)/)![1];
+  const unplanned = async () => (await (await get("/customers?next=none")).text()).includes("Nan Step");
+  assert.match(await (await get("/customers")).text(), new RegExp(`<tr id="customers-row-${id}"[^>]*data-href="/customers/${id}" onclick=`), "a click on the row opens them");
+  await db.sql`update customers set stage = (select key from pipeline_stages where kind = 'won' order by position limit 1) where id = ${id}::bigint`;
+  assert.equal(await unplanned(), false, "a customer with nothing open needs no next step");
+  await post(`/customers/${id}/deals`, { title: "Second boiler", value: "" });
+  assert.equal(await unplanned(), true, "an open deal with nothing planned");
+  await post(`/customers/${id}/visits`, { title: "Survey", at: "2099-03-01T10:00", status: "planned" });
+  assert.equal(await unplanned(), false, "a planned job is the next step");
 });
 
 test("Add as deal: a new person, and a customer already here getting another", async (t) => {
@@ -369,7 +384,7 @@ test("a quote made for a deal: its value stands in, its page names the deal, and
   assert.match(await (await get(link)).text(), new RegExp(`name="deal_id" value="${did}"`));
 
   const body = new URLSearchParams({ email: "ida@example.com", name: "Ida Quote", currency: "usd", valid_until: "2099-01-31", visit_id: "", deal_id: did, notes: "", terms: "" });
-  body.append("description", "Cabinets"); body.append("quantity", "1"); body.append("unit", "8000"); body.append("tax_rate_id", "");
+  body.append("description", "Cabinets"); body.append("quantity", "1"); body.append("unit", "8000");
   const res = await app.request(HOST + "/invoices/quotes", { method: "POST", body, headers: { ...ME, origin: HOST, "content-type": "application/x-www-form-urlencoded" } }, { runtime });
   const qid = res.headers.get("location")!.match(/\/invoices\/quotes\/(\d+)/)![1];
   assert.match(await (await get(`/invoices/quotes/${qid}`)).text(), new RegExp(`For <a href="/deals/${did}">Kitchen remodel</a>; a yes wins the deal`));
@@ -508,7 +523,7 @@ test("visits: add from the customer's page, the list, its page, status, CSV", as
   assert.equal(made2.name, "Nia New");
 });
 
-test("bookings in the CRM: its own frame, a type and a person, Make it a job from a booking", async (t) => {
+test("bookings in the CRM: its own frame, a type and a person, Create job from a booking", async (t) => {
   if (skip) return t.skip(skip);
   let html = await (await get("/bookings/types")).text();
   assert.match(html, /<nav aria-label="CRM"/, "the CRM's own frame");
@@ -528,7 +543,7 @@ test("bookings in the CRM: its own frame, a type and a person, Make it a job fro
   assert.equal((await post(`/bookings/types/${typeId}/hosts`, { host: personId })).status, 303);
   assert.match(await (await get(`/bookings/people/${personId}`)).text(), /Estimate visit/);
 
-  // A booking the Website took, then Make it a job from the Jobs page.
+  // A booking the Website took, then Create job from the Jobs page.
   const [b] = await db.sql<{ id: string }>`
     insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, location_kind, location)
     values (${typeId}::bigint, ${personId}::bigint, now() + interval '2 days', now() + interval '2 days 1 hour', 'Lee Wong', 'lee@example.com', 'their_place', '7 Pine St')
@@ -568,7 +583,7 @@ test("bookings in the CRM: its own frame, a type and a person, Make it a job fro
   assert.match(html, /Times are in UTC/, "the CRM's zone");
 });
 
-test("quotes in the CRM: from a job, sent, accepted, made a job; Make it a job once", async (t) => {
+test("quotes in the CRM: from a job, sent, accepted, made a job; Create job once", async (t) => {
   if (skip) return t.skip(skip);
   const made = await post("/customers", { name: "Quin Quote", email: "quin@example.com", phone: "555 777 0000" });
   const cid = made.headers.get("location")!.match(/\/customers\/(\d+)/)![1];
@@ -591,7 +606,7 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Make it a job o
 
   const body = new URLSearchParams({ email: "quin@example.com", name: "Quin Quote", currency: "usd", valid_until: "2099-01-31", visit_id: vid, notes: "", terms: "" });
   for (const [d, u] of [["Water heater swap", "1200.00"], ["", ""]]) {
-    body.append("description", d); body.append("quantity", ""); body.append("unit", u); body.append("tax_rate_id", "");
+    body.append("description", d); body.append("quantity", ""); body.append("unit", u);
   }
   const res = await app.request(HOST + "/invoices/quotes", { method: "POST", body, headers: { ...ME, origin: HOST, "content-type": "application/x-www-form-urlencoded" } }, { runtime });
   assert.equal(res.status, 303);
@@ -609,9 +624,9 @@ test("quotes in the CRM: from a job, sent, accepted, made a job; Make it a job o
   assert.ok((await getCustomer(db, cid))!.last_contact_at, "a quote that went out is contact");
   assert.equal((await post(`/invoices/quotes/${qid}/decide`, { answer: "accepted" })).headers.get("location"), `/invoices/quotes/${qid}?saved=accepted`);
 
-  // A quote for someone new, accepted with no job: Make it a job adds them, once.
+  // A quote for someone new, accepted with no job: Create job adds them, once.
   const nb = new URLSearchParams({ email: "new@example.com", name: "Nia New", currency: "usd", valid_until: "", visit_id: "", notes: "", terms: "", address: "9 Elm St" });
-  nb.append("description", "Gutter clean"); nb.append("quantity", "1"); nb.append("unit", "180"); nb.append("tax_rate_id", "");
+  nb.append("description", "Gutter clean"); nb.append("quantity", "1"); nb.append("unit", "180");
   const r2 = await app.request(HOST + "/invoices/quotes", { method: "POST", body: nb, headers: { ...ME, origin: HOST, "content-type": "application/x-www-form-urlencoded" } }, { runtime });
   const q2 = r2.headers.get("location")!.match(/\/invoices\/quotes\/(\d+)/)![1];
   assert.equal((await post(`/invoices/quotes/${q2}/job`, {})).headers.get("location"), `/invoices/quotes/${q2}?saved=not-now`, "only an accepted quote");

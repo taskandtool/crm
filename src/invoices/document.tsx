@@ -23,6 +23,14 @@ export function dayText(day: string | null, locale = "en-US"): string {
   return Number.isNaN(d.getTime()) ? day : new Intl.DateTimeFormat(locale, { timeZone: "UTC", dateStyle: "long" }).format(d);
 }
 
+/** Today in the business's zone, as YYYY-MM-DD. */
+export function todayIn(zone: string, now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
+
+/** A YYYY-MM-DD calendar day `n` days on. */
+export const addDays = (day: string, n: number): string => new Date(Date.parse(day + "T00:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
+
 /** Tax per rate, from the stored line taxes, in the order the rates first appear. */
 export function taxSummary(lines: SavedLine[], rates: TaxRate[]): { label: string; cents: number; inclusive: boolean }[] {
   const out = new Map<string, { label: string; cents: number; inclusive: boolean }>();
@@ -189,12 +197,10 @@ function Paper(p: Paper) {
   );
 }
 
-const today = (o: DocOptions, at: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: o.timeZone ?? "UTC" }).format(at);
-
 export function QuoteDocument({ qt, rates, o, payUrl }: { qt: Quote & { lines: SavedLine[] }; rates: TaxRate[]; o: DocOptions; payUrl?: string | null }) {
   return (
     <Paper kind="Quote" number={qt.number} to={[qt.name, qt.email, qt.phone, qt.address].filter(Boolean).join("\n")}
-      facts={[["Date", dayText(today(o, qt.sent_at ?? qt.created_at), o.locale)], ...(qt.valid_until ? [["Valid until", dayText(qt.valid_until, o.locale)] as [string, string]] : [])]}
+      facts={[["Date", dayText(todayIn(o.timeZone ?? "UTC", qt.sent_at ?? qt.created_at), o.locale)], ...(qt.valid_until ? [["Valid until", dayText(qt.valid_until, o.locale)] as [string, string]] : [])]}
       headline={["Total", formatMoney(qt.total_cents, qt.currency, o.locale)]}
       currency={qt.currency} lines={qt.lines} subtotal={qt.subtotal_cents} total={qt.total_cents} rates={rates} o={o}
       pay={payUrl ? { href: payUrl, text: "Accept and pay online" } : undefined} notes={qt.notes} terms={qt.terms} />
@@ -208,8 +214,8 @@ export function QuoteDocument({ qt, rates, o, payUrl }: { qt: Quote & { lines: S
  */
 export function InvoiceDocument({ inv, rates, o }: { inv: Invoice & { lines: SavedLine[] }; rates: TaxRate[]; o: DocOptions }) {
   const sent = inv.sent_at ?? null;
-  const day = today(o, sent ?? new Date());
-  const due = inv.due_date ?? new Date(Date.parse(day + "T00:00:00Z") + inv.days_until_due * 86_400_000).toISOString().slice(0, 10);
+  const day = todayIn(o.timeZone ?? "UTC", sent ?? new Date());
+  const due = inv.due_date ?? addDays(day, inv.days_until_due);
   const paid = inv.status === "paid";
   // Only one that can still be paid shows what is due and a Pay button; a void or written-off one shows its total.
   const payable = inv.status === "draft" || inv.status === "open";

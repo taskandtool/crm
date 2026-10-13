@@ -55,7 +55,7 @@ export function customerSpec(stages: Stage[], n: NextOf): TableSpec<Customer> {
 export function Results(p: { stages: Stage[]; filter: ListFilter; rows: Customer[]; next: string | null; paged: boolean; nextOf: NextOf }) {
   const params = filterParams(p.filter);
   const self = listUrl("/customers", params);
-  const filtered = !!(p.filter.q || p.filter.stage || p.filter.tag || p.filter.owner || p.filter.unplanned);
+  const narrowed = !!(p.filter.q || p.filter.stage || p.filter.tag || p.filter.owner);
   return (
     <div id="results">
       {p.paged ? (
@@ -70,9 +70,9 @@ export function Results(p: { stages: Stage[]; filter: ListFilter; rows: Customer
         next={p.next}
         more={(cur) => listUrl("/customers", { ...params, after: cur })}
         empty={
-          p.filter.unplanned && !(p.filter.q || p.filter.stage || p.filter.tag || p.filter.owner) ? (
+          p.filter.unplanned && !narrowed ? (
             <EmptyState title="Everyone has a next step.">Every open lead and {dealsCfg.one.toLowerCase()} has a task or a {visitsCfg ? visitsCfg.one.toLowerCase() : "visit"} planned.</EmptyState>
-          ) : filtered ? (
+          ) : narrowed || p.filter.unplanned ? (
             <NoMatches clear="/customers" />
           ) : p.filter.archived ? (
             "Nothing is archived."

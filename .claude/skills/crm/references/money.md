@@ -22,7 +22,7 @@ job"), sent as a PDF through the owner's email sender (as booking
 messages are; with none, the team copies the text into their own email
 and marks it sent). The customer says yes by reply or on the phone; a
 person marks it accepted, which offers "Make the invoice" and, with no job
-yet, "Make it a job". An invoice is made in the owner's Stripe account:
+yet, "Create job". An invoice is made in the owner's Stripe account:
 Stripe emails it and hosts the page the customer pays on. Paid, void and
 uncollectible arrive from Stripe's webhook; "Mark paid" is for cash or a
 check. A customer's page shows what was quoted, what they owe now and what

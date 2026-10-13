@@ -1,7 +1,7 @@
 // One customer, laid out as every CRM lays out a record: what happens next
 // (tasks), one Activity timeline (notes and calls, and everything they
 // sent, booked, paid and were quoted, newest first) with a small box to log
-// a note on top, and their visits; beside it, About (their details as
+// a note on top, and their visits; beside it, Details (their details as
 // values, Edit for the form), their deals, quotes and invoices, possible
 // duplicates, Merge and Archive. Empty sections are left out. Plain forms
 // throughout: every change is a POST answered with a 303 back here.
@@ -22,12 +22,12 @@ import { NOTE_KINDS, NOTE_LABELS, type Note } from "../crm/notes";
 import type { Stage } from "../crm/stages";
 import type { Visit } from "../crm/visits";
 import { missingSentence, type Present } from "../crm/tables";
-import { money } from "../crm/text";
+import { formatMoney } from "../payments/money";
 import { whereText, type Booking } from "../booking/book";
 import { firstText } from "./inbox";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, stageOptions, timeZone } from "./ui";
-import { CustomerVisits } from "./visits";
+import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, stageOptions, telHref, timeZone } from "./ui";
+import { CustomerVisits, JobFromBooking } from "./visits";
 import { CustomerMoney, type Owed } from "./money";
 import type { Quote } from "../invoices/quotes";
 import type { Invoice } from "../invoices/invoices";
@@ -58,7 +58,7 @@ export function CustomerPage(p: {
   const self = `/customers/${c.id}`;
   // A status another app wrote, or one archived since, still shows and stays selectable.
   const stages = p.stages.some((s) => s.key === c.stage) ? p.stages : [...p.stages, { key: c.stage, label: c.stage, position: 999, kind: "open" as const, archived: true }];
-  const missing = missingSentence(p.present, { submissions: true, bookings: true, payments: true });
+  const missing = missingSentence(p.present, { bookings: true, payments: true });
   const money = p.money && (p.money.quotes.length || p.money.invoices.length) ? p.money : null;
   return (
     <Layout
@@ -70,7 +70,7 @@ export function CustomerPage(p: {
       actions={
         <>
           <SaveOnChange action={`${self}/stage`} current={c.stage} options={stageOptions(stages)} label="Status" returnTo={self} />
-          {c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`} class={buttonClass}>Call</a> : null}
+          {c.phone ? <a href={telHref(c.phone)} class={buttonClass}>Call</a> : null}
           {c.email ? <a href={`mailto:${c.email}`} class={buttonClass} title={c.email}>Email</a> : null}
           {showBooking ? (
             <a href={listUrl("/bookings/new", { name: c.name, email: c.email, phone: c.phone, address: c.address })} class={buttonClass}>Book a time</a>
@@ -103,7 +103,7 @@ export function CustomerPage(p: {
         </div>
         <div class="flex min-w-0 flex-col gap-4">
           <Section title="Details">
-            <About c={c} owners={p.owners} />
+            <Details c={c} owners={p.owners} />
           </Section>
           <Section title={dealsCfg.many}>
             <CustomerDeals c={c} deals={p.deals} stages={p.dealStages} />
@@ -143,7 +143,7 @@ export function CustomerPage(p: {
 function Reach({ c }: { c: Customer }) {
   const parts = [
     c.company ? <span>{c.company}</span> : null,
-    c.phone ? <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`} class="whitespace-nowrap text-ink-2">{c.phone}</a> : null,
+    c.phone ? <a href={telHref(c.phone)} class="whitespace-nowrap text-ink-2">{c.phone}</a> : null,
     c.email ? <a href={`mailto:${c.email}`} class="break-all text-ink-2">{c.email}</a> : null,
   ].filter(Boolean);
   if (!parts.length) return null;
@@ -151,7 +151,7 @@ function Reach({ c }: { c: Customer }) {
 }
 
 /** Their details as values, then Edit for the form. */
-function About({ c, owners }: { c: Customer; owners: string[] }) {
+function Details({ c, owners }: { c: Customer; owners: string[] }) {
   const custom = cfg.fields.map((f) => ({ label: f.label, value: fieldText(c.fields?.[f.key]) || null }));
   return (
     <ReadThenEdit
@@ -167,12 +167,12 @@ function About({ c, owners }: { c: Customer; owners: string[] }) {
           { label: "Last contact", value: c.last_contact_at ? <When at={c.last_contact_at} timeZone={timeZone} /> : null },
       ]}
     >
-      <Details c={c} owners={owners} />
+      <DetailsForm c={c} owners={owners} />
     </ReadThenEdit>
   );
 }
 
-function Details({ c, owners }: { c: Customer; owners: string[] }) {
+function DetailsForm({ c, owners }: { c: Customer; owners: string[] }) {
   return (
     <form method="post" action={`/customers/${c.id}`} class="grid gap-3">
       <Field label="Name">
@@ -329,10 +329,7 @@ function BookingItem({ i, customerId }: { i: Extract<HistoryItem, { kind: "booki
         i.visit_id ? (
           <a href={`/visits/${i.visit_id}`} class="text-label">The {visitsCfg.one.toLowerCase()}</a>
         ) : (
-          <form method="post" action={`/bookings/${i.id}/job`}>
-            <input type="hidden" name="customer" value={customerId} />
-            <button class={buttonClass}>Create {visitsCfg.one.toLowerCase()}</button>
-          </form>
+          <JobFromBooking bookingId={i.id} customerId={customerId} />
         )
       ) : null}
     </div>
@@ -361,11 +358,11 @@ function HistoryEntry({ i, customerId }: { i: HistoryItem; customerId: string })
         <BookingItem i={i} customerId={customerId} />
       ) : i.kind === "quote" || i.kind === "invoice" ? (
         <p>
-          <a href={i.kind === "quote" ? `/invoices/quotes/${i.id}` : `/invoices/${i.id}`}>{money(i.total_cents, i.currency)}</a>
+          <a href={i.kind === "quote" ? `/invoices/quotes/${i.id}` : `/invoices/${i.id}`}>{formatMoney(i.total_cents, i.currency)}</a>
         </p>
       ) : (
         <p>
-          {money(i.amount_cents, i.currency)}
+          {formatMoney(i.amount_cents, i.currency)}
           {i.description ? `, ${i.description}` : ""}
           {i.livemode === false ? " (test mode)" : ""}
         </p>

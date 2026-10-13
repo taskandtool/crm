@@ -5,7 +5,8 @@ import { cfg } from "../src/config";
 import { addFromInbox, inboxPage, markDone, sinceDays, sourceOf, submissionStatus, type InboxKind, type InboxRow } from "../src/crm/inbox";
 import { firstOpenStage } from "../src/crm/stages";
 import { missingSentence } from "../src/crm/tables";
-import { money, wallTime, wallToInstant } from "../src/crm/text";
+import { wallTime, wallToInstant } from "../src/crm/text";
+import { formatMoney } from "../src/payments/money";
 import { done, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, usage, who, withDb } from "./lib";
 
 const HELP = `inbox.mjs [list] [--since 7d|YYYY-MM-DD (in the business's zone)] [--unmatched] [--limit 50] [--json]
@@ -46,7 +47,7 @@ function since(v: string | undefined): Date | null {
 function line(r: InboxRow): string {
   const person = [r.name, r.email, r.phone].filter(Boolean).join(" ");
   const what =
-    r.kind === "booking" ? `booked for ${local(r.starts_at)}${r.resource_name ? " with " + r.resource_name : ""}` : r.kind === "payment" ? money(r.amount_cents, r.currency) : "";
+    r.kind === "booking" ? `booked for ${local(r.starts_at)}${r.resource_name ? " with " + r.resource_name : ""}` : r.kind === "payment" ? formatMoney(r.amount_cents, r.currency) : "";
   const match = r.customer_id ? `-> #${r.customer_id} ${r.customer_name}${r.customer_archived_at ? " (archived)" : ""}` : "-> not a customer yet";
   return [`${r.kind} ${r.id}`, local(r.created_at), sourceOf(r), `(${r.status})`, person, what, match].filter(Boolean).join("  ");
 }
@@ -57,7 +58,7 @@ await withDb(async (db) => {
     case "list": {
       const limit = limitOf(a, at, { max: 500 });
       const { rows, next, present } = await inboxPage(db, { inbox: cfg.inbox, since: since(flag(a, "since")), unmatched: has(a, "unmatched") }, null, limit);
-      const missing = missingSentence(present, { submissions: true, bookings: cfg.inbox.bookings !== false, payments: cfg.inbox.payments !== false });
+      const missing = missingSentence(present, { bookings: cfg.inbox.bookings !== false, payments: cfg.inbox.payments !== false });
       if (json) return out(true, { rows, more: !!next, missing }, String);
       const extra = [missing ?? "", next ? `the first ${limit}; --limit ${Math.min(limit * 4, 500)} or a narrower --since for more` : ""].filter(Boolean);
       if (!rows.length) return done(at, `nothing came in${has(a, "unmatched") ? " from anyone who is not a customer yet" : ""}`, { lines: extra });

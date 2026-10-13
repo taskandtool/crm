@@ -28,7 +28,7 @@ import { envOf } from "../data/env";
 import { senderOf, sendEmail, type Email, type Sent } from "../data/send";
 import { formatMoney } from "../payments/money";
 import { stripeConnected, stripeFrom, type Stripe } from "../payments/stripe";
-import { dayText, invoiceHtml, quoteHtml, quoteMessage, sendQuote, taxSummary } from "./document";
+import { addDays, dayText, invoiceHtml, quoteHtml, quoteMessage, sendQuote, taxSummary, todayIn } from "./document";
 import { createTaxRate, percentText, setTaxRateActive, taxRates, type TaxRate } from "../payments/tax";
 import { amountInput, type Errors, type SavedLine } from "./lines";
 import {
@@ -36,7 +36,7 @@ import {
   type Quote, type QuoteRow, type QuoteStatus,
 } from "./quotes";
 import {
-  createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, INVOICE_STATUSES, INVOICE_STATUS_LABELS, invoiceTotals, saveInvoice,
+  createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, INVOICE_STATUSES, INVOICE_STATUS_LABELS, invoiceTotals, pastDue, saveInvoice,
   type Invoice, type InvoiceRow, type InvoiceStatus,
 } from "./invoices";
 import { closePayLink, markPaidOutOfBand, markUncollectible, payLinkForQuote, sendInvoice, voidInvoice } from "./stripe";
@@ -57,8 +57,6 @@ export type InvoicesAdminOptions = {
   business: string;
   /** A new quote's currency; default usd. */
   currency?: string;
-  /** A new quote is valid this many days; default 30. */
-  validDays?: number;
   /** Standing terms a new quote starts with ("Payment due within 14 days of the work."). */
   terms?: string | null;
   nav?: NavItem[];
@@ -69,7 +67,7 @@ export type InvoicesAdminOptions = {
   send?: (c: Ctx, mail: Email) => Promise<Sent>;
   /** A PDF of the document's HTML, or null when this runtime cannot print (production). */
   print?: (c: Ctx, html: string) => Promise<Uint8Array | null>;
-  /** More on a quote's page: the CRM's customer, its job, "Make it a job". */
+  /** More on a quote's page: the CRM's customer, its job, "Create job". */
   quoteExtra?: (c: Ctx, qt: Quote) => Child | Promise<Child>;
   /** More on an invoice's page: the CRM's customer and job. */
   invoiceExtra?: (c: Ctx, inv: Invoice) => Child | Promise<Child>;
@@ -83,7 +81,7 @@ export type InvoicesAdminOptions = {
   stripe?: (c: Ctx) => Stripe;
 };
 
-export const INVOICE_OPTIONS: StatusOption[] = INVOICE_STATUSES.map((s) => ({
+const INVOICE_OPTIONS: StatusOption[] = INVOICE_STATUSES.map((s) => ({
   value: s,
   label: INVOICE_STATUS_LABELS[s],
   tone: s === "paid" ? "accent" : s === "open" ? "strong" : s === "draft" ? "neutral" : "muted",
@@ -153,12 +151,6 @@ const MESSAGES: FlashMessages = {
 };
 
 
-/** Today in the business's zone, as YYYY-MM-DD. */
-export function todayIn(zone: string, now = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-}
-
-const addDays = (day: string, n: number) => new Date(Date.parse(day + "T00:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
 
 /**
  * The form's repeated line fields as rows, by index. Tax is one choice for
@@ -297,7 +289,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const currency = (qy("currency") || opts.currency || "usd").toLowerCase();
     const values: FormValues = {
       email: qy("email"), name: qy("name"), phone: qy("phone"), address: qy("address"), currency,
-      valid_until: addDays(todayIn(opts.timeZone), opts.validDays ?? 30), notes: "", terms: opts.terms ?? "", days_until_due: "", visit_id: qy("visit"), deal_id: qy("deal"),
+      valid_until: addDays(todayIn(opts.timeZone), 30), notes: "", terms: opts.terms ?? "", days_until_due: "", visit_id: qy("visit"), deal_id: qy("deal"),
       lines: qy("line") ? [{ description: qy("line"), quantity: "1", unit: qy("unit"), tax_rate_id: "" }] : [],
     };
     return editor(c, { title: "New quote", action: qbase, values, errors: {}, current: qbase });
@@ -602,7 +594,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
         {(await stripeReady(c)) ? null : needStripe}
         {totals ? <Totals totals={totals} currency={currency} base={base} /> : null}
         <SearchBar action={base} target="#results" q={q} placeholder="Number, name or email"
-          filters={[{ name: "status", label: "Status", options: [...INVOICE_OPTIONS, { value: "due", label: "Past due" }], value: params.status, any: "Any status" }]} />
+          filters={[{ name: "status", label: "Status", options: SHOWN_INVOICE, value: params.status, any: "Any status" }]} />
         {results}
       </>
     ));
@@ -651,13 +643,12 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const draft = inv.status === "draft" && !inv.stripe_invoice_id;
     const extra = opts.invoiceExtra ? await opts.invoiceExtra(c, inv) : null;
     const quote = inv.quote_id ? await quoteById(getDb(c), inv.quote_id) : null;
-    const pastDue = inv.status === "open" && !!inv.due_date && inv.due_date < todayIn(opts.timeZone) && (!quote || quote.status === "accepted");
     return framed(c, base, {
       title: inv.number ? `Invoice ${inv.number}` : "Draft invoice",
       back: { href: base, label: "Invoices" },
       sub: (
         <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <StatusBadge value={pastDue ? "due" : inv.status} options={SHOWN_INVOICE} />
+          <StatusBadge value={pastDue(inv, todayIn(opts.timeZone), quote) ? "due" : inv.status} options={SHOWN_INVOICE} />
           <span>{inv.name ?? inv.email} · {money(inv.total_cents, inv.currency)}</span>
           {inv.livemode === false ? <span class="text-label text-ink-3">Stripe test mode: not real money</span> : null}
         </p>

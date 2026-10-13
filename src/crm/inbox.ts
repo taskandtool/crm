@@ -11,6 +11,7 @@
 // text and casts back exactly (admin/keyset.ts has the microsecond rule).
 import type { Db } from "../data/db";
 import { normalizeEmail } from "../data/email";
+import { fromB64url, toB64url } from "../data/token";
 import type { CustomField, InboxConfig } from "../config-schema";
 import { createCustomer, fillBlanks, validK, type Customer } from "./customers";
 import { readFields } from "./fields";
@@ -55,13 +56,13 @@ export type InboxOptions = {
 };
 
 export function makeInboxCursor(row: InboxRow): string {
-  return b64url(JSON.stringify([row.k, RANK[row.kind], row.id]));
+  return toB64url(new TextEncoder().encode(JSON.stringify([row.k, RANK[row.kind], row.id])));
 }
 
 export function readInboxCursor(s: string | null | undefined): InboxCursor | null {
   if (!s) return null;
   try {
-    const [k, r, id] = JSON.parse(fromB64url(s));
+    const [k, r, id] = JSON.parse(new TextDecoder().decode(fromB64url(s)));
     if (typeof k !== "string" || !validK(k) || ![0, 1, 2].includes(r) || typeof id !== "string" || !/^\d{1,18}$/.test(id)) return null;
     return { k, r, id };
   } catch {
@@ -309,11 +310,6 @@ export async function submissionStatus(db: Db, id: string): Promise<string | nul
 export function sinceDays(days: number, now = new Date()): Date {
   return new Date(now.getTime() - days * 86_400_000);
 }
-
-const b64url = (s: string) =>
-  btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const fromB64url = (s: string) =>
-  new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (ch) => ch.charCodeAt(0)));
 
 /** The forms the Inbox counts (crm.config.json's inbox), for its filter; none before any app made the forms table. */
 export async function formChoices(db: Db, ib: InboxConfig): Promise<{ key: string; title: string }[]> {

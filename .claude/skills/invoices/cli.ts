@@ -19,8 +19,7 @@ import { sendEmail } from "../data/send";
 import { formatMoney } from "../payments/money";
 import { stripeFrom } from "../payments/stripe";
 import { createTaxRate, percentText, taxRates, type TaxRate } from "../payments/tax";
-import { todayIn } from "./admin";
-import { quoteMessage, sendQuote } from "./document";
+import { addDays, quoteMessage, sendQuote, todayIn } from "./document";
 import {
   createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, owed, saveInvoice, INVOICE_STATUSES,
   type Invoice, type InvoiceFields, type InvoiceStatus,
@@ -226,7 +225,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
           };
         } else {
           const p = await personOf(db, cli, rest[0], at);
-          const valid = new Date(Date.parse(todayIn(cli.timeZone) + "T00:00:00Z") + 30 * 86_400_000).toISOString().slice(0, 10);
+          const valid = addDays(todayIn(cli.timeZone), 30);
           f = { ...p, currency: cli.currency, valid_until: valid, terms: cli.terms ?? null, lines: [] };
         }
         const set = (k: keyof QuoteFields, flagName: string) => {

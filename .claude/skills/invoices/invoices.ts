@@ -171,6 +171,10 @@ export async function invoiceById(db: Db, id: string): Promise<(Invoice & { line
   return rows[0] ? { ...toInvoice(rows[0]), lines: lines.map(toLine) } : null;
 }
 
+/** Past due as the invoices list counts it: open, its due day gone, and its quote (if any) accepted. */
+export const pastDue = (inv: Invoice, today: string, quote: { status: string } | null): boolean =>
+  inv.status === "open" && !!inv.due_date && inv.due_date < today && (!inv.quote_id || quote?.status === "accepted");
+
 /** Invoices for one customer, one job or one quote, newest first. */
 export async function invoicesFor(db: Db, by: { email?: string | null; visitId?: string | null; quoteId?: string | null }): Promise<Invoice[]> {
   const email = by.email ?? null, visit = by.visitId ?? null, quote = by.quoteId ?? null;
@@ -191,15 +195,15 @@ export async function invoicesPage(db: Db, f: InvoiceFilter, after: { k: string;
   const pat = likePattern(f.q);
   const k = after?.k ?? null, id = after?.id ?? null;
   const rows = await db.sql`
-    select *, to_char(due_date, 'YYYY-MM-DD') as due_day, created_at::text as k,
-           (status = 'open' and due_date < ${today}::date
-            and (quote_id is null or exists (select 1 from quotes q where q.id = invoices.quote_id and q.status = 'accepted'))) as past_due
-    from invoices
-    where (${pat}::text is null or number ilike ${pat} or email::text ilike ${pat} or name ilike ${pat})
-      and (${f.status}::text is null or status = ${f.status})
-      and (not ${f.due} or (status = 'open' and due_date < ${today}::date
-                             and (quote_id is null or exists (select 1 from quotes q where q.id = invoices.quote_id and q.status = 'accepted'))))
-      and (${k}::timestamptz is null or (created_at, id) < (${k}::timestamptz, ${id}::bigint))
+    select * from (
+      select *, to_char(due_date, 'YYYY-MM-DD') as due_day, created_at::text as k,
+             (status = 'open' and due_date < ${today}::date
+              and (quote_id is null or exists (select 1 from quotes q where q.id = invoices.quote_id and q.status = 'accepted'))) as past_due
+      from invoices
+      where (${pat}::text is null or number ilike ${pat} or email::text ilike ${pat} or name ilike ${pat})
+        and (${f.status}::text is null or status = ${f.status})
+        and (${k}::timestamptz is null or (created_at, id) < (${k}::timestamptz, ${id}::bigint))) i
+    where not ${f.due} or past_due
     order by created_at desc, id desc limit ${size + 1}`;
   return rows.map((r) => ({ ...toInvoice(r), k: r.k, past_due: r.past_due === true }));
 }

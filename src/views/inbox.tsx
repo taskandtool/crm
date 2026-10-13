@@ -8,29 +8,20 @@ import { Flash } from "../admin/flash";
 import { EmptyCard, rowClick, When } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { StatusBadge, type StatusOption } from "../admin/status";
+import { BOOKING_STATUSES } from "../booking/admin";
 import { dealsCfg, invoicesCfg, showBooking, vocab } from "../config";
 import type { Overview } from "../crm/overview";
 import { sourceOf, type InboxRow } from "../crm/inbox";
-import { cash, money } from "../crm/text";
+import { cash } from "../crm/text";
+import { STATUSES as SUBMISSION_STATUSES } from "../forms/admin";
+import { STATUSES as PAYMENT_STATUSES } from "../payments/admin";
+import { formatMoney } from "../payments/money";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, MESSAGES, timeZone } from "./ui";
+import { buttonClass, controlClass, MESSAGES, timeZone, ViewLink } from "./ui";
 
-const SUBMISSION: StatusOption[] = [
-  { value: "new", label: "New", tone: "accent" },
-  { value: "read", label: "Read", tone: "strong" },
-  { value: "done", label: "Done", tone: "muted" },
-];
-const BOOKING: StatusOption[] = [
-  { value: "confirmed", label: "Confirmed", tone: "strong" },
-  { value: "cancelled", label: "Cancelled", tone: "muted" },
-  { value: "completed", label: "Completed", tone: "neutral" },
-  { value: "no_show", label: "No show", tone: "muted" },
-];
-const PAYMENT: StatusOption[] = [
-  { value: "paid", label: "Paid", tone: "strong" },
-  { value: "refunded", label: "Refunded", tone: "muted" },
-  { value: "partially_refunded", label: "Partly refunded", tone: "neutral" },
-];
+// Each kind's own labels, as its page shows them; in the Inbox only New stands out.
+const quiet = (list: StatusOption[]): StatusOption[] => list.map((o) => (o.value !== "new" && o.tone === "accent" ? { ...o, tone: "strong" } : o));
+const SUBMISSION = quiet(SUBMISSION_STATUSES), BOOKING = quiet(BOOKING_STATUSES), PAYMENT = quiet(PAYMENT_STATUSES);
 
 export type InboxProps = {
   user: string;
@@ -78,10 +69,7 @@ export function InboxPage(p: InboxProps) {
       <div class="mb-4 flex flex-wrap items-center justify-between gap-3 text-label">
         <nav aria-label="Which" class="flex gap-1">
           {[["To do", false], ["Everything", true]].map(([label, all]) => (
-            <a href={listUrl("/", { view: all ? "all" : null, form: p.form })} aria-current={p.all === all ? "page" : undefined}
-              class={"rounded-control px-2 py-1 no-underline " + (p.all === all ? "bg-panel font-semibold" : "text-ink-2 hover:bg-panel")}>
-              {label}
-            </a>
+            <ViewLink href={listUrl("/", { view: all ? "all" : null, form: p.form })} on={p.all === all}>{label}</ViewLink>
           ))}
         </nav>
         {/* Applies on change (htmx swaps #results and pushes the URL); the button is for a browser without JavaScript. */}
@@ -238,7 +226,7 @@ function What({ row }: { row: InboxRow }) {
   }
   return (
     <p class="mt-1 text-ink-2">
-      {money(row.amount_cents, row.currency)}
+      {formatMoney(row.amount_cents, row.currency)}
       {row.pay_kind !== "full" ? ` ${row.pay_kind}` : ""}
       {row.description ? `, ${row.description}` : ""}
       {row.livemode === false ? " (test mode)" : ""}

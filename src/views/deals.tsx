@@ -15,9 +15,8 @@ import { dueOf, type Task } from "../crm/tasks";
 import { KIND_LABELS, type Stage } from "../crm/stages";
 import { cash } from "../crm/text";
 import { amountText, type Visit } from "../crm/visits";
-import { QUOTE_OPTIONS, todayIn } from "../invoices/admin";
-import { shownStatus, type Quote } from "../invoices/quotes";
-import { formatMoney } from "../payments/money";
+import type { Quote } from "../invoices/quotes";
+import { Docs } from "./money";
 import { TasksSection } from "./tasks";
 import { Layout } from "./layout";
 import { AddToggle, buttonClass, controlClass, dueDayText, CustomerPicker, DueMark, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, stageOptions, timeZone } from "./ui";
@@ -273,15 +272,7 @@ export function DealPage(p: {
           {p.quotes && (p.quotes.length || !closed) ? (
             <Section title="Quotes">
               {p.quotes.length ? (
-                <ul class="flex flex-col gap-2">
-                  {p.quotes.map((q) => (
-                    <li class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <a href={`/invoices/quotes/${q.id}`}>Quote {q.number}</a>
-                      <StatusBadge value={shownStatus(q, todayIn(timeZone))} options={QUOTE_OPTIONS} />
-                      <span class="whitespace-nowrap">{formatMoney(q.total_cents, q.currency)}</span>
-                    </li>
-                  ))}
-                </ul>
+                <Docs quotes={p.quotes} invoices={[]} />
               ) : (
                 <p class="text-ink-3">No quotes yet. {d.customer_email ? `Accepting a quote marks the ${one} won.` : `Add an email to ${d.customer_name} to send a quote.`}</p>
               )}

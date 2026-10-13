@@ -1,11 +1,11 @@
 # Bookings in the CRM
 
-Read when setting up what can be booked, who takes it, their hours and calendars, booking messages, or "Make it a job".
+Read when setting up what can be booked, who takes it, their hours and calendars, booking messages, or "Create job".
 
 ## Bookings
 
 A customer books a **type** (an estimate visit, an installation, a video
-call) and one of its **hosts** takes it. Here, under Bookings, the team
+call) and one of its **hosts** takes it. Here, under Schedule, the team
 sets its Services (`/bookings/types`: length, gaps for travel,
 notice, and where it happens, whether at their place, at ours, by phone or
 by video link), who takes each, each person's weekly hours, time off and Google or
@@ -37,8 +37,8 @@ is a `Send` written against the owner's Twilio connection (the `booking`
 skill's "Messages and reminders"). Never send through Task & Tool.
 
 A booking is a time on someone's calendar; a job is the record of the
-work. "Make it a job" (on the booking, on the customer's page, or in the
-Jobs page's "Booked, not a job yet") adds the customer if they are new
+work. "Create job" (on the booking, on the customer's page, or in the
+Jobs page's "Bookings to convert") adds the customer if they are new
 (their address from a booking at their place) and a job carrying the
 booking's type, time, host and place, once per booking.
 

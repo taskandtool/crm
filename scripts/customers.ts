@@ -14,7 +14,8 @@ import { addNote, listNotes, pickNoteKind, NOTE_KINDS } from "../src/crm/notes";
 import { phoneKey } from "../src/crm/phone";
 import { customerVisits } from "../src/crm/visits";
 import { firstOpenStage, listStages, resolveStage } from "../src/crm/stages";
-import { clean, money, parseTags, relativeWall, wallTime } from "../src/crm/text";
+import { clean, parseTags, relativeWall, wallTime } from "../src/crm/text";
+import { formatMoney } from "../src/payments/money";
 import { normalizeEmail } from "../src/data/email";
 import { done, fail, flag, flags, fmtCustomer, has, limitOf, local, misused, noMore, out, parseArgs, resolveCustomer, usage, who, withDb } from "./lib";
 
@@ -115,7 +116,7 @@ await withDb(async (db) => {
             ? "tasks:\n" + tasks.open.map((f) => `  #${f.id} ${f.due_on}${f.due_time ? " " + f.due_time : ""} ${f.kind}: ${f.title}${f.owner ? " @" + f.owner : ""}`).join("\n")
             : "nothing planned",
           deals.length
-            ? `${dealsCfg.many.toLowerCase()}:\n` + deals.map((d) => `  #${d.id} ${d.title} [${dealStage.get(d.stage) ?? d.stage}]${d.shown_cents !== null ? " " + money(d.shown_cents, d.currency ?? dealsCfg.currency) : ""}`).join("\n")
+            ? `${dealsCfg.many.toLowerCase()}:\n` + deals.map((d) => `  #${d.id} ${d.title} [${dealStage.get(d.stage) ?? d.stage}]${d.shown_cents !== null ? " " + formatMoney(d.shown_cents, d.currency ?? dealsCfg.currency) : ""}`).join("\n")
             : `no ${dealsCfg.many.toLowerCase()}`,
           notes.length ? "notes:\n" + notes.map((n) => `  ${local(n.happened_at)} ${n.kind}${n.author ? " " + n.author : ""}: ${n.body}`).join("\n") : "no notes",
           visitsCfg

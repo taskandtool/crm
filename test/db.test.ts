@@ -199,7 +199,7 @@ test("the inbox, with none of the other apps' tables", async (t) => {
   assert.deepEqual(p, { submissions: false, forms: false, bookings: false, resources: false, payments: false, quotes: false, invoices: false });
   const page = await inboxPage(db, { inbox: INBOX }, null, 10);
   assert.deepEqual(page.rows, []);
-  assert.match(missingSentence(page.present, { submissions: true, bookings: true, payments: true })!, /no form submissions, bookings or payments/);
+  assert.match(missingSentence(page.present, { bookings: true, payments: true })!, /no form submissions, bookings or payments/);
   assert.equal(await addFromInbox(db, "submission", "1", "new", ME), null);
   assert.equal((await everythingFrom(db, { email: "ann.lee@example.com", phone: null })).items.length, 0);
 });

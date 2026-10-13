@@ -2,7 +2,8 @@
 import { dealsCfg, visitsCfg } from "../src/config";
 import { createDeal, customerDeals, getDeal, listDeals, saveDeal, setDealArchived, setDealStage, setLostReason, type Deal, type DealInput } from "../src/crm/deals";
 import { firstOfKind, firstOpenStage, listStages, resolveStage } from "../src/crm/stages";
-import { clean, money } from "../src/crm/text";
+import { clean } from "../src/crm/text";
+import { formatMoney } from "../src/payments/money";
 import { readDay } from "../src/crm/tasks";
 import { amountText, parseAmount, visitFromDeal } from "../src/crm/visits";
 import { done, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, resolveCustomer, usage, who, withDb } from "./lib";
@@ -72,7 +73,7 @@ await withDb(async (db) => {
   const stageList = active.map((s) => `${s.key} (${s.label})`).join(", ");
   const user = who(a);
   const fmt = (d: Deal) =>
-    [`#${d.id}`, d.title, `[${label(d.stage)}]`, d.customer_name, d.shown_cents !== null ? money(d.shown_cents, d.currency ?? dealsCfg.currency) + (d.from_quote ? " (its quote)" : "") : "",
+    [`#${d.id}`, d.title, `[${label(d.stage)}]`, d.customer_name, d.shown_cents !== null ? formatMoney(d.shown_cents, d.currency ?? dealsCfg.currency) + (d.from_quote ? " (its quote)" : "") : "",
       d.owner ? `@${d.owner}` : "", d.expected_close ? `close ${d.expected_close}` : "", d.archived_at ? "(archived)" : ""].filter(Boolean).join("  ");
   const result = (data: unknown, what: string, opts: Parameters<typeof done>[2] = {}) => (json ? out(true, data, String) : done(at, what, opts));
   const dealOr = async (id: string | undefined) => {

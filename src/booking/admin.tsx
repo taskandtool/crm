@@ -19,7 +19,7 @@ import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, readCursor, type Cursor, type Keyed } from "../admin/keyset";
 import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
-import { DataTable, EmptyState, NoMatches, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
+import { DataTable, EmptyCard, EmptyState, NoMatches, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
 import { buttonClass, controlClass, fieldClass, pickStatus, primaryClass, StatusBadge, type StatusOption } from "../admin/status";
 import { book, bookableTypes, hostsOf, LOCATION_KINDS, rescheduleById, resourceById, setStatus, toBooking, typeById, whereText, type Booking, type BookingType, type Resource } from "./book";
@@ -66,7 +66,7 @@ export type BookingAdminOptions = {
   manageBase?: string;
   /** After the team books for someone: send the confirmation here (notify.ts). Never throws into the response. */
   onBooked?: (c: Context<{ Variables: TeamVars }>, e: BookingNotice) => void | Promise<void>;
-  /** More on a booking's page, beside its status: the CRM's customer and "Make it a job". */
+  /** More on a booking's page, beside its status: the CRM's customer and "Create job". */
   extra?: (c: Context<{ Variables: TeamVars }>, b: Booking) => Child | Promise<Child>;
   /**
    * The app's own things on the team's days, shown on the Calendar among the
@@ -79,7 +79,7 @@ export type BookingAdminOptions = {
 };
 
 /** One of the app's own things on the Calendar: when, who and what, and where it opens. */
-export type CalendarItem = { starts_at: Date; ends_at: Date | null; href: string; name: string; what: string; badge?: Child; note?: string | null };
+export type CalendarItem = { starts_at: Date; ends_at: Date | null; href: string; name: string; what: string; badge?: Child; note?: Child };
 
 export type { Frame, Head } from "../admin/layout";
 
@@ -294,34 +294,22 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
           {days.map((day) => {
             const b = dayBounds(day, zone);
             const on = (s: Date, e: Date | null) => new Date(s) < b.end && (e ? new Date(e) > b.start : new Date(s) >= b.start);
-            const mine = rows.filter((r) => on(r.starts_at, r.ends_at));
-            const theirs = more.filter((m) => on(m.starts_at, m.ends_at));
-            const away = off.filter((t) => new Date(t.starts_at) < b.end && new Date(t.ends_at) > b.start);
+            const away = off.filter((t) => on(t.starts_at, t.ends_at));
             // Bookings and the app's own things, in one line by when they start.
-            const items: [Date, Child][] = [
-              ...mine.map((r): [Date, Child] => [new Date(r.starts_at), (
-                <li class="flex flex-wrap gap-x-4">
-                  <span class="w-36 shrink-0 whitespace-nowrap text-ink-2">{time(r.starts_at)} – {time(r.ends_at)}</span>
-                  <span class="min-w-0">
-                    <a href={`${base}/${r.id}`} class="font-semibold no-underline hover:underline">{r.name}</a>
-                    <span class="text-ink-2"> · {r.type_name} with {r.host}</span>
-                    {r.status !== "confirmed" ? <> <StatusBadge value={r.status} options={BOOKING_STATUSES} /></> : null}
-                    <span class="block break-words text-label text-ink-3">{whereText(r, { link: true })}</span>
-                  </span>
-                </li>
-              )]),
-              ...theirs.map((m): [Date, Child] => [new Date(m.starts_at), (
-                <li class="flex flex-wrap gap-x-4">
-                  <span class="w-36 shrink-0 whitespace-nowrap text-ink-2">{time(m.starts_at)}{m.ends_at ? ` – ${time(m.ends_at)}` : ""}</span>
-                  <span class="min-w-0">
-                    <a href={m.href} class="font-semibold no-underline hover:underline">{m.name}</a>
-                    <span class="text-ink-2"> · {m.what}</span>
-                    {m.badge ? <> {m.badge}</> : null}
-                    {m.note ? <span class="block break-words text-label text-ink-3">{m.note}</span> : null}
-                  </span>
-                </li>
-              )]),
-            ].sort((x, y) => x[0].getTime() - y[0].getTime());
+            const items = [...rows.map((r): CalendarItem => ({
+              starts_at: r.starts_at, ends_at: r.ends_at, href: `${base}/${r.id}`, name: r.name, what: `${r.type_name} with ${r.host}`,
+              badge: r.status !== "confirmed" ? <StatusBadge value={r.status} options={BOOKING_STATUSES} /> : null, note: whereText(r, { link: true }),
+            })), ...more].filter((m) => on(m.starts_at, m.ends_at)).sort((x, y) => new Date(x.starts_at).getTime() - new Date(y.starts_at).getTime()).map((m) => (
+              <li class="flex flex-wrap gap-x-4">
+                <span class="w-36 shrink-0 whitespace-nowrap text-ink-2">{time(m.starts_at)}{m.ends_at ? ` – ${time(m.ends_at)}` : ""}</span>
+                <span class="min-w-0">
+                  <a href={m.href} class="font-semibold no-underline hover:underline">{m.name}</a>
+                  <span class="text-ink-2"> · {m.what}</span>
+                  {m.badge ? <> {m.badge}</> : null}
+                  {m.note ? <span class="block break-words text-label text-ink-3">{m.note}</span> : null}
+                </span>
+              </li>
+            ));
             return (
               <li class={"flex flex-col gap-2 px-4 py-3 sm:flex-row sm:gap-6 " + (day === today ? "bg-accent/5" : "")}>
                 <h3 class={"w-36 shrink-0 text-label " + (day === today ? "font-semibold text-accent" : "font-semibold text-ink-2")}>
@@ -336,7 +324,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
                       const span = allDay ? "all day" : `${s0 > b.start ? time(s0) : "until"}${s0 > b.start ? " to " : " "}${e0 < b.end ? time(e0) : "the end of the day"}`;
                       return <li class="text-label text-ink-2">{t.name} is off, {span}{t.note ? ` (${t.note})` : ""}</li>;
                     })}
-                    {items.map(([, node]) => node)}
+                    {items}
                   </ul>
                 ) : <p class="text-label text-ink-3">{opts.more ? "Nothing scheduled" : "Nothing booked"}</p>}
               </li>
@@ -377,7 +365,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
               ))}
             </ul>
           </>
-        ) : <p class="text-ink-2">Nothing can be booked yet. <a href={`${base}/types/new`}>Add a service</a></p>}
+        ) : <EmptyCard title="Nothing can be booked yet." action={<a href={`${base}/types/new`} class={primaryClass}>New service</a>}>A booking is for a service: an estimate visit, a consultation, a video call.</EmptyCard>}
       </>
     ));
   });
@@ -883,7 +871,7 @@ export function typeRoutes(getDb: GetDb, opts: BookingAdminOptions) {
               </li>
             ))}
           </ul>
-        ) : <p class="text-ink-2">Nothing can be booked yet. <a href={`${base}/new`}>Add a service</a>: an estimate visit, a consultation, a video call.</p>}
+        ) : <EmptyCard title="No services yet.">A service is what people book: an estimate visit, a consultation, a video call. Make one with New service.</EmptyCard>}
       </>
     ));
   });
@@ -1032,7 +1020,7 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
               );
             })}
           </ul>
-        ) : <p class="text-ink-2">Nobody takes bookings yet. <a href={`${base}/new`}>Add the first person</a></p>}
+        ) : <EmptyCard title="Nobody takes bookings yet.">Each person on the team has their own hours and calendar. Start with Add team member.</EmptyCard>}
       </>
     ));
   });

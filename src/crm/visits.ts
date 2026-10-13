@@ -9,6 +9,8 @@ import type { CsvColumn } from "../admin/csv";
 import { likePattern } from "../admin/query";
 import type { CustomField } from "../config-schema";
 import { q, type Db } from "../data/db";
+import { amountInput } from "../invoices/lines";
+import { decimals } from "../payments/money";
 import { fieldText } from "./fields";
 
 export const VISIT_STATUSES = ["planned", "done", "cancelled"] as const;
@@ -56,14 +58,6 @@ export type VisitInput = {
 export type VisitView = "upcoming" | "invoice" | "done" | "all";
 export type VisitFilter = { view: VisitView; owner: string | null; q: string | null };
 
-const digitsOf = (currency: string): number => {
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2;
-  } catch {
-    return 2;
-  }
-};
-
 /**
  * "1,245.50" or "$90" as minor units of `currency`: null for an empty box,
  * "invalid" for anything that is not a plain amount of zero or more (a
@@ -72,7 +66,7 @@ const digitsOf = (currency: string): number => {
 export function parseAmount(v: unknown, currency: string): number | null | "invalid" {
   const s = typeof v === "string" ? v.trim().replace(/^\p{Sc}\s*/u, "").replace(/[, ]/g, "") : typeof v === "number" ? String(v) : "";
   if (!s) return null;
-  const d = digitsOf(currency);
+  const d = decimals(currency);
   const m = s.match(d ? new RegExp(`^(\\d{1,12})(?:\\.(\\d{1,${d}}))?$`) : /^(\d{1,12})$/);
   if (!m) return "invalid";
   return Number(m[1]) * 10 ** d + Number((m[2] ?? "").padEnd(d, "0") || 0);
@@ -80,12 +74,7 @@ export function parseAmount(v: unknown, currency: string): number | null | "inva
 
 /** Minor units as a plain amount for an input or a CSV cell: 124550 USD is "1245.50". */
 export function amountText(cents: string | number | null, currency: string): string {
-  if (cents === null || cents === "") return "";
-  const d = digitsOf(currency);
-  const n = BigInt(cents);
-  if (!d) return n.toString();
-  const unit = 10n ** BigInt(d);
-  return `${n / unit}.${(n % unit).toString().padStart(d, "0")}`;
+  return cents === null || cents === "" ? "" : amountInput(cents, currency);
 }
 
 // The customer's last contact moves to their latest visit done, as a call's
@@ -245,7 +234,7 @@ export function visitsPage(db: Db, f: VisitFilter, after: Cursor | null, size: n
 }
 
 /**
- * "Make it a job": a planned visit (done, once the booking is completed) for
+ * "Create job": a planned visit (done, once the booking is completed) for
  * this customer, carrying the booking's type, time, host and place. A
  * booking makes one visit at most: a second click returns the first.
  */
@@ -275,7 +264,7 @@ export async function visitFromBooking(db: Db, bookingId: string, customerId: st
 }
 
 /**
- * "Make it a job" from a won deal: a planned visit for its customer, titled
+ * "Create job" from a won deal: a planned visit for its customer, titled
  * as the deal, worth what the deal shows. One per deal: the deal is locked
  * first, so a second click returns the first.
  */
@@ -307,7 +296,7 @@ export function dealVisits(db: Db, dealId: string): Promise<Visit[]> {
 
 export type OpenBooking = { id: string; starts_at: Date; name: string; email: string; type_name: string | null; host_name: string | null; customer_id: string | null };
 
-/** Confirmed bookings still to come that no job was made from, soonest first: the "booked, not a job yet" list. */
+/** Confirmed bookings still to come that no job was made from, soonest first: the Jobs page's "Bookings to convert". */
 export function bookingsWithoutJob(db: Db, limit = 20): Promise<OpenBooking[]> {
   return db.sql<OpenBooking>`
     select b.id::text as id, b.starts_at, b.name, b.email::text as email, t.name as type_name, r.name as host_name,

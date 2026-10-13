@@ -74,6 +74,19 @@ export function DueMark({ next, today }: { next: { due_on: string; due_time: str
  * stage): htmx posts it and swaps in the page the POST redirects to, flash
  * included. Without JavaScript it is a form with a Save button.
  */
+/** One of a list's views (Today, Upcoming; To do, Everything), the current one filled in. */
+export function ViewLink({ href, on, children }: { href: string; on: boolean; children: Child }) {
+  return (
+    <a href={href} aria-current={on ? "page" : undefined}
+      class={"rounded-control px-2 py-1 no-underline " + (on ? "bg-panel font-semibold" : "text-ink-2 hover:bg-panel")}>
+      {children}
+    </a>
+  );
+}
+
+/** A phone number as a link that dials it. */
+export const telHref = (phone: string) => `tel:${phone.replace(/[^0-9+]/g, "")}`;
+
 export function SaveOnChange(p: { action: string; current: string; options: StatusOption[]; label: string; returnTo: string }) {
   return (
     <form method="post" action={p.action} hx-post={p.action} hx-trigger="change" hx-target="main" hx-select="main" hx-swap="outerHTML" class="flex items-center gap-2">

@@ -22,9 +22,9 @@ export async function present(db: Db): Promise<Present> {
 }
 
 /** One sentence about what is left out, or null when nothing is. */
-export function missingSentence(p: Present, wanted: { submissions: boolean; bookings: boolean; payments: boolean }): string | null {
+export function missingSentence(p: Present, wanted: { bookings: boolean; payments: boolean }): string | null {
   const names: string[] = [];
-  if (wanted.submissions && !p.submissions) names.push("form submissions");
+  if (!p.submissions) names.push("form submissions");
   if (wanted.bookings && !p.bookings) names.push("bookings");
   if (wanted.payments && !p.payments) names.push("payments");
   if (!names.length) return null;

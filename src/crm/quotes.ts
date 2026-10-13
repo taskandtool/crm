@@ -1,5 +1,5 @@
 // What the CRM adds to the invoices skill's quotes: the customer a quote is
-// for, and "Make it a job" for an accepted quote that has none.
+// for, and "Create job" for an accepted quote that has none.
 import { q, type Db } from "../data/db";
 import type { Quote } from "../invoices/quotes";
 import type { SavedLine } from "../invoices/lines";
