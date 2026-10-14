@@ -14,7 +14,7 @@ the project database reads the same rows: the Website's `/book` pages
 take bookings, the CRM sets types, hosts and hours and lists the bookings
 by email.
 
-Version: 0.5.5 (taskandtool/skills)
+Version: 0.6.0 (taskandtool/skills)
 
 ## The rules
 
@@ -40,6 +40,10 @@ Version: 0.5.5 (taskandtool/skills)
 - **A booker is a customer** from the moment they book: `takeSlot` saves
   them through the customers skill (`savePerson`), a visit at their place
   giving their address.
+- **A booker's own changes are noted.** A move or cancel through their
+  manage link writes a `booking_changes` row in the same statement, so the
+  CRM's Inbox shows what the team did not do. The team's changes are not
+  noted there.
 - **One appointment table.** `bookings` also holds what the team schedules
   itself (the CRM's events): such a row may have no service (`title` names
   it), nobody assigned yet, or no email. Read it with `left join` to

@@ -26,7 +26,10 @@
 //   await applySchema(db, readFileSync("src/booking/schema.sql", "utf8"));
 import { q, type Db, type Query } from "./db";
 
-const LOOSEN = /^alter\s+table\s+(if\s+exists\s+)?\w+\s+alter\s+column\s+\w+\s+drop\s+not\s+null$/i;
+// Loosening is the one change to what exists that is safe while older apps
+// still run: a column that may now be null, or a check (Postgres's
+// <table>_<column>_check) that now allows more. An older app's writes still pass both.
+const LOOSEN = /^alter\s+table\s+(if\s+exists\s+)?\w+\s+(alter\s+column\s+\w+\s+drop\s+not\s+null|drop\s+constraint\s+if\s+exists\s+\w+_check)$/i;
 const ALLOWED = [
   /^create\s+table\s+if\s+not\s+exists\s+\w+\s*\(/i,
   /^create\s+(unique\s+)?index\s+if\s+not\s+exists\s+\w+\s+on\s+\w+(\s|\()/i,

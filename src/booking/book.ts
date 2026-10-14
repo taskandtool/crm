@@ -487,7 +487,9 @@ async function moveBooking(db: Db, b: Booking, newStart: Date, by: string | null
   const st = settingsOf(type);
   const start = slot.start.toISOString(), end = slot.end.toISOString();
   const gap = st.bufferBeforeMin + st.bufferAfterMin;
+  // A move by the booker (no `by`) is recorded in booking_changes in the same statement.
   const move = q`
+    with moved as (
     update bookings b
     set starts_at = ${start}::timestamptz, ends_at = ${end}::timestamptz, resource_id = ${host}::bigint, sequence = b.sequence + 1, updated_at = now(),
         updated_by = coalesce(${by}::citext, b.updated_by)
@@ -507,7 +509,11 @@ async function moveBooking(db: Db, b: Booking, newStart: Date, by: string | null
         where t.resource_id = ${host}::bigint
           and t.starts_at < ${end}::timestamptz + ${st.bufferAfterMin}::int * interval '1 minute'
           and t.ends_at > ${start}::timestamptz - ${st.bufferBeforeMin}::int * interval '1 minute')
-    returning *`;
+    returning *),
+    noted as (
+      insert into booking_changes (booking_id, kind, was_starts_at, starts_at)
+      select id, 'rescheduled', ${b.starts_at.toISOString()}::timestamptz, starts_at from moved where ${by}::citext is null)
+    select * from moved`;
   const results = await db.transaction([...locks([host]), move]);
   const row = results[results.length - 1][0];
   return row ? { ok: true, booking: toBooking(row) } : { ok: false, reason: "taken" };
@@ -517,10 +523,13 @@ async function moveBooking(db: Db, b: Booking, newStart: Date, by: string | null
 export async function cancelByToken(db: Db, token: string, now = new Date()): Promise<ChangeResult> {
   if (!TOKEN_SHAPE.test(token)) return { ok: false, reason: "not_found" };
   const [r] = await db.sql`
-    update bookings
-    set status = 'cancelled', cancelled_at = now(), sequence = sequence + 1, updated_at = now()
-    where manage_token_hash = ${await tokenHash(token)} and status = 'confirmed' and starts_at > ${now.toISOString()}::timestamptz
-    returning *`;
+    with cancelled as (
+      update bookings
+      set status = 'cancelled', cancelled_at = now(), sequence = sequence + 1, updated_at = now()
+      where manage_token_hash = ${await tokenHash(token)} and status = 'confirmed' and starts_at > ${now.toISOString()}::timestamptz
+      returning *),
+    noted as (insert into booking_changes (booking_id, kind, was_starts_at) select id, 'cancelled', starts_at from cancelled)
+    select * from cancelled`;
   if (r) return { ok: true, booking: toBooking(r) };
   return (await bookingByToken(db, token)) ? { ok: false, reason: "closed" } : { ok: false, reason: "not_found" };
 }

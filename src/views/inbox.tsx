@@ -154,10 +154,12 @@ export function InboxRows({ rows, next, more, self }: { rows: InboxRow[]; next: 
   );
 }
 
-/** Where the thing that came in is kept: the submission, the booking, the payment (when this CRM shows that page). */
+/** Where the thing that came in is kept: the submission, the booking (a change's too), the quote, the payment (when this CRM shows that page). */
 function itemHref(row: InboxRow): string | null {
   if (row.kind === "submission") return `/forms/submissions/${row.id}`;
   if (row.kind === "booking") return eventsCfg ? `/events/${row.id}` : null;
+  if (row.kind === "change") return eventsCfg ? `/events/${row.booking_id}` : null;
+  if (row.kind === "quote") return invoicesCfg ? `/invoices/quotes/${row.id}` : null;
   return invoicesCfg ? `/invoices/payments/${row.id}` : null;
 }
 
@@ -165,7 +167,8 @@ function itemHref(row: InboxRow): string | null {
 // what came in and the person's name opens their customer record (everyone
 // who gets in touch is one, saved as they do). Two actions, both in
 // view: New deal, and Done for what still needs someone, so the To do list
-// can be cleared without opening anything.
+// can be cleared without opening anything. A booker's change or a quote they
+// accepted is news about work already in hand: Done only.
 function Row({ row, self }: { row: InboxRow; self: string }) {
   const person = row.name || row.email || row.phone || "Someone";
   const href = itemHref(row);
@@ -175,8 +178,12 @@ function Row({ row, self }: { row: InboxRow; self: string }) {
       <input type="hidden" name="id" value={row.id} />
     </>
   );
-  // What still needs someone: a form request by its status, an online booking nobody has marked done.
-  const open = row.kind === "submission" ? row.status === "new" || row.status === "read" : row.kind === "booking" && !row.handled && row.status !== "cancelled";
+  // What still needs someone: a form request by its status; an online booking, a booker's change or an online yes nobody has marked done.
+  const open = row.kind === "submission" ? row.status === "new" || row.status === "read"
+    : row.kind === "booking" ? !row.handled && row.status !== "cancelled"
+    : row.kind === "change" || row.kind === "quote" ? !row.handled
+    : false;
+  const enquiry = row.kind === "submission" || row.kind === "booking" || row.kind === "payment";
   const deal = dealsCfg.one.toLowerCase();
   return (
     <li id={`${row.kind}-${row.id}`} {...(href ? rowClick(href) : {})}
@@ -205,10 +212,12 @@ function Row({ row, self }: { row: InboxRow; self: string }) {
         </div>
       </div>
       <div class="flex items-center gap-2 pl-11 sm:pl-0">
-        <form method="post" action="/inbox/deal">
-          {hidden}
-          <button class={buttonClass} aria-label={`New ${deal} for ${person}`}>New {deal}</button>
-        </form>
+        {enquiry ? (
+          <form method="post" action="/inbox/deal">
+            {hidden}
+            <button class={buttonClass} aria-label={`New ${deal} for ${person}`}>New {deal}</button>
+          </form>
+        ) : null}
         {open ? (
           <form method="post" action="/inbox/done">
             {hidden}
@@ -221,8 +230,12 @@ function Row({ row, self }: { row: InboxRow; self: string }) {
   );
 }
 
+// A booker's change says what they did; a quote's yes is the accent, as a won stage is.
+const CHANGE: StatusOption[] = [{ value: "rescheduled", label: "Rescheduled", tone: "strong" }, { value: "cancelled", label: "Cancelled", tone: "muted" }];
+const QUOTE: StatusOption[] = [{ value: "accepted", label: "Accepted", tone: "accent" }];
+
 function Status({ row }: { row: InboxRow }) {
-  const options = row.kind === "submission" ? SUBMISSION : row.kind === "booking" ? BOOKING : PAYMENT;
+  const options = row.kind === "submission" ? SUBMISSION : row.kind === "booking" ? BOOKING : row.kind === "change" ? CHANGE : row.kind === "quote" ? QUOTE : PAYMENT;
   return <StatusBadge value={row.status} options={options} />;
 }
 
@@ -239,6 +252,20 @@ function What({ row }: { row: InboxRow }) {
         {row.resource_name ? ` with ${row.resource_name}` : ""}
       </p>
     );
+  }
+  if (row.kind === "change") {
+    // In the booker's own words of it: what moved, from when to when, or what they cancelled.
+    return (
+      <p class="mt-1.5 text-ink-2">
+        {row.type_name ?? "Their booking"}
+        {row.resource_name ? ` with ${row.resource_name}` : ""}
+        {row.starts_at ? <>{" moved from "}<When at={row.was_starts_at} timeZone={timeZone} />{" to "}<When at={row.starts_at} timeZone={timeZone} /></>
+          : <>{" on "}<When at={row.was_starts_at} timeZone={timeZone} />{", cancelled by them"}</>}
+      </p>
+    );
+  }
+  if (row.kind === "quote") {
+    return <p class="mt-1.5 text-ink-2">{formatMoney(row.total_cents, row.currency)}, accepted and paid online</p>;
   }
   return (
     <p class="mt-1.5 text-ink-2">

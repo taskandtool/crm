@@ -134,6 +134,42 @@ test("the Inbox: everyone in it is a customer already, then New deal and Done", 
   assert.doesNotMatch(await (await get("/")).text(), /Do you service boilers\?/, "Done takes it off To do");
 });
 
+test("the Inbox shows a booker's own reschedule and a quote paid online, with Done only; a quote the team marked is not news", async (t) => {
+  if (skip) return t.skip(skip);
+  const [b] = await db.sql<{ id: string }>`
+    insert into bookings (starts_at, ends_at, name, email, status, location_kind, source)
+    values ('2099-05-01 15:00+00', '2099-05-01 16:00+00', 'Rae Fox', 'rae.fox@example.com', 'confirmed', 'our_place', 'website') returning id::text as id`;
+  const [ch] = await db.sql<{ id: string }>`
+    insert into booking_changes (booking_id, kind, was_starts_at, starts_at)
+    values (${b.id}::bigint, 'rescheduled', '2099-04-30 15:00+00', '2099-05-01 15:00+00') returning id::text as id`;
+  const [paid] = await db.sql<{ id: string }>`
+    insert into quotes (number, email, name, status, currency, total_cents, decided_at, decided_by)
+    values ('Q-9001', 'rae.fox@example.com', 'Rae Fox', 'accepted', 'usd', 238000, now(), 'paid online') returning id::text as id`;
+  await db.sql`
+    insert into quotes (number, email, name, status, currency, total_cents, decided_at, decided_by)
+    values ('Q-9002', 'rae.fox@example.com', 'Rae Fox', 'accepted', 'usd', 5000, now(), 'ann@team.example')`;
+
+  const html = await (await get("/")).text();
+  const row = (kind: string, id: string) => html.match(new RegExp(`<li id="${kind}-${id}"[\\s\\S]*?</li>`))?.[0] ?? "";
+  const moved = row("change", ch.id);
+  assert.match(moved, /moved from/, "what they did, from when to when");
+  assert.match(moved, new RegExp(`data-href="/events/${b.id}"`), "it opens the booking");
+  assert.match(moved, />Done<\/button>/);
+  assert.doesNotMatch(moved, /New deal/, "news about work in hand, not an enquiry");
+  const yes = row("quote", paid.id);
+  assert.match(yes, /Quote Q-9001/);
+  assert.match(yes, /accepted and paid online/);
+  assert.doesNotMatch(html, /Q-9002/, "the team's own mark is not news");
+
+  for (const [kind, id] of [["change", ch.id], ["quote", paid.id]]) {
+    assert.equal((await post("/inbox/done", { kind, id })).headers.get("location"), "/?saved=done");
+  }
+  const after = await (await get("/")).text();
+  assert.doesNotMatch(after, new RegExp(`id="change-${ch.id}"`));
+  assert.doesNotMatch(after, new RegExp(`id="quote-${paid.id}"`));
+  assert.match(await (await get("/?view=all")).text(), new RegExp(`id="quote-${paid.id}"`), "still in Everything");
+});
+
 test("customers: create, open, edit, note, archive", async (t) => {
   if (skip) return t.skip(skip);
   const made = await post("/customers", { name: "Quinn Ray", email: "Quinn@Example.com", phone: "555 123 4567", stage: "contacted" });

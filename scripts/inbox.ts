@@ -3,7 +3,7 @@
 // (the forms and booking skills save each person as they arrive); a deal is deals.mjs add.
 // `node scripts/inbox.mjs --help`.
 import { cfg } from "../src/config";
-import { inboxPage, markDone, markHandled, sinceDays, sourceOf, submissionStatus, type InboxRow } from "../src/crm/inbox";
+import { HANDLED_KINDS, inboxPage, markDone, markHandled, sinceDays, sourceOf, submissionStatus, type HandledKind, type InboxRow } from "../src/crm/inbox";
 import { missingSentence } from "../src/crm/tables";
 import { dayBounds } from "../src/booking/slots";
 import { wallTime } from "../src/customers/notes";
@@ -11,10 +11,11 @@ import { formatMoney } from "../src/payments/money";
 import { done, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, usage, who, withDb } from "./lib";
 
 const HELP = `inbox.mjs [list] [--since 7d|YYYY-MM-DD (in the business's zone)] [--unmatched] [--limit 50] [--json]
-inbox.mjs done [booking|payment] <id>              mark a form submission (or a booking or payment) done: off To do
+inbox.mjs done [booking|payment|change|quote] <id>   mark a form submission (or one of the others) done: off To do
 
-Newest first across form submissions (not spam), bookings and payments
-(paid or refunded), as crm.config.json's "inbox" says. Everyone who gets in
+Newest first across form submissions (not spam), bookings, payments (paid or
+refunded), a booker's own reschedule or cancel (change) and a quote they
+accepted by paying it online (quote), as crm.config.json's "inbox" says. Everyone who gets in
 touch is saved as a customer as they do, matched by email, else by phone,
 never by name; each row shows theirs. --unmatched lists the rows
 with neither an email nor a phone to know them by. Times print in
@@ -24,7 +25,7 @@ Prints what happened first, then Next:. A re-run says "already" and changes
 nothing. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`;
 
 const FLAGS: Record<string, string[]> = { list: ["since", "unmatched", "limit"], done: ["as"] };
-const KINDS = ["submission", "booking", "payment"];
+const KINDS = ["submission", ...HANDLED_KINDS];
 
 const a = parseArgs(process.argv.slice(2), { bare: ["unmatched"] });
 const [cmd = "list", ...rest] = a._;
@@ -33,7 +34,7 @@ const at = `inbox ${cmd}`;
 noMore(rest, { list: 0, done: 2 }[cmd] ?? 0, at);
 const doneKind = cmd === "done" && rest.length === 2 ? rest[0] : "submission";
 const doneId = cmd === "done" ? rest[rest.length - 1] ?? "" : "";
-if (cmd === "done" && (!KINDS.includes(doneKind) || !/^\d{1,18}$/.test(doneId))) misused(`${at}: name a submission by its id (submission 12 is 12), or a booking or payment as "booking 12"`, "node scripts/inbox.mjs");
+if (cmd === "done" && (!KINDS.includes(doneKind) || !/^\d{1,18}$/.test(doneId))) misused(`${at}: name a submission by its id (submission 12 is 12), or one of ${HANDLED_KINDS.join(", ")} as "booking 12"`, "node scripts/inbox.mjs");
 const json = has(a, "json");
 
 function since(v: string | undefined): Date | null {
@@ -48,7 +49,11 @@ function since(v: string | undefined): Date | null {
 function line(r: InboxRow): string {
   const person = [r.name, r.email, r.phone].filter(Boolean).join(" ");
   const what =
-    r.kind === "booking" ? `booked for ${local(r.starts_at)}${r.resource_name ? " with " + r.resource_name : ""}` : r.kind === "payment" ? formatMoney(r.amount_cents, r.currency) : "";
+    r.kind === "booking" ? `booked for ${local(r.starts_at)}${r.resource_name ? " with " + r.resource_name : ""}`
+    : r.kind === "payment" ? formatMoney(r.amount_cents, r.currency)
+    : r.kind === "change" ? (r.starts_at ? `moved ${local(r.was_starts_at)} -> ${local(r.starts_at)}` : `cancelled ${local(r.was_starts_at)}`) + ` (booking ${r.booking_id})`
+    : r.kind === "quote" ? `${formatMoney(r.total_cents, r.currency)}, paid online`
+    : "";
   const match = r.customer_id ? `-> #${r.customer_id} ${r.customer_name}${r.customer_archived_at ? " (archived)" : ""}` : "-> no email or phone to know them by";
   return [`${r.kind} ${r.id}`, local(r.created_at), sourceOf(r), `(${r.status})`, person, what, match].filter(Boolean).join("  ");
 }
@@ -67,8 +72,8 @@ await withDb(async (db) => {
     }
     case "done": {
       const id = doneId;
-      if (doneKind === "booking" || doneKind === "payment") {
-        const r = await markHandled(db, doneKind, id, user);
+      if (doneKind !== "submission") {
+        const r = await markHandled(db, doneKind as HandledKind, id, user);
         if (r === "missing") return fail(`${at}: no ${doneKind} ${id}`, "node scripts/inbox.mjs");
         if (r === "done") return json ? out(true, { ok: true, kind: doneKind, id }, String) : done(at, `${doneKind} ${id} marked done`, { next: "node scripts/inbox.mjs" });
         return json ? out(true, { ok: true, kind: doneKind, id, already: true }, String) : done(at, `${doneKind} ${id} is already done; left alone`);

@@ -31,9 +31,10 @@ test("a schema file that only grows passes; anything else is refused", () => {
     create index if not exists things_email on things (email);
     alter table things add column if not exists note text;
     alter table things alter column email drop not null;
+    alter table things drop constraint if exists things_kind_check;
     comment on table things is 'Things';`;
   assert.deepEqual(additiveProblems(ok), []);
-  assert.equal(statements(ok).length, 5);
+  assert.equal(statements(ok).length, 6);
   assert.deepEqual(statements("comment on table t is 'a; b -- c ''d''';\ncomment on column t.x is 'y'"), [
     "comment on table t is 'a; b -- c ''d'''",
     "comment on column t.x is 'y'",
@@ -47,6 +48,9 @@ test("a schema file that only grows passes; anything else is refused", () => {
     "alter table things alter column note drop default",
     "alter table things alter column note drop not null, drop column x",
     "alter table things add constraint c check (true)",
+    "alter table things drop constraint if exists things_pkey",
+    "alter table things drop constraint if exists things_email_key",
+    "alter table things drop constraint things_kind_check",
     "create table things (id int)",
     "create table if not exists public.things (id int)",
     "create index if not exists i on other.things (id)",

@@ -204,3 +204,19 @@ alter table bookings add column if not exists notes text;
 comment on column bookings.type_id is 'The service booked; null for one the team scheduled without one (title names it).';
 comment on column bookings.title is 'What it is, when the service does not say (or there is none).';
 comment on column bookings.notes is 'The team''s notes. The booker''s own words are in answers.';
+
+-- What a booker changed themselves, through their manage link: a move (from
+-- one start to another) or a cancel, one row each, written in the same
+-- statement as the change. The team's own changes are on the booking. The
+-- CRM's Inbox shows these, so the team sees what it did not do.
+create table if not exists booking_changes (
+  id bigserial primary key,
+  booking_id bigint not null references bookings (id) on delete cascade,
+  kind text not null check (kind in ('rescheduled', 'cancelled')),
+  was_starts_at timestamptz not null,
+  starts_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists booking_changes_recent on booking_changes (created_at desc, id desc);
+create index if not exists booking_changes_booking on booking_changes (booking_id);
+comment on table booking_changes is 'A booker''s own move or cancel, through their manage link: when, and from which start to which (none for a cancel).';

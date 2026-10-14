@@ -9,7 +9,7 @@ Every app in a project shares one Postgres database, so a CRM installed
 later finds the Website's form submissions, bookings and payments already
 there.
 
-Version: 0.2.1 (taskandtool/skills)
+Version: 0.2.2 (taskandtool/skills)
 
 ## The rules
 
@@ -29,8 +29,11 @@ Version: 0.2.1 (taskandtool/skills)
   skill, so a newer one adds a column an older one ignores and neither breaks
   the other. A `schema.sql` holds only `create table if not exists x`,
   `create [unique] index if not exists … on x`, `alter table x add column if
-  not exists …`, `alter table x alter column y drop not null` (loosening:
-  an older app still fills it) and `comment on`, with plain table names. Put constraints
+  not exists …`, the two loosenings an older app's writes still pass
+  (`alter table x alter column y drop not null`, and `alter table x drop
+  constraint if exists x_y_check` when a check should allow more; the
+  code that writes it checks its values instead) and `comment on`, with
+  plain table names. Put constraints
   inline in `create table`, or on the column in `add column`. Never drop,
   rename or change a type; add a new column and stop writing the old one.
   `applySchema` refuses anything else before running any of it.

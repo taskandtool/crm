@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { applySchema } from "../../data/migrate";
 import { scratch, why, type Scratch } from "../../data/test/scratch";
 import {
-  book, bookingByToken, cancelByToken, hostsOf, openSlotAt, resourceById, openSlotsFor, reschedule, setStatus, takeSlot, tokenHash, type BookingType,
+  book, bookingByToken, cancelByToken, hostsOf, openSlotAt, resourceById, openSlotsFor, reschedule, rescheduleById, setStatus, takeSlot, tokenHash, type BookingType,
   checkBooker,
 } from "../book";
 import { addTimeOff, addWindow, createPerson, createType, readPerson, readType, setHosts, weeklyHours } from "../hours";
@@ -363,4 +363,20 @@ test("a booking saves its booker as a customer (the customers skill's savePerson
     assert.ok((await book(s.db, { ...who, email: "ANN@example.com", typeId: r.id, start: T("2026-03-10T10:00:00Z") })).ok);
     const customers = await s.db.sql`select name, email::text as email, source, stage from customers`;
     assert.deepEqual(customers, [{ name: "Ann Lee", email: "ann@example.com", source: "Booking: pat", stage: "lead" }]);
+  }));
+
+test("a booker's own move and cancel are each noted once in booking_changes; the team's move is not", (t) =>
+  withDb(t, async (s) => {
+    const r = await person(s, "Pat");
+    const b = await book(s.db, { ...who, typeId: r.id, start: T("2026-03-09T10:00:00Z") });
+    assert.ok(b.ok);
+    assert.ok((await reschedule(s.db, b.token, T("2026-03-09T13:00:00Z"), NOW)).ok);
+    assert.ok((await rescheduleById(s.db, b.booking.id, T("2026-03-09T14:00:00Z"), "owner@example.com", null, NOW)).ok);
+    assert.ok((await cancelByToken(s.db, b.token, NOW)).ok);
+    assert.ok(!(await cancelByToken(s.db, b.token, NOW)).ok, "a second cancel changes nothing");
+    const noted = await s.db.sql`select kind, was_starts_at, starts_at from booking_changes order by id`;
+    assert.deepEqual(noted.map((n) => [n.kind, n.was_starts_at.toISOString(), n.starts_at?.toISOString() ?? null]), [
+      ["rescheduled", "2026-03-09T10:00:00.000Z", "2026-03-09T13:00:00.000Z"],
+      ["cancelled", "2026-03-09T14:00:00.000Z", null],
+    ]);
   }));

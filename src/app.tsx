@@ -22,7 +22,7 @@ import {
 import { csvColumns } from "./crm/columns";
 import { postedFields, readFields } from "./crm/fields";
 import { everythingFrom } from "./crm/history";
-import { addFromInbox, formChoices, inboxPage, markDone, markHandled, readInboxCursor, type InboxKind } from "./crm/inbox";
+import { addFromInbox, formChoices, HANDLED_KINDS, inboxPage, markDone, markHandled, readInboxCursor, type HandledKind, type InboxKind } from "./crm/inbox";
 import { board, createDeal, customerDeals, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
 import {
   addTask, customerTasks, doneTask, taskCounts, getTask, inPlay, listTasks, moveTask, nextTasks,
@@ -244,7 +244,9 @@ app.post("/inbox/done", async (c) => {
   const body = await c.req.parseBody();
   const ret = localPath(str(body.return), "", "/");
   const kind = str(body.kind);
-  const done = kind === "booking" || kind === "payment" ? (await markHandled(c.var.db, kind, str(body.id), c.var.user)) !== "missing" : await markDone(c.var.db, str(body.id), c.var.user);
+  const done = HANDLED_KINDS.includes(kind as HandledKind)
+    ? (await markHandled(c.var.db, kind as HandledKind, str(body.id), c.var.user)) !== "missing"
+    : await markDone(c.var.db, str(body.id), c.var.user);
   return back(c, ret, done ? "done" : "gone");
 });
 
