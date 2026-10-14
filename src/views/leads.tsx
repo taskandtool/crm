@@ -8,15 +8,14 @@ import { Flash } from "../admin/flash";
 import { EmptyState, rowClick, SearchBar, When } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { StatusBadge, type StatusOption } from "../admin/status";
-import { NoteForm } from "../customers/note-form";
-import { NOTE_LABELS, type Note } from "../customers/notes";
+import type { Note } from "../customers/notes";
 import { dealsCfg, vocab } from "../config";
 import { ARCHIVE_REASONS, MANUAL_SOURCES, SOURCE_LABELS, sourceText, type Lead, type LeadStatus } from "../crm/leads";
 import { ownerOptions, ownerSuggestions, personName } from "../crm/people";
 import type { Task } from "../crm/tasks";
 import { Layout } from "./layout";
 import { TasksSection } from "./tasks";
-import { AddToggle, Avatar, buttonClass, controlClass, Field, MESSAGES, PersonFields, primaryClass, quietClass, telHref, timeZone, ViewLink, viewsClass } from "./ui";
+import { ActivitySection, AddToggle, Avatar, buttonClass, ContactCard, controlClass, Field, MESSAGES, PersonFields, primaryClass, quietClass, telHref, timeZone, ViewLink, viewsClass } from "./ui";
 
 const LEAD_TONES: StatusOption[] = [
   { value: "open", label: "Open", tone: "accent" },
@@ -209,31 +208,14 @@ export function LeadPage(p: {
               deals={l.open_deal_id ? [{ id: l.open_deal_id, title: l.open_deal_title ?? "" }] : []}
               owners={p.owners} user={p.user} today={p.today} returnTo={self} />
           </Section>
-          <Section title="Activity">
-            <NoteForm action={`${self}/notes`} />
-            {p.notes.length ? (
-              <ol class="mt-4 flex flex-col gap-3">
-                {p.notes.slice(0, 5).map((n) => (
-                  <li class="border-l-2 border-line pl-3">
-                    <p class="text-label text-ink-3"><span class="font-semibold text-ink-2">{NOTE_LABELS[n.kind] ?? n.kind}</span> · <When at={n.happened_at} timeZone={timeZone} />{n.author ? ` · ${n.author}` : ""}</p>
-                    <p class="mt-0.5 whitespace-pre-wrap break-words">{n.body}</p>
-                  </li>
-                ))}
-              </ol>
-            ) : null}
-          </Section>
+          <ActivitySection action={`${self}/notes`} notes={p.notes} />
         </div>
         <div class="flex flex-col gap-4">
-          <Section title={vocab.one}>
-            <p class="flex items-center gap-3"><Avatar name={l.customer_name} /><a href={`/customers/${l.customer_id}`} class="font-medium">{l.customer_name}</a></p>
-            <FieldList fields={[
-              { label: "Phone", value: l.customer_phone ? <a href={telHref(l.customer_phone)}>{l.customer_phone}</a> : null },
-              { label: "Email", value: l.customer_email ? <a href={`mailto:${l.customer_email}`}>{l.customer_email}</a> : null },
-              { label: `Open ${deal}`, value: l.open_deal_id ? <a href={`/deals/${l.open_deal_id}`}>{l.open_deal_title}</a> : null },
-              { label: "Next visit", value: l.next_event_id ? <a href={`/events/${l.next_event_id}`}><When at={l.next_event_at} timeZone={timeZone} /></a> : null },
-              { label: "Owner", value: l.owner ? personName(l.owner) : null },
-            ]} />
-          </Section>
+          <ContactCard id={l.customer_id} name={l.customer_name} phone={l.customer_phone} email={l.customer_email} more={[
+            { label: `Open ${deal}`, value: l.open_deal_id ? <a href={`/deals/${l.open_deal_id}`}>{l.open_deal_title}</a> : null },
+            { label: "Next visit", value: l.next_event_id ? <a href={`/events/${l.next_event_id}`}><When at={l.next_event_at} timeZone={timeZone} /></a> : null },
+            { label: "Owner", value: l.owner ? personName(l.owner) : null },
+          ]} />
         </div>
       </div>
       <p class="mt-6 border-t border-line pt-3 text-label text-ink-3">Added <When at={l.created_at} timeZone={timeZone} day />{l.created_by ? ` by ${l.created_by}` : ""}</p>

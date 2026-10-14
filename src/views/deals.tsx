@@ -12,6 +12,7 @@ import { dealsCfg, invoicesCfg, ownerLabel, vocab } from "../config";
 import type { Customer } from "../crm/customers";
 import type { Deal } from "../crm/deals";
 import type { Event } from "../crm/events";
+import type { Note } from "../customers/notes";
 import type { Task } from "../crm/tasks";
 import { KIND_LABELS, type Stage } from "../crm/stages";
 import { amountText, formatWholeMoney } from "../crm/text";
@@ -22,7 +23,7 @@ import { TasksSection } from "./tasks";
 import { Layout } from "./layout";
 import type { Lead } from "../crm/leads";
 import { LeadList } from "./leads";
-import { AddToggle, Avatar, buttonClass, controlClass, dueDayText, CustomerPicker, DueMark, Field, MESSAGES, primaryClass, quietClass, ReadThenEdit, RecordLine, stageOptions, timeZone } from "./ui";
+import { ActivitySection, AddToggle, Avatar, buttonClass, ContactCard, controlClass, dueDayText, CustomerPicker, DueMark, Field, MESSAGES, primaryClass, quietClass, ReadThenEdit, RecordLine, stageOptions, timeZone } from "./ui";
 import { ownerSuggestions, personName } from "../crm/people";
 
 /** How many cards a column shows; how many days won and lost ones stay on the board. */
@@ -220,6 +221,8 @@ export function DealPage(p: {
   tasks: { open: Task[]; done: Task[] };
   openDeals: { id: string; title: string }[];
   customer: Customer;
+  /** The contact's notes and logged calls, newest first: the deal's Activity. */
+  notes: Note[];
   /** Its events and what the form chooses from; null with the schedule off. */
   schedule: { events: Event[]; choices: Choices } | null;
   quotes: Quote[] | null;
@@ -329,8 +332,11 @@ export function DealPage(p: {
               )}
             </Section>
           ) : null}
+          {/* Last, as the contact's page and Pipedrive's History: what happened, after what is coming. */}
+          <ActivitySection action={`${self}/notes`} notes={p.notes} />
         </div>
         <div class="flex flex-col gap-4">
+          <ContactCard id={d.customer_id} name={d.customer_name} phone={d.customer_phone} email={d.customer_email} />
           <Section title="Details">
             <ReadThenEdit
               fields={[

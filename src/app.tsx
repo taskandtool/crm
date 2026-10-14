@@ -865,15 +865,22 @@ app.post("/leads/:id/reopen", async (c) => {
   return back(c, localPath(str(body.return), "", `/leads/${id}`), ok ? "lead-reopened" : "gone");
 });
 
-// A note or a call from a lead's page goes on the contact, and the page comes back.
+// A note or a call from a lead's or a deal's page goes on its contact, and the page comes back.
+async function noteFrom(c: C, customerId: string, self: string) {
+  const body = await c.req.parseBody();
+  if (!str(body.body).trim()) return back(c, self, "note-empty");
+  await addNote(c.var.db, customerId, { kind: pickNoteKind(body.kind) ?? "note", body: str(body.body), at: wallTime(body.at), timeZone: cfg.time_zone }, c.var.user);
+  return back(c, self, "note");
+}
+
 app.post("/leads/:id/notes", async (c) => {
   const lead = await getLead(c.var.db, c.req.param("id"));
-  if (!lead) return c.notFound();
-  const body = await c.req.parseBody();
-  const self = `/leads/${lead.id}`;
-  if (!str(body.body).trim()) return back(c, self, "note-empty");
-  await addNote(c.var.db, lead.customer_id, { kind: pickNoteKind(body.kind) ?? "note", body: str(body.body), at: wallTime(body.at), timeZone: cfg.time_zone }, c.var.user);
-  return back(c, self, "note");
+  return lead ? noteFrom(c, lead.customer_id, `/leads/${lead.id}`) : c.notFound();
+});
+
+app.post("/deals/:id/notes", async (c) => {
+  const deal = await getDeal(c.var.db, c.req.param("id"));
+  return deal ? noteFrom(c, deal.customer_id, `/deals/${deal.id}`) : c.notFound();
 });
 
 // ---- tasks -----------------------------------------------------------
@@ -1029,7 +1036,7 @@ app.get("/deals/:id", async (c) => {
   const id = idParam(c.req.param("id"));
   const deal = id ? await getDeal(db, id) : null;
   if (!deal) return c.notFound();
-  const [stages, tasks, deals, f, quotes, leads, customer, events, choices] = await Promise.all([
+  const [stages, tasks, deals, f, quotes, leads, customer, events, choices, notes] = await Promise.all([
     listStages(db, "deals"),
     customerTasks(db, deal.customer_id, deal.id),
     customerDeals(db, deal.customer_id),
@@ -1039,10 +1046,11 @@ app.get("/deals/:id", async (c) => {
     getCustomer(db, deal.customer_id),
     eventsCfg ? customerEvents(db, deal.customer_id, CUSTOMER_EVENTS, deal.id) : null,
     eventsCfg ? choicesOf(db) : null,
+    listNotes(db, deal.customer_id),
   ]);
   return c.html(
     <DealPage user={c.var.user} deal={deal} leads={leads} stages={stages} tasks={tasks} openDeals={dealChoices(deals, deal.id)}
-      customer={customer!} schedule={events && choices ? { events, choices } : null}
+      customer={customer!} notes={notes} schedule={events && choices ? { events, choices } : null}
       quotes={quotes} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} flash={flashOf(c)} />,
   );
 });

@@ -171,6 +171,8 @@ function RecordFoot({ made, by, timeZone, children }: { made: Date; by: string |
     </div>
   );
 }
+/** One choice in a page's More menu. */
+const menuItem = "block rounded-control px-2.5 py-1.5 font-medium text-ink no-underline hover:bg-panel";
 /** A quiet action in a record's foot: a POST, or a link to a page that says what will happen. */
 const footLink = "text-ink-2 underline decoration-line-strong underline-offset-2 hover:decoration-current";
 
@@ -766,6 +768,22 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const draft = inv.status === "draft" && !inv.stripe_invoice_id;
     const linked = opts.links ? await opts.links(c, { kind: "invoice", invoice: inv }) : {};
     const quote = inv.quote_id ? await quoteById(getDb(c), inv.quote_id) : null;
+    // What was paid against it, as Jobber lists an invoice's payments above its balance.
+    const paid = await getDb(c).sql<{ id: string; amount_cents: string; currency: string; paid_at: Date | null; created_at: Date; status: string }>`
+      select id::text as id, coalesce(total_cents, amount_cents)::text as amount_cents, currency, paid_at, created_at, status
+      from payments where ref_type = 'invoice' and ref_id = ${inv.id}::text and status in ('paid', 'refunded', 'partially_refunded')
+      order by coalesce(paid_at, created_at)`;
+    const owes = inv.status === "open" || inv.status === "uncollectible";
+    // Jobber's More actions: everything but the one next step, in one menu.
+    const more = [
+      draft ? <a href={`${self}/edit`} class={menuItem}>Edit</a> : null,
+      !inv.pdf_url ? <a href={`${self}/document`} target="_blank" class={menuItem}>Preview</a> : null,
+      inv.hosted_url && inv.status !== "void" ? <a href={inv.hosted_url} target="_blank" rel="noopener" class={menuItem}>Payment page</a> : null,
+      inv.pdf_url ? <a href={inv.pdf_url} target="_blank" rel="noopener" class={menuItem}>PDF</a> : null,
+      inv.status === "open" ? <a href={`${self}/uncollectible`} class={menuItem}>Write off</a> : null,
+      owes ? <a href={`${self}/void`} class={menuItem}>Void</a> : null,
+      draft ? <form method="post" action={`${self}/discard`}><button class={menuItem + " w-full text-left"}>Delete draft</button></form> : null,
+    ].filter(Boolean);
     return framed(c, base, {
       title: inv.number ? `Invoice ${inv.number}` : "Draft invoice",
       back: { href: base, label: "Invoices" },
@@ -776,16 +794,20 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
           {inv.livemode === false ? <span class="text-label text-ink-3">Stripe test mode: not real money</span> : null}
         </p>
       ),
-      // The one thing to do next is the blue one: send a draft; an open one is paid on Stripe's page, or marked paid here.
+      // As Jobber's invoice: one blue next step by status (send a draft; mark an open or past-due one paid,
+      // its Collect payment), everything else under More.
       actions: (
         <>
-          {draft ? <a href={`${self}/edit`} class={buttonClass}>Edit</a> : null}
-          {/* Before Stripe has it, our preview; after, Stripe's own PDF below. */}
-          {!inv.pdf_url ? <a href={`${self}/document`} target="_blank" class={buttonClass}>Preview</a> : null}
-          {inv.status === "draft" || (inv.status === "open" && !inv.sent_at) ? <a href={`${self}/send`} class={primaryClass}>Send invoice</a> : null}
-          {inv.hosted_url && inv.status !== "void" ? <a href={inv.hosted_url} target="_blank" rel="noopener" class={buttonClass}>Payment page</a> : null}
-          {inv.pdf_url ? <a href={inv.pdf_url} target="_blank" rel="noopener" class={buttonClass}>PDF</a> : null}
-          {inv.status === "open" || inv.status === "uncollectible" ? <a href={`${self}/paid`} class={buttonClass}>Mark paid</a> : null}
+          {more.length ? (
+            <details data-menu class="relative">
+              <summary class={buttonClass + " cursor-pointer list-none"}>More</summary>
+              <div class="absolute right-0 z-10 mt-1 flex w-44 flex-col rounded-control bg-surface p-1 shadow-lift ring-1 ring-line">
+                {more}
+              </div>
+            </details>
+          ) : null}
+          {inv.status === "draft" || (inv.status === "open" && !inv.sent_at) ? <a href={`${self}/send`} class={primaryClass}>Send invoice</a>
+            : owes ? <a href={`${self}/paid`} class={primaryClass}>Mark paid</a> : null}
         </>
       ),
     }, (
@@ -800,6 +822,24 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             <Section title="Line items">
               <Lines qt={inv} rates={rates} />
             </Section>
+            {paid.length || owes ? (
+              <Section title="Payments">
+                {paid.length ? (
+                  <ul class="flex flex-col divide-y divide-line">
+                    {paid.map((p) => (
+                      <li class="flex items-center justify-between gap-3 py-2">
+                        <span><When at={p.paid_at ?? p.created_at} timeZone={opts.timeZone} />{p.status !== "paid" ? <span class="text-label text-ink-3"> · {p.status.replace("_", " ")}</span> : null}</span>
+                        <span class="tabular-nums">{money(p.amount_cents, p.currency)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p class="text-ink-3">No payment yet.</p>}
+                <p class="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3 font-semibold">
+                  <span>Balance due</span>
+                  <span class="tabular-nums">{money(owes ? inv.total_cents : "0", inv.currency)}</span>
+                </p>
+              </Section>
+            ) : null}
             {inv.notes ? <Section title="Message to the customer"><p class="whitespace-pre-wrap break-words">{inv.notes}</p></Section> : null}
           </div>
           <div class="flex flex-col gap-4">
@@ -815,13 +855,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             </Section>
           </div>
         </div>
-        <RecordFoot made={inv.created_at} by={inv.created_by} timeZone={opts.timeZone}>
-          {draft ? (
-            <form method="post" action={`${self}/discard`}><button class={footLink}>Delete draft</button></form>
-          ) : null}
-          {inv.status === "open" ? <a href={`${self}/uncollectible`} class={footLink}>Write off</a> : null}
-          {inv.status === "open" || inv.status === "uncollectible" ? <a href={`${self}/void`} class={footLink}>Void</a> : null}
-        </RecordFoot>
+        <RecordFoot made={inv.created_at} by={inv.created_by} timeZone={opts.timeZone} />
       </>
     ));
   });

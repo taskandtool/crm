@@ -8,7 +8,9 @@ import { buttonClass, controlClass, fieldClass, primaryClass, quietClass, type S
 import { cfg, dealsCfg, eventsCfg, vocab } from "../config";
 import type { CustomField } from "../config-schema";
 import { When } from "../admin/list";
-import { FieldList, type Field as Shown } from "../admin/detail";
+import { FieldList, Section, type Field as Shown } from "../admin/detail";
+import { NoteForm } from "../customers/note-form";
+import { NOTE_LABELS, type Note } from "../customers/notes";
 import { fieldText } from "../crm/fields";
 import type { Stage } from "../crm/stages";
 import { addDays, dueOf, type Due } from "../crm/tasks";
@@ -349,3 +351,41 @@ export const MESSAGES: FlashMessages = {
 };
 
 export const timeZone = cfg.time_zone;
+
+/**
+ * A lead's or a deal's Activity: write a note or log a call (it goes on the
+ * contact's timeline, as Pipedrive shows a deal's notes on its person too),
+ * then their five most recent.
+ */
+export function ActivitySection({ action, notes }: { action: string; notes: Note[] }) {
+  return (
+    <Section title="Activity">
+      <NoteForm action={action} />
+      {notes.length ? (
+        <ol class="mt-4 flex flex-col gap-3">
+          {notes.slice(0, 5).map((n) => (
+            <li class="border-l-2 border-line pl-3">
+              <p class="text-label text-ink-3"><span class="font-semibold text-ink-2">{NOTE_LABELS[n.kind] ?? n.kind}</span> · <When at={n.happened_at} timeZone={timeZone} />{n.author ? ` · ${n.author}` : ""}</p>
+              <p class="mt-0.5 whitespace-pre-wrap break-words">{n.body}</p>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </Section>
+  );
+}
+
+/** Who a lead or a deal is for, and how to reach them, as Pipedrive's Summary carries the contact person; `more` adds rows (their open deal, next visit). */
+export function ContactCard({ id, name, phone, email, more = [] }: { id: string; name: string; phone: string | null; email: string | null; more?: Shown[] }) {
+  return (
+    <Section title={vocab.one}>
+      <p class="flex items-center gap-3"><Avatar name={name} /><a href={`/customers/${id}`} class="font-medium">{name}</a></p>
+      <FieldList fields={[
+        { label: "Phone", value: phone ? <a href={telHref(phone)}>{phone}</a> : null },
+        { label: "Email", value: email ? <a href={`mailto:${email}`} class="break-all">{email}</a> : null },
+        ...more,
+      ]} />
+    </Section>
+  );
+}
+

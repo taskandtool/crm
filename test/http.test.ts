@@ -451,6 +451,36 @@ test("a deal's schedule: an event added from the deal is for it, shows it, and c
   assert.equal((await db.sql<{ d: string | null }>`select deal_id::text as d from bookings where id = ${eventId}::bigint`)[0].d, null);
 });
 
+test("record pages: a deal has Activity and its contact; a contact's status is in Details; an invoice has one next step, More, and its balance", async (t) => {
+  if (skip) return t.skip(skip);
+  const made = await post("/customers", { name: "Rec Page", email: "recpage@example.com", phone: "555 321 0000" });
+  const cid = made.headers.get("location")!.match(/\/customers\/(\d+)/)![1];
+  const [deal] = await db.sql<{ id: string }>`insert into deals (customer_id, title, stage) values (${cid}::bigint, 'Attic fan', 'new') returning id::text as id`;
+
+  // A deal: write a note or log a call there, and reach the person without leaving it.
+  let html = await (await get(`/deals/${deal.id}`)).text();
+  assert.match(html, new RegExp(`action="/deals/${deal.id}/notes"`), "the deal's activity box");
+  assert.match(html, /href="tel:[^"]*5553210000"/, "the contact card's phone");
+  assert.equal((await post(`/deals/${deal.id}/notes`, { body: "Called about the fan", kind: "call" })).headers.get("location"), `/deals/${deal.id}?saved=note`);
+  assert.match(await (await get(`/deals/${deal.id}`)).text(), /Called about the fan/);
+  assert.match(await (await get(`/customers/${cid}`)).text(), /Called about the fan/, "it is on the contact's timeline too");
+
+  // A contact: the status is a value under the name and changed in Details, not a control among the actions.
+  html = await (await get(`/customers/${cid}`)).text();
+  assert.match(html, /<h2[^>]*>Details<\/h2>[\s\S]*?name="status"/);
+  assert.doesNotMatch(html.slice(0, html.indexOf("<h2")), /name="status"/, "no status select up with the actions");
+
+  // An invoice sent and owed: Mark paid is the one blue button; the rest are under More; the balance is shown.
+  const [inv] = await db.sql<{ id: string }>`
+    insert into invoices (email, name, currency, status, livemode, total_cents, sent_at, number, hosted_url)
+    values ('recpage@example.com', 'Rec Page', 'usd', 'open', true, 25000, now(), 'INV-REC1', 'https://pay.example/rec') returning id::text as id`;
+  html = await (await get(`/invoices/${inv.id}`)).text();
+  assert.match(html, new RegExp(`href="/invoices/${inv.id}/paid" class="[^"]*bg-accent[^"]*">Mark paid<`));
+  assert.match(html, /<summary[^>]*>More<\/summary>[\s\S]*>Payment page<[\s\S]*>Write off<[\s\S]*>Void</);
+  assert.match(html, /Balance due<\/span><span[^>]*>\$250\.00</);
+  await db.sql`delete from invoices where id = ${inv.id}::bigint`;
+});
+
 test("merge: preview, merge, history under either address, the merged record opens the kept one", async (t) => {
   if (skip) return t.skip(skip);
   const a = (await post("/customers", { name: "Hal Moe", email: "hal@example.com" })).headers.get("location")!.match(/\/customers\/(\d+)/)![1];

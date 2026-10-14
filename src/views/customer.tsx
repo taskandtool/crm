@@ -9,6 +9,7 @@ import type { Child } from "hono/jsx";
 import { JsonData, Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
+import { StatusBadge } from "../admin/status";
 import { cfg, dealsCfg, eventsCfg, invoicesCfg, ownerLabel, vocab } from "../config";
 import { dealChoices, type Deal } from "../crm/deals";
 import type { Task } from "../crm/tasks";
@@ -72,10 +73,10 @@ export function CustomerPage(p: {
       user={p.user}
       section="customers"
       back={{ href: "/customers", label: vocab.many }}
-      sub={<Reach c={c} />}
+      sub={<div class="flex flex-wrap items-center gap-x-2 gap-y-1"><StatusBadge value={c.stage} options={stageOptions(stages)} /><Reach c={c} /></div>}
+      // Actions only; the status is a value, shown under the name and changed in Details, as HubSpot's About card and Pipedrive's Summary hold it.
       actions={
         <>
-          <SaveOnChange action={`${self}/stage`} current={c.stage} options={stageOptions(stages)} label="Status" returnTo={self} />
           {c.phone ? <a href={telHref(c.phone)} class={buttonClass}>Call</a> : null}
           {c.email ? <a href={`mailto:${c.email}`} class={buttonClass} title={c.email}>Email</a> : null}
           {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", { email: c.email, name: c.name, phone: c.phone, address: c.address })} class={buttonClass}>New quote</a> : null}
@@ -95,17 +96,19 @@ export function CustomerPage(p: {
               deals={dealChoices(p.deals)}
               owners={p.owners} user={p.user} today={p.today} returnTo={self} />
           </Section>
-          <Section title="Activity">
-            <Activity c={c} notes={p.notes} history={p.history} missing={missing} />
-          </Section>
+          {/* What is coming (tasks, then events) before the activity and its history, as Pipedrive's Focus comes before History. */}
           {eventsCfg ? (
             <Section title={eventsCfg.many} count={p.events.length}>
               <CustomerEvents c={c} events={p.events} choices={p.choices} deals={dealChoices(p.deals)} />
             </Section>
           ) : null}
+          <Section title="Activity">
+            <Activity c={c} notes={p.notes} history={p.history} missing={missing} />
+          </Section>
         </div>
         <div class="flex min-w-0 flex-col gap-4">
           <Section title="Details">
+            <div class="mb-3"><SaveOnChange action={`${self}/stage`} current={c.stage} options={stageOptions(stages)} label="Status" returnTo={self} /></div>
             <Details c={c} owners={p.owners} />
           </Section>
           <Section title="Leads" count={p.leads.length}>
