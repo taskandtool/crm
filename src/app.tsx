@@ -22,7 +22,7 @@ import {
 import { csvColumns } from "./crm/columns";
 import { postedFields, readFields } from "./crm/fields";
 import { everythingFrom } from "./crm/history";
-import { addFromInbox, formChoices, HANDLED_KINDS, inboxPage, markDone, markHandled, readInboxCursor, type HandledKind, type InboxKind } from "./crm/inbox";
+import { formChoices, inboxPage, markDone, markHandled, markUndone, readInboxCursor, requestOf, type InboxKind } from "./crm/inbox";
 import { board, createDeal, customerDeals, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
 import {
   addTask, customerTasks, doneTask, taskCounts, getTask, inPlay, listTasks, moveTask, nextTasks,
@@ -191,43 +191,28 @@ app.get("/", async (c) => {
   if (isPartial(c)) return c.html(<InboxResults rows={rows} next={next} more={more} self={self} all={all} form={form} paged={false} missing={missing} />);
   return c.html(
     <InboxPage user={c.var.user} rows={rows} next={next} more={more} self={self} all={all} form={form} forms={await formChoices(c.var.db, cfg.inbox)}
-      paged={!!after} missing={missing} numbers={numbers!} flash={flashOf(c)} />,
+      paged={!!after} missing={missing} numbers={numbers!} flash={flashOf(c)} undo={inboxRef(c.req.query("undo"))} />,
   );
 });
 
 /**
- * A lead's task: "Call back <name>" today, for whoever added them, unless
- * crm.config.json turns it off or they already have one open.
+ * A deal made from the Inbox gets its first step: "Call back <name>" today,
+ * on the deal, for whoever made it, unless crm.config.json turns it off.
  */
-async function newLeadCall(db: Db, customer: Customer, dealId: string | null, user: string) {
+async function newLeadCall(db: Db, customer: { id: string; name: string }, dealId: string, user: string) {
   if (!newLeadTask) return;
-  const open = await customerTasks(db, customer.id);
-  if (open.open.length) return;
   await addTask(db, customer.id, { kind: "call", title: `Call back ${customer.name}`, due_on: today(), due_time: null, owner: user, deal_id: dealId }, user);
 }
 
-// New deal from the Inbox: the person (matched, or saved as a customer) and a deal in the
-// first open stage, named for what came in. A customer already here gets
-// another deal: a repeat customer's new enquiry.
-app.post("/inbox/deal", async (c) => {
-  const db = c.var.db;
-  const body = await c.req.parseBody();
-  const kind = str(body.kind);
-  if (kind !== "submission" && kind !== "booking" && kind !== "payment") return back(c, "/", "gone");
-  const [status, stage] = await Promise.all([firstOpenStage(db, "customers"), firstOpenStage(db, "deals")]);
-  if (!status || !stage) return back(c, "/stages", "last-open");
-  const r = await addFromInbox(db, kind as InboxKind, str(body.id), status.key, c.var.user, cfg.fields);
-  if (!r) return back(c, "/", "gone");
-  // Named for what they asked for (the form, the booked service), as HubSpot's and Pipedrive's
-  // deals are; the customer is already on the card under it.
-  const deal = await createDeal(db, r.customer.id, { title: r.source.replace(/^Booking: /, "").slice(0, 200), value_cents: null, currency: dealsCfg.currency, owner: c.var.user, expected_close: null, notes: null }, stage.key, c.var.user);
-  if (!deal) return back(c, "/", "gone");
-  // Made into a deal is dealt with: it leaves To do.
-  if (kind === "submission") await markDone(db, str(body.id), c.var.user);
-  else await markHandled(db, kind as "booking" | "payment", str(body.id), c.var.user);
-  await newLeadCall(db, r.customer, deal.id, c.var.user);
-  return back(c, `/deals/${deal.id}`, "deal-added");
-});
+/** An Inbox item named in a form or a link, "booking.12": its kind and id, or null. */
+function inboxRef(v: unknown): { kind: InboxKind; id: string } | null {
+  const m = typeof v === "string" ? v.match(/^(submission|booking|payment|change|quote)\.(\d{1,18})$/) : null;
+  return m ? { kind: m[1] as InboxKind, id: m[2] } : null;
+}
+
+/** Take an Inbox item off To do: a submission by its status, anything else in inbox_done. */
+const markItemDone = (db: Db, ref: { kind: InboxKind; id: string }, user: string) =>
+  ref.kind === "submission" ? markDone(db, ref.id, user) : markHandled(db, ref.kind, ref.id, user).then((r) => r !== "missing");
 
 /** The nav's count: what is in To do, filled in after the page loads so no page waits on it. */
 app.get("/inbox/count", async (c) => {
@@ -240,14 +225,20 @@ app.get("/inbox/count", async (c) => {
   );
 });
 
+// Done, with Undo in its message as Gmail's archive has: the redirect names what was done.
 app.post("/inbox/done", async (c) => {
   const body = await c.req.parseBody();
   const ret = localPath(str(body.return), "", "/");
-  const kind = str(body.kind);
-  const done = HANDLED_KINDS.includes(kind as HandledKind)
-    ? (await markHandled(c.var.db, kind as HandledKind, str(body.id), c.var.user)) !== "missing"
-    : await markDone(c.var.db, str(body.id), c.var.user);
-  return back(c, ret, done ? "done" : "gone");
+  const ref = inboxRef(`${str(body.kind)}.${str(body.id)}`);
+  if (!ref || !(await markItemDone(c.var.db, ref, c.var.user))) return back(c, ret, "gone");
+  return c.redirect(`${backTo(ret, "done")}&undo=${ref.kind}.${ref.id}`, 303);
+});
+
+app.post("/inbox/undo", async (c) => {
+  const body = await c.req.parseBody();
+  const ref = inboxRef(str(body.item));
+  const undone = ref ? await markUndone(c.var.db, ref.kind, ref.id) : false;
+  return back(c, localPath(str(body.return), "", "/"), undone ? "undone" : "gone");
 });
 
 // ---- customers ------------------------------------------------------------
@@ -859,7 +850,7 @@ async function boardData(c: C): Promise<BoardData> {
     listStages(db, "deals"),
     board(db, { per: PER_COLUMN, closedDays: CLOSED_DAYS, currency: dealsCfg.currency }),
   ]);
-  return { stages, cards, totals, next: await nextTasks(db, [...new Set(cards.map((d) => d.customer_id))]), today: today() };
+  return { stages, cards, totals, next: await nextTasks(db, cards.map((d) => d.id), "deal"), today: today() };
 }
 
 app.get("/deals", async (c) => {
@@ -867,9 +858,17 @@ app.get("/deals", async (c) => {
   return c.html(<DealsPage user={c.var.user} data={await boardData(c)} flash={flashOf(c)} />);
 });
 
+// New deal; from an Inbox item (?from=submission.12), filled in from it first, as Pipedrive's
+// Convert to deal: the person, the deal named for what they asked, what they wrote as its
+// notes, and the deals they already have open.
 app.get("/deals/new", async (c) => {
-  const [stages, customers] = await Promise.all([listStages(c.var.db, "deals"), customerChoices(c.var.db)]);
-  return c.html(<NewDealPage user={c.var.user} stages={stages} customers={customers} flash={flashOf(c)} />);
+  const db = c.var.db;
+  const ref = inboxRef(c.req.query("from"));
+  const asked = ref ? await requestOf(db, ref.kind, ref.id) : null;
+  const who = asked ? await findMatch(db, asked.email, asked.phone) : null;
+  const [stages, customers, theirs] = await Promise.all([listStages(db, "deals"), customerChoices(db), who ? customerDeals(db, who.id) : []]);
+  const from = ref && asked ? { ref: `${ref.kind}.${ref.id}`, ...asked, customerId: who?.id ?? null, openDeals: theirs.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title })) } : null;
+  return c.html(<NewDealPage user={c.var.user} stages={stages} customers={customers} from={from} flash={flashOf(c)} />);
 });
 
 // New deal from the board: the customer picked, or someone new, and their deal.
@@ -883,7 +882,15 @@ app.post("/deals", async (c) => {
   const who = await pickedCustomer(c, body);
   if ("error" in who) return back(c, who.error === "last-open" ? "/stages" : "/deals/new", who.error);
   const deal = await createDeal(db, who.id, { ...input.deal, owner: input.deal.owner ?? c.var.user }, stage, c.var.user);
-  return deal ? back(c, `/deals/${deal.id}`, input.invalid ? "invalid" : "deal-added") : back(c, "/deals", "gone");
+  if (!deal) return back(c, "/deals", "gone");
+  // Made from an Inbox item: that item is dealt with, and the deal gets its first step.
+  const ref = inboxRef(body.from);
+  if (ref) {
+    await markItemDone(db, ref, c.var.user);
+    const customer = await getCustomer(db, who.id);
+    if (customer) await newLeadCall(db, customer, deal.id, c.var.user);
+  }
+  return back(c, `/deals/${deal.id}`, input.invalid ? "invalid" : "deal-added");
 });
 
 app.get("/deals/:id", async (c) => {
@@ -893,7 +900,7 @@ app.get("/deals/:id", async (c) => {
   if (!deal) return c.notFound();
   const [stages, tasks, deals, f, quotes] = await Promise.all([
     listStages(db, "deals"),
-    customerTasks(db, deal.customer_id),
+    customerTasks(db, deal.customer_id, deal.id),
     customerDeals(db, deal.customer_id),
     facets(db),
     invoicesCfg ? quotesFor(db, { dealId: deal.id }) : null,

@@ -7,7 +7,10 @@
 //   <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
 //
 // A message that says nothing was done is `{ error: "…" }`: it is announced
-// as an alert and set apart from a confirmation.
+// as an alert and set apart from a confirmation. `action` goes after a
+// confirmation's words: an Undo, as Gmail's message after an archive has.
+import type { Child } from "hono/jsx";
+
 export type FlashMessages = Record<string, string | ((n: number) => string) | { error: string }>;
 
 /** A message that says something went wrong: an alert, not a confirmation. */
@@ -23,14 +26,15 @@ export function withFlash(path: string, code: string, n?: number): string {
   return u.pathname.startsWith("//") ? "/" + u.search : u.pathname + u.search;
 }
 
-export function Flash({ code, n, messages }: { code?: string | null; n?: string | null; messages: FlashMessages }) {
+export function Flash({ code, n, messages, action }: { code?: string | null; n?: string | null; messages: FlashMessages; action?: Child }) {
   const m = code && Object.hasOwn(messages, code) ? messages[code] : null;
   if (!m) return null;
   const count = /^\d{1,9}$/.test(n ?? "") ? Number(n) : 0;
   if (typeof m === "object") return <p role="alert" class={"mb-4 " + alertClass}>{m.error}</p>;
   return (
-    <p role="status" class="mb-4 rounded-card border border-line bg-panel px-4 py-2 text-copy text-ink">
-      {typeof m === "function" ? m(count) : m}
-    </p>
+    <div role="status" class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-card border border-line bg-panel px-4 py-2 text-copy text-ink">
+      <span>{typeof m === "function" ? m(count) : m}</span>
+      {action}
+    </div>
   );
 }

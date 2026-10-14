@@ -197,24 +197,32 @@ export async function taskCounts(db: Db, today: string, owner: string | null): P
 }
 
 /** A customer's open ones, soonest first, and the last few done. */
-export async function customerTasks(db: Db, customerId: string): Promise<{ open: Task[]; done: Task[] }> {
+export async function customerTasks(db: Db, customerId: string, dealId: string | null = null): Promise<{ open: Task[]; done: Task[] }> {
   if (!ID.test(customerId)) return { open: [], done: [] };
+  // On a deal's page only that deal's, as Pipedrive's deal shows its own activities.
   const [open, done] = await Promise.all([
-    sql(db)<Task>`select {select} {from} where t.customer_id = ${customerId}::bigint and t.done_at is null order by t.due_on, t.due_time nulls last, t.id`,
-    sql(db)<Task>`select {select} {from} where t.customer_id = ${customerId}::bigint and t.done_at is not null order by t.done_at desc, t.id desc limit 5`,
+    sql(db)<Task>`select {select} {from} where t.customer_id = ${customerId}::bigint and (${dealId}::bigint is null or t.deal_id = ${dealId}::bigint)
+      and t.done_at is null order by t.due_on, t.due_time nulls last, t.id`,
+    sql(db)<Task>`select {select} {from} where t.customer_id = ${customerId}::bigint and (${dealId}::bigint is null or t.deal_id = ${dealId}::bigint)
+      and t.done_at is not null order by t.done_at desc, t.id desc limit 5`,
   ]);
   return { open, done };
 }
 
-/** Each customer's next open one: what a pipeline card and a list row mark. */
-export async function nextTasks(db: Db, customerIds: string[]): Promise<Map<string, { due_on: string; due_time: string | null }>> {
-  const ids = customerIds.filter((x) => ID.test(x));
-  if (!ids.length) return new Map();
-  const rows = await db.sql<{ customer_id: string; due_on: string; due_time: string | null }>`
-    select distinct on (customer_id) customer_id::text as customer_id, to_char(due_on, 'YYYY-MM-DD') as due_on, to_char(due_time, 'HH24:MI') as due_time
-    from follow_ups where done_at is null and customer_id = any(${ids}::bigint[])
-    order by customer_id, due_on, due_time nulls last, id`;
-  return new Map(rows.map((r) => [r.customer_id, { due_on: r.due_on, due_time: r.due_time }]));
+/** Each customer's next open one (a list row's mark), or each deal's (a pipeline card's), keyed by its id. */
+export async function nextTasks(db: Db, ids: string[], by: "customer" | "deal" = "customer"): Promise<Map<string, { due_on: string; due_time: string | null }>> {
+  const keys = ids.filter((x) => ID.test(x));
+  if (!keys.length) return new Map();
+  const rows = by === "deal"
+    ? await db.sql<{ key: string; due_on: string; due_time: string | null }>`
+        select distinct on (deal_id) deal_id::text as key, to_char(due_on, 'YYYY-MM-DD') as due_on, to_char(due_time, 'HH24:MI') as due_time
+        from follow_ups where done_at is null and deal_id = any(${keys}::bigint[])
+        order by deal_id, due_on, due_time nulls last, id`
+    : await db.sql<{ key: string; due_on: string; due_time: string | null }>`
+        select distinct on (customer_id) customer_id::text as key, to_char(due_on, 'YYYY-MM-DD') as due_on, to_char(due_time, 'HH24:MI') as due_time
+        from follow_ups where done_at is null and customer_id = any(${keys}::bigint[])
+        order by customer_id, due_on, due_time nulls last, id`;
+  return new Map(rows.map((r) => [r.key, { due_on: r.due_on, due_time: r.due_time }]));
 }
 
 /**

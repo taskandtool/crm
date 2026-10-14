@@ -203,35 +203,41 @@ export function AddToggle({ label, open, children }: { label: string; open?: boo
  * customer already here, or "Someone new", which opens their name, email and
  * phone (matched by email or phone, or added). Spans the whole form's grid.
  */
-export function CustomerPicker({ customers }: { customers: { id: string; name: string; email: string | null }[] }) {
+export function CustomerPicker({ customers, selected, person }: {
+  customers: { id: string; name: string; email: string | null }[];
+  /** Already chosen (a deal from an Inbox item): this customer, or "new" with `person` filled in. */
+  selected?: string | null;
+  person?: { name: string | null; email: string | null; phone: string | null };
+}) {
+  const isNew = selected === "new" || !customers.length;
   return (
     <>
       <Field label={vocab.one} class="col-span-full">
         <select name="customer" required autofocus class={controlClass + " w-full min-w-0"}>
           {customers.length ? <option value="">Choose a {vocab.one.toLowerCase()}</option> : null}
-          {customers.map((c) => <option value={c.id}>{c.email ? `${c.name} (${c.email})` : c.name}</option>)}
-          <option value="new" selected={!customers.length}>Someone new</option>
+          {customers.map((c) => <option value={c.id} selected={c.id === selected}>{c.email ? `${c.name} (${c.email})` : c.name}</option>)}
+          <option value="new" selected={isNew}>Someone new</option>
         </select>
       </Field>
       <div class="col-span-full hidden gap-3 sm:grid-cols-2 [form:has(select[name=customer]>option[value=new]:checked)_&]:grid">
-        <PersonFields pairs />
+        <PersonFields pairs person={person} />
       </div>
     </>
   );
 }
 
 /** Who a new deal or event is for: matched by email or phone, or added. In a two-column form the name takes a row, so email and phone pair up. */
-export function PersonFields({ pairs }: { pairs?: boolean }) {
+export function PersonFields({ pairs, person }: { pairs?: boolean; person?: { name: string | null; email: string | null; phone: string | null } }) {
   return (
     <>
       <Field label={`${vocab.one} name`} class={pairs ? "sm:col-span-2" : ""}>
-        <input name="name" maxlength={200} autocomplete="off" autofocus class={controlClass} />
+        <input name="name" value={person?.name ?? ""} maxlength={200} autocomplete="off" autofocus class={controlClass} />
       </Field>
       <Field label="Email">
-        <input name="email" type="email" maxlength={254} autocomplete="off" class={controlClass} />
+        <input name="email" type="email" value={person?.email ?? ""} maxlength={254} autocomplete="off" class={controlClass} />
       </Field>
       <Field label="Phone">
-        <input name="phone" type="tel" maxlength={40} autocomplete="off" class={controlClass} />
+        <input name="phone" type="tel" value={person?.phone ?? ""} maxlength={40} autocomplete="off" class={controlClass} />
       </Field>
     </>
   );
@@ -322,6 +328,7 @@ export const MESSAGES: FlashMessages = {
   archived: `${vocab.one} archived. Nothing was deleted; Unarchive brings them back.`,
   unarchived: `${vocab.one} is back from the archive.`,
   done: "Marked done.",
+  undone: "Back on To do.",
   "email-taken": { error: `Another ${one} already has that email. Nothing was saved.` },
   "name-needed": { error: "A name, an email or a phone number is needed." },
   gone: { error: "That is no longer there." },

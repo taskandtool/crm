@@ -104,7 +104,7 @@ test("a time shows in the business's zone, not the server's", async () => {
 
 test("a flash shows only the app's own words", async () => {
   const messages = { status: "Status saved.", bulk: (n: number) => `Updated ${n}.` };
-  assert.match(await render(Flash({ code: "status", messages })), /role="status"[^>]*>Status saved\./);
+  assert.match(await render(Flash({ code: "status", messages })), /role="status"[^>]*><span>Status saved\.<\/span>/);
   assert.ok((await render(Flash({ code: "bulk", n: "3", messages }))).includes("Updated 3."));
   assert.equal(await render(Flash({ code: "toString", messages }) ?? ""), "");
   assert.equal(await render(Flash({ code: HOSTILE, messages }) ?? ""), "");

@@ -23,7 +23,7 @@ import type { Stage } from "../crm/stages";
 import type { Event } from "../crm/events";
 import { missingSentence, type Present } from "../crm/tables";
 import { formatMoney } from "../payments/money";
-import { firstText } from "./inbox";
+import { firstText } from "../crm/inbox";
 import { Layout } from "./layout";
 import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, quietClass, ReadThenEdit, RecordLine, SaveOnChange, shownField, stageOptions, telHref, timeZone } from "./ui";
 import { CustomerEvents, type Choices } from "./events";

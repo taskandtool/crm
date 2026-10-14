@@ -12,15 +12,11 @@
 // cursor's time is fixed-width UTC text with microseconds, so it compares as
 // text and casts back exactly (admin/keyset.ts has the microsecond rule).
 import type { Db } from "../data/db";
-import { normalizeEmail } from "../data/email";
 import { fromB64url, toB64url } from "../data/token";
-import type { CustomField, InboxConfig } from "../config-schema";
-import { createCustomer, fillBlanks, validK, type Customer } from "./customers";
-import { readFields } from "./fields";
-import { cleanPhone } from "./phone";
+import type { InboxConfig } from "../config-schema";
+import { validK } from "./customers";
 import { savePerson } from "../customers/customer";
 import { BOOKING_PAGE, saveSubmitter } from "../forms/store";
-import { clean } from "./text";
 import { present as presentTables, type Present } from "./tables";
 import { byEmail, isCustomer, spliced } from "./sql";
 
@@ -79,9 +75,10 @@ export type InboxOptions = {
   /** Only this form's submissions (no bookings or payments). */
   form?: string | null;
   /**
-   * Only what still needs someone: a submission, an online booking (not
-   * cancelled), a booker's change or a quote accepted online, none of them
-   * marked done. Payments never are.
+   * Only what still needs someone: a submission, an online booking still
+   * scheduled (one completed, a no-show or cancelled was dealt with), a
+   * booker's change or a quote accepted online, none of them marked done.
+   * Payments never are.
    */
   todo?: boolean;
 };
@@ -174,7 +171,7 @@ export async function inboxPage(
           and b.hold_until is null -- nor one held for a form still being paid
           and (${since}::timestamptz is null or b.created_at >= ${since}::timestamptz)
           and (not ${unmatched}::boolean or m.id is null)
-          and (not ${todo}::boolean or (b.status <> 'cancelled'
+          and (not ${todo}::boolean or (b.status = 'confirmed'
                and not exists (select 1 from inbox_done d where d.kind = 'booking' and d.ref_id = b.id)))
           and (${ak}::timestamptz is null or (b.created_at, 1, b.id) < (${ak}::timestamptz, ${ar}::int, ${aid}::bigint))
         order by b.created_at desc, b.id desc
@@ -273,104 +270,44 @@ export function sourceOf(row: { kind: InboxKind; form_key?: string; form_title?:
   return row.kind === "payment" ? "Payment" : "Booking";
 }
 
+/** What came in, for the New deal form it opens (Pipedrive's Convert to deal): who, the deal's title, and what they said. */
+export type Request = { name: string | null; email: string | null; phone: string | null; title: string; said: string | null };
+
 /**
- * Make a customer from a row that came in: its name, email and phone, the
- * source it came from, the first open stage, and its time as the last
- * contact. What else the person gave comes too:
- *
- * - a row with no phone (a payment never has one) takes the latest phone
- *   the same email gave on a submission or booking;
- * - a submission's answers keyed `address`, `company` or a custom field's
- *   key (`defs`, crm.config.json's fields) fill those, read exactly as the
- *   customer form reads them (`gave`); any other answer stays on the
- *   submission.
- *
- * When the person is already a customer, that one is returned, with only
- * its empty values filled from the row (customers.ts fillBlanks). `source`
- * is what the row was, in words ("Get a quote", "Booking: Estimate"). Null
- * when the row does not exist (or is spam).
+ * An Inbox item as a deal starts from it: the person, the deal named for what
+ * they asked (the form, the booked service), and what they wrote. Null when
+ * it is not there, or is spam.
  */
-export async function addFromInbox(
-  db: Db,
-  kind: InboxKind,
-  id: string,
-  stage: string,
-  user: string,
-  defs: CustomField[] = [],
-): Promise<{ customer: Customer; created: boolean; source: string } | null> {
+export async function requestOf(db: Db, kind: InboxKind, id: string): Promise<Request | null> {
   if (!/^\d{1,18}$/.test(id)) return null;
   const p = await presentTables(db);
-  type Src = { name: string | null; email: string | null; phone: string | null; created_at: Date; source: string; data: Record<string, unknown> | null };
-  let row: Src | undefined;
   if (kind === "submission" && p.submissions) {
-    [row] = await db.sql<Src>`
-      select s.name, s.email::text as email, s.phone, s.created_at, s.form_key as source, s.data
-      from submissions s where s.id = ${id}::bigint and s.status <> 'spam'`;
-    if (row && p.forms) {
-      const [f] = await db.sql<{ title: string }>`select title from forms where key = ${row.source}`;
-      if (f?.title) row.source = f.title;
-    }
-  } else if (kind === "booking") {
-    // What they booked is where they came from; a visit at their place gave their address.
-    [row] = await db.sql<Src>`
-      select b.name, b.email::text as email, b.phone, b.created_at, coalesce('Booking: ' || t.name, 'Booking') as source,
-             case when b.location_kind = 'their_place' then jsonb_build_object('address', b.location) end as data
+    const [s] = await db.sql<{ name: string | null; email: string | null; phone: string | null; data: Record<string, unknown> | null; form_key: string }>`
+      select s.name, s.email::text as email, s.phone, s.data, s.form_key from submissions s where s.id = ${id}::bigint and s.status <> 'spam'`;
+    if (!s) return null;
+    const [f] = p.forms ? await db.sql<{ title: string }>`select title from forms where key = ${s.form_key}` : [];
+    return { name: s.name, email: s.email, phone: s.phone, title: f?.title ?? s.form_key, said: firstText(s.data) };
+  }
+  if (kind === "booking") {
+    const [b] = await db.sql<{ name: string | null; email: string | null; phone: string | null; title: string }>`
+      select b.name, b.email::text as email, b.phone, coalesce(t.name, b.title, 'Booking') as title
       from bookings b left join booking_types t on t.id = b.type_id where b.id = ${id}::bigint`;
-  } else if (kind === "payment" && p.payments) {
-    [row] = await db.sql<Src>`select name, email::text as email, null::text as phone, created_at, 'Payment' as source, null::jsonb as data from payments where id = ${id}::bigint`;
+    return b ? { ...b, said: null } : null;
   }
-  if (!row) return null;
-  const email = normalizeEmail(row.email);
-  const phone = cleanPhone(row.phone) ?? (email ? await latestPhone(db, p, email) : null);
-  const name = row.name?.trim() || email || phone || "Unknown";
-  const extra = gave(defs, row.data);
-  // With nothing to match on but the name, the import's rule: a customer of
-  // that name with neither, so a second click finds the one the first made.
-  const r = await createCustomer(
-    db,
-    { name: name.slice(0, 200), email, phone, ...extra, stage, source: row.source, last_contact_at: row.created_at },
-    user,
-    { bareName: true },
-  );
-  if (r.created) return { ...r, source: row.source };
-  return { customer: await fillBlanks(db, r.customer, { phone, ...extra }, user), created: false, source: row.source };
+  if (kind === "payment" && p.payments) {
+    const [r] = await db.sql<{ name: string | null; email: string | null; description: string | null }>`
+      select name, email::text as email, description from payments where id = ${id}::bigint`;
+    return r ? { name: r.name, email: r.email, phone: null, title: r.description || "Payment", said: null } : null;
+  }
+  return null;
 }
 
-/**
- * The latest phone this email gave on a submission (not spam) or a booking:
- * the tables the project has. Payments carry no phone.
- */
-async function latestPhone(db: Db, p: Present, email: string): Promise<string | null> {
-  type P = { phone: string; at: Date };
-  const jobs: Promise<P[]>[] = [];
-  if (p.submissions) {
-    jobs.push(db.sql<P>`
-      select phone, created_at as at from submissions
-      where email = ${email}::citext and status <> 'spam' and nullif(trim(phone), '') is not null
-      order by created_at desc, id desc limit 1`);
-  }
-  jobs.push(db.sql<P>`
-    select phone, created_at as at from bookings
-    where email = ${email}::citext and nullif(trim(phone), '') is not null
-    order by created_at desc, id desc limit 1`);
-
-  const [latest] = (await Promise.all(jobs)).flat().sort((a, b) => b.at.getTime() - a.at.getTime());
-  return latest ? cleanPhone(latest.phone) : null;
-}
-
-/**
- * The address, company and custom fields a submission's answers give, read
- * the way the customer form reads them (app.tsx's POST /customers/:id):
- * `clean` to the same lengths, `readFields` strictly, so a value the form
- * would refuse (a select outside its options, a date that is not one, an
- * object where text belongs) is left out. Other answers are ignored.
- */
-export function gave(defs: CustomField[], data: Record<string, unknown> | null): { address: string | null; company: string | null; fields: Record<string, unknown> } {
-  const d = data && typeof data === "object" && !Array.isArray(data) ? data : {};
-  const own = (k: string) => (Object.prototype.hasOwnProperty.call(d, k) ? d[k] : undefined);
-  const input: Record<string, unknown> = {};
-  for (const f of defs) if (own(f.key) !== undefined) input[f.key] = own(f.key);
-  return { address: clean(own("address"), 500), company: clean(own("company"), 200), fields: readFields(defs, input).set };
+/** The first answer worth reading: a message if there is one, else the first text. */
+export function firstText(data: Record<string, unknown> | null): string | null {
+  if (!data) return null;
+  const entries = Object.entries(data).filter(([k, v]) => !k.startsWith("_") && typeof v === "string" && v.trim());
+  const msg = entries.find(([k]) => /message|comment|note|details|question|enquiry|inquiry|about|reason|issue|problem|describe/i.test(k)) ?? entries[0];
+  return msg ? String(msg[1]).slice(0, 300) : null;
 }
 
 /**
@@ -413,6 +350,18 @@ export async function saveEveryone(db: Db): Promise<number> {
   return (await count()) - before;
 }
 
+/**
+ * Undo Done, as Gmail's Undo after an archive: a submission back to read (it
+ * was opened), anything else off inbox_done. False when it was not done.
+ */
+export async function markUndone(db: Db, kind: InboxKind, id: string): Promise<boolean> {
+  if (!/^\d{1,18}$/.test(id)) return false;
+  const rows = kind === "submission"
+    ? await db.sql`update submissions set status = 'read', updated_at = now() where id = ${id}::bigint and status = 'done' returning id`
+    : await db.sql`delete from inbox_done where kind = ${kind} and ref_id = ${id}::bigint returning ref_id`;
+  return rows.length > 0;
+}
+
 /** Mark a submission done. The CRM writes no other column of another app's table. */
 export async function markDone(db: Db, id: string, user: string): Promise<boolean> {
   if (!/^\d{1,18}$/.test(id)) return false;
@@ -423,7 +372,6 @@ export async function markDone(db: Db, id: string, user: string): Promise<boolea
   return rows.length > 0;
 }
 
-/** Take a booking or payment off To do: "done", "already" when it was, "missing" when there is none by that id. */
 /** The Inbox kinds marked done here rather than by a status of their own (a submission's). */
 export type HandledKind = "booking" | "payment" | "change" | "quote";
 export const HANDLED_KINDS: HandledKind[] = ["booking", "payment", "change", "quote"];

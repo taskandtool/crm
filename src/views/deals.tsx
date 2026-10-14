@@ -33,6 +33,7 @@ export type BoardData = {
   stages: Stage[];
   cards: Deal[];
   totals: Record<string, { count: number; cents: string; other: number }>;
+  /** Each deal's next open task, by deal id. */
   next: Map<string, { due_on: string; due_time: string | null }>;
   today: string;
 };
@@ -56,14 +57,39 @@ function OpenTotal({ data }: { data: BoardData }) {
   return <p>{count} open{cents > 0n ? ` · ${formatWholeMoney(cents.toString(), dealsCfg.currency)}` : ""}</p>;
 }
 
-/** A new deal from the board: the person (matched by email or phone, or added) and what is being won. */
-export function NewDealPage(p: { user: string; stages: Stage[]; customers: { id: string; name: string; email: string | null }[]; flash: { code?: string | null; n?: string | null } }) {
+/** What a deal made from an Inbox item starts from: the item, who, what they asked and said, and their deals already open. */
+export type DealFrom = {
+  ref: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  title: string;
+  said: string | null;
+  customerId: string | null;
+  openDeals: { id: string; title: string }[];
+};
+
+/**
+ * A new deal: the person (matched by email or phone, or added) and what is
+ * being won. From an Inbox item it is filled in first, as Pipedrive's
+ * Convert to deal: the customer chosen, the title, what they wrote as its
+ * notes, and the deals they already have open, so a second one is a choice.
+ */
+export function NewDealPage(p: { user: string; stages: Stage[]; customers: { id: string; name: string; email: string | null }[]; from: DealFrom | null; flash: { code?: string | null; n?: string | null } }) {
+  const f = p.from;
   return (
-    <Layout title={`New ${one}`} user={p.user} section="deals" back={{ href: "/deals", label: dealsCfg.many }}>
+    <Layout title={`New ${one}`} user={p.user} section="deals" back={f ? { href: "/", label: "Inbox" } : { href: "/deals", label: dealsCfg.many }}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <form method="post" action="/deals" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface shadow-card p-4 sm:grid-cols-3">
-        <CustomerPicker customers={p.customers} />
-        <DealInputs stages={p.stages.filter((s) => s.kind === "open")} />
+        {f ? <input type="hidden" name="from" value={f.ref} /> : null}
+        {f?.openDeals.length ? (
+          <p class="col-span-full rounded-control bg-panel px-3 py-2 text-ink-2">
+            Already open for {f.name ?? "them"}:{" "}
+            {f.openDeals.map((d, i) => <>{i ? ", " : ""}<a href={`/deals/${d.id}`}>{d.title}</a></>)}
+          </p>
+        ) : null}
+        <CustomerPicker customers={p.customers} selected={f ? f.customerId ?? "new" : null} person={f ?? undefined} />
+        <DealInputs stages={p.stages.filter((s) => s.kind === "open")} title={f?.title} notes={f?.said} />
         <div class="sm:col-span-3">
           <button class={primaryClass}>Create {one}</button>
         </div>
@@ -72,12 +98,12 @@ export function NewDealPage(p: { user: string; stages: Stage[]; customers: { id:
   );
 }
 
-/** What a new deal needs: what it is, its value, its stage. On the board and on a customer's page. */
-function DealInputs({ stages }: { stages: Stage[] }) {
+/** What a new deal needs: what it is, its value, its stage, and notes. On the board and on a customer's page. */
+function DealInputs({ stages, title, notes }: { stages: Stage[]; title?: string; notes?: string | null }) {
   return (
     <>
       <Field label="Title">
-        <input name="title" required maxlength={200} placeholder="New furnace" class={controlClass} />
+        <input name="title" required value={title ?? ""} maxlength={200} placeholder="New furnace" class={controlClass} />
       </Field>
       <Field label={`Value (${dealsCfg.currency})`} hint="Blank uses the quote's total.">
         <input name="value" inputmode="decimal" maxlength={20} class={controlClass} />
@@ -86,6 +112,9 @@ function DealInputs({ stages }: { stages: Stage[] }) {
         <select name="stage" class={controlClass}>
           {stages.map((s) => <option value={s.key}>{s.label}</option>)}
         </select>
+      </Field>
+      <Field label="Notes" class="col-span-full">
+        <textarea name="notes" rows={3} maxlength={10000} class={controlClass}>{notes ?? ""}</textarea>
       </Field>
     </>
   );
@@ -118,7 +147,7 @@ export function Board({ data }: { data: BoardData }) {
         <ul data-cards data-stage={key} class="flex flex-1 flex-col gap-2">
           {/* An empty stage says so, where a card would be; a drop redraws the board. */}
           {list.length ? null : <li class="px-1.5 py-2 text-label text-ink-3">No {many} here</li>}
-          {list.map((d) => <Card d={d} options={options} stray={!known.has(d.stage)} next={data.next.get(d.customer_id)} today={data.today} open={kind === "open"} />)}
+          {list.map((d) => <Card d={d} options={options} stray={!known.has(d.stage)} next={data.next.get(d.id)} today={data.today} open={kind === "open"} />)}
         </ul>
         {t && t.count > list.length ? <p class="mt-2 px-1 text-label text-ink-3">and {t.count - list.length} more</p> : null}
       </section>

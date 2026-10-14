@@ -11,7 +11,7 @@ import { createCustomer, findCustomer, findMatch, getCustomer, listPage, NO_FILT
 import { everythingFrom } from "../src/crm/history";
 import { parseCsv } from "../src/crm/csv-read";
 import { guessMap, planRows, runImport } from "../src/crm/importer";
-import { addFromInbox, inboxPage, markDone, markHandled, readInboxCursor, saveEveryone, type InboxRow } from "../src/crm/inbox";
+import { inboxPage, markDone, markHandled, markUndone, readInboxCursor, requestOf, saveEveryone, type InboxRow } from "../src/crm/inbox";
 import { publishFields } from "../src/crm/fields";
 import { loadTeam, setTeam } from "../src/crm/people";
 import { addNote, listNotes } from "../src/customers/notes";
@@ -203,7 +203,7 @@ test("the inbox, with none of the other apps' tables", async (t) => {
   const page = await inboxPage(db, { inbox: INBOX }, null, 10);
   assert.deepEqual(page.rows, []);
   assert.match(missingSentence(page.present, { payments: true })!, /no form submissions or payments/);
-  assert.equal(await addFromInbox(db, "submission", "1", "new", ME), null);
+  assert.equal(await requestOf(db, "submission", "1"), null);
   assert.equal((await everythingFrom(db, { email: "ann.lee@example.com", phone: null })).items.length, 0);
 });
 
@@ -257,109 +257,34 @@ test("the inbox, across submissions, bookings and payments", async (t) => {
   assert.ok(onlyQuote.rows.every((r) => r.kind === "submission"));
 });
 
-test("saving a customer from a submission, and Mark done", async (t) => {
+test("saving everyone from the Inbox, a New deal's request, and Mark done and Undo", async (t) => {
   if (skip) return t.skip(skip);
   const [jo] = await rows("select id::text as id, created_at from submissions where name = 'Jo Park' and status = 'new'");
-  const added = await addFromInbox(db, "submission", jo.id, "new", ME);
-  assert.ok(added?.created);
-  assert.equal(added!.customer.name, "Jo Park");
-  assert.equal(added!.customer.email, "jo@example.com");
-  assert.equal(added!.customer.source, "Quote request");
-  assert.equal(added!.customer.stage, "new");
-  assert.equal(added!.customer.last_contact_at!.getTime(), new Date(jo.created_at).getTime());
-  const again = await addFromInbox(db, "submission", jo.id, "new", ME);
-  assert.equal(again?.created, false);
-  assert.equal(again?.customer.id, added!.customer.id);
+  await saveEveryone(db);
+  const saved = (await findCustomer(db, "jo@example.com"))!;
+  assert.deepEqual([saved.name, saved.source, saved.stage], ["Jo Park", "Quote request", "new"]);
+  assert.equal(new Date(saved.last_contact_at!).getTime(), new Date(jo.created_at).getTime(), "first contact is when they wrote");
+  assert.equal((await findCustomer(db, "kim@example.com"))?.source, "Payment");
+  assert.equal(await findCustomer(db, "spam@example.com"), null, "spam saves no one");
+
+  // What New deal starts from: the person, the form's title, what they wrote. Spam is nothing.
+  assert.deepEqual(await requestOf(db, "submission", jo.id), { name: "Jo Park", email: "JO@example.com", phone: null, title: "Quote request", said: "Need a new furnace" });
   const [spam] = await rows("select id::text as id from submissions where status = 'spam'");
-  assert.equal(await addFromInbox(db, "submission", spam.id, "new", ME), null);
-
-  // A row with nothing to match on but a name is still added once.
-  await db.sql`insert into submissions (form_key, name, source) values ('quote', 'Name Only', 'website')`;
-  const [bareSub] = await rows("select id::text as id from submissions where name = 'Name Only'");
-  assert.equal((await addFromInbox(db, "submission", bareSub.id, "new", ME))?.created, true);
-  assert.equal((await addFromInbox(db, "submission", bareSub.id, "new", ME))?.created, false);
-
-  const pay = await addFromInbox(db, "payment", (await rows("select id::text as id from payments where status = 'paid'"))[0].id, "new", ME);
-  assert.equal(pay?.customer.source, "Payment");
+  assert.equal(await requestOf(db, "submission", spam.id), null);
 
   assert.equal(await markDone(db, jo.id, ME), true);
   assert.equal(await markDone(db, jo.id, ME), false, "already done");
   const [done] = await rows(`select status, updated_by::text as by from submissions where id = ${Number(jo.id)}`);
   assert.deepEqual(done, { status: "done", by: ME });
-
-  const history = await everythingFrom(db, added!.customer);
+  const history = await everythingFrom(db, saved);
   assert.deepEqual(history.items.map((i) => `${i.kind}:${i.status}`), ["submission:read", "submission:done"]);
+  // Undo puts it back, opened; a second Undo changes nothing.
+  assert.equal(await markUndone(db, "submission", jo.id), true);
+  assert.equal(await markUndone(db, "submission", jo.id), false);
+  assert.equal((await rows(`select status from submissions where id = ${Number(jo.id)}`))[0].status, "read");
   const ann = (await findCustomer(db, "ann.lee@example.com"))!;
   assert.deepEqual((await everythingFrom(db, ann)).items, [], "her booking is not on the timeline");
   assert.deepEqual((await customerEvents(db, ann.id)).map((e) => e.what), ["Estimate visit"], "it is one of her events");
-});
-
-test("saving a customer keeps what the person gave: address, custom fields, a phone from their other rows", async (t) => {
-  if (skip) return t.skip(skip);
-  const DEFS: CustomField[] = [
-    { key: "insurance", label: "Insurance", type: "select", options: ["Delta Dental", "Aetna"] },
-    { key: "visit_date", label: "Visit date", type: "date" },
-    { key: "referred_by", label: "Referred by", type: "text" },
-  ];
-  const sub = async (email: string, phone: string | null, data: unknown, at = "2026-09-01 10:00+00") => {
-    const [r] = await db.sql<{ id: string }>`
-      insert into submissions (form_key, name, email, phone, data, source, created_at)
-      values ('quote', 'Gave Things', ${email}, ${phone}, ${JSON.stringify(data)}::jsonb, 'website', ${at}::timestamptz) returning id::text as id`;
-    return r.id;
-  };
-
-  // The answers named like a column or a custom field come across; others stay on the submission.
-  const a = await addFromInbox(db, "submission", await sub("gave@example.com", null, { address: " 12 High St ", insurance: "delta dental", colour: "red", message: "hi" }), "new", ME, DEFS);
-  assert.ok(a?.created);
-  assert.equal(a!.customer.address, "12 High St");
-  assert.deepEqual(a!.customer.fields, { insurance: "Delta Dental" });
-  assert.equal(a!.customer.phone, null);
-
-  // Refused as the customer form refuses it: a select outside its options, a
-  // date that is not one, an object where text belongs; text is cut to the
-  // form's lengths.
-  const h = await addFromInbox(
-    db,
-    "submission",
-    await sub("hostile@example.com", null, {
-      insurance: "<script>alert(1)</script>", visit_date: "2026-13-45", address: { $gt: "" }, company: "x".repeat(5000), referred_by: "y".repeat(5000), "__proto__": { polluted: true },
-    }),
-    "new", ME, DEFS,
-  );
-  assert.ok(h?.created);
-  assert.equal(h!.customer.address, null);
-  assert.equal(h!.customer.company!.length, 200);
-  assert.deepEqual(Object.keys(h!.customer.fields), ["referred_by"]);
-  assert.equal((h!.customer.fields.referred_by as string).length, 2000);
-  assert.equal(({} as Record<string, unknown>).polluted, undefined);
-
-  // Already a customer: only what is empty is filled; nothing is overwritten.
-  const before = (await getCustomer(db, a!.customer.id))!;
-  const again = await addFromInbox(db, "submission", await sub("gave@example.com", "555 818 0001", { address: "99 Other Rd", insurance: "Aetna", visit_date: "2026-11-02" }), "new", ME, DEFS);
-  assert.equal(again?.created, false);
-  assert.equal(again!.customer.id, a!.customer.id);
-  assert.equal(again!.customer.address, "12 High St", "an address already there is kept");
-  assert.deepEqual(again!.customer.fields, { insurance: "Delta Dental", visit_date: "2026-11-02" }, "a field already there is kept, an empty one filled");
-  assert.equal(again!.customer.phone, "555 818 0001", "an empty phone is filled");
-  assert.ok(again!.customer.updated_at > before.updated_at);
-  const third = await addFromInbox(db, "submission", await sub("gave@example.com", "555 000 0000", { address: "1 Third St" }), "new", ME, DEFS);
-  assert.equal(third!.customer.phone, "555 818 0001");
-  assert.equal(third!.customer.updated_at.getTime(), again!.customer.updated_at.getTime(), "nothing to fill touches nothing");
-
-  // A payment has no phone: it takes the latest one that email gave elsewhere.
-  await sub("payer@example.com", "555 818 1111", {}, "2026-08-01 10:00+00");
-  await sub("payer@example.com", "555 818 4545", {}, "2026-08-03 10:00+00");
-  await sub("payer@example.com", "  ", {}, "2026-08-05 10:00+00");
-  await sub("payer@example.com", "555 818 9999", {}, "2026-08-06 10:00+00").then((id) => db.sql`update submissions set status = 'spam' where id = ${id}::bigint`);
-  await db.sql`
-    insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, phone, location_kind, created_at)
-    select (select id from booking_types limit 1), id, '2026-08-10 15:00+00', '2026-08-10 16:00+00', 'Payer', 'payer@example.com', '555 818 3333', 'phone', '2026-08-02 10:00+00' from resources limit 1`;
-  const [pay] = await db.sql<{ id: string }>`
-    insert into payments (email, name, amount_cents, currency, status, created_at)
-    values ('Payer@Example.com', 'Payer', 5000, 'usd', 'paid', '2026-08-07 10:00+00') returning id::text as id`;
-  const paid = await addFromInbox(db, "payment", pay.id, "new", ME, DEFS);
-  assert.ok(paid?.created);
-  assert.equal(paid!.customer.phone, "555 818 4545", "the latest non-empty phone, spam left out");
 });
 
 test("nothing planned: everyone in play with no task and nothing booked", async (t) => {
@@ -476,14 +401,6 @@ test("racing creates of one person make one customer: by email, by phone only, b
     createCustomer(db, { name: "Mixed", phone: "(555) 404-0002", stage: "new" }, ME),
   ]);
   assert.equal(mixed.filter((r) => r.created).length, 1);
-  // Two saves at once (two pages, a page and a command) for a phone-only and a name-only submission.
-  await db.sql`insert into submissions (form_key, name, phone, source) values ('quote', 'Call Me', '555 404 0003', 'website'), ('quote', 'Only A Name', null, 'website')`;
-  for (const name of ["Call Me", "Only A Name"]) {
-    const [sub] = await rows(`select id::text as id from submissions where name = '${name}'`);
-    const clicks = await many(4, () => addFromInbox(db, "submission", sub.id, "new", ME));
-    assert.equal(clicks.filter((r) => r?.created).length, 1, name);
-    assert.equal(new Set(clicks.map((r) => r?.customer.id)).size, 1, name);
-  }
   // Creating a plain customer with only a name is still always a new one (two John Smiths).
   const plain = await many(2, () => createCustomer(db, { name: "Same Name", stage: "new" }, ME));
   assert.equal(plain.filter((r) => r.created).length, 2);
@@ -627,10 +544,11 @@ test("an online booking is an event of the customer its email belongs to; added 
   assert.deepEqual([before!.what, before!.customer_id, before!.name], ["Installation", null, "Joy Park"], "not a customer yet");
   assert.ok((await inboxPage(db, { inbox: INBOX, todo: true }, null, 200)).rows.some((r) => r.kind === "booking" && r.id === b.id), "an online booking is news");
 
-  const added = await addFromInbox(db, "booking", b.id, "new", ME, []);
-  assert.deepEqual([added!.customer.address, added!.customer.source], ["44 Birch Road", "Booking: Installation"], "their place is their address");
-  assert.equal((await getEvent(db, b.id))!.customer_id, added!.customer.id, "matched by email");
-  assert.ok((await customerEvents(db, added!.customer.id)).some((e) => e.id === b.id));
+  await saveEveryone(db);
+  const added = (await findCustomer(db, "joy@example.com"))!;
+  assert.deepEqual([added.address, added.source], ["44 Birch Road", "Booking: Installation"], "their place is their address");
+  assert.equal((await getEvent(db, b.id))!.customer_id, added.id, "matched by email");
+  assert.ok((await customerEvents(db, added.id)).some((e) => e.id === b.id));
 });
 
 test("an online booking with no email is the event of the customer its phone belongs to, as in the Inbox", async (t) => {
@@ -717,24 +635,30 @@ test("a team member written by name or by email is one person: shown by name, fi
   }
 });
 
-test("Mark done takes a booking or payment off To do and changes neither", async (t) => {
+test("Mark done takes a scheduled booking off To do and changes nothing; a finished one is never to do", async (t) => {
   if (skip) return t.skip(skip);
   await applySchema(db, readFileSync("test/fixtures/other-apps.sql", "utf8"));
   const [type] = await db.sql<{ id: string }>`insert into booking_types (slug, name, location_kind) values ('noshow', 'Phone consult', 'phone') returning id::text as id`;
   const [host] = await db.sql<{ id: string }>`insert into resources (name, time_zone) values ('Lou', 'UTC') returning id::text as id`;
   const [b] = await db.sql<{ id: string }>`
     insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, status, location_kind)
+    values (${type.id}::bigint, ${host.id}::bigint, now() + interval '2 days', now() + interval '2 days' + interval '20 minutes', 'Nora Show', 'nora@example.com', 'confirmed', 'phone')
+    returning id::text as id`;
+  const todo = async (id = b.id) => (await inboxPage(db, { inbox: INBOX, todo: true }, null, 200)).rows.filter((r) => r.kind === "booking" && r.id === id);
+  assert.equal((await todo()).length, 1, "a scheduled online booking is to do until someone marks it");
+  // One already finished (a no-show, completed or cancelled) was dealt with: it is never to do.
+  const [gone] = await db.sql<{ id: string }>`
+    insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, status, location_kind)
     values (${type.id}::bigint, ${host.id}::bigint, now() - interval '2 days', now() - interval '2 days' + interval '20 minutes', 'Nora Show', 'nora@example.com', 'no_show', 'phone')
     returning id::text as id`;
-  const todo = async () => (await inboxPage(db, { inbox: INBOX, todo: true }, null, 200)).rows.filter((r) => r.kind === "booking" && r.id === b.id);
-  assert.equal((await todo()).length, 1, "nobody made a customer of her: still to do");
+  assert.equal((await todo(gone.id)).length, 0);
   assert.equal(await markHandled(db, "booking", b.id, ME), "done");
   assert.equal((await todo()).length, 0);
   assert.equal(await markHandled(db, "booking", b.id, ME), "already");
   assert.equal(await markHandled(db, "booking", "999999", ME), "missing");
   const all = (await inboxPage(db, { inbox: INBOX }, null, 200)).rows.find((r) => r.kind === "booking" && r.id === b.id);
   assert.ok(all && all.kind === "booking" && all.handled, "Everything still lists it, marked done");
-  assert.equal((await db.sql<{ status: string }>`select status from bookings where id = ${b.id}::bigint`)[0].status, "no_show");
+  assert.equal((await db.sql<{ status: string }>`select status from bookings where id = ${b.id}::bigint`)[0].status, "confirmed", "the booking itself is unchanged");
 });
 
 test("the morning email reaches a team member a task names by name, at the team list's email", async (t) => {

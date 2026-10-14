@@ -257,7 +257,7 @@ export function TasksSection(p: {
       </AddToggle>
       {p.done.length ? (
         <details>
-          <summary class="cursor-pointer text-label text-ink-2">Completed</summary>
+          <summary class="cursor-pointer text-label text-ink-2">Completed tasks</summary>
           <ul class="mt-2 flex flex-col gap-1 text-label text-ink-2">
             {p.done.map((task) => (
               <li>

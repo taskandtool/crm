@@ -104,7 +104,7 @@ test("the Inbox: everyone in it is a customer already, then New deal and Done", 
   const html = await page.text();
   assert.match(html, /Contact us/);
   assert.match(html, /Do you service boilers\?/);
-  assert.match(html, /New deal<\/button>/);
+  assert.match(html, /href="\/deals\/new\?from=submission\.\d+"[^>]*>New deal<\/a>/, "New deal opens the form, filled in from the request");
   assert.match(html, />Done<\/button>/);
   assert.doesNotMatch(html, /Add as customer/);
   assert.doesNotMatch(html, /This project has no/, "every table is there");
@@ -127,11 +127,16 @@ test("the Inbox: everyone in it is a customer already, then New deal and Done", 
   assert.match(html, new RegExp(`href="/customers/${saved.id}"[^>]*>Pat Doe<`), "their name opens them");
   assert.equal((await db.sql`select 1 from follow_ups where customer_id = ${saved.id}::bigint`).length, 0, "saving them plans nothing: To do is the reminder");
 
-  const done = await post("/inbox/done", { id: sub.id, return: "//evil.example/x" });
-  assert.equal(done.headers.get("location"), "/?saved=done", "a return path cannot leave the app");
+  const done = await post("/inbox/done", { kind: "submission", id: sub.id, return: "//evil.example/x" });
+  assert.equal(done.headers.get("location"), `/?saved=done&undo=submission.${sub.id}`, "a return path cannot leave the app; the message offers Undo");
   const [row] = await db.sql<{ status: string }>`select status from submissions where id = ${sub.id}::bigint`;
   assert.equal(row.status, "done");
-  assert.doesNotMatch(await (await get("/")).text(), /Do you service boilers\?/, "Done takes it off To do");
+  const after = await (await get(done.headers.get("location")!)).text();
+  assert.doesNotMatch(after, /Do you service boilers\?/, "Done takes it off To do");
+  assert.match(after, /Marked done\.[\s\S]*name="item" value="submission\.\d+"[\s\S]*>Undo<\/button>/);
+  assert.equal((await post("/inbox/undo", { item: `submission.${sub.id}`, return: "/" })).headers.get("location"), "/?saved=undone");
+  assert.match(await (await get("/")).text(), /Do you service boilers\?/, "Undo puts it back on To do");
+  await post("/inbox/done", { kind: "submission", id: sub.id });
 });
 
 test("the Inbox shows a booker's own reschedule and a quote paid online, with Done only; a quote the team marked is not news", async (t) => {
@@ -162,7 +167,7 @@ test("the Inbox shows a booker's own reschedule and a quote paid online, with Do
   assert.doesNotMatch(html, /Q-9002/, "the team's own mark is not news");
 
   for (const [kind, id] of [["change", ch.id], ["quote", paid.id]]) {
-    assert.equal((await post("/inbox/done", { kind, id })).headers.get("location"), "/?saved=done");
+    assert.equal((await post("/inbox/done", { kind, id })).headers.get("location"), `/?saved=done&undo=${kind}.${id}`);
   }
   const after = await (await get("/")).text();
   assert.doesNotMatch(after, new RegExp(`id="change-${ch.id}"`));
@@ -346,22 +351,35 @@ test("nothing planned: a customer with an open deal is in play, a scheduled even
   assert.equal(await unplanned(), false, "a scheduled event is planned");
 });
 
-test("New deal from the Inbox: a new person, and a customer already here getting another", async (t) => {
+test("New deal from the Inbox opens the form filled in; saving it clears the request and gives the deal its call back", async (t) => {
   if (skip) return t.skip(skip);
+  // Someone not saved yet (written straight into the table): the form offers Someone new, filled in.
   const [sub] = await db.sql<{ id: string }>`
     insert into submissions (form_key, name, email, phone, data, source)
-    values ('contact', 'Gil Ross', 'gil@example.com', null, '{"message": "Need a quote"}', 'website') returning id::text as id`;
-  const first = await post("/inbox/deal", { kind: "submission", id: sub.id });
+    values ('contact', 'Gil Ross', 'gil@example.com', null, '{"message": "Need a quote for a new furnace"}', 'website') returning id::text as id`;
+  const form = await (await get(`/deals/new?from=submission.${sub.id}`)).text();
+  assert.match(form, /<option value="new" selected="">Someone new<\/option>/);
+  assert.match(form, /name="name" value="Gil Ross"/);
+  assert.match(form, /name="title" required="" value="Contact us"/, "named for what they asked");
+  assert.match(form, /<textarea name="notes"[^>]*>Need a quote for a new furnace<\/textarea>/, "what they wrote, as its notes");
+  assert.match(form, new RegExp(`name="from" value="submission\\.${sub.id}"`));
+  const first = await post("/deals", { from: `submission.${sub.id}`, customer: "new", name: "Gil Ross", email: "gil@example.com", title: "New furnace", value: "6500", notes: "Need a quote for a new furnace" });
   assert.match(first.headers.get("location")!, /^\/deals\/\d+\?saved=deal-added$/);
-  const [sub2] = await db.sql<{ id: string }>`
-    insert into submissions (form_key, name, email, data, source)
-    values ('contact', 'Gil Ross', 'GIL@example.com', '{"message": "And the garage"}', 'website') returning id::text as id`;
-  await post("/inbox/deal", { kind: "submission", id: sub2.id });
-  const deals = await db.sql<{ title: string }>`select d.title from deals d join customers c on c.id = d.customer_id where c.email = 'gil@example.com' order by d.id`;
-  assert.deepEqual(deals.map((d) => d.title), ["Contact us", "Contact us"], "one person, two deals, each named for the form");
-  const calls = await db.sql<{ n: number }>`select count(*)::int as n from follow_ups f join customers c on c.id = f.customer_id where c.email = 'gil@example.com'`;
-  assert.equal(calls[0].n, 1, "one open call back is enough");
-  assert.match(await (await get("/?view=all")).text(), /New deal<\/button>/, "a customer's new enquiry can still be a deal");
+  const [made] = await db.sql<{ title: string; value_cents: string; notes: string }>`select d.title, d.value_cents::text, d.notes from deals d join customers c on c.id = d.customer_id where c.email = 'gil@example.com'`;
+  assert.deepEqual(made, { title: "New furnace", value_cents: "650000", notes: "Need a quote for a new furnace" });
+  assert.equal((await db.sql<{ status: string }>`select status from submissions where id = ${sub.id}::bigint`)[0].status, "done", "the request is dealt with");
+
+  // Their next request, as the Website writes it (so they are already a customer): chosen for you, with their open deal named.
+  const sub2 = await insertSubmission(db, { form_key: "contact", name: "Gil Ross", email: "GIL@example.com", phone: null, data: { message: "And the garage" }, source: "website", page: null, status: "new" });
+  const [gil] = await db.sql<{ id: string }>`select id::text as id from customers where email = 'gil@example.com'`;
+  const again = await (await get(`/deals/new?from=submission.${sub2}`)).text();
+  assert.match(again, new RegExp(`<option value="${gil.id}" selected="">Gil Ross`));
+  assert.match(again, /Already open for Gil Ross:[\s\S]*>New furnace<\/a>/, "a second deal is a choice, not an accident");
+  await post("/deals", { from: `submission.${sub2}`, customer: gil.id, title: "Garage unit" });
+  const calls = await db.sql<{ title: string; deal: string }>`
+    select f.title, d.title as deal from follow_ups f join deals d on d.id = f.deal_id where f.customer_id = ${gil.id}::bigint order by f.id`;
+  assert.deepEqual(calls, [{ title: "Call back Gil Ross", deal: "New furnace" }, { title: "Call back Gil Ross", deal: "Garage unit" }], "each deal its own first step");
+  assert.match(await (await get("/?view=all")).text(), /New deal<\/a>/, "a customer's new enquiry can still be a deal");
 });
 
 test("merge: preview, merge, history under either address, the merged record opens the kept one", async (t) => {

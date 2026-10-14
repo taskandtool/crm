@@ -11,7 +11,7 @@ import { phoneKey } from "../customers/customer";
 import { cleanPhone } from "./phone";
 import { NOTHING_PLANNED, phoneKeyOf, spliced } from "./sql";
 
-const texts = spliced({ nothing_planned: NOTHING_PLANNED, phone_key: phoneKeyOf("c.phone"), phone_key_or_none: phoneKeyOf("coalesce(c.phone, '')") });
+const texts = spliced({ nothing_planned: NOTHING_PLANNED, phone_key: phoneKeyOf("c.phone") });
 
 export type Customer = Keyed & {
   id: string;
@@ -156,28 +156,26 @@ export async function findCustomer(db: Db, whoIn: string): Promise<Customer | nu
 }
 
 /**
- * Create a customer unless one already has this email or phone (or, with
- * `bareName`, for a person with neither: a customer of the same name who has
- * neither). Returns the customer and whether it is new.
+ * Create a customer unless one already has this email or phone (never by
+ * name: two John Smiths are two people). Returns the customer and whether it
+ * is new.
  *
- * Two requests racing on one person (two pages saving the same new person, the
- * page and a script) both get the one row. A unique index covers only the
- * email, so the transaction first takes an advisory lock on each key it
- * could match on (email, then phone, then name: one order everywhere, so no
- * two creates wait on each other in a circle), then looks and inserts in one
- * statement. The second request waits for the first to commit and finds it.
+ * Two requests racing on one person (a double click, the page and a script)
+ * both get the one row. A unique index covers only the email, so the
+ * transaction first takes an advisory lock on each key it could match on
+ * (email, then phone: one order everywhere, and the customers skill's
+ * savePerson takes the same locks), then looks and inserts in one statement.
+ * The second request waits for the first to commit and finds it.
  */
 export async function createCustomer(
   db: Db,
   input: NewCustomer,
   user: string,
-  opts: { bareName?: boolean } = {},
 ): Promise<{ customer: Customer; created: boolean }> {
   const email = normalizeEmail(input.email);
   const phone = cleanPhone(input.phone);
   const key = phoneKey(phone);
-  const bare = !email && !key && opts.bareName ? input.name.trim() : null;
-  const locks = [email && `email:${email}`, key && `phone:${key}`, bare && `name:${bare.toLowerCase()}`].filter((l): l is string => !!l);
+  const locks = [email && `email:${email}`, key && `phone:${key}`].filter((l): l is string => !!l);
   const statements: Query[] = locks.map((l) => q`select pg_advisory_xact_lock(hashtext(${"crm.customer." + l}::text))`);
   statements.push(texts.q`
     with m as (
@@ -189,10 +187,6 @@ export async function createCustomer(
         where ${key}::text is not null
           and {phone_key} = ${key}
           and (c.email is null or ${email}::citext is null)
-        union all
-        select c.id, c.archived_at, 2 as rank from customers c
-        where ${bare}::text is not null and c.email is null and lower(c.name) = lower(${bare}::text)
-          and length({phone_key_or_none}) < 7
       ) x
       order by rank, archived_at nulls first, id
       limit 1),
@@ -218,43 +212,6 @@ export async function createCustomer(
   const existing = await findMatch(db, email, phone);
   if (!existing) throw new Error("createCustomer: the insert yielded to a row that cannot be found");
   return { customer: existing, created: false };
-}
-
-/**
- * Fill what a customer is missing (phone, company, address, custom fields),
- * never replacing a value they already have: saving someone from the Inbox who
- * is already here. The emptiness is judged in the statement itself, so a
- * save that lands first wins. Touches nothing, `updated_at` included, when
- * there is nothing to fill.
- */
-export async function fillBlanks(
-  db: Db,
-  c: Customer,
-  give: { phone?: string | null; company?: string | null; address?: string | null; fields?: Record<string, unknown> },
-  user: string,
-): Promise<Customer> {
-  const phone = cleanPhone(give.phone);
-  const company = give.company || null;
-  const address = give.address || null;
-  const fields = JSON.stringify(give.fields ?? {});
-  // `customers.fields` inside the subqueries is the row being updated, so a
-  // field saved meanwhile is seen as taken.
-  const [row] = await db.sql<Customer>`
-    update customers set
-      phone = coalesce(nullif(phone, ''), ${phone}::text),
-      company = coalesce(nullif(company, ''), ${company}::text),
-      address = coalesce(nullif(address, ''), ${address}::text),
-      fields = fields || coalesce((
-        select jsonb_object_agg(e.key, e.value) from jsonb_each(${fields}::jsonb) e
-        where coalesce(customers.fields ->> e.key, '') = ''), '{}'::jsonb),
-      updated_at = now(), updated_by = ${user}
-    where id = ${c.id}::bigint
-      and ((nullif(phone, '') is null and ${phone}::text is not null)
-        or (nullif(company, '') is null and ${company}::text is not null)
-        or (nullif(address, '') is null and ${address}::text is not null)
-        or exists (select 1 from jsonb_each(${fields}::jsonb) e where coalesce(customers.fields ->> e.key, '') = ''))
-    returning *, updated_at::text as k`;
-  return row ?? c;
 }
 
 export type Details = {

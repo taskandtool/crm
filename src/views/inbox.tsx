@@ -11,7 +11,7 @@ import { StatusBadge, type StatusOption } from "../admin/status";
 import { BOOKING_STATUSES } from "../booking/admin";
 import { dealsCfg, eventsCfg, invoicesCfg, vocab } from "../config";
 import type { Overview } from "../crm/overview";
-import { sourceOf, type InboxRow } from "../crm/inbox";
+import { firstText, sourceOf, type InboxKind, type InboxRow } from "../crm/inbox";
 import { formatWholeMoney } from "../crm/text";
 import { STATUSES as SUBMISSION_STATUSES } from "../forms/admin";
 import { STATUSES as PAYMENT_STATUSES } from "../payments/admin";
@@ -38,6 +38,8 @@ export type InboxProps = {
   missing: string | null;
   numbers: Overview;
   flash: { code?: string | null; n?: string | null };
+  /** What Done just took off To do, for its Undo. */
+  undo: { kind: InboxKind; id: string } | null;
 };
 
 /**
@@ -79,7 +81,13 @@ const CHIP = { good: "bg-good/10 text-good", late: "bg-late/10 text-late", neutr
 export function InboxPage(p: InboxProps) {
   return (
     <Layout title="Inbox" user={p.user} section="inbox">
-      <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
+      <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} action={p.undo && p.flash.code === "done" ? (
+        <form method="post" action="/inbox/undo">
+          <input type="hidden" name="item" value={`${p.undo.kind}.${p.undo.id}`} />
+          <input type="hidden" name="return" value={p.self} />
+          <button class="font-semibold text-accent hover:underline">Undo</button>
+        </form>
+      ) : null} />
       <Numbers n={p.numbers} />
       <div class="mb-2 flex flex-wrap items-center justify-between gap-3">
         <nav aria-label="Which" class={viewsClass}>
@@ -178,9 +186,9 @@ function Row({ row, self }: { row: InboxRow; self: string }) {
       <input type="hidden" name="id" value={row.id} />
     </>
   );
-  // What still needs someone: a form request by its status; an online booking, a booker's change or an online yes nobody has marked done.
+  // What still needs someone: a form request by its status; an online booking still scheduled, a booker's change or an online yes nobody has marked done.
   const open = row.kind === "submission" ? row.status === "new" || row.status === "read"
-    : row.kind === "booking" ? !row.handled && row.status !== "cancelled"
+    : row.kind === "booking" ? !row.handled && row.status === "confirmed"
     : row.kind === "change" || row.kind === "quote" ? !row.handled
     : false;
   const enquiry = row.kind === "submission" || row.kind === "booking" || row.kind === "payment";
@@ -212,12 +220,7 @@ function Row({ row, self }: { row: InboxRow; self: string }) {
         </div>
       </div>
       <div class="flex items-center gap-2 pl-11 sm:pl-0">
-        {enquiry ? (
-          <form method="post" action="/inbox/deal">
-            {hidden}
-            <button class={buttonClass} aria-label={`New ${deal} for ${person}`}>New {deal}</button>
-          </form>
-        ) : null}
+        {enquiry ? <a href={`/deals/new?from=${row.kind}.${row.id}`} class={buttonClass} aria-label={`New ${deal} for ${person}`}>New {deal}</a> : null}
         {open ? (
           <form method="post" action="/inbox/done">
             {hidden}
@@ -275,12 +278,4 @@ function What({ row }: { row: InboxRow }) {
       {row.livemode === false ? " (test mode)" : ""}
     </p>
   );
-}
-
-/** The first answer worth reading: a message if there is one, else the first text. */
-export function firstText(data: Record<string, unknown> | null): string | null {
-  if (!data) return null;
-  const entries = Object.entries(data).filter(([k, v]) => !k.startsWith("_") && typeof v === "string" && v.trim());
-  const msg = entries.find(([k]) => /message|comment|note|details|question|enquiry|inquiry|about|reason|issue|problem|describe/i.test(k)) ?? entries[0];
-  return msg ? String(msg[1]).slice(0, 300) : null;
 }

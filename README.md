@@ -24,11 +24,12 @@ runs anywhere with Node 20 and a Postgres.
   (through their link), and a quote the customer accepted by paying it
   online. Everyone who gets in touch is saved as a customer on their own,
   matched by email, else by phone, never by name. A request, booking or
-  payment has New deal (a returning customer's new enquiry too) and Done;
-  a booker's change and a quote's yes are news about work in hand, so they
-  have Done only. It opens on To do, which empties as you work: anything
-  but a payment leaves once it is done (a request or booking also once it
-  is made a deal); a payment needs nothing, so it is in Everything only. The nav counts what is to
+  payment has New deal (the New deal form, filled in from it; a returning
+  customer's new enquiry too) and Done, which offers Undo; a booker's
+  change and a quote's yes are news about work in hand, so they have Done
+  only. It opens on To do, which empties as you work: anything leaves once
+  it is done or made a deal, and a booking once it is no longer scheduled;
+  a payment needs nothing, so it is in Everything only. The nav counts what is to
   do. A source the project does not have yet is simply left out.
 - **Tasks**: a call, email, meeting, text or to-do due on a day, by
   one person. Every open task on one list, overdue first, everyone's or mine, and
