@@ -40,7 +40,9 @@ export async function home(db: Db, opts: { timeZone: string; currency: string; i
     db.sql<{ current: number; previous: number }>`
       select count(*) filter (where created_at >= ${day(addDays(today, -6)).start})::int as current,
              count(*) filter (where created_at < ${day(addDays(today, -6)).start})::int as previous
-      from leads where created_at >= ${day(addDays(today, -13)).start}`,
+      from leads where created_at >= ${day(addDays(today, -13)).start}
+        -- One archived as spam or a duplicate was never a new enquiry.
+        and not (status = 'archived' and archived_reason in ('Spam', 'Duplicate'))`,
     taskCounts(db, today, opts.user),
     dealTotals(db, opts.currency, day(monthStart).start),
     p.invoices && opts.invoiceCurrency ? invoiceTotals(db, { today, timeZone: opts.timeZone, currency: opts.invoiceCurrency }) : null,

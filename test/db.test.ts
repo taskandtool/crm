@@ -666,3 +666,15 @@ test("converting a lead into another contact's deal (the form lets you switch) g
   assert.deepEqual(await db.sql`select customer_id::text as c, title, deal_id::text as d from follow_ups where deal_id = ${deal.id}::bigint`,
     [{ c: payer.id, title: "Call back Pay Er", d: deal.id }]);
 });
+
+test("Home's new leads leave out one archived as spam or a duplicate", async (t) => {
+  if (skip) return t.skip(skip);
+  const count = async () => (await home(db, { timeZone: "UTC", currency: "USD", invoiceCurrency: "usd", user: ME })).leads.current;
+  const before = await count();
+  const { customer } = await createCustomer(db, { name: "Spam Lead", email: "spamlead@example.com", stage: "new" }, ME);
+  const [real, spam] = await Promise.all(["Real one", "Junk"].map((title) => saveLead(db, { customerId: customer.id, source: "phone", title }, ME)));
+  assert.equal(await count(), before + 2);
+  await db.sql`update leads set status = 'archived', archived_reason = 'Spam' where id = ${spam}::bigint`;
+  await db.sql`update leads set status = 'archived', archived_reason = 'Not a fit' where id = ${real}::bigint`;
+  assert.equal(await count(), before + 1, "not a fit was still an enquiry; spam was not");
+});
