@@ -253,6 +253,10 @@ export async function setDealArchived(db: Db, id: string, archived: boolean, use
   return rows.length > 0;
 }
 
+/** The deals a form offers for a task or an event: the open ones, and `keep` (the one it has) even once closed. */
+export const dealChoices = (deals: Deal[], keep: string | null = null) =>
+  deals.filter((d) => !d.closed_at || d.id === keep).map((d) => ({ id: d.id, title: d.title }));
+
 /** Open deals expected to close by `day`, soonest first (one past its date first of all): Home's "Closing this month". */
 export async function closingBy(db: Db, day: string, limit: number): Promise<Deal[]> {
   const { sql } = await dealSql(db);

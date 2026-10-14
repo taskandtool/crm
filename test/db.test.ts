@@ -438,7 +438,7 @@ test("events: scheduled, then completed, no-show or cancelled; completed is cont
   if (skip) return t.skip(skip);
   const { customer } = await createCustomer(db, { name: "Ev Ent", email: "event@example.com", phone: "555 919 7001", stage: "new" }, ME);
   const [sam] = await db.sql<{ id: string }>`insert into resources (name, email, time_zone) values ('Sam', 'sam@team.example', 'UTC') returning id::text as id`;
-  const base: EventInput = { title: "Tune-up", type_id: null, at: "2099-01-15 09:30:00", timeZone: "America/Chicago", minutes: 90, resource_id: sam.id, location: "9 Oak Lane", amount_cents: null, currency: "USD", notes: null, fields: {} };
+  const base: EventInput = { title: "Tune-up", type_id: null, at: "2099-01-15 09:30:00", timeZone: "America/Chicago", minutes: 90, resource_id: sam.id, location: "9 Oak Lane", amount_cents: null, currency: "USD", notes: null, fields: {}, deal_id: null };
 
   const later = await addEvent(db, customer, { ...base, fields: { truck: "Truck 2" } }, ME);
   assert.ok(later);
@@ -462,11 +462,12 @@ test("events: scheduled, then completed, no-show or cancelled; completed is cont
 
   // Save merges fields and removes unset ones; a new time raises SEQUENCE so the calendar copy moves.
   const [{ sequence: before }] = await db.sql<{ sequence: number }>`select sequence from bookings where id = ${later.id}::bigint`;
-  const saved = await saveEvent(db, later.id, { ...base, title: "Tune-up and filter", at: "2099-01-16 09:30:00", fields: { van: "Van 1" }, unset: ["truck"] }, ME);
+  const saved = await saveEvent(db, later.id, { ...base, title: "Tune-up and filter", at: "2099-01-16 09:30:00", fields: { van: "Van 1" }, unset: ["truck"] }, customer.id, ME);
   assert.deepEqual([saved!.what, saved!.fields], ["Tune-up and filter", { van: "Van 1" }]);
   const [{ sequence: after }] = await db.sql<{ sequence: number }>`select sequence from bookings where id = ${later.id}::bigint`;
   assert.equal(after, before + 1);
-  assert.equal(await saveEvent(db, "999999", { ...base, unset: [] }, ME), null);
+  assert.equal(await saveEvent(db, "999999", { ...base, unset: [] }, customer.id, ME), null);
+
   await assert.rejects(db.sql`update bookings set amount_cents = -1 where id = ${later.id}::bigint`);
 
   const cancelled = await addEvent(db, customer, { ...base, title: "Called off", at: "2099-01-01 08:00:00" }, ME);
@@ -489,12 +490,22 @@ test("events: scheduled, then completed, no-show or cancelled; completed is cont
     cursor = readListCursor(next);
   }
   assert.deepEqual(seen, ["Batch 0", "Batch 1", "Batch 2", "Batch 3", "Batch 4"]);
+
+  // For one of the customer's deals, as a task can be; another customer's deal is left off.
+  const [ours] = await db.sql<{ id: string }>`insert into deals (customer_id, title, stage) values (${customer.id}::bigint, 'New furnace', 'new') returning id::text as id`;
+  const { customer: other } = await createCustomer(db, { name: "Not Them", email: "notthem@example.com", stage: "new" }, ME);
+  const [theirs] = await db.sql<{ id: string }>`insert into deals (customer_id, title, stage) values (${other.id}::bigint, 'Theirs', 'new') returning id::text as id`;
+  const visit = await addEvent(db, customer, { ...base, title: "Estimate", deal_id: ours.id }, ME);
+  assert.deepEqual([visit!.deal_id, visit!.deal_title], [ours.id, "New furnace"]);
+  assert.equal((await addEvent(db, customer, { ...base, title: "Stray", deal_id: theirs.id }, ME))!.deal_id, null);
+  assert.deepEqual((await customerEvents(db, customer.id, 100, ours.id)).map((e) => e.what), ["Estimate"], "the deal's own");
+  assert.equal((await saveEvent(db, visit!.id, { ...base, title: "Estimate", deal_id: null, unset: [] }, customer.id, ME))!.deal_id, null, "taken off it");
 });
 
 test("an event carries its customer's details as they change", async (t) => {
   if (skip) return t.skip(skip);
   const { customer } = await createCustomer(db, { name: "Pho Only", email: null, phone: "555 919 7002", stage: "new" }, ME);
-  const e = await addEvent(db, customer, { title: "Visit", type_id: null, at: "2099-02-01 09:00:00", timeZone: "UTC", minutes: 60, resource_id: null, location: null, amount_cents: null, currency: "USD", notes: null, fields: {} }, ME);
+  const e = await addEvent(db, customer, { title: "Visit", type_id: null, at: "2099-02-01 09:00:00", timeZone: "UTC", minutes: 60, resource_id: null, location: null, amount_cents: null, currency: "USD", notes: null, fields: {}, deal_id: null }, ME);
   assert.equal(e!.email, null);
   const r = await patchCustomer(db, customer.id, { name: "Pho Found", email: "found@example.com" }, ME);
   assert.ok(r.ok);
@@ -519,7 +530,12 @@ test("an online booking is an event of the customer its email belongs to; saved 
   assert.deepEqual([added.address, added.source], ["44 Birch Road", "Booking: Installation"], "their place is their address");
   assert.equal((await getEvent(db, b.id))!.customer_id, added.id, "matched by email");
   assert.ok((await customerEvents(db, added.id)).some((e) => e.id === b.id));
-  assert.deepEqual((await db.sql`select title, customer_id::text as c from leads where booking_id = ${b.id}::bigint`), [{ title: "Installation", c: added.id }], "it is their lead");
+  const [lead] = await db.sql<{ id: string; title: string; c: string }>`select id::text as id, title, customer_id::text as c from leads where booking_id = ${b.id}::bigint`;
+  assert.deepEqual([lead.title, lead.c], ["Installation", added.id], "it is their lead");
+  // Converted into a deal, the booking it came from is the deal's.
+  const [deal] = await db.sql<{ id: string }>`insert into deals (customer_id, title, stage) values (${added.id}::bigint, 'Install', 'new') returning id::text as id`;
+  assert.equal(await convertLead(db, lead.id, deal.id, ME), true);
+  assert.equal((await getEvent(db, b.id))!.deal_id, deal.id);
 });
 
 test("an online booking with no email is the event of the customer its phone belongs to", async (t) => {

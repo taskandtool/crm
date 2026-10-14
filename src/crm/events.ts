@@ -52,6 +52,9 @@ export type Event = Keyed & {
   /** The customer: the one it names, else the one it matches (sql.ts isCustomer). */
   customer_id: string | null;
   customer_name: string | null;
+  /** The deal it is for, one of its customer's. */
+  deal_id: string | null;
+  deal_title: string | null;
 };
 
 export type EventInput = {
@@ -67,6 +70,8 @@ export type EventInput = {
   currency: string;
   notes: string | null;
   fields: Record<string, unknown>;
+  /** One of the customer's deals; any other is left off. */
+  deal_id: string | null;
 };
 
 /** The views of the list: what is still to happen (scheduled, soonest first), what is over, everything. */
@@ -104,11 +109,13 @@ const SELECT = `b.id::text as id, coalesce(b.title, t.name, 'Untitled') as what,
   b.starts_at, b.ends_at, b.resource_id::text as resource_id, r.name as host_name, b.status, b.name, b.email::text as email, b.phone,
   b.location_kind, b.location, b.answers, b.notes, b.amount_cents::text as amount_cents, b.currency, b.fields, b.source,
   b.created_at, b.updated_at, b.updated_by::text as updated_by, c.id::text as customer_id, c.name as customer_name,
+  b.deal_id::text as deal_id, dl.title as deal_title,
   to_char(b.starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k`;
 // A booking held for a form still being paid is no one's event yet (EVENT_OF).
 const FROM = `from (select * from bookings where hold_until is null) b
   left join booking_types t on t.id = b.type_id
   left join resources r on r.id = b.resource_id
+  left join deals dl on dl.id = b.deal_id
   left join lateral (
     select c.id, c.name from customers c
     where ${EVENT_OF}
@@ -141,10 +148,10 @@ export async function getEvent(db: Db, id: string): Promise<Event | null> {
 export async function addEvent(db: Db, customer: { id: string; name: string; email: string | null; phone: string | null }, v: EventInput, user: string): Promise<Event | null> {
   const [row] = await db.sql<{ id: string }>`
     insert into bookings (type_id, resource_id, starts_at, ends_at, title, name, email, phone, location_kind, location,
-                          customer_id, amount_cents, currency, fields, notes, source, updated_by)
+                          customer_id, deal_id, amount_cents, currency, fields, notes, source, updated_by)
     select t.id, ${v.resource_id}::bigint, s.at, s.at + ${v.minutes}::int * interval '1 minute', ${v.title}, ${customer.name}, ${customer.email}, ${customer.phone},
            coalesce(t.location_kind, 'their_place'), coalesce(${v.location}::text, case when t.location_kind in ('our_place', 'video') then t.location end),
-           ${customer.id}::bigint, ${v.amount_cents}::bigint, ${v.amount_cents === null ? null : v.currency}, ${JSON.stringify(v.fields)}::jsonb, ${v.notes}, 'crm', ${user}
+           ${customer.id}::bigint, (select d.id from deals d where d.id = ${v.deal_id}::bigint and d.customer_id = ${customer.id}::bigint), ${v.amount_cents}::bigint, ${v.amount_cents === null ? null : v.currency}, ${JSON.stringify(v.fields)}::jsonb, ${v.notes}, 'crm', ${user}
     from (select ${v.at}::timestamp at time zone ${v.timeZone}::text as at) s
     left join booking_types t on t.id = ${v.type_id}::bigint
     returning id::text as id`;
@@ -157,7 +164,7 @@ export async function addEvent(db: Db, customer: { id: string; name: string; ema
  * value). A new time, person or place raises SEQUENCE, so the person's
  * calendar copy moves with it. Null when it does not exist.
  */
-export async function saveEvent(db: Db, id: string, v: EventInput & { unset: string[] }, user: string): Promise<Event | null> {
+export async function saveEvent(db: Db, id: string, v: EventInput & { unset: string[] }, customerId: string | null, user: string): Promise<Event | null> {
   if (!/^\d{1,18}$/.test(id)) return null;
   const [row] = await db.sql<{ id: string }>`
     update bookings b set
@@ -167,7 +174,8 @@ export async function saveEvent(db: Db, id: string, v: EventInput & { unset: str
         is distinct from (s.at, s.at + ${v.minutes}::int * interval '1 minute', ${v.resource_id}::bigint, ${v.location}::text) then 1 else 0 end,
       amount_cents = ${v.amount_cents}::bigint, currency = ${v.amount_cents === null ? null : v.currency},
       fields = (b.fields || ${JSON.stringify(v.fields)}::jsonb) - ${v.unset}::text[],
-      notes = ${v.notes}, updated_by = ${user}, updated_at = now()
+      notes = ${v.notes}, updated_by = ${user}, updated_at = now(),
+      deal_id = (select d.id from deals d where d.id = ${v.deal_id}::bigint and d.customer_id = ${customerId}::bigint)
     from (select ${v.at}::timestamp at time zone ${v.timeZone}::text as at) s
     where b.id = ${id}::bigint
     returning b.id::text as id`;
@@ -203,11 +211,11 @@ export function eventsBetween(db: Db, start: Date, end: Date, limit = 50): Promi
     limit ${limit}`;
 }
 
-/** One customer's: the scheduled ones first, soonest first, then the rest newest first. */
-export function customerEvents(db: Db, customerId: string, limit = 100): Promise<Event[]> {
+/** One customer's, or only those for one of their deals: the scheduled ones first, soonest first, then the rest newest first. */
+export function customerEvents(db: Db, customerId: string, limit = 100, dealId: string | null = null): Promise<Event[]> {
   return sql(db)<Event>`
     select {select} {from}
-    where c.id = ${customerId}::bigint
+    where c.id = ${customerId}::bigint and (${dealId}::bigint is null or b.deal_id = ${dealId}::bigint)
     order by (b.status = 'confirmed') desc,
              case when b.status = 'confirmed' then b.starts_at end asc,
              b.starts_at desc, b.id desc

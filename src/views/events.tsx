@@ -11,7 +11,7 @@ import { StatusBadge } from "../admin/status";
 import { BOOKING_STATUSES } from "../booking/admin";
 import { whereText, type BookingType, type Resource } from "../booking/book";
 import { durationText } from "../booking/slots";
-import { eventsCfg, invoicesCfg, ownerLabel, vocab } from "../config";
+import { dealsCfg, eventsCfg, invoicesCfg, ownerLabel, vocab } from "../config";
 import type { CustomField } from "../config-schema";
 import type { Customer } from "../crm/customers";
 import { LENGTHS, minutesOf, type Event, type EventFilter } from "../crm/events";
@@ -65,8 +65,14 @@ function Who({ r }: { r: Event }) {
   return r.customer_id ? <a href={`/customers/${r.customer_id}`} class="break-words">{r.customer_name}</a> : <span class="break-words">{r.name}</span>;
 }
 
-/** The form's own fields, for adding one and for its page. `where` fills a new one's place (the customer's address). */
-function EventFields({ r, choices, where }: { r?: Event; choices: Choices; where?: string | null }) {
+type DealChoice = { id: string; title: string };
+
+/**
+ * The form's own fields, for adding one and for its page. `where` fills a new
+ * one's place (the customer's address); `deals` are the customer's to choose
+ * from, as a task's are, with `dealId` chosen.
+ */
+function EventFields({ r, choices, where, deals = [], dealId = null }: { r?: Event; choices: Choices; where?: string | null; deals?: DealChoice[]; dealId?: string | null }) {
   const length = r ? minutesOf(r) : 60;
   const lengths = LENGTHS.includes(length) ? LENGTHS : [...LENGTHS, length].sort((a, b) => a - b);
   return (
@@ -99,6 +105,14 @@ function EventFields({ r, choices, where }: { r?: Event; choices: Choices; where
       <Field label="Where" class="sm:col-span-2">
         <input name="location" value={r ? (r.location ?? "") : (where ?? "")} maxlength={500} class={controlClass} />
       </Field>
+      {deals.length ? (
+        <Field label={dealsCfg.one}>
+          <select name="deal" class={controlClass}>
+            <option value="">None</option>
+            {deals.map((d) => <option value={d.id} selected={d.id === dealId}>{d.title}</option>)}
+          </select>
+        </Field>
+      ) : null}
       <Field label={`Amount (${ev.currency})`}>
         <input name="amount" inputmode="decimal" value={r ? amountText(r.amount_cents, r.currency ?? ev.currency) : ""} maxlength={20} class={controlClass} />
       </Field>
@@ -114,8 +128,8 @@ function EventFields({ r, choices, where }: { r?: Event; choices: Choices; where
   );
 }
 
-/** The section on a customer's page: theirs, and a form to add one. */
-export function CustomerEvents({ c, events, choices }: { c: Customer; events: Event[]; choices: Choices }) {
+/** The section on a customer's page (theirs) or a deal's (its own, `dealId`), and a form to add one. */
+export function CustomerEvents({ c, events, choices, deals, dealId = null }: { c: Customer; events: Event[]; choices: Choices; deals: DealChoice[]; dealId?: string | null }) {
   return (
     <div class="flex flex-col gap-4">
       {events.length ? (
@@ -129,7 +143,7 @@ export function CustomerEvents({ c, events, choices }: { c: Customer; events: Ev
                 <p class="text-label text-ink-2">
                   <WhenOf r={r} />
                 </p>
-                <p class="text-label text-ink-3">{[r.host_name, amountOf(r), fieldsLine(r)].filter(Boolean).join(" · ")}</p>
+                <p class="text-label text-ink-3">{[dealId ? null : r.deal_title, r.host_name, amountOf(r), fieldsLine(r)].filter(Boolean).join(" · ")}</p>
               </div>
               <StatusBadge value={r.status} options={BOOKING_STATUSES} />
             </li>
@@ -145,7 +159,7 @@ export function CustomerEvents({ c, events, choices }: { c: Customer; events: Ev
       ) : null}
       <AddToggle label={`Add ${one}`}>
         <form method="post" action={`/customers/${c.id}/events`} aria-label={`Add ${/^[aeiou]/i.test(one) ? "an" : "a"} ${one}`} class="grid gap-3 sm:grid-cols-2">
-          <EventFields choices={choices} where={c.address} />
+          <EventFields choices={choices} where={c.address} deals={deals} dealId={dealId} />
           <div class="sm:col-span-2">
             <button class={buttonClass}>Add {one}</button>
           </div>
@@ -181,7 +195,7 @@ export function eventSpec(): TableSpec<Event> {
         cell: (r) => (
           <>
             {r.what}
-            {fieldsLine(r) ? <span class="block text-label text-ink-2">{fieldsLine(r)}</span> : null}
+            {r.deal_title || fieldsLine(r) ? <span class="block text-label text-ink-2">{[r.deal_title, fieldsLine(r)].filter(Boolean).join(" · ")}</span> : null}
           </>
         ),
       },
@@ -288,13 +302,14 @@ function StatusButton({ id, status, label, primary, ask }: { id: string; status:
 
 /** One event: what, when and for whom at the top, its details with Edit, its quote and invoice. */
 export function EventPage(p: {
-  user: string; event: Event; choices: Choices; money: { quotes: Quote[]; invoices: Invoice[] } | null; flash: { code?: string | null; n?: string | null };
+  user: string; event: Event; choices: Choices; money: { quotes: Quote[]; invoices: Invoice[] } | null;
+  /** Its customer's deals to choose from. */ deals: DealChoice[]; flash: { code?: string | null; n?: string | null };
 }) {
   const r = p.event;
   const self = `/events/${r.id}`;
   const started = new Date(r.starts_at).getTime() <= Date.now();
   const doc = {
-    email: r.email, name: r.customer_name ?? r.name, phone: r.phone, event: r.id, line: r.what,
+    email: r.email, name: r.customer_name ?? r.name, phone: r.phone, event: r.id, deal: r.deal_id, line: r.what,
     unit: r.amount_cents === null ? null : amountText(r.amount_cents, r.currency ?? ev.currency),
     currency: r.amount_cents === null ? null : r.currency,
   };
@@ -336,6 +351,7 @@ export function EventPage(p: {
               fields={[
                 { label: "When", value: <><When at={r.starts_at} timeZone={timeZone} /> for {durationText(minutesOf(r))}<Overdue r={r} /></> },
                 ...(r.type_name && r.title ? [{ label: "Service", value: r.type_name }] : []),
+                { label: dealsCfg.one, value: r.deal_id ? <a href={`/deals/${r.deal_id}`}>{r.deal_title}</a> : null },
                 { label: ownerLabel, value: r.host_name },
                 { label: "Where", value: r.location ? whereText(r, { link: true, team: true }) : null },
                 { label: "Email", value: r.email ? <a href={`mailto:${r.email}`} class="break-all">{r.email}</a> : null },
@@ -346,7 +362,7 @@ export function EventPage(p: {
               ]}
             >
               <form method="post" action={self} class="grid gap-3 sm:grid-cols-2">
-                <EventFields r={r} choices={p.choices} />
+                <EventFields r={r} choices={p.choices} deals={p.deals} dealId={r.deal_id} />
                 <div class="sm:col-span-2">
                   <button class={primaryClass}>Save</button>
                 </div>

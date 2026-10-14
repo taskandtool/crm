@@ -411,6 +411,26 @@ test("Convert to deal opens the form filled in; saving it converts the lead, cle
   assert.equal((await get("/deals/new?from=submission.1")).status, 200, "an old Inbox link opens a blank form");
 });
 
+test("a deal's schedule: an event added from the deal is for it, shows it, and can be taken off it", async (t) => {
+  if (skip) return t.skip(skip);
+  const made = await post("/customers", { name: "Dee Lane", email: "dee@example.com", address: "7 Elm Row" });
+  const cid = made.headers.get("location")!.match(/\/customers\/(\d+)/)![1];
+  const [deal] = await db.sql<{ id: string }>`insert into deals (customer_id, title, stage) values (${cid}::bigint, 'Heat pump', 'new') returning id::text as id`;
+  const page = await (await get(`/deals/${deal.id}`)).text();
+  assert.match(page, /<h2[^>]*>Schedule<\/h2>/);
+  assert.match(page, new RegExp(`action="/customers/${cid}/events"[\\s\\S]*?<option value="${deal.id}" selected="">Heat pump</option>`), "the deal is chosen");
+  assert.match(page, /name="location" value="7 Elm Row"/, "their address, as from their page");
+
+  const added = await post(`/customers/${cid}/events`, { title: "Site visit", at: "2099-04-02T10:00", deal: deal.id });
+  const eventId = added.headers.get("location")!.match(/\/events\/(\d+)/)![1];
+  assert.match(await (await get(`/events/${eventId}`)).text(), new RegExp(`href="/deals/${deal.id}">Heat pump</a>`), "the event names its deal");
+  assert.match(await (await get(`/deals/${deal.id}`)).text(), new RegExp(`href="/events/${eventId}"[^>]*>\\s*Site visit`), "the deal lists it");
+  assert.match(await (await get("/events?q=Dee")).text(), /Site visit[\s\S]*?Heat pump/, "the list says which deal");
+
+  await post(`/events/${eventId}`, { title: "Site visit", at: "2099-04-02T10:00", deal: "" });
+  assert.equal((await db.sql<{ d: string | null }>`select deal_id::text as d from bookings where id = ${eventId}::bigint`)[0].d, null);
+});
+
 test("merge: preview, merge, history under either address, the merged record opens the kept one", async (t) => {
   if (skip) return t.skip(skip);
   const a = (await post("/customers", { name: "Hal Moe", email: "hal@example.com" })).headers.get("location")!.match(/\/customers\/(\d+)/)![1];

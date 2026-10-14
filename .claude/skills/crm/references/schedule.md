@@ -16,9 +16,12 @@ phone) matches; one held for a form still being paid is not an event until
 it is paid.
 
 `node scripts/events.mjs add <who> "<what>" --at "friday 9:30" --host Dana`
-puts one on the schedule (`--help` for the rest); `done`, `no-show` and
-`cancel` change it; a completed one counts as contact. Pages: `/events` (upcoming, overdue (scheduled, time passed, not marked), past, all;
-CSV), each event's page, and a section on every customer's page.
+puts one on the schedule (`--deal <id>` for one of their deals; `--help` for
+the rest); `done`, `no-show` and `cancel` change it; a completed one counts
+as contact. Pages: `/events` (upcoming, overdue (scheduled, time passed, not marked), past, all;
+CSV), each event's page, and a section on every customer's page and every
+deal's (its own events). A lead from an online booking, converted, takes
+its booking onto the new deal.
 
 ## Online booking
 

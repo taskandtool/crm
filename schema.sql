@@ -32,6 +32,10 @@ alter table bookings add column if not exists amount_cents bigint check (amount_
 alter table bookings add column if not exists currency text;
 alter table bookings add column if not exists fields jsonb not null default '{}'::jsonb check (jsonb_typeof(fields) = 'object');
 create index if not exists bookings_customer on bookings (customer_id, starts_at desc) where customer_id is not null;
+-- The deal an event is for (a visit to quote the work, the job itself), one
+-- of its customer's: a deal's page lists them, as Pipedrive's activities on a deal.
+alter table bookings add column if not exists deal_id bigint;
+create index if not exists bookings_deal on bookings (deal_id, starts_at desc) where deal_id is not null;
 
 comment on table pipeline_stages is 'A customer''s statuses (Lead, Customer, Not a fit), one row each, edited by the owner. customers.stage holds a key. Seeded once from crm.config.json statuses.';
 

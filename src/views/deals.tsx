@@ -11,10 +11,12 @@ import { StatusBadge, StatusForm } from "../admin/status";
 import { dealsCfg, invoicesCfg, ownerLabel, vocab } from "../config";
 import type { Customer } from "../crm/customers";
 import type { Deal } from "../crm/deals";
+import type { Event } from "../crm/events";
 import type { Task } from "../crm/tasks";
 import { KIND_LABELS, type Stage } from "../crm/stages";
 import { amountText, formatWholeMoney } from "../crm/text";
 import type { Quote } from "../invoices/quotes";
+import { CustomerEvents, type Choices } from "./events";
 import { Docs } from "./money";
 import { TasksSection } from "./tasks";
 import { Layout } from "./layout";
@@ -217,6 +219,9 @@ export function DealPage(p: {
   stages: Stage[];
   tasks: { open: Task[]; done: Task[] };
   openDeals: { id: string; title: string }[];
+  customer: Customer;
+  /** Its events and what the form chooses from; null with the schedule off. */
+  schedule: { events: Event[]; choices: Choices } | null;
   quotes: Quote[] | null;
   owners: string[];
   today: string;
@@ -303,6 +308,11 @@ export function DealPage(p: {
             <Section title="Tasks">
               <TasksSection customerId={d.customer_id} open={p.tasks.open} done={p.tasks.done} deals={p.openDeals} dealId={d.id}
                 owners={p.owners} user={p.user} today={p.today} returnTo={self} prompt={!closed} />
+            </Section>
+          ) : null}
+          {p.schedule && (p.schedule.events.length || !closed) ? (
+            <Section title="Schedule">
+              <CustomerEvents c={p.customer} events={p.schedule.events} choices={p.schedule.choices} deals={p.openDeals} dealId={d.id} />
             </Section>
           ) : null}
           {p.leads.length ? (

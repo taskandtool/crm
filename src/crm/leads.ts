@@ -133,11 +133,14 @@ export async function openLeadCount(db: Db): Promise<number> {
   return r.n;
 }
 
-/** Converted into a deal: off Open, with the deal named. */
+/** Converted into a deal: off Open, with the deal named, and the booking it came from (if any) is the deal's. */
 export async function convertLead(db: Db, id: string, dealId: string, user: string): Promise<boolean> {
-  const [lead] = await db.sql<{ submission_id: string | null }>`
+  const [lead] = await db.sql<{ submission_id: string | null; booking_id: string | null }>`
     update leads set status = 'converted', deal_id = ${dealId}::bigint, archived_reason = null, updated_at = now(), updated_by = ${user}
-    where id = ${id}::bigint and status = 'open' returning submission_id::text as submission_id`;
+    where id = ${id}::bigint and status = 'open' returning submission_id::text as submission_id, booking_id::text as booking_id`;
+  if (lead?.booking_id) {
+    await db.sql`update bookings set deal_id = ${dealId}::bigint, updated_at = now(), updated_by = ${user} where id = ${lead.booking_id}::bigint and deal_id is null`;
+  }
   // Its form submission is dealt with too: done in the forms list. The CRM writes no other column of the forms skill's table.
   if (lead?.submission_id) {
     await db.sql`update submissions set status = 'done', updated_at = now(), updated_by = ${user} where id = ${lead.submission_id}::bigint and status in ('new', 'read')`;

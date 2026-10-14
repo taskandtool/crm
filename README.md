@@ -42,8 +42,9 @@ runs anywhere with Node 20 and a Postgres.
   gets a "Call back" for that day, and a morning email lists what is due.
 - **Deals**: one piece of work being won, for one customer, who may have
   many. Stages you name, a value (a quote's total until one is typed),
-  an owner, an expected close; won makes them a customer, a quote's yes
-  wins it, a lost one keeps why.
+  an owner, an expected close; its own tasks and events (a visit to quote
+  it, the job itself); won makes them a customer, a quote's yes wins it, a
+  lost one keeps why.
 - **Contacts**, everyone the business deals with, keyed by email (a phone
   alone is fine too), each with a status (Lead until they buy, then
   Customer, or Not a fit), as Pipedrive and HubSpot name them; the word is

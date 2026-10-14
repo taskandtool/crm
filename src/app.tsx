@@ -22,7 +22,7 @@ import {
 import { csvColumns } from "./crm/columns";
 import { postedFields, readFields } from "./crm/fields";
 import { everythingFrom } from "./crm/history";
-import { board, createDeal, customerDeals, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
+import { board, createDeal, customerDeals, dealChoices, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
 import {
   addTask, customerTasks, doneTask, taskCounts, getTask, inPlay, listTasks, moveTask, nextTasks,
   pickTaskKind, readDay, readTime,
@@ -494,6 +494,8 @@ function readEventForm(body: Record<string, unknown>, current?: Event): { event:
       resource_id: idParam(str(body.host)), location: clean(body.location, 500),
       amount_cents: amount, currency: (amount !== null && current?.currency) || ev.currency,
       notes: clean(body.notes, 10_000), fields: fr.set,
+      // A form with no Deal choice (no open deals) leaves the one it has.
+      deal_id: "deal" in body ? idParam(str(body.deal)) : current?.deal_id ?? null,
     },
     unset: fr.unset,
     invalid,
@@ -562,10 +564,12 @@ app.get("/events/:id", async (c) => {
   const id = idParam(c.req.param("id"));
   const event = id ? await getEvent(db, id) : null;
   if (!event) return c.notFound();
-  const [choices, money] = await Promise.all([
+  const [choices, money, deals] = await Promise.all([
     choicesOf(db), invoicesCfg ? Promise.all([quotesFor(db, { visitId: event.id }), invoicesFor(db, { visitId: event.id })]) : null,
+    event.customer_id ? customerDeals(db, event.customer_id) : [],
   ]);
-  return c.html(<EventPage user={c.var.user} event={event} choices={choices} money={money ? { quotes: money[0], invoices: money[1] } : null} flash={flashOf(c)} />);
+  return c.html(<EventPage user={c.var.user} event={event} choices={choices} money={money ? { quotes: money[0], invoices: money[1] } : null}
+    deals={dealChoices(deals, event.deal_id)} flash={flashOf(c)} />);
 });
 
 app.post("/events/:id", async (c) => {
@@ -576,7 +580,7 @@ app.post("/events/:id", async (c) => {
   const self = `/events/${current.id}`;
   const form = readEventForm(await c.req.parseBody(), current);
   if (!form) return back(c, self, "event-incomplete");
-  const r = await saveEvent(db, current.id, { ...form.event, unset: form.unset }, c.var.user);
+  const r = await saveEvent(db, current.id, { ...form.event, unset: form.unset }, current.customer_id, c.var.user);
   if (!r) return back(c, "/events", "gone");
   afterResponse(c, tellBooker(db, envOf(c), current, r));
   return back(c, self, form.invalid ? "invalid" : "saved");
@@ -922,7 +926,7 @@ async function dealFrom(db: Db, from: unknown): Promise<DealFrom | null> {
   const theirs = await customerDeals(db, lead.customer_id);
   return {
     leadId: lead.id, name: lead.customer_name, email: lead.customer_email, phone: lead.customer_phone, title: lead.title, said: lead.said,
-    customerId: lead.customer_id, openDeals: theirs.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title })),
+    customerId: lead.customer_id, openDeals: dealChoices(theirs),
   };
 }
 
@@ -958,16 +962,20 @@ app.get("/deals/:id", async (c) => {
   const id = idParam(c.req.param("id"));
   const deal = id ? await getDeal(db, id) : null;
   if (!deal) return c.notFound();
-  const [stages, tasks, deals, f, quotes, leads] = await Promise.all([
+  const [stages, tasks, deals, f, quotes, leads, customer, events, choices] = await Promise.all([
     listStages(db, "deals"),
     customerTasks(db, deal.customer_id, deal.id),
     customerDeals(db, deal.customer_id),
     facets(db),
     invoicesCfg ? quotesFor(db, { dealId: deal.id }) : null,
     dealLeads(db, deal.id),
+    getCustomer(db, deal.customer_id),
+    eventsCfg ? customerEvents(db, deal.customer_id, CUSTOMER_EVENTS, deal.id) : null,
+    eventsCfg ? choicesOf(db) : null,
   ]);
   return c.html(
-    <DealPage user={c.var.user} deal={deal} leads={leads} stages={stages} tasks={tasks} openDeals={deals.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title }))}
+    <DealPage user={c.var.user} deal={deal} leads={leads} stages={stages} tasks={tasks} openDeals={dealChoices(deals, deal.id)}
+      customer={customer!} schedule={events && choices ? { events, choices } : null}
       quotes={quotes} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} flash={flashOf(c)} />,
   );
 });

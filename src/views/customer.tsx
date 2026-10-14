@@ -10,7 +10,7 @@ import { JsonData, Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { When } from "../admin/list";
 import { cfg, dealsCfg, eventsCfg, invoicesCfg, ownerLabel, vocab } from "../config";
-import type { Deal } from "../crm/deals";
+import { dealChoices, type Deal } from "../crm/deals";
 import type { Task } from "../crm/tasks";
 import { CustomerDeals } from "./deals";
 import { TasksSection } from "./tasks";
@@ -92,7 +92,7 @@ export function CustomerPage(p: {
         <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
           <Section title="Tasks">
             <TasksSection customerId={c.id} open={p.tasks.open} done={p.tasks.done}
-              deals={p.deals.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title }))}
+              deals={dealChoices(p.deals)}
               owners={p.owners} user={p.user} today={p.today} returnTo={self} />
           </Section>
           <Section title="Activity">
@@ -100,7 +100,7 @@ export function CustomerPage(p: {
           </Section>
           {eventsCfg ? (
             <Section title={eventsCfg.many}>
-              <CustomerEvents c={c} events={p.events} choices={p.choices} />
+              <CustomerEvents c={c} events={p.events} choices={p.choices} deals={dealChoices(p.deals)} />
             </Section>
           ) : null}
         </div>

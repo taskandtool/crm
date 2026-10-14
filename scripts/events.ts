@@ -3,7 +3,8 @@
 // `node scripts/events.mjs --help`.
 import { cut } from "../src/admin/keyset";
 import { allPeople, allTypes } from "../src/booking/hours";
-import { cfg, eventsCfg, ownerLabel } from "../src/config";
+import { cfg, dealsCfg, eventsCfg, ownerLabel } from "../src/config";
+import { getDeal } from "../src/crm/deals";
 import { addEvent, customerEvents, eventsPage, getEvent, LENGTHS, minutesOf, saveEvent, setEventStatus, startWall, tellBooker, type Event, type EventInput } from "../src/crm/events";
 import { amountText, clean, parseAmount, relativeWall } from "../src/crm/text";
 import { wallTime } from "../src/customers/notes";
@@ -21,8 +22,8 @@ const HELP = ((ev) => !ev ? OFF : `events.mjs <command> [...] [--json] [--as <em
   list --customer <who>                one customer's
   show <id>
   add <who> "<what>" --at "YYYY-MM-DD HH:MM" [--length 60] [--service <name>] [--host <name>]
-               [--where w] [--amount 245.00] [--notes n] [--field key=value]...
-  update <id> [--what w] [--at ...] [--length m] [--service s] [--host h] [--where w] [--amount a] [--notes n] [--field key=value]...
+               [--where w] [--amount 245.00] [--notes n] [--deal <id>] [--field key=value]...
+  update <id> [--what w] [--at ...] [--length m] [--service s] [--host h] [--where w] [--amount a] [--notes n] [--deal <id>] [--field key=value]...
                                        "" clears a value
   done <id> | no-show <id> | cancel <id>   completed and no-show only once it has started
 
@@ -30,14 +31,14 @@ A new time, person or a cancel tells the booker of one with a service and a pers
 
 <who> is a customer's id, email or phone. --at also takes "next friday 9:30", "tomorrow 2pm"; it is in the business's zone
 (${cfg.time_zone}). --length is minutes (default 60). --host is a Team member (${ownerLabel}) by name or email; --service a
-service by name. --amount is in ${ev.currency}. Custom fields (--field):
+service by name. --amount is in ${ev.currency}. --deal names one of the customer's ${dealsCfg.many.toLowerCase()}. Custom fields (--field):
 ${ev.fields.length ? ev.fields.map((f) => `  ${f.key} (${f.type}${f.options ? ": " + f.options.join(", ") : ""})`).join("\n") : "  none declared in crm.config.json's events"}
 --as records who acted (default CRM_USER, else AI).
 
 Prints what happened first, then Next:. A re-run says "already" and changes
 nothing. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`)(eventsCfg);
 
-const FIELDS = ["at", "length", "service", "host", "where", "amount", "notes", "field", "as"];
+const FIELDS = ["at", "length", "service", "host", "where", "amount", "notes", "deal", "field", "as"];
 const FLAGS: Record<string, string[]> = {
   list: ["overdue", "past", "all", "host", "find", "limit", "customer"], show: [], add: FIELDS, update: [...FIELDS, "what"],
   done: ["as"], "no-show": ["as"], cancel: ["as"],
@@ -56,6 +57,16 @@ const json = has(a, "json");
 const show = (id: string) => `node scripts/events.mjs show ${id}`;
 /** What the booker heard of a move or a cancel, as the page's Reschedule and Cancel would have told them. */
 const told = (s: Sent | null) => (!s ? [] : [s.status === "sent" ? "The booker was told." : `The booker was not told: ${s.status === "none" ? s.why : s.error}.`]);
+
+/** --deal: one of this customer's deals, "" for none; `current` when the flag is absent. */
+async function dealFlag(db: Db, customerId: string | null, current: string | null): Promise<string | null> {
+  if (!has(a, "deal")) return current;
+  const v = (flag(a, "deal") ?? "").replace(/^#/, "");
+  if (!v) return null;
+  const d = await getDeal(db, v);
+  if (!d || d.customer_id !== customerId) fail(`${at}: the customer has no ${dealsCfg.one.toLowerCase()} ${flag(a, "deal")}`, `node scripts/deals.mjs list --customer ${customerId}`);
+  return d.id;
+}
 
 function atFlag(current: string | null): string | null {
   if (!has(a, "at")) return current;
@@ -106,6 +117,7 @@ const fmt = (r: Event) =>
     `[${r.status}]`,
     r.what,
     r.customer_id ? `for ${r.customer_name} (#${r.customer_id})` : `for ${r.name} (not a customer yet)`,
+    r.deal_title ? `re ${r.deal_title} (#${r.deal_id})` : "",
     r.host_name ? `@${r.host_name}` : "",
     r.amount_cents !== null ? `${amountText(r.amount_cents, r.currency ?? ev.currency)} ${r.currency ?? ev.currency}` : "",
     ...ev.fields.map((f) => (r.fields?.[f.key] !== undefined ? `${f.label}: ${String(r.fields[f.key])}` : "")),
@@ -155,7 +167,7 @@ await withDb(async (db) => {
       const input: EventInput = {
         title, type_id: type, at: wall, timeZone: cfg.time_zone, minutes: lengthFlag(60), resource_id: await hostFlag(db, null),
         location: has(a, "where") ? clean(flag(a, "where"), 500) : c.address, amount_cents: amountFlag(null), currency: ev.currency,
-        notes: clean(flag(a, "notes"), 10_000), fields: fr.set,
+        notes: clean(flag(a, "notes"), 10_000), fields: fr.set, deal_id: await dealFlag(db, c.id, null),
       };
       const r = (await addEvent(db, c, input, user)) ?? fail(`${at}: no customer ${c.id}`, "node scripts/customers.mjs list");
       return result(r, `added ${fmt(r)}`, { next: show(r.id) });
@@ -163,7 +175,7 @@ await withDb(async (db) => {
 
     case "update": {
       const r = await eventOr(db, rest[0]);
-      if (!["what", "at", "length", "service", "host", "where", "amount", "notes", "field"].some((k) => has(a, k))) misused(`${at}: nothing to change; name a flag such as --at`, "node scripts/events.mjs --help");
+      if (!["what", "at", "length", "service", "host", "where", "amount", "notes", "deal", "field"].some((k) => has(a, k))) misused(`${at}: nothing to change; name a flag such as --at`, "node scripts/events.mjs --help");
       const fr = fieldFlags(a, ev.fields, at, `${one} field`);
       const amount = amountFlag(r.amount_cents === null ? null : Number(r.amount_cents));
       const title = has(a, "what") ? clean(flag(a, "what"), 200) : r.title;
@@ -175,9 +187,9 @@ await withDb(async (db) => {
         minutes: lengthFlag(minutesOf(r)),
         resource_id: await hostFlag(db, r.resource_id), location: has(a, "where") ? clean(flag(a, "where"), 500) : r.location,
         amount_cents: amount, currency: (amount !== null && r.currency) || ev.currency,
-        notes: has(a, "notes") ? clean(flag(a, "notes"), 10_000) : r.notes, fields: fr.set,
+        notes: has(a, "notes") ? clean(flag(a, "notes"), 10_000) : r.notes, fields: fr.set, deal_id: await dealFlag(db, r.customer_id, r.deal_id),
       };
-      const saved = (await saveEvent(db, r.id, { ...input, unset: fr.unset }, user)) ?? fail(`${at}: no ${one} ${r.id}`, "node scripts/events.mjs list --all");
+      const saved = (await saveEvent(db, r.id, { ...input, unset: fr.unset }, r.customer_id, user)) ?? fail(`${at}: no ${one} ${r.id}`, "node scripts/events.mjs list --all");
       return result(saved, `updated ${fmt(saved)}`, { lines: told(await tellBooker(db, machineEnv(), r, saved)), next: show(r.id) });
     }
 
