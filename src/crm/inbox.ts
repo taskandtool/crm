@@ -1,5 +1,5 @@
-// The Inbox: form submissions (not spam), bookings and payments, newest
-// first across all three, or only what still needs someone (`todo`: a form
+// The Inbox: form submissions (not spam) and online bookings, newest first
+// across both, or only what still needs someone (`todo`: a form
 // request or an online booking nobody has marked done or made a deal of),
 // each matched to its customer (by email, then by phone where one side has
 // no email: customers.ts findMatch says why; the forms and booking skills save
@@ -22,18 +22,12 @@ import { byEmail, isCustomer, spliced } from "./sql";
 
 // Who each row is: the one rule (sql.ts), by email, else by phone.
 const { sql } = spliced({
-  sub_is: isCustomer("s"), sub_email: byEmail("s"), booking_is: isCustomer("b"), booking_email: byEmail("b"), pay_email: byEmail("p"), quote_email: byEmail("qt"),
+  sub_is: isCustomer("s"), sub_email: byEmail("s"), booking_is: isCustomer("b"), booking_email: byEmail("b"), pay_email: byEmail("p"),
 });
 
-/**
- * What can come in: a form submission, a booking, a payment, a booker's own
- * reschedule or cancel (`change`, the booking skill's booking_changes), and a
- * quote the customer accepted by paying it online (`quote`).
- */
-export type InboxKind = "submission" | "booking" | "payment" | "change" | "quote";
-const RANK: Record<InboxKind, number> = { submission: 0, booking: 1, payment: 2, change: 3, quote: 4 };
-/** A quote's `decided_by` when its Pay button was paid: the invoices skill's webhook writes it. */
-const PAID_ONLINE = "paid online";
+/** What can come in: a form submission or a booking. What happened since (a booker's change, a payment) is the bell's (notifications.ts). */
+export type InboxKind = "submission" | "booking";
+const RANK: Record<InboxKind, number> = { submission: 0, booking: 1 };
 
 type Base = {
   id: string;
@@ -49,21 +43,7 @@ type Base = {
 };
 export type SubmissionRow = Base & { kind: "submission"; form_key: string; form_title: string | null; data: Record<string, unknown> };
 export type BookingRow = Base & { kind: "booking"; starts_at: Date; ends_at: Date; resource_name: string | null; type_name: string | null; /** Marked done in the Inbox. */ handled: boolean };
-export type PaymentRow = Base & { kind: "payment"; amount_cents: string; currency: string; pay_kind: string; description: string | null; livemode: boolean | null; /** Marked done in the Inbox. */ handled: boolean };
-export type ChangeRow = Base & {
-  kind: "change";
-  /** rescheduled or cancelled, as status is too. */
-  change: "rescheduled" | "cancelled";
-  booking_id: string;
-  was_starts_at: Date;
-  /** The new start of a move; null for a cancel. */
-  starts_at: Date | null;
-  type_name: string | null;
-  resource_name: string | null;
-  /** Marked done in the Inbox. */ handled: boolean;
-};
-export type QuoteRow = Base & { kind: "quote"; number: string; total_cents: string; currency: string; /** Marked done in the Inbox. */ handled: boolean };
-export type InboxRow = SubmissionRow | BookingRow | PaymentRow | ChangeRow | QuoteRow;
+export type InboxRow = SubmissionRow | BookingRow;
 
 export type InboxCursor = { k: string; r: number; id: string };
 export type InboxOptions = {
@@ -72,13 +52,12 @@ export type InboxOptions = {
   since?: Date | null;
   /** Only rows with no matching customer. */
   unmatched?: boolean;
-  /** Only this form's submissions (no bookings or payments). */
+  /** Only this form's submissions (no bookings). */
   form?: string | null;
   /**
-   * Only what still needs someone: a submission, an online booking still
-   * scheduled (one completed, a no-show or cancelled was dealt with), a
-   * booker's change or a quote accepted online, none of them marked done.
-   * Payments never are.
+   * Only what still needs someone: a submission, or an online booking still
+   * scheduled (one completed, a no-show or cancelled was dealt with), neither
+   * marked done.
    */
   todo?: boolean;
 };
@@ -91,7 +70,7 @@ export function readInboxCursor(s: string | null | undefined): InboxCursor | nul
   if (!s) return null;
   try {
     const [k, r, id] = JSON.parse(new TextDecoder().decode(fromB64url(s)));
-    if (typeof k !== "string" || !validK(k) || ![0, 1, 2, 3, 4].includes(r) || typeof id !== "string" || !/^\d{1,18}$/.test(id)) return null;
+    if (typeof k !== "string" || !validK(k) || ![0, 1].includes(r) || typeof id !== "string" || !/^\d{1,18}$/.test(id)) return null;
     return { k, r, id };
   } catch {
     return null;
@@ -178,82 +157,6 @@ export async function inboxPage(
         limit ${n}`,
     );
   }
-  if (p.payments && ib.payments !== false && !form && !todo) {
-    // Money that actually moved: a checkout nobody finished is not news. Nor is it
-    // something to do (the receipt went from Stripe), so it is in Everything only.
-    jobs.push(
-      sql(db)<PaymentRow>`
-        select 'payment' as kind, p.id::text as id, p.created_at, p.name, p.email::text as email, null::text as phone, p.status,
-               p.amount_cents::text as amount_cents, p.currency, p.kind as pay_kind, p.description, p.livemode,
-               exists (select 1 from inbox_done d where d.kind = 'payment' and d.ref_id = p.id) as handled,
-               to_char(p.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k,
-               m.id::text as customer_id, m.name as customer_name, m.archived_at as customer_archived_at
-        from payments p
-        left join lateral (
-          select c.id, c.name, c.archived_at from customers c
-          where {pay_email}
-          order by c.archived_at nulls first, c.id
-          limit 1) m on true
-        where p.status in ('paid', 'refunded', 'partially_refunded')
-          and (${since}::timestamptz is null or p.created_at >= ${since}::timestamptz)
-          and (not ${unmatched}::boolean or m.id is null)
-          and (${ak}::timestamptz is null or (p.created_at, 2, p.id) < (${ak}::timestamptz, ${ar}::int, ${aid}::bigint))
-        order by p.created_at desc, p.id desc
-        limit ${n}`,
-    );
-  }
-
-  if (ib.bookings !== false && !form) {
-    // What a booker changed themselves through their manage link: the team did not.
-    jobs.push(
-      sql(db)<ChangeRow>`
-        select 'change' as kind, x.id::text as id, x.created_at, b.name, b.email::text as email, b.phone, x.kind as status, x.kind as change,
-               b.id::text as booking_id, x.was_starts_at, x.starts_at, t.name as type_name, r.name as resource_name,
-               exists (select 1 from inbox_done d where d.kind = 'change' and d.ref_id = x.id) as handled,
-               to_char(x.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k,
-               m.id::text as customer_id, m.name as customer_name, m.archived_at as customer_archived_at
-        from booking_changes x
-        join bookings b on b.id = x.booking_id
-        left join resources r on r.id = b.resource_id
-        left join booking_types t on t.id = b.type_id
-        left join lateral (
-          select c.id, c.name, c.archived_at from customers c
-          where {booking_is}
-          order by {booking_email} desc, c.archived_at nulls first, c.id
-          limit 1) m on true
-        where (${since}::timestamptz is null or x.created_at >= ${since}::timestamptz)
-          and (not ${unmatched}::boolean or m.id is null)
-          and (not ${todo}::boolean or not exists (select 1 from inbox_done d where d.kind = 'change' and d.ref_id = x.id))
-          and (${ak}::timestamptz is null or (x.created_at, 3, x.id) < (${ak}::timestamptz, ${ar}::int, ${aid}::bigint))
-        order by x.created_at desc, x.id desc
-        limit ${n}`,
-    );
-  }
-  if (p.quotes && !form) {
-    // The customer's own yes: a quote paid through its Pay button. One the team marked is not news.
-    jobs.push(
-      sql(db)<QuoteRow>`
-        select 'quote' as kind, qt.id::text as id, qt.decided_at as created_at, qt.name, qt.email::text as email, qt.phone, qt.status,
-               qt.number, qt.total_cents::text as total_cents, qt.currency,
-               exists (select 1 from inbox_done d where d.kind = 'quote' and d.ref_id = qt.id) as handled,
-               to_char(qt.decided_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as k,
-               m.id::text as customer_id, m.name as customer_name, m.archived_at as customer_archived_at
-        from quotes qt
-        left join lateral (
-          select c.id, c.name, c.archived_at from customers c
-          where {quote_email}
-          order by c.archived_at nulls first, c.id
-          limit 1) m on true
-        where qt.status = 'accepted' and qt.decided_by = ${PAID_ONLINE} and qt.decided_at is not null
-          and (${since}::timestamptz is null or qt.decided_at >= ${since}::timestamptz)
-          and (not ${unmatched}::boolean or m.id is null)
-          and (not ${todo}::boolean or not exists (select 1 from inbox_done d where d.kind = 'quote' and d.ref_id = qt.id))
-          and (${ak}::timestamptz is null or (qt.decided_at, 4, qt.id) < (${ak}::timestamptz, ${ar}::int, ${aid}::bigint))
-        order by qt.decided_at desc, qt.id desc
-        limit ${n}`,
-    );
-  }
-
   const merged = (await Promise.all(jobs)).flat().sort(newer).slice(0, n);
   if (p.forms && merged.some((r) => r.kind === "submission")) {
     const titles = new Map((await db.sql<{ key: string; title: string }>`select key, title from forms`).map((f) => [f.key, f.title]));
@@ -263,11 +166,9 @@ export async function inboxPage(
   return { rows, next: merged.length > size ? makeInboxCursor(rows[rows.length - 1]) : null, present: p };
 }
 
-/** What a row is, in a few words: the form's title, "Booking", "Payment". */
-export function sourceOf(row: { kind: InboxKind; form_key?: string; form_title?: string | null; number?: string }): string {
-  if (row.kind === "submission") return row.form_title || row.form_key || "Form";
-  if (row.kind === "quote") return `Quote ${row.number ?? ""}`.trim();
-  return row.kind === "payment" ? "Payment" : "Booking";
+/** What a row is, in a few words: the form's title, or "Booking". */
+export function sourceOf(row: { kind: InboxKind; form_key?: string; form_title?: string | null }): string {
+  return row.kind === "submission" ? row.form_title || row.form_key || "Form" : "Booking";
 }
 
 /** What came in, for the New deal form it opens (Pipedrive's Convert to deal): who, the deal's title, and what they said. */
@@ -293,11 +194,6 @@ export async function requestOf(db: Db, kind: InboxKind, id: string): Promise<Re
       select b.name, b.email::text as email, b.phone, coalesce(t.name, b.title, 'Booking') as title
       from bookings b left join booking_types t on t.id = b.type_id where b.id = ${id}::bigint`;
     return b ? { ...b, said: null } : null;
-  }
-  if (kind === "payment" && p.payments) {
-    const [r] = await db.sql<{ name: string | null; email: string | null; description: string | null }>`
-      select name, email::text as email, description from payments where id = ${id}::bigint`;
-    return r ? { name: r.name, email: r.email, phone: null, title: r.description || "Payment", said: null } : null;
   }
   return null;
 }
@@ -372,25 +268,14 @@ export async function markDone(db: Db, id: string, user: string): Promise<boolea
   return rows.length > 0;
 }
 
-/** The Inbox kinds marked done here rather than by a status of their own (a submission's). */
-export type HandledKind = "booking" | "payment" | "change" | "quote";
-export const HANDLED_KINDS: HandledKind[] = ["booking", "payment", "change", "quote"];
-
 /**
- * Mark a booking, payment, booker's change or online quote acceptance done
- * (inbox_done): off To do, the row itself unchanged (it is another skill's).
+ * Mark an online booking done (inbox_done): off To do, the booking itself
+ * unchanged (it is the booking skill's).
  */
-export async function markHandled(db: Db, kind: HandledKind, id: string, user: string): Promise<"done" | "already" | "missing"> {
+export async function markHandled(db: Db, id: string, user: string): Promise<"done" | "already" | "missing"> {
   if (!/^\d{1,18}$/.test(id)) return "missing";
-  const p = await presentTables(db);
-  if ((kind === "payment" && !p.payments) || (kind === "quote" && !p.quotes)) return "missing";
-  const found =
-    kind === "booking" ? await db.sql`select 1 from bookings where id = ${id}::bigint`
-    : kind === "payment" ? await db.sql`select 1 from payments where id = ${id}::bigint`
-    : kind === "change" ? await db.sql`select 1 from booking_changes where id = ${id}::bigint`
-    : await db.sql`select 1 from quotes where id = ${id}::bigint and status = 'accepted'`;
-  if (!found.length) return "missing";
-  const rows = await db.sql`insert into inbox_done (kind, ref_id, done_by) values (${kind}, ${id}::bigint, ${user}) on conflict do nothing returning ref_id`;
+  if (!(await db.sql`select 1 from bookings where id = ${id}::bigint`).length) return "missing";
+  const rows = await db.sql`insert into inbox_done (kind, ref_id, done_by) values ('booking', ${id}::bigint, ${user}) on conflict do nothing returning ref_id`;
   return rows.length ? "done" : "already";
 }
 

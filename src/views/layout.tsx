@@ -21,7 +21,7 @@ const creates = [
 /** The sidebar's name: the business on its quotes once it has one, else what this is. */
 const brand = invoicesCfg?.name && !/to fill/i.test(invoicesCfg.name) ? invoicesCfg.name : "CRM";
 
-export type Section = "inbox" | "leads" | "tasks" | "deals" | "customers" | "schedule" | "forms" | "invoices";
+export type Section = "inbox" | "notifications" | "leads" | "tasks" | "deals" | "customers" | "schedule" | "forms" | "invoices";
 
 /**
  * Schedule, as Jobber's and Housecall Pro's: one place for the team's days.
@@ -118,13 +118,15 @@ export function Layout(props: {
             class="-ml-1.5 inline-flex size-9 items-center justify-center rounded-control text-ink-2 hover:bg-panel hover:text-ink">
             <Icon name="menu" />
           </a>
-          <span class="truncate font-semibold">{brand}</span>
+          <span class="min-w-0 flex-1 truncate font-semibold">{brand}</span>
+          <Bell on={section === "notifications"} />
         </header>
         {/* The sidebar: fixed from lg up; below, a drawer over the page. */}
         <aside id="nav" aria-label="Menu"
           class="peer fixed inset-y-0 left-0 z-40 hidden w-72 flex-col overflow-y-auto bg-canvas px-3 pb-3 shadow-lift target:flex lg:flex lg:w-60 lg:shadow-none [.nav-open_&]:flex">
           <div class="flex items-center justify-between gap-2 px-2 pt-4 pb-3">
-            <span class="truncate text-heading font-semibold">{brand}</span>
+            <span class="min-w-0 flex-1 truncate text-heading font-semibold">{brand}</span>
+            <span class="hidden lg:contents"><Bell on={section === "notifications"} /></span>
             <a href="#" data-nav-close aria-label="Close the menu" class="inline-flex size-9 items-center justify-center rounded-control text-ink-2 hover:bg-panel hover:text-ink lg:hidden">
               <Icon name="close" />
             </a>
@@ -186,6 +188,19 @@ export function Layout(props: {
         </div>
       </body>
     </html>
+  );
+}
+
+/** The bell beside the business's name: the notifications page, with how many are unread. One shows at a time (the bar's below lg, the sidebar's from lg up). */
+function Bell({ on }: { on: boolean }) {
+  return (
+    <a href="/notifications" aria-current={on ? "page" : undefined}
+      class={"relative inline-flex size-9 items-center justify-center rounded-control hover:bg-panel hover:text-ink " + (on ? "bg-panel text-ink" : "text-ink-2")}>
+      <Icon name="notifications" />
+      <span class="sr-only">Notifications</span>
+      {/* Filled in once it shows, so no page waits on it and the hidden one asks nothing. */}
+      <span hx-get="/notifications/count" hx-trigger="intersect once" hx-swap="outerHTML"></span>
+    </a>
   );
 }
 

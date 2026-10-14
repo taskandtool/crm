@@ -207,7 +207,7 @@ test("the inbox, with none of the other apps' tables", async (t) => {
   assert.equal((await everythingFrom(db, { email: "ann.lee@example.com", phone: null })).items.length, 0);
 });
 
-test("the inbox, across submissions, bookings and payments", async (t) => {
+test("the inbox, across submissions and bookings; payments are the bell's", async (t) => {
   if (skip) return t.skip(skip);
   await applySchema(db, readFileSync("test/fixtures/other-apps.sql", "utf8"));
   await db.transaction([
@@ -231,12 +231,10 @@ test("the inbox, across submissions, bookings and payments", async (t) => {
   ]);
   const page = await inboxPage(db, { inbox: INBOX }, null, 50);
   const kinds = page.rows.map((r) => `${r.kind}:${r.name ?? r.phone}`);
-  // Newest first; spam, the excluded newsletter and the unfinished payment are left out.
-  assert.deepEqual(kinds, ["payment:Kim", "booking:Ann Lee", "submission:Jo Park", "submission:Jo Park", "submission:555 777 1234"]);
-  const booking = page.rows[1];
-  assert.equal(booking.customer_name, "Ann Lee", "matched by email");
-  assert.equal(page.rows[4].customer_name, "Ed", "a phone-only submission matches a phone-only customer");
-  assert.equal(page.rows[0].customer_id, null);
+  // Newest first; spam and the excluded newsletter are left out.
+  assert.deepEqual(kinds, ["booking:Ann Lee", "submission:Jo Park", "submission:Jo Park", "submission:555 777 1234"]);
+  assert.equal(page.rows[0].customer_name, "Ann Lee", "matched by email");
+  assert.equal(page.rows[3].customer_name, "Ed", "a phone-only submission matches a phone-only customer");
   const sub = page.rows.find((r) => r.kind === "submission") as Extract<InboxRow, { kind: "submission" }>;
   assert.equal(sub.form_title, "Quote request");
 
@@ -252,7 +250,7 @@ test("the inbox, across submissions, bookings and payments", async (t) => {
   assert.deepEqual(seen, page.rows.map((r) => `${r.kind}:${r.id}`));
 
   const unmatched = await inboxPage(db, { inbox: INBOX, unmatched: true }, null, 50);
-  assert.deepEqual(unmatched.rows.map((r) => r.name), ["Kim", "Jo Park", "Jo Park"]);
+  assert.deepEqual(unmatched.rows.map((r) => r.name), ["Jo Park", "Jo Park"]);
   const onlyQuote = await inboxPage(db, { inbox: { forms: ["quote"], bookings: false, payments: false } }, null, 50);
   assert.ok(onlyQuote.rows.every((r) => r.kind === "submission"));
 });
@@ -652,10 +650,10 @@ test("Mark done takes a scheduled booking off To do and changes nothing; a finis
     values (${type.id}::bigint, ${host.id}::bigint, now() - interval '2 days', now() - interval '2 days' + interval '20 minutes', 'Nora Show', 'nora@example.com', 'no_show', 'phone')
     returning id::text as id`;
   assert.equal((await todo(gone.id)).length, 0);
-  assert.equal(await markHandled(db, "booking", b.id, ME), "done");
+  assert.equal(await markHandled(db, b.id, ME), "done");
   assert.equal((await todo()).length, 0);
-  assert.equal(await markHandled(db, "booking", b.id, ME), "already");
-  assert.equal(await markHandled(db, "booking", "999999", ME), "missing");
+  assert.equal(await markHandled(db, b.id, ME), "already");
+  assert.equal(await markHandled(db, "999999", ME), "missing");
   const all = (await inboxPage(db, { inbox: INBOX }, null, 200)).rows.find((r) => r.kind === "booking" && r.id === b.id);
   assert.ok(all && all.kind === "booking" && all.handled, "Everything still lists it, marked done");
   assert.equal((await db.sql<{ status: string }>`select status from bookings where id = ${b.id}::bigint`)[0].status, "confirmed", "the booking itself is unchanged");
@@ -693,8 +691,6 @@ test("setup saves everyone already in the tables: by email, else by phone, never
   assert.equal((await rows("select 1 from customers where name in ('Nobody Known', 'Spam Guy') or email = 'spamguy@example.com'")).length, 0);
   assert.equal(await saveEveryone(db), 0, "a second run saves no one");
   await publishFields(db, []);
-  // To do: a form request until it is done; an online booking until it is done, whoever booked; a payment never.
   const todo = await inboxPage(db, { inbox: INBOX, todo: true }, null, 200);
   assert.ok(todo.rows.some((r) => r.kind === "submission" && r.name === "Rae Fox"));
-  assert.ok(todo.rows.every((r) => r.kind !== "payment"));
 });

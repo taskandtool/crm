@@ -48,7 +48,7 @@ function Context({ l }: { l: Lead }) {
   );
 }
 
-/** Archive, asking why, as Pipedrive and Jobber ask: a menu of the reasons. */
+/** Archive, asking why, as HubSpot's Disqualification reason: a menu of the reasons. */
 function ArchiveMenu({ l, returnTo, quiet }: { l: Lead; returnTo: string; quiet?: boolean }) {
   return (
     <details data-menu class="relative">
@@ -67,23 +67,12 @@ function ArchiveMenu({ l, returnTo, quiet }: { l: Lead; returnTo: string; quiet?
   );
 }
 
-/**
- * What to do with an open lead: Convert to deal when the contact has none
- * open (the New deal form, filled in), Add to deal when they have one (the
- * lead joins it, no second deal), and Archive.
- */
+/** What to do with an open lead, as Pipedrive's: Convert to deal (the New deal form, filled in) or Archive. */
 function Actions({ l, returnTo, quiet }: { l: Lead; returnTo: string; quiet?: boolean }) {
   if (l.status !== "open") return null;
   return (
     <>
-      {l.open_deal_id ? (
-        <form method="post" action={`/leads/${l.id}/attach`}>
-          <input type="hidden" name="deal" value={l.open_deal_id} />
-          <button class={buttonClass} aria-label={`Add to ${l.open_deal_title}`}>Add to {deal}</button>
-        </form>
-      ) : (
-        <a href={`/deals/new?from=lead.${l.id}`} class={buttonClass}>Convert to {deal}</a>
-      )}
+      <a href={`/deals/new?from=lead.${l.id}`} class={buttonClass}>Convert to {deal}</a>
       <ArchiveMenu l={l} returnTo={returnTo} quiet={quiet} />
     </>
   );
@@ -205,7 +194,7 @@ export function LeadPage(p: {
       {l.status === "archived" ? (
         <div role="status" class="mb-4 flex flex-wrap items-center gap-3 rounded-card border border-line bg-panel px-4 py-2">
           <span>Archived: {l.archived_reason}.</span>
-          <form method="post" action={`${self}/reopen`}><input type="hidden" name="return" value={self} /><button class={quietClass}>Reopen</button></form>
+          <form method="post" action={`${self}/reopen`}><input type="hidden" name="return" value={self} /><button class={quietClass}>Unarchive</button></form>
         </div>
       ) : null}
       <div class="grid gap-4 md:grid-cols-3">

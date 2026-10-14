@@ -139,40 +139,43 @@ test("the Inbox: everyone in it is a customer already, then New deal and Done", 
   await post("/inbox/done", { kind: "submission", id: sub.id });
 });
 
-test("the Inbox shows a booker's own reschedule and a quote paid online, with Done only; a quote the team marked is not news", async (t) => {
+test("the bell: a booker's own move, a quote paid online (once, not again as its payment) and a payment; opening it clears the count", async (t) => {
   if (skip) return t.skip(skip);
   const [b] = await db.sql<{ id: string }>`
     insert into bookings (starts_at, ends_at, name, email, status, location_kind, source)
     values ('2099-05-01 15:00+00', '2099-05-01 16:00+00', 'Rae Fox', 'rae.fox@example.com', 'confirmed', 'our_place', 'website') returning id::text as id`;
-  const [ch] = await db.sql<{ id: string }>`
+  await db.sql`
     insert into booking_changes (booking_id, kind, was_starts_at, starts_at)
-    values (${b.id}::bigint, 'rescheduled', '2099-04-30 15:00+00', '2099-05-01 15:00+00') returning id::text as id`;
+    values (${b.id}::bigint, 'rescheduled', '2099-04-30 15:00+00', '2099-05-01 15:00+00')`;
   const [paid] = await db.sql<{ id: string }>`
     insert into quotes (number, email, name, status, currency, total_cents, decided_at, decided_by)
     values ('Q-9001', 'rae.fox@example.com', 'Rae Fox', 'accepted', 'usd', 238000, now(), 'paid online') returning id::text as id`;
   await db.sql`
     insert into quotes (number, email, name, status, currency, total_cents, decided_at, decided_by)
     values ('Q-9002', 'rae.fox@example.com', 'Rae Fox', 'accepted', 'usd', 5000, now(), 'ann@team.example')`;
+  const [inv] = await db.sql<{ id: string }>`insert into invoices (email, currency, quote_id) values ('rae.fox@example.com', 'usd', ${paid.id}::bigint) returning id::text as id`;
+  await db.sql`
+    insert into payments (email, name, amount_cents, total_cents, currency, status, kind, ref_type, ref_id, description, livemode) values
+      ('rae.fox@example.com', 'Rae Fox', 238000, 238000, 'usd', 'paid', 'invoice', 'invoice', ${inv.id}, 'Invoice for Q-9001', true),
+      ('max@example.com', 'Max Bell', 18900, 18900, 'usd', 'paid', 'full', null, null, null, true),
+      ('nope@example.com', 'Never Paid', 500, 500, 'usd', 'pending', 'full', null, null, null, true)`;
 
-  const html = await (await get("/")).text();
-  const row = (kind: string, id: string) => html.match(new RegExp(`<li id="${kind}-${id}"[\\s\\S]*?</li>`))?.[0] ?? "";
-  const moved = row("change", ch.id);
-  assert.match(moved, /moved from/, "what they did, from when to when");
-  assert.match(moved, new RegExp(`data-href="/events/${b.id}"`), "it opens the booking");
-  assert.match(moved, />Done<\/button>/);
-  assert.doesNotMatch(moved, /New deal/, "news about work in hand, not an enquiry");
-  const yes = row("quote", paid.id);
-  assert.match(yes, /Quote Q-9001/);
-  assert.match(yes, /accepted and paid online/);
-  assert.doesNotMatch(html, /Q-9002/, "the team's own mark is not news");
+  const count = async () => (await (await get("/notifications/count")).text()).match(/>(\d+\+?)<span class="sr-only"> unread/)?.[1] ?? "0";
+  assert.equal(await count(), "3");
+  const html = await (await get("/notifications")).text();
+  assert.match(html, /Rae Fox<\/span> moved <span[^>]*>/, "what they did");
+  assert.match(html, new RegExp(`data-href="/events/${b.id}"`), "it opens the booking");
+  assert.match(html, /accepted Quote Q-9001 and paid \$2,380\.00/);
+  assert.match(html, new RegExp(`data-href="/invoices/quotes/${paid.id}"`));
+  assert.match(html, /Payment of \$189\.00 from <span[^>]*>Max Bell/);
+  assert.doesNotMatch(html, /Invoice for Q-9001/, "the quote's own payment is the quote's notice");
+  assert.doesNotMatch(html, /Q-9002|Never Paid/, "the team's own mark and money that never moved are not news");
+  assert.equal((html.match(/Unread: /g) ?? []).length, 3, "what is new since the last look, in bold");
 
-  for (const [kind, id] of [["change", ch.id], ["quote", paid.id]]) {
-    assert.equal((await post("/inbox/done", { kind, id })).headers.get("location"), `/?saved=done&undo=${kind}.${id}`);
-  }
-  const after = await (await get("/")).text();
-  assert.doesNotMatch(after, new RegExp(`id="change-${ch.id}"`));
-  assert.doesNotMatch(after, new RegExp(`id="quote-${paid.id}"`));
-  assert.match(await (await get("/?view=all")).text(), new RegExp(`id="quote-${paid.id}"`), "still in Everything");
+  assert.equal(await count(), "0", "opening the bell saw them");
+  assert.doesNotMatch(await (await get("/notifications")).text(), /Unread: /);
+  // Read state is each person's own.
+  assert.match(await (await get("/notifications/count", { ...ME, "x-tasktool-user": "bo@team.example" })).text(), /3<span class="sr-only"> unread/);
 });
 
 test("leads: a form fill and a phone call; convert to a deal, add a second to it, archive with Undo", async (t) => {
@@ -216,15 +219,11 @@ test("leads: a form fill and a phone call; convert to a deal, add a second to it
   assert.equal((await db.sql<{ status: string }>`select status from submissions where id = ${subId}::bigint`)[0].status, "done", "its request is dealt with");
   assert.match(await (await get(`/deals/${dealId}`)).text(), /Where it came from[\s\S]*Website form · Contact us/);
 
-  // Lou asks again while the deal is open: Add to deal, not a second deal.
+  // Lou asks again while the deal is open: the lead shows the deal they already have.
   const again = await insertSubmission(db, { form_key: "contact", name: "Lou Park", email: "lou@example.com", phone: null, data: { message: "And the softener" }, source: "website", page: null, status: "new" });
   const [second] = await db.sql<{ id: string }>`select id::text as id from leads where submission_id = ${again}::bigint`;
-  const lead2 = await (await get(`/leads/${second.id}`)).text();
-  assert.match(lead2, />Add to deal</);
-  assert.doesNotMatch(lead2, />Convert to deal</);
-  assert.equal((await post(`/leads/${second.id}/attach`, { deal: dealId })).headers.get("location"), `/deals/${dealId}?saved=lead-attached`);
-  assert.equal((await db.sql`select 1 from deals where customer_id = ${lou.id}::bigint`).length, 1, "still one deal");
-  assert.match(await (await get(`/customers/${lou.id}`)).text(), /<h2[^>]*>Leads<\/h2>[\s\S]*Converted[\s\S]*Converted/, "their page lists both leads");
+  assert.match(await (await get(`/leads/${second.id}`)).text(), new RegExp(`href="/deals/${dealId}">Water heater`));
+  assert.match(await (await get(`/customers/${lou.id}`)).text(), /<h2[^>]*>Leads<\/h2>[\s\S]*Open[\s\S]*Converted/, "their page lists both leads");
 });
 
 test("customers: create, open, edit, note, archive", async (t) => {

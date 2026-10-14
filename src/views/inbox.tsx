@@ -1,6 +1,6 @@
 // The Inbox: four figures (new leads this week, tasks due, open deals,
-// won this month), then To do (or Everything): one row per submission,
-// booking or payment, newest first; a click on it opens it, the person's
+// won this month), then To do (or Everything): one row per submission or
+// booking, newest first; a click on it opens it, the person's
 // name opens their customer record, New deal makes a deal of it (a repeat
 // customer's new enquiry too) and Done clears it. Rows are a list rather
 // than a table so they wrap on a phone.
@@ -9,19 +9,17 @@ import { EmptyCard, rowClick, When } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { StatusBadge, type StatusOption } from "../admin/status";
 import { BOOKING_STATUSES } from "../booking/admin";
-import { dealsCfg, eventsCfg, invoicesCfg, vocab } from "../config";
+import { dealsCfg, eventsCfg, vocab } from "../config";
 import type { Overview } from "../crm/overview";
 import { firstText, sourceOf, type InboxKind, type InboxRow } from "../crm/inbox";
 import { formatWholeMoney } from "../crm/text";
 import { STATUSES as SUBMISSION_STATUSES } from "../forms/admin";
-import { STATUSES as PAYMENT_STATUSES } from "../payments/admin";
-import { formatMoney } from "../payments/money";
 import { Layout } from "./layout";
 import { Avatar, buttonClass, controlClass, MESSAGES, quietClass, timeZone, ViewLink, viewsClass } from "./ui";
 
 // Each kind's own labels, as its page shows them; in the Inbox only New stands out.
 const quiet = (list: StatusOption[]): StatusOption[] => list.map((o) => (o.value !== "new" && o.tone === "accent" ? { ...o, tone: "strong" } : o));
-const SUBMISSION = quiet(SUBMISSION_STATUSES), BOOKING = quiet(BOOKING_STATUSES), PAYMENT = quiet(PAYMENT_STATUSES);
+const SUBMISSION = quiet(SUBMISSION_STATUSES), BOOKING = quiet(BOOKING_STATUSES);
 
 export type InboxProps = {
   user: string;
@@ -136,7 +134,7 @@ export function InboxResults(p: Pick<InboxProps, "rows" | "next" | "more" | "sel
           </EmptyCard>
         ) : (
           <EmptyCard title="No leads yet." action={<a href="/customers/new" class={buttonClass}>Add {vocab.one.toLowerCase()}</a>}>
-            {p.missing ?? "Form submissions, bookings and payments from your other apps show up here."}
+            {p.missing ?? "Form submissions and online bookings from your other apps show up here."}
           </EmptyCard>
         )
       )}
@@ -162,21 +160,17 @@ export function InboxRows({ rows, next, more, self }: { rows: InboxRow[]; next: 
   );
 }
 
-/** Where the thing that came in is kept: the submission, the booking (a change's too), the quote, the payment (when this CRM shows that page). */
+/** Where the thing that came in is kept: the submission, or the booking (when this CRM shows the schedule). */
 function itemHref(row: InboxRow): string | null {
   if (row.kind === "submission") return `/forms/submissions/${row.id}`;
-  if (row.kind === "booking") return eventsCfg ? `/events/${row.id}` : null;
-  if (row.kind === "change") return eventsCfg ? `/events/${row.booking_id}` : null;
-  if (row.kind === "quote") return invoicesCfg ? `/invoices/quotes/${row.id}` : null;
-  return invoicesCfg ? `/invoices/payments/${row.id}` : null;
+  return eventsCfg ? `/events/${row.id}` : null;
 }
 
 // As Pipedrive's Leads Inbox and Jobber's requests: a click on a row opens
 // what came in and the person's name opens their customer record (everyone
 // who gets in touch is one, saved as they do). Two actions, both in
 // view: New deal, and Done for what still needs someone, so the To do list
-// can be cleared without opening anything. A booker's change or a quote they
-// accepted is news about work already in hand: Done only.
+// can be cleared without opening anything.
 function Row({ row, self }: { row: InboxRow; self: string }) {
   const person = row.name || row.email || row.phone || "Someone";
   const href = itemHref(row);
@@ -186,12 +180,8 @@ function Row({ row, self }: { row: InboxRow; self: string }) {
       <input type="hidden" name="id" value={row.id} />
     </>
   );
-  // What still needs someone: a form request by its status; an online booking still scheduled, a booker's change or an online yes nobody has marked done.
-  const open = row.kind === "submission" ? row.status === "new" || row.status === "read"
-    : row.kind === "booking" ? !row.handled && row.status === "confirmed"
-    : row.kind === "change" || row.kind === "quote" ? !row.handled
-    : false;
-  const enquiry = row.kind === "submission" || row.kind === "booking" || row.kind === "payment";
+  // What still needs someone: a form request by its status; an online booking still scheduled that nobody has marked done.
+  const open = row.kind === "submission" ? row.status === "new" || row.status === "read" : !row.handled && row.status === "confirmed";
   const deal = dealsCfg.one.toLowerCase();
   return (
     <li id={`${row.kind}-${row.id}`} {...(href ? rowClick(href) : {})}
@@ -220,7 +210,7 @@ function Row({ row, self }: { row: InboxRow; self: string }) {
         </div>
       </div>
       <div class="flex items-center gap-2 pl-11 sm:pl-0">
-        {enquiry ? <a href={`/deals/new?from=${row.kind}.${row.id}`} class={buttonClass} aria-label={`New ${deal} for ${person}`}>New {deal}</a> : null}
+        <a href={`/deals/new?from=${row.kind}.${row.id}`} class={buttonClass} aria-label={`New ${deal} for ${person}`}>New {deal}</a>
         {open ? (
           <form method="post" action="/inbox/done">
             {hidden}
@@ -233,49 +223,20 @@ function Row({ row, self }: { row: InboxRow; self: string }) {
   );
 }
 
-// A booker's change says what they did; a quote's yes is the accent, as a won stage is.
-const CHANGE: StatusOption[] = [{ value: "rescheduled", label: "Rescheduled", tone: "strong" }, { value: "cancelled", label: "Cancelled", tone: "muted" }];
-const QUOTE: StatusOption[] = [{ value: "accepted", label: "Accepted", tone: "accent" }];
-
 function Status({ row }: { row: InboxRow }) {
-  const options = row.kind === "submission" ? SUBMISSION : row.kind === "booking" ? BOOKING : row.kind === "change" ? CHANGE : row.kind === "quote" ? QUOTE : PAYMENT;
-  return <StatusBadge value={row.status} options={options} />;
+  return <StatusBadge value={row.status} options={row.kind === "submission" ? SUBMISSION : BOOKING} />;
 }
 
-/** One line of what it was: the message, the booked time, the amount. */
+/** One line of what it was: the message, or the booked time. */
 function What({ row }: { row: InboxRow }) {
   if (row.kind === "submission") {
     const text = firstText(row.data);
     return text ? <p class="mt-1.5 line-clamp-2 break-words text-ink-2">{text}</p> : null;
   }
-  if (row.kind === "booking") {
-    return (
-      <p class="mt-1.5 text-ink-2">
-        {row.type_name ?? "Booked"}, <When at={row.starts_at} timeZone={timeZone} />
-        {row.resource_name ? ` with ${row.resource_name}` : ""}
-      </p>
-    );
-  }
-  if (row.kind === "change") {
-    // In the booker's own words of it: what moved, from when to when, or what they cancelled.
-    return (
-      <p class="mt-1.5 text-ink-2">
-        {row.type_name ?? "Their booking"}
-        {row.resource_name ? ` with ${row.resource_name}` : ""}
-        {row.starts_at ? <>{" moved from "}<When at={row.was_starts_at} timeZone={timeZone} />{" to "}<When at={row.starts_at} timeZone={timeZone} /></>
-          : <>{" on "}<When at={row.was_starts_at} timeZone={timeZone} />{", cancelled by them"}</>}
-      </p>
-    );
-  }
-  if (row.kind === "quote") {
-    return <p class="mt-1.5 text-ink-2">{formatMoney(row.total_cents, row.currency)}, accepted and paid online</p>;
-  }
   return (
     <p class="mt-1.5 text-ink-2">
-      {formatMoney(row.amount_cents, row.currency)}
-      {row.pay_kind !== "full" ? ` ${row.pay_kind}` : ""}
-      {row.description ? `, ${row.description}` : ""}
-      {row.livemode === false ? " (test mode)" : ""}
+      {row.type_name ?? "Booked"}, <When at={row.starts_at} timeZone={timeZone} />
+      {row.resource_name ? ` with ${row.resource_name}` : ""}
     </p>
   );
 }

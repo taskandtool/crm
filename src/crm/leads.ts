@@ -21,7 +21,7 @@ export const SOURCE_LABELS: Record<LeadSource, string> = {
 };
 /** What the team adds by hand: everything but what only the website makes. */
 export const MANUAL_SOURCES: LeadSource[] = ["phone", "walk_in", "referral", "other"];
-/** Why a lead was archived, as Pipedrive and Jobber ask. */
+/** Why a lead was archived, as HubSpot's Disqualification reason. */
 export const ARCHIVE_REASONS = ["Not a fit", "Spam", "Duplicate", "Other"];
 
 export type Lead = {
@@ -48,7 +48,7 @@ export type Lead = {
   answers: Record<string, unknown> | null;
   /** What they said: the lead's notes, else the submission's message. */
   said: string | null;
-  /** The contact's newest open deal: Add to deal, not a second one. */
+  /** The contact's newest open deal, shown beside the lead. */
   open_deal_id: string | null;
   open_deal_title: string | null;
   /** The contact's next scheduled event. */
@@ -135,7 +135,7 @@ export async function openLeadCount(db: Db): Promise<number> {
   return r.n;
 }
 
-/** Converted into a deal (a new one, or the one they already had): off Open, with the deal named. */
+/** Converted into a deal: off Open, with the deal named. */
 export async function convertLead(db: Db, id: string, dealId: string, user: string): Promise<boolean> {
   const rows = await db.sql`
     update leads set status = 'converted', deal_id = ${dealId}::bigint, archived_reason = null, updated_at = now(), updated_by = ${user}
@@ -151,7 +151,7 @@ export async function archiveLead(db: Db, id: string, reason: string, user: stri
   return rows.length > 0;
 }
 
-/** Open again: Undo after Archive, or Reopen on an archived lead. A converted one stays with its deal. */
+/** Open again: Undo after Archive, or Unarchive on an archived lead. A converted one stays with its deal. */
 export async function reopenLead(db: Db, id: string, user: string): Promise<boolean> {
   const rows = await db.sql`
     update leads set status = 'open', archived_reason = null, updated_at = now(), updated_by = ${user}

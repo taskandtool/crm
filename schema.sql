@@ -143,3 +143,11 @@ create table if not exists crm_setup (
   updated_at timestamptz not null default now()
 );
 comment on table crm_setup is 'The hash of the schema the CRM''s setup last applied; the command-line scripts skip setup while it matches.';
+
+-- The bell (crm/notifications.ts): when each person last opened it.
+-- Unread is anything newer; no row is everything.
+create table if not exists notifications_seen (
+  email citext primary key,
+  seen_at timestamptz not null default now()
+);
+comment on table notifications_seen is 'When each team member last opened the bell: unread is anything newer.';

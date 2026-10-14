@@ -30,6 +30,7 @@ import {
 } from "./crm/tasks";
 import { overview } from "./crm/overview";
 import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
+import { isUnread, markSeen, NOTICE_LIMIT, notices, seenAt } from "./crm/notifications";
 import { addNote, listNotes, pickNoteKind, wallTime } from "./customers/notes";
 import { phoneKey, saveLead, savePerson } from "./customers/customer";
 import { archiveLead, ARCHIVE_REASONS, contactLeads, convertLead, dealLeads, getLead, LEAD_STATUSES, leadOfItem, listLeads, MANUAL_SOURCES, openLeadCount, reopenLead, SOURCE_LABELS, type LeadStatus } from "./crm/leads";
@@ -44,6 +45,7 @@ import { CustomerPage } from "./views/customer";
 import { CustomersPage, customerSpec, filterParams, NewCustomerPage, Results } from "./views/customers";
 import { InboxPage, InboxResults, InboxRows } from "./views/inbox";
 import { Layout, SCHEDULE_TABS, WaitingView, type Section as NavSection } from "./views/layout";
+import { NotificationsPage, UnreadCount } from "./views/notifications";
 import type { Frame } from "./admin/layout";
 import { Board, CLOSED_DAYS, DealPage, DealsPage, NewDealPage, PER_COLUMN, type BoardData, type DealFrom } from "./views/deals";
 import { NewTaskPage, TasksPage } from "./views/tasks";
@@ -188,7 +190,7 @@ app.get("/", async (c) => {
   const self = listUrl("/", filter);
   const more = (cur: string) => listUrl("/", { ...filter, after: cur });
   if (isPartial(c) && after) return c.html(<InboxRows rows={rows} next={next} more={more} self={self} />);
-  const missing = missingSentence(present, { payments: cfg.inbox.payments !== false });
+  const missing = missingSentence(present, { payments: false });
   // The filter box (htmx): everything under it.
   if (isPartial(c)) return c.html(<InboxResults rows={rows} next={next} more={more} self={self} all={all} form={form} paged={false} missing={missing} />);
   return c.html(
@@ -208,13 +210,13 @@ async function newLeadCall(db: Db, customer: { id: string; name: string }, dealI
 
 /** An Inbox item named in a form or a link, "booking.12": its kind and id, or null. */
 function inboxRef(v: unknown): { kind: InboxKind; id: string } | null {
-  const m = typeof v === "string" ? v.match(/^(submission|booking|payment|change|quote)\.(\d{1,18})$/) : null;
+  const m = typeof v === "string" ? v.match(/^(submission|booking)\.(\d{1,18})$/) : null;
   return m ? { kind: m[1] as InboxKind, id: m[2] } : null;
 }
 
-/** Take an Inbox item off To do: a submission by its status, anything else in inbox_done. */
+/** Take an Inbox item off To do: a submission by its status, a booking in inbox_done. */
 const markItemDone = (db: Db, ref: { kind: InboxKind; id: string }, user: string) =>
-  ref.kind === "submission" ? markDone(db, ref.id, user) : markHandled(db, ref.kind, ref.id, user).then((r) => r !== "missing");
+  ref.kind === "submission" ? markDone(db, ref.id, user) : markHandled(db, ref.id, user).then((r) => r !== "missing");
 
 /** The nav's count: what is in To do, filled in after the page loads so no page waits on it. */
 app.get("/inbox/count", async (c) => {
@@ -241,6 +243,21 @@ app.post("/inbox/undo", async (c) => {
   const ref = inboxRef(str(body.item));
   const undone = ref ? await markUndone(c.var.db, ref.kind, ref.id) : false;
   return back(c, localPath(str(body.return), "", "/"), undone ? "undone" : "gone");
+});
+
+// ---- the bell ---------------------------------------------------------------
+
+// Opening it is seeing it, as HubSpot's bell: the count clears, and what was new shows in bold this once.
+app.get("/notifications", async (c) => {
+  const [rows, seen] = await Promise.all([notices(c.var.db), seenAt(c.var.db, c.var.user)]);
+  await markSeen(c.var.db, c.var.user);
+  return c.html(<NotificationsPage user={c.var.user} rows={rows} seen={seen} />);
+});
+
+/** The bell's count, filled in after the page loads. */
+app.get("/notifications/count", async (c) => {
+  const [rows, seen] = await Promise.all([notices(c.var.db), seenAt(c.var.db, c.var.user)]);
+  return c.html(<UnreadCount n={rows.filter((n) => isUnread(n, seen)).length} max={NOTICE_LIMIT} />);
 });
 
 // ---- customers ------------------------------------------------------------
@@ -830,18 +847,6 @@ app.post("/leads/:id/reopen", async (c) => {
   const body = await c.req.parseBody();
   const ok = id ? await reopenLead(c.var.db, id, c.var.user) : false;
   return back(c, localPath(str(body.return), "", `/leads/${id}`), ok ? "lead-reopened" : "gone");
-});
-
-// Add to deal: the contact's open deal takes the lead, as no second deal is made for one person's same work.
-app.post("/leads/:id/attach", async (c) => {
-  const db = c.var.db;
-  const lead = await getLead(db, c.req.param("id"));
-  const dealId = idParam(str((await c.req.parseBody()).deal));
-  const deal = dealId ? await getDeal(db, dealId) : null;
-  if (!lead || !deal || deal.customer_id !== lead.customer_id || deal.closed_at || !(await convertLead(db, lead.id, deal.id, c.var.user))) return back(c, "/leads", "gone");
-  if (lead.submission_id) await markItemDone(db, { kind: "submission", id: lead.submission_id }, c.var.user);
-  else if (lead.booking_id) await markItemDone(db, { kind: "booking", id: lead.booking_id }, c.var.user);
-  return back(c, `/deals/${deal.id}`, "lead-attached");
 });
 
 // A note or a call from a lead's page goes on the contact, and the page comes back.
