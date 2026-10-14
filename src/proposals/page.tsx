@@ -1,57 +1,20 @@
-// A proposal as one self-contained HTML file: its CSS (and any fonts)
-// inlined from style.ts, its pictures as data: URIs, no script. This is the
-// file stored on the quote, shown in Preview, printed to the PDF, and served
-// at the customer's link, where the two markers are filled: Accept's state,
+// A proposal as one self-contained HTML file: its CSS and fonts inlined from
+// style.ts, its photographs from photos.ts, no script. The quote's chosen
+// components in their order, then the sign-off. This is the file stored on
+// the quote, shown in Preview, printed to the PDF, and served at the
+// customer's link, where the two markers are filled: the sign-off's state,
 // and the bar that leads to it. Nothing else is drawn when it is asked for.
 import { raw } from "hono/html";
-import type { FC } from "hono/jsx";
-import type { Quote } from "../invoices/quotes";
-import type { SavedLine } from "../invoices/lines";
-import type { TaxRate } from "../payments/tax";
-import { sectionDef, type Content } from "./sections";
-import { Accept, AcceptBar, type AcceptState } from "./sections/accept";
-import { About } from "./sections/about";
-import { Cover } from "./sections/cover";
-import { Faq } from "./sections/faq";
-import type { SectionProps } from "./sections/parts";
-import { Pricing } from "./sections/pricing";
-import { Scope } from "./sections/scope";
-import { Summary } from "./sections/summary";
-import { Team } from "./sections/team";
-import { Terms } from "./sections/terms";
-import { Testimonials } from "./sections/testimonials";
-import { Timeline } from "./sections/timeline";
-import { Work } from "./sections/work";
+import { COMPONENTS, type PageData } from "./components";
+import { Accept, AcceptBar, type AcceptState } from "./components/signoff";
 import { PROPOSAL_CSS } from "./style";
-
-export type PageData = {
-  /** What the business calls it: Quote, Proposal, Estimate. */
-  word: string;
-  business: string;
-  timeZone: string;
-  locale?: string;
-  quote: Quote & { lines: SavedLine[] };
-  rates: TaxRate[];
-  title: string;
-  /** The ticked sections in page order, placeholders filled, Cover and Pricing among them. */
-  sections: { key: string; content: Content }[];
-  /** Picture id to data: URI, for the pictures the sections name. */
-  images: Map<string, string>;
-  /** What happens when they sign, in a sentence, printed under the total. */
-  afterSign: string | null;
-};
 
 const ACCEPT_MARK = "<!--tt-accept-->";
 const BAR_MARK = "<!--tt-bar-->";
 
-const COMPONENTS: Record<string, FC<SectionProps>> = {
-  cover: Cover, summary: Summary, scope: Scope, pricing: Pricing, timeline: Timeline, team: Team,
-  testimonials: Testimonials, work: Work, about: About, faq: Faq, terms: Terms,
-};
-
-/** The page as stored: Accept's place and the bar are markers. */
-export function renderPage(d: PageData): string {
-  const accept = d.sections.find((s) => s.key === "accept")?.content.title || sectionDef("accept")!.title;
+/** The page as stored: the sign-off's place and the bar are markers. `keys` are the ticked components; the always-on ones are added. */
+export function renderPage(d: PageData, keys: string[]): string {
+  const shown = COMPONENTS.filter((c) => c.always || keys.includes(c.key));
   const doc = (
     <html lang="en">
       <head>
@@ -63,14 +26,14 @@ export function renderPage(d: PageData): string {
         <style>{raw(PROPOSAL_CSS)}</style>
       </head>
       <body class="bg-canvas font-body text-body text-ink">
-        <main class="mx-auto max-w-read px-5 pb-16">
-          {d.sections.filter((s) => s.key in COMPONENTS).map((s) => {
-            const C = COMPONENTS[s.key];
-            return <C d={d} c={s.content} />;
-          })}
-          <section id="accept" class="border-t border-line py-12 print:break-before-page print:border-0 sm:py-16">
-            <h2 class="mb-6 font-display text-section">{accept}</h2>
-            {raw(ACCEPT_MARK)}
+        <main>
+          {shown.map((c) => c.render(d))}
+          <section id="accept" class="bg-panel py-20 sm:py-28 print:break-before-page">
+            <div class="mx-auto max-w-read px-6 sm:px-10">
+              <p class="mb-4 text-eyebrow uppercase text-accent">Next step</p>
+              <h2 class="mb-10 font-display text-section">Ready to go ahead?</h2>
+              {raw(ACCEPT_MARK)}
+            </div>
           </section>
         </main>
         {raw(BAR_MARK)}
@@ -80,8 +43,10 @@ export function renderPage(d: PageData): string {
   return "<!doctype html>" + doc.toString();
 }
 
-/** The stored page with Accept's state drawn in, and the bar while it is open. */
+/** The stored page with the sign-off's state drawn in, and the bar while it is open. */
 export function fillPage(stored: string, state: AcceptState, word: string): string {
   const bar = state.kind === "open" ? (<AcceptBar word={word} />).toString() : "";
   return stored.replace(ACCEPT_MARK, () => (<Accept s={state} word={word} />).toString()).replace(BAR_MARK, () => bar);
 }
+
+export type { PageData } from "./components";

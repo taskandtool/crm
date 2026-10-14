@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 
-const scripts = readdirSync("scripts").filter((f) => f.endsWith(".mjs") && !["check.mjs", "dev.mjs", "vendor.mjs", "run.mjs", "proposal-css.mjs"].includes(f));
+const scripts = readdirSync("scripts").filter((f) => f.endsWith(".mjs") && !["check.mjs", "dev.mjs", "vendor.mjs", "run.mjs", "proposal-build.mjs"].includes(f));
 const run = (script: string, args: string[], env: Record<string, string> = {}) =>
   spawnSync("node", [`scripts/${script}`, ...args], { encoding: "utf8", env: { ...process.env, DATABASE_URL: "", ...env }, timeout: 60_000 });
 

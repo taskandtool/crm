@@ -6,7 +6,7 @@
   "description": "A small business's customer record: an inbox of everything that came in across the project, customers keyed by email, a pipeline, notes, a schedule of events, quotes and invoices. Server-rendered on Hono, on the project's Postgres, shaped by its AI; runs in dev on its machine and in production on Cloudflare, team only.",
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "css": "tailwindcss -i styles/input.css -o static/crm.css --minify && node scripts/proposal-css.mjs",
+    "css": "tailwindcss -i styles/input.css -o static/crm.css --minify && node scripts/proposal-build.mjs",
     "css:watch": "tailwindcss -i styles/input.css -o static/crm.css --watch=always",
     "build": "tsx scripts/build.ts",
     "vendor": "node scripts/vendor.mjs",

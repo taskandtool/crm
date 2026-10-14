@@ -72,6 +72,8 @@ export type ProposalHooks = {
   emailed: (c: Ctx, qt: Quote) => Promise<void>;
   /** What accepting it does, in a sentence, shown before Mark accepted; null when nothing. */
   onAccept: (c: Ctx, qt: Quote) => Promise<string | null>;
+  /** Anything to know before it goes (parts still showing sample words), in a sentence; null when nothing. */
+  warning: (c: Ctx, qt: Quote) => Promise<string | null>;
 };
 
 export type InvoicesAdminOptions = {
@@ -499,9 +501,11 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const msg = quoteMessage(qt, rates, doc, withLink ? "(the link, made when you send)" : null);
     const problem = c.req.query("problem");
     const canEmail = emailReady(c);
+    const warning = opts.proposal ? await opts.proposal.warning(c, qt) : null;
     return framed(c, qbase, { title: `Send ${w} ${qt.number}`, back: { href: self, label: `${W} ${qt.number}` } }, (
       <>
         {problem ? <p role="alert" class={"mb-4 " + alertClass}>{problem}</p> : null}
+        {warning ? <p role="alert" class={"mb-4 " + alertClass}>{warning}</p> : null}
         {opts.proposal && !withLink ? (
           <p role="status" class="mb-4 max-w-prose rounded-card border border-line-strong bg-panel px-4 py-3">
             It goes without a link this time: {noLink} They reply to accept, and you mark it accepted.

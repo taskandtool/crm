@@ -66,10 +66,10 @@ runs anywhere with Node 20 and a Postgres.
   or Outlook calendar). The public booking page is the Website's; both use
   the same table. Turned off for a business that keeps its schedule
   elsewhere.
-- **Proposals, quotes and invoices**: a quote with lines and tax and the
-  sections you tick (summary, scope, timeline, team, testimonials, case
-  studies, terms...), each from a library you word once and change per
-  quote. It goes out as a private link from your own email sender (or one
+- **Proposals, quotes and invoices**: a quote with lines and tax, and the
+  designed components you tick by name (about us, your team, reviews, case
+  studies, a full-page photograph, questions, terms), which the AI fills
+  with your own words and photographs from your website. It goes out as a private link from your own email sender (or one
   you copy); the customer reads a clean page, types their name to accept
   or says why not, and you see when they opened it. Signing can make the
   first invoice, a deposit too, and take them straight to pay. The
@@ -127,7 +127,7 @@ src/booking/             a copy of the booking skill: the Schedule, Services and
 src/customers/           a copy of the customers skill: the customers and notes tables, the note box
 src/forms/               a copy of the forms skill: the submissions list, the form editor
 src/invoices/            a copy of the invoices skill: quotes, invoices, tax rates, Stripe
-src/proposals/           a quote as the customer's page: sections, the link at /q, signing, opens
+src/proposals/           a quote as the customer's page: designed components, the link at /q, signing, opens
 src/data/  src/admin/    copies of the data and admin business skills, and what is
 src/payments/ src/reports/   used of payments and reports
 scripts/                 customers, deals, tasks, events, forms, quotes, invoices, stages, import, export, migrate (--help)

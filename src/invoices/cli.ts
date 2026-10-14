@@ -77,6 +77,8 @@ export type InvoicesCli = {
     document: (db: Db, qt: Quote & { lines: SavedLine[] }) => Promise<string>;
     /** What accepting it does, in a sentence; null when nothing. Accept waits for --confirm when there is one. */
     onAccept: (db: Db, qt: Quote) => Promise<string | null>;
+    /** Anything to know before it goes (parts still showing sample words), in a sentence; null when nothing. */
+    warning: (db: Db, qt: Quote) => Promise<string | null>;
   };
 };
 
@@ -271,8 +273,10 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
           const m = quoteMessage(qt, rates, doc, withLink ? "<its link, made when it is sent>" : null);
           if (json) return out(true, { to: qt.email, subject: m.subject, text: m.text, link: withLink, why_no_link: withLink ? null : noLink || null }, String);
           if (has(a, "link")) return done(at, `${word} ${qt.number}: a link for the owner to pass on to ${qt.email}; nothing is emailed`, { waits: `node scripts/quotes.mjs send ${qt.id} --link` });
+          const warning = cli.proposal ? await cli.proposal.warning(db, qt) : null;
           return done(at, `${word} ${qt.number} to ${qt.email}, ${money(qt.total_cents, qt.currency)}`, {
             lines: [
+              ...(warning ? [`Before it goes: ${warning}`] : []),
               ...(cli.proposal && !withLink ? [`No link this time: ${noLink} They reply to accept.`] : []),
               `Subject: ${m.subject}`, withLink ? "Attached: nothing; the link always shows the current one" : `Attached: ${W} ${qt.number}.pdf, when this machine can print it`, "", m.text, "",
             ],

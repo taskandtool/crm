@@ -243,6 +243,7 @@ test("with the app's page (proposal): the email carries a link and no PDF, Copy 
         mintLink: async () => ({ url: `https://crm.example/q/token${++n}`, keep: async () => void calls.push("kept") }),
         emailed: async (_c, qt) => void calls.push(`emailed ${qt.id}`),
         onAccept: async () => "A $500.00 deposit invoice is sent and they are taken to pay it.",
+        warning: async () => "Reviews still show sample words.",
       },
     }));
     let res = await app.request(...post("/invoices/quotes", { email: "ann@example.com", currency: "usd", description: ["Fence"], quantity: [""], unit: ["1000"], tax: "" }));
@@ -255,6 +256,7 @@ test("with the app's page (proposal): the email carries a link and no PDF, Copy 
 
     html = await (await app.request(...get(`/invoices/quotes/${id}/send`))).text();
     assert.match(html, /Review and accept your proposal: \(the link, made when you send\)/);
+    assert.match(html, /Reviews still show sample words\./, "what to know before it goes");
     assert.match(html, /Copy link/);
     res = await app.request(...post(`/invoices/quotes/${id}/send`, { how: "email" }));
     assert.match(res.headers.get("location")!, /saved=sent-link$/);

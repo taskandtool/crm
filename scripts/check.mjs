@@ -10,7 +10,7 @@
 //   - only the dev-only files under src/ import a Node built-in, so the
 //     code production runs on Cloudflare stays portable
 //   - the manifest, the skill, the vendored scripts are there
-//   - src/proposals/style.ts is what styles/proposal.css compiles to
+//   - src/proposals/style.ts and photos.ts are what styles/proposal.css and the components make
 //   - the typecheck passes
 // Exit 1 with the findings when something is off.
 import { spawnSync } from "node:child_process";
@@ -83,8 +83,8 @@ if (!existsSync("starter-app.json")) findings.push("starter-app.json is missing"
 if (!existsSync(".claude/skills/crm/SKILL.md")) findings.push(".claude/skills/crm/SKILL.md is missing");
 if (!existsSync("static/vendor/htmx.min.js") || !existsSync("static/vendor/Sortable.min.js")) findings.push("static/vendor is missing: run npm run vendor");
 
-// the proposal's stylesheet module is what styles/proposal.css and src/proposals make
-const pc = spawnSync("node", ["scripts/proposal-css.mjs", "--check"], { encoding: "utf8" });
+// the proposal's stylesheet and photographs are what styles/proposal.css and its components make
+const pc = spawnSync("node", ["scripts/proposal-build.mjs", "--check"], { encoding: "utf8" });
 if (pc.status !== 0) findings.push((pc.stderr || pc.stdout).trim());
 
 // typecheck

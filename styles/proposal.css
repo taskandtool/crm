@@ -1,68 +1,101 @@
 /* The proposal's own look: what the customer reads, apart from the team's
-   CRM (styles/theme.css). `npm run css` compiles it, with its fonts inlined,
-   into src/proposals/style.ts, which every proposal page carries whole: the
-   page loads nothing else. Change the tokens here to make proposals look
-   like the business; copy a Website's colours and fonts from its
-   styles/theme.css. A font is a WOFF2 file in static/fonts/ named in an
-   @font-face below (url("/fonts/<file>.woff2")), never a font service. */
+   CRM (styles/theme.css). `npm run css` compiles it, its fonts inlined, into
+   src/proposals/style.ts, which every proposal page carries whole: the page
+   loads nothing else. These tokens are the starter's; make them the
+   business's from brand/visual-identity.md (its colours, its fonts). A font
+   is a WOFF2 file in static/fonts/ named in an @font-face below, never a
+   font service. */
 @import "tailwindcss" source(none);
-/* The page's own files only: the team's proposal pages (admin.tsx) are the CRM's look. */
-@source "../src/proposals/sections";
+/* The page's own files only: the team's pages (admin.tsx) are the CRM's look. */
+@source "../src/proposals/components";
 @source "../src/proposals/page.tsx";
 @source "../src/proposals/public.tsx";
 
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-latin-wght-normal.woff2") format("woff2");
+}
+
 @theme {
+  /* Grounds: the page, a tinted band, the dark band (a cover without a photo, reviews). */
   --color-canvas: #ffffff;
-  --color-panel: #f5f6f8;
-  --color-ink: #15171c;
-  --color-muted: #5a606c;
-  --color-line: #e2e4e9;
-  --color-line-strong: #c5c9d1;
-  --color-accent: #1d4ed8;
+  --color-panel: #f3f4f1;
+  --color-night: #111412;
+  /* Ink on light grounds, and on night. */
+  --color-ink: #121513;
+  --color-muted: #59615c;
+  --color-night-ink: #f5f6f3;
+  --color-night-muted: #a9b0ab;
+  /* The one action and highlight colour: the business's own. */
+  --color-accent: #1f6f5c;
   --color-accent-ink: #ffffff;
+  --color-line: #e3e6e2;
+  --color-line-strong: #c9cec9;
+  --color-line-night: rgb(245 246 243 / 0.16);
 
-  --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 
-  --text-display: clamp(2.25rem, 6vw, 3.25rem);
-  --text-display--line-height: 1.05;
-  --text-display--letter-spacing: -0.025em;
-  --text-display--font-weight: 600;
-  --text-section: 1.625rem;
-  --text-section--line-height: 1.2;
-  --text-section--letter-spacing: -0.015em;
-  --text-section--font-weight: 600;
-  --text-lede: 1.1875rem;
-  --text-lede--line-height: 1.55;
+  /* The cover's title. */
+  --text-hero: clamp(2.75rem, 7vw, 5.5rem);
+  --text-hero--line-height: 1;
+  --text-hero--letter-spacing: -0.035em;
+  --text-hero--font-weight: 650;
+  /* Every section's title. */
+  --text-section: clamp(2rem, 4vw, 3.25rem);
+  --text-section--line-height: 1.05;
+  --text-section--letter-spacing: -0.03em;
+  --text-section--font-weight: 650;
+  /* A card's or a step's title. */
+  --text-title: 1.375rem;
+  --text-title--line-height: 1.2;
+  --text-title--letter-spacing: -0.015em;
+  --text-title--font-weight: 600;
+  /* A figure: a total, a stat, a result. */
+  --text-figure: clamp(2.5rem, 5vw, 4rem);
+  --text-figure--line-height: 1;
+  --text-figure--letter-spacing: -0.04em;
+  --text-figure--font-weight: 650;
+  /* A figure beside others: a stat in a row of three. */
+  --text-stat: clamp(1.75rem, 3vw, 2.5rem);
+  --text-stat--line-height: 1;
+  --text-stat--letter-spacing: -0.03em;
+  --text-stat--font-weight: 650;
+  /* A featured review. */
+  --text-quote: clamp(1.625rem, 3vw, 2.375rem);
+  --text-quote--line-height: 1.25;
+  --text-quote--letter-spacing: -0.02em;
+  --text-quote--font-weight: 500;
+  --text-lede: clamp(1.25rem, 2vw, 1.5rem);
+  --text-lede--line-height: 1.5;
+  --text-lede--letter-spacing: -0.01em;
   --text-body: 1.0625rem;
   --text-body--line-height: 1.65;
   --text-small: 0.9375rem;
   --text-small--line-height: 1.5;
-  --text-label: 0.75rem;
-  --text-label--line-height: 1.3;
-  --text-label--letter-spacing: 0.08em;
-  --text-label--font-weight: 600;
-  --text-total: 1.75rem;
-  --text-total--line-height: 1.1;
-  --text-total--letter-spacing: -0.02em;
-  --text-total--font-weight: 600;
+  --text-eyebrow: 0.8125rem;
+  --text-eyebrow--line-height: 1.2;
+  --text-eyebrow--letter-spacing: 0.14em;
+  --text-eyebrow--font-weight: 600;
 
-  --container-read: 42.5rem;
-  --radius-box: 0.75rem;
-  --radius-control: 0.5rem;
+  --container-page: 72rem;
+  --container-read: 42rem;
+  --radius-box: 1rem;
+  --radius-control: 0.625rem;
 }
 
 @layer base {
-  html { background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+  html { background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-body); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
   body { margin: 0; }
-  a { color: var(--color-accent); text-underline-offset: 0.2em; }
-  :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+  a { color: inherit; text-underline-offset: 0.2em; }
+  :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
   input, select, textarea, button { font: inherit; color: inherit; }
-  /* Markdown from the owner: paragraphs and lists, spaced as one text. */
-  .prose > * + * { margin-top: 0.85em; }
-  .prose ul { list-style: disc; padding-left: 1.25em; }
-  .prose ol { list-style: decimal; padding-left: 1.4em; }
-  .prose li + li { margin-top: 0.35em; }
-  .prose strong { font-weight: 600; }
-  @page { margin: 16mm 14mm; }
+  img { display: block; max-width: 100%; }
+  @page { margin: 0; }
+  @media print {
+    html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
 }

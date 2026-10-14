@@ -4,43 +4,12 @@
 -- additive only, no semicolons inside a statement, no double hyphens inside
 -- a string.
 
--- The library: one row per section, its standing title, texts (Markdown, by
--- name: summary's heard and propose, scope's included and excluded...) and
--- entries (team members, testimonials, case studies, timeline steps, FAQ).
--- A section with no row reads its defaults from src/proposals/sections.ts.
-create table if not exists proposal_sections (
-  key         text primary key check (key ~ '^[a-z]{2,20}$'),
-  title       text not null,
-  texts       jsonb not null default '{}',
-  entries     jsonb not null default '[]',
-  ticked      boolean not null default false,
-  updated_by  citext,
-  updated_at  timestamptz not null default now()
-);
-
--- Pictures for the proposal (a logo, team photos, case studies), resized in
--- the browser before upload and kept here, so the page that carries them
--- needs no sign-in to load them.
-create table if not exists proposal_images (
-  id          bigserial primary key,
-  name        text,
-  type        text not null check (type in ('image/jpeg', 'image/png', 'image/webp')),
-  bytes       bytea not null,
-  created_by  citext,
-  created_at  timestamptz not null default now()
-);
-
--- On a quote: which sections are ticked, and any title, texts or entries
--- changed for this quote (null reads the library). Sending copies the
--- library's into the nulls, so a later library edit never changes a
--- proposal a customer has.
-create table if not exists quote_sections (
-  quote_id    bigint not null,
-  key         text not null check (key ~ '^[a-z]{2,20}$'),
-  ticked      boolean not null default true,
-  title       text,
-  texts       jsonb,
-  entries     jsonb,
+-- On a quote: the components ticked for it, by their key in
+-- src/proposals/components/index.ts. A component's design and words are its
+-- own code, written from the brand record; nothing here but the choice.
+create table if not exists quote_components (
+  quote_id  bigint not null,
+  key       text not null check (key ~ '^[a-z][a-z0-9-]{1,39}$'),
   primary key (quote_id, key)
 );
 

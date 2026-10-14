@@ -9,7 +9,9 @@
 #   1. makes sure the working copy is a git repo with a commit in it
 #   2. installs the npm dependencies (which vendors htmx and SortableJS) and
 #      builds the CSS once
-#   3. registers the `web` service (`npm run dev`) so the CRM runs in dev on
+#   3. installs tt-crawl (the site reader the brand skill fills brand/ and
+#      public/ with, for the proposal's components) and its browsers
+#   4. registers the `web` service (`npm run dev`) so the CRM runs in dev on
 #      the machine's URL, or restarts it after a replacement
 #
 # The database is not this script's business: the platform grants
@@ -18,6 +20,8 @@
 set -euo pipefail
 
 APP="$(pwd)"
+CRAWLER_REF="${CRAWLER_REF:-main}"
+CRAWLER="git+https://github.com/taskandtool/crawler@$CRAWLER_REF"
 echo "== crm starter app: setup in $APP"
 
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
@@ -52,7 +56,17 @@ fi
 echo "== building the CSS"
 npm run --silent css
 
-# 3. The web service. `npm run dev` rebuilds the CSS and restarts the server
+# 3. tt-crawl, as the other Starter Apps install it: the crawler's main every
+# run (the second install replaces its own code even when its version did
+# not move), then the browsers it reads sites with. A failure here leaves the
+# CRM working; only reading a site waits for it.
+echo "== tt-crawl $CRAWLER_REF"
+python3 -m pip install --quiet --upgrade "ttcrawl @ $CRAWLER" 2>&1 | tail -1 || true
+python3 -m pip install --quiet --force-reinstall --no-deps "ttcrawl @ $CRAWLER" 2>&1 | tail -1 || true
+python3 -m ttcrawl setup || echo "tt-crawl setup did not finish every step; its output above says which"
+tt-crawl --version || echo "== warning: tt-crawl is not on the PATH; the brand skill cannot read a site until bash .taskandtool/setup.sh runs clean"
+
+# 4. The web service. `npm run dev` rebuilds the CSS and restarts the server
 # on every change; the server applies schema.sql once DATABASE_URL is in
 # /home/sprite/.env, which the service sources at start. This is what the
 # manifest's `ready` check looks for, so a failure here is the one outcome

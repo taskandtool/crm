@@ -12,7 +12,6 @@ import { setup } from "../src/db/setup";
 import { invoiceById, invoicesFor } from "../src/invoices/invoices";
 import { quoteById } from "../src/invoices/quotes";
 import { markEmailed } from "../src/proposals/store";
-import { fill, markdown, unknownPlaceholders } from "../src/proposals/text";
 import type { Runtime } from "../src/runtime";
 import { scratch, type Scratch } from "./scratch";
 
@@ -82,48 +81,37 @@ async function newQuote(email: string, name: string, deal: string, unit = "2000.
   return /\/invoices\/quotes\/(\d+)\?saved=created/.exec(res.headers.get("location")!)![1];
 }
 
-test("the words: Markdown is escaped, links only to the web or email; placeholders fill, others are named", () => {
-  assert.equal(markdown("Hi <script>alert(1)</script>"), "<p>Hi &lt;script&gt;alert(1)&lt;/script&gt;</p>");
-  assert.equal(markdown("- **Gate**\n- [Plans](https://acme.example/plans)"), '<ul><li><strong>Gate</strong></li><li><a href="https://acme.example/plans" rel="noopener noreferrer">Plans</a></li></ul>');
-  assert.equal(markdown("[x](javascript:alert(1))"), "<p>[x](javascript:alert(1))</p>");
-  assert.equal(fill("Thanks, {customer}, for {nope}.", { customer: "Ann" }), "Thanks, Ann, for {nope}.");
-  assert.deepEqual(unknownPlaceholders("{customer} {client} {client}"), ["{client}"]);
-});
-
 test("a proposal end to end: built, linked, opened, changed under them, signed; its deal won and its deposit drafted", async (t) => {
   if (skip) return t.skip(skip);
   const { deal } = await customerWithDeal("Ann Lee", "ann@example.com");
   const id = await newQuote("ann@example.com", "Ann Lee", deal);
 
-  // The proposal: a bad placeholder is named and nothing is saved.
-  let res = await post(`/invoices/quotes/${id}/proposal`, { title: "A new fence", "summary.ticked": "1", "summary.text.heard": "Hi {client}", first_invoice: "draft", deposit_percent: "50" });
-  assert.equal(res.status, 422);
-  assert.match(await res.text(), /\{client\} is not a placeholder/);
-
-  // A picture, for the cover's logo.
-  const form = new FormData();
-  form.append("image", new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])], "logo.jpg", { type: "image/jpeg" }));
-  form.append("name", "Our logo");
-  res = await post("/proposals/images", form);
-  assert.match(res.headers.get("location")!, /saved=image-added/);
-  const [img] = await db.sql`select id::text as id from proposal_images`;
-
-  res = await post(`/invoices/quotes/${id}/proposal`, {
-    title: "A new fence for {customer}", "cover.entry.logo": img.id, "summary.ticked": "1", "summary.title": "Summary",
-    "summary.text.heard": "Your old fence is **down**.", "summary.text.propose": "A cedar fence.", "terms.ticked": "1", "terms.title": "Terms",
-    "terms.text.terms": "Payment due within 30 days.", first_invoice: "draft", deposit_percent: "50",
-  });
-  assert.match(res.headers.get("location")!, /saved=proposal-saved/, await res.text());
+  // The quote's page: the components by name, with check marks; one not registered is refused.
   let html = await (await get(`/invoices/quotes/${id}`)).text();
-  assert.match(html, /The quote/);
+  assert.match(html, /name="components" value="about"/);
+  assert.match(html, /Sample words/, "a component still showing the starter's words says so");
+  let res = await post(`/invoices/quotes/${id}/proposal`, { title: "A new fence", components: ["about", "nope"], first_invoice: "draft" });
+  assert.match(decodeURIComponent(res.headers.get("location")!), /Nothing was saved: No component nope/);
+
+  res = await post(`/invoices/quotes/${id}/proposal`, { title: "A new fence for Ann", components: ["about", "reviews"], first_invoice: "draft", deposit_percent: "50" });
+  assert.match(res.headers.get("location")!, /saved=saved$/);
+  assert.deepEqual((await db.sql`select key from quote_components where quote_id = ${id}::bigint order by key`).map((r) => r.key), ["about", "reviews"]);
+  html = await (await get(`/invoices/quotes/${id}`)).text();
   assert.match(html, /A draft invoice for a 50% deposit of \$1,000\.00 is made for you to review/);
 
   const doc = await (await get(`/invoices/quotes/${id}/document`)).text();
-  assert.match(doc, /A new fence for Ann Lee/);
-  assert.match(doc, /<strong>down<\/strong>/);
-  assert.match(doc, /src="data:image\/jpeg;base64,/, "the logo travels inside the page");
+  assert.match(doc, /A new fence for Ann/);
+  assert.match(doc, /id="about"/);
+  assert.match(doc, /id="reviews"/);
+  assert.doesNotMatch(doc, /id="team"/, "a component not ticked is not on the page");
+  assert.match(doc, /id="pricing"/, "pricing is on every one");
+  assert.match(doc, /A photograph of the team or the work, from your website/, "a photograph's slot says what belongs there");
   assert.match(doc, /A preview: on the customer(&#39;|')s page this form signs it/);
   assert.doesNotMatch(doc, /<script/);
+
+  // Before it goes: what still shows sample words.
+  html = await (await get(`/invoices/quotes/${id}/send`)).text();
+  assert.match(html, /About us, Reviews still show sample words/);
 
   // Copy link: shown once, the quote sent.
   html = await (await get(`/invoices/quotes/${id}/send`)).text();
@@ -187,8 +175,9 @@ test("a proposal end to end: built, linked, opened, changed under them, signed; 
   assert.match(html, /Signed on/);
   assert.match(html, /Coming by email/);
   assert.doesNotMatch(html, /Type your full name/);
-  res = await post(`/invoices/quotes/${id}/proposal`, { title: "Changed" });
-  assert.equal(res.status, 422);
+  res = await post(`/invoices/quotes/${id}/proposal`, { title: "Changed", components: ["team"] });
+  assert.match(decodeURIComponent(res.headers.get("location")!), /Nothing was saved: It was accepted/);
+  assert.deepEqual((await db.sql`select key from quote_components where quote_id = ${id}::bigint order by key`).map((r) => r.key), ["about", "reviews"]);
 });
 
 test("emailed: the link goes by the owner's sender with nothing attached; an open in the first minute is a mail scanner", async (t) => {

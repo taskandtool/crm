@@ -15,19 +15,31 @@ says how the three link.
 
 ## Quotes and invoices
 
-Under Invoices: the tabs Quotes, Invoices, Payments and Quote sections, and a
-Tax rates page. `invoices.quote_word` names a quote everywhere: Quote,
+Under Invoices: the tabs Quotes, Invoices and Payments, and a Tax rates
+page. `invoices.quote_word` names a quote everywhere: Quote,
 Proposal or Estimate.
 
-**A quote is a proposal page** (`src/proposals/`): the lines plus the
-sections ticked on it (summary, scope, timeline, team, testimonials, case
-studies, about, questions, terms; cover, pricing and accept always). Each
-section's standing words are in Quote sections, with the pictures; a quote
-changes its own on "Edit the quote" (or `node scripts/quotes.mjs proposal
-<id> --sections ... --text summary.heard="..."`). Write the summary and
-scope from what the owner told you; fill the library from the Website's
-facts when there is one. Placeholders: `{customer}`, `{business}`,
-`{total}`, `{valid_until}`, `{number}`.
+**A quote is a proposal page**: designed components in their order, the
+quote's own (cover, its message as A note for them, pricing, terms) and the
+business's (About us, How we'll do it, a full photograph, Our work, Our team,
+Reviews, Trusted by, Questions). The team ticks them by name on the quote's
+page; you tick them with `node scripts/quotes.mjs proposal <id> --components
+about,reviews` (no flag: what it has). A quote's own words for this customer
+go in its message (`--notes`).
+
+**A component is its file** in `src/proposals/components/`: its design and
+its words written in, registered in `index.ts`. It starts with sample words
+(`sample: true`, and Send says so while one is ticked). Make it the
+business's from the brand record: `tt-crawl brand <their site>` and the
+`brand` skill fill `brand/` (look, logo, photographs in `brand/images/`)
+and `public/` (business, services, team, proof); write the component's words
+from those notes, verbatim for reviews, never invented, then set `sample:
+false`. Photographs are `photo("brand/images/<file>")`, at most 600 KB each:
+built into the page. Change a component's look, add one (a file and a line in
+`index.ts`) or remove one when asked. The look as a whole is
+`styles/proposal.css`: its tokens from `brand/visual-identity.md`, fonts as
+WOFF2 in `static/fonts/`. After any change: `npm run css`, `npm run check`,
+then Preview a quote. The page runs no script and loads nothing: keep it so.
 
 **Sending** gives a private link: emailed through the owner's sender, or
 Copy link (`send <id> --link --confirm`). The customer opens it signed out,
@@ -40,12 +52,6 @@ signature and the decline show on the quote; signed and declined ring the
 bell; the morning email lists ones opened, and a task comes 3 days before
 one expires unsigned. Without a link (no production yet) it goes as a PDF
 and they reply to accept.
-
-**How it looks** is `styles/proposal.css` (its tokens; copy a Website's
-`styles/theme.css` colours and fonts there when asked, fonts as WOFF2 in
-`static/fonts/`) and `src/proposals/sections/<name>.tsx`. After a change:
-`npm run css` (it compiles into `src/proposals/style.ts`), `npm run check`,
-then Preview a quote. The page runs no script and loads nothing: keep it so.
 
 An invoice is made in the owner's Stripe account: Stripe emails it and
 hosts the page the customer pays on. Paid, void and uncollectible arrive

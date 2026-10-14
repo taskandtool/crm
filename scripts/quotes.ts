@@ -1,7 +1,7 @@
 // Quotes from chat: the invoices skill's command (src/invoices/cli.ts) with
 // this CRM's settings and its customers as <who>, a quote as its proposal
-// page (src/proposals) at a link, and "proposal" to tick its sections, give
-// it its words, and say what happens when they sign. `--help` for usage.
+// page (src/proposals) at a link, and "proposal" to tick its components and
+// say what happens when they sign. `--help` for usage.
 import { quotesCli } from "../src/invoices/cli";
 import { winFromQuotes } from "../src/crm/deals";
 import { cfg, invoicesCfg } from "../src/config";
@@ -10,15 +10,15 @@ import { stripeFrom } from "../src/payments/stripe";
 import { quoteById } from "../src/invoices/quotes";
 import { linkReady } from "../src/proposals/link";
 import { production } from "../src/proposals/serving";
-import { SECTIONS, TICKABLE, sectionDef } from "../src/proposals/sections";
+import { COMPONENTS, PICKABLE } from "../src/proposals/components";
 import { afterAccepted, onAcceptSentence, type AnswerDeps } from "../src/proposals/sign";
-import { ensureProposal, freezeSections, markEmailed, newLink, pageFor, proposalOf, resolvedSections, saveProposal, storePage, type ProposalOpts } from "../src/proposals/store";
+import { chosenKeys, ensureProposal, markEmailed, newLink, pageFor, proposalOf, sampleWarning, saveProposal, storePage, type ProposalOpts } from "../src/proposals/store";
 import { fillPage } from "../src/proposals/page";
 import { printPdf } from "../src/pdf";
-import { cliSettings, done, fail, flag, flags, has, misused, out } from "./lib";
+import { cliSettings, done, fail, flag, has, misused, out } from "./lib";
 
 const settings = cliSettings("quotes");
-const opts: ProposalOpts = { business: invoicesCfg?.name ?? "", word: invoicesCfg?.word ?? "Quote", timeZone: cfg.time_zone, terms: invoicesCfg?.terms ?? null };
+const opts: ProposalOpts = { business: invoicesCfg?.name ?? "", word: invoicesCfg?.word ?? "Quote", timeZone: cfg.time_zone };
 const deps: AnswerDeps = {
   opts,
   stripe: () => stripeFrom(settings.env),
@@ -37,17 +37,14 @@ async function base(): Promise<{ ok: true; base: string } | { ok: false; why: st
   return { ok: true, base: p.url.replace(/\/+$/, "") };
 }
 
-const tickable = TICKABLE.map((s) => s.key).join(",");
+const pickable = PICKABLE.map((c) => c.key).join(",");
 
 await quotesCli(process.argv.slice(2), {
   ...settings,
   word: opts.word,
   afterSend: async (db, doc, by) => {
     await settings.afterSend?.(db, doc, by);
-    if (doc.kind === "quote") {
-      await freezeSections(db, doc.id, opts);
-      await storePage(db, doc.id, opts);
-    }
+    if (doc.kind === "quote") await storePage(db, doc.id, opts);
   },
   // A yes wins the deal the quote is for, and does what "After they sign" says.
   afterDecide: async (db, qt, by) => {
@@ -57,7 +54,7 @@ await quotesCli(process.argv.slice(2), {
   },
   proposal: {
     saved: async (db, qt) => {
-      await ensureProposal(db, qt, opts);
+      await ensureProposal(db, qt);
       const r = await storePage(db, qt.id, opts);
       if (!r.ok) console.error(`its page was not made again: ${r.why}`);
     },
@@ -68,7 +65,6 @@ await quotesCli(process.argv.slice(2), {
     mint: async (db, qt, by) => {
       const b = await base();
       if (!b.ok) throw new Error(b.why);
-      await freezeSections(db, qt.id, opts);
       const stored = await storePage(db, qt.id, opts);
       if (!stored.ok) throw new Error(stored.why);
       return newLink(db, qt.id, by, b.base);
@@ -76,16 +72,16 @@ await quotesCli(process.argv.slice(2), {
     emailed: (db, qt) => markEmailed(db, qt.id),
     document: async (db, qt) => fillPage((await pageFor(db, qt.id, opts))!.html, { kind: "preview" }, opts.word),
     onAccept: (db, qt) => onAcceptSentence(db, qt),
+    warning: (db, qt) => sampleWarning(db, qt.id),
   },
   more: {
-    help: `  proposal <id>                        its sections (ticked or not), title and what happens when they sign
-  proposal <id> [--sections ${tickable.split(",").slice(0, 3).join(",")},...] [--title "..."]
-            [--text <section>.<name>="..."]... [--first-invoice none|draft|send] [--deposit 50|full]
-                                       ticks exactly the sections named; --text gives one its words for this
-                                       quote (summary.heard, summary.propose, scope.included, scope.excluded,
-                                       about.about, terms.terms, pricing.intro); the page is made again
-  The sections: ${tickable}. Cover, pricing and accept are always there.`,
-    flags: { proposal: ["sections", "title", "text", "first-invoice", "deposit", "as"] },
+    help: `  proposal <id>                        its components (ticked or not), title and what happens when they sign
+  proposal <id> [--components ${pickable.split(",").slice(0, 3).join(",")},...] [--title "..."]
+            [--first-invoice none|draft|send] [--deposit 50|full]
+                                       ticks exactly the components named; the page is made again
+  The components: ${pickable}. Cover, pricing and the sign-off are on every one;
+  a component's design and words are its file in src/proposals/components/.`,
+    flags: { proposal: ["components", "title", "first-invoice", "deposit", "as"] },
     commands: {
       proposal: async (db, a, rest, by) => {
         const at = "quotes proposal";
@@ -93,40 +89,32 @@ await quotesCli(process.argv.slice(2), {
         if (!rest[0] || !/^\d{1,18}$/.test(rest[0])) misused(`${at}: name the quote by its id (#12 is 12)`, "node scripts/quotes.mjs list");
         const qt = await quoteById(db, rest[0]);
         if (!qt) fail(`${at}: no quote ${rest[0]}`, "node scripts/quotes.mjs list");
-        await ensureProposal(db, qt, opts);
-        const changing = ["sections", "title", "text", "first-invoice", "deposit"].some((f) => has(a, f));
+        await ensureProposal(db, qt);
+        const changing = ["components", "title", "first-invoice", "deposit"].some((f) => has(a, f));
         if (changing) {
-          const current = await resolvedSections(db, qt.id, opts);
           const p = await proposalOf(db, qt.id);
-          const wanted = has(a, "sections") ? (flag(a, "sections") ?? "").split(",").map((s) => s.trim()).filter(Boolean) : null;
-          const odd = (wanted ?? []).filter((k) => !TICKABLE.some((s) => s.key === k));
-          if (odd.length) misused(`${at}: ${odd.join(", ")} ${odd.length === 1 ? "is not a section" : "are not sections"}; they are ${tickable}`, `node scripts/quotes.mjs proposal ${qt.id} --sections summary,scope,terms`);
-          const sections = Object.fromEntries(current.map((s) => [s.key, { ticked: wanted ? wanted.includes(s.key) || !!sectionDef(s.key)!.always : s.ticked, title: s.content.title, texts: { ...s.content.texts }, entries: s.content.entries }]));
-          for (const t of flags(a, "text")) {
-            const m = /^([a-z]+)\.([a-z_]+)=([\s\S]*)$/.exec(t);
-            const def = m && sectionDef(m[1]);
-            if (!m || !def || !def.texts.some((x) => x.name === m[2])) misused(`${at}: --text ${t.slice(0, 40)}: write it as <section>.<name>="words", e.g. summary.heard="..."`, "node scripts/quotes.mjs proposal --help");
-            (sections[m[1]].texts as Record<string, string>)[m[2]] = m[3];
-          }
+          const wanted = has(a, "components") ? (flag(a, "components") ?? "").split(",").map((s) => s.trim()).filter(Boolean) : await chosenKeys(db, qt.id);
+          const odd = wanted.filter((k) => !PICKABLE.some((c) => c.key === k));
+          if (odd.length) misused(`${at}: ${odd.join(", ")} ${odd.length === 1 ? "is not a component" : "are not components"}; they are ${pickable}`, `node scripts/quotes.mjs proposal ${qt.id} --components about,reviews`);
           const first = flag(a, "first-invoice") ?? p?.first_invoice ?? "none";
           if (!["none", "draft", "send"].includes(first)) misused(`${at}: --first-invoice is none, draft or send`, `node scripts/quotes.mjs proposal ${qt.id} --first-invoice draft`);
           const dep = flag(a, "deposit");
           const pct = dep === undefined ? (p?.deposit_percent ? String(p.deposit_percent) : "") : dep === "full" ? "" : dep.replace(/%$/, "");
-          const r = await saveProposal(db, qt.id, { title: flag(a, "title") ?? p?.title ?? "", first_invoice: first, deposit_percent: pct, sections }, by, opts);
+          const r = await saveProposal(db, qt.id, { title: flag(a, "title") ?? p?.title ?? "", first_invoice: first, deposit_percent: pct, components: wanted }, by);
           if (!r.ok) fail(`${at}: not saved\n${Object.entries(r.errors).map(([k, v]) => `  ${k}: ${v}`).join("\n")}`, `node scripts/quotes.mjs proposal ${qt.id}`);
           const stored = await storePage(db, qt.id, opts);
           if (!stored.ok) fail(`${at}: saved, but its page was not made: ${stored.why}`, "node scripts/quotes.mjs proposal --help");
         }
-        const [p, sections] = await Promise.all([proposalOf(db, qt.id), resolvedSections(db, qt.id, opts)]);
+        const [p, keys] = await Promise.all([proposalOf(db, qt.id), chosenKeys(db, qt.id)]);
         const view = {
           id: qt.id, number: qt.number, status: qt.status, title: p?.title ?? null,
-          sections: sections.filter((s) => s.ticked).map((s) => s.key),
+          components: COMPONENTS.filter((c) => c.always || keys.includes(c.key)).map((c) => ({ key: c.key, sample: c.sample })),
           first_invoice: p?.first_invoice ?? "none", deposit_percent: p?.deposit_percent ?? null,
         };
         if (json) return out(true, view, String);
         return done(at, `${changing ? "saved " : ""}${opts.word.toLowerCase()} ${qt.number}${view.title ? ` "${view.title}"` : ""}`, {
           lines: [
-            `sections: ${SECTIONS.filter((d) => view.sections.includes(d.key)).map((d) => d.key).join(", ")}`,
+            `components: ${view.components.map((c) => c.key + (c.sample ? " (sample words)" : "")).join(", ")}`,
             `after they sign: ${view.first_invoice === "none" ? "nothing" : `${view.first_invoice === "draft" ? "a draft" : "a sent"} invoice for ${view.deposit_percent ? `a ${view.deposit_percent}% deposit` : "the full total"}`}`,
             `preview: /invoices/quotes/${qt.id}/document on dev`,
           ],

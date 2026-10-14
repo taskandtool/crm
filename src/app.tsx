@@ -61,7 +61,7 @@ import { proposalAdmin, proposalDocument, proposalPanel } from "./proposals/admi
 import { linkBase, readyHere } from "./proposals/link";
 import { proposalPages } from "./proposals/public";
 import { afterAccepted, onAcceptSentence, type AnswerDeps } from "./proposals/sign";
-import { ensureProposal, freezeSections, markEmailed, newLink, storePage, type ProposalOpts } from "./proposals/store";
+import { ensureProposal, markEmailed, newLink, sampleWarning, storePage, type ProposalOpts } from "./proposals/store";
 import { afterResponse } from "./data/send";
 import type { Db } from "./data/db";
 import { primaryClass } from "./views/ui";
@@ -135,7 +135,7 @@ if (invoicesCfg) {
 // Stripe and the sender as this runtime has them, the PDF where it prints.
 
 const PROPOSAL_OPTS: ProposalOpts = {
-  business: invoicesCfg?.name ?? "", word: invoicesCfg?.word ?? "Quote", timeZone: cfg.time_zone, terms: invoicesCfg?.terms ?? null,
+  business: invoicesCfg?.name ?? "", word: invoicesCfg?.word ?? "Quote", timeZone: cfg.time_zone,
 };
 const answerDeps = (c: Context): AnswerDeps => ({
   opts: PROPOSAL_OPTS,
@@ -718,34 +718,31 @@ if (invoicesCfg) {
       proposal: {
         document: (c, qt) => proposalDocument(dbOf(c), qt, PROPOSAL_OPTS),
         saved: async (c, qt) => {
-          await ensureProposal(dbOf(c), qt, PROPOSAL_OPTS);
+          await ensureProposal(dbOf(c), qt);
           const r = await storePage(dbOf(c), qt.id, PROPOSAL_OPTS);
           if (!r.ok) console.error(`quote ${qt.id}: its page: ${r.why}`);
         },
         panel: (c, qt) => proposalPanel(dbOf(c), qt, { opts: PROPOSAL_OPTS, quotes: "/invoices/quotes", timeZone: cfg.time_zone }),
         linkReady: (c) => readyHere(c, (c as unknown as C).env.runtime.production),
-        // Sending: the library's words are copied in and the page made from them, then the link.
+        // Sending: the page made as it stands, then the link.
         mintLink: async (c, qt) => {
           const b = await linkBaseOf(c);
           if (!b.ok) throw new Error(`no link: ${b.why}`);
-          await freezeSections(dbOf(c), qt.id, PROPOSAL_OPTS);
           const stored = await storePage(dbOf(c), qt.id, PROPOSAL_OPTS);
           if (!stored.ok) throw new Error(stored.why);
           return newLink(dbOf(c), qt.id, (c as unknown as C).var.user, b.base);
         },
         emailed: (c, qt) => markEmailed(dbOf(c), qt.id),
         onAccept: (c, qt) => onAcceptSentence(dbOf(c), qt),
+        warning: (c, qt) => sampleWarning(dbOf(c), qt.id),
       },
       print: (c, html) => (c as unknown as C).env.runtime.print?.(html) ?? Promise.resolve(null),
       Frame: frameIn("invoices"),
       daysUntilDue: invoicesCfg.days_until_due,
-      // A quote or an invoice that went out is contact with the customer; a quote sent keeps its own words from then on.
+      // A quote or an invoice that went out is contact with the customer; its page is made as it went.
       afterSend: async (c, doc) => {
         await sentTo(dbOf(c), doc.email, (c as unknown as C).var.user);
-        if (doc.kind === "quote") {
-          await freezeSections(dbOf(c), doc.id, PROPOSAL_OPTS);
-          await storePage(dbOf(c), doc.id, PROPOSAL_OPTS);
-        }
+        if (doc.kind === "quote") await storePage(dbOf(c), doc.id, PROPOSAL_OPTS);
       },
       // A yes on the quote's page wins the deal it is for, and does what "After they sign" says.
       afterDecide: async (c, qt) => {

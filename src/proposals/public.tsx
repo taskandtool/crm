@@ -17,7 +17,6 @@ import { PROPOSALS_HEADER } from "./link";
 import { fillPage } from "./page";
 import { confirmSignature, declineProposal, signedState, signProposal, type AnswerDeps } from "./sign";
 import { proposalOf, quoteIdByToken, recordView } from "./store";
-import { escapeHtml } from "./text";
 
 export type PublicOpts = {
   /** This request's database, or null while it is not up. */
@@ -50,6 +49,8 @@ function dead(c: Context, business: string, status = 404) {
     status as 404,
   );
 }
+
+const escapeHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 const ipOf = (c: Context) => c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for")?.split(",")[0].trim() ?? c.req.header("x-real-ip") ?? null;
 
