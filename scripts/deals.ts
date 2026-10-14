@@ -5,7 +5,8 @@ import { firstOfKind, firstOpenStage, listStages, resolveStage } from "../src/cr
 import { amountText, clean, parseAmount } from "../src/crm/text";
 import { formatMoney } from "../src/payments/money";
 import { readDay } from "../src/crm/tasks";
-import { done, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, resolveCustomer, usage, who, withDb } from "./lib";
+import { convertLead, getLead } from "../src/crm/leads";
+import { done, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, ownerOf, resolveCustomer, usage, who, withDb } from "./lib";
 
 const one = dealsCfg.one.toLowerCase();
 const many = dealsCfg.many.toLowerCase();
@@ -14,8 +15,9 @@ const HELP = `deals.mjs <command> [...] [--json] [--as <email>]      ${dealsCfg.
   list [--open | --won | --lost] [--stage s] [--owner o] [--customer <who>] [--limit 50]
                                        most recently changed first; open, won or lost by the stage's kind
   show <id>
-  add <who> "<what>" [--value 1200] [--stage s] [--owner o] [--close YYYY-MM-DD] [--notes n]
-                                       in the first open stage unless --stage
+  add <who> "<what>" [--value 1200] [--stage s] [--owner o] [--close YYYY-MM-DD] [--notes n] [--lead <id>]
+                                       in the first open stage unless --stage; --lead converts that open lead of
+                                       theirs into it ("<what>" defaults to the lead's), with a "Call back" task today
   update <id> [--what w] [--value v] [--owner o] [--close d] [--notes n]   "" clears a value
   stage <id> <stage> [--reason r]      a stage key or label; --reason when it is a lost one
   won <id> | lost <id> [--reason r]    to the first won or lost stage
@@ -31,7 +33,7 @@ nothing. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misus
 
 const FIELDS = ["value", "owner", "close", "notes", "as"];
 const FLAGS: Record<string, string[]> = {
-  list: ["open", "won", "lost", "stage", "owner", "customer", "limit"], show: [], add: [...FIELDS, "stage"], update: [...FIELDS, "what"],
+  list: ["open", "won", "lost", "stage", "owner", "customer", "limit"], show: [], add: [...FIELDS, "stage", "lead"], update: [...FIELDS, "what"],
   stage: ["reason", "as"], won: ["as"], lost: ["reason", "as"], archive: ["undo", "as"],
 };
 const WORDS: Record<string, number> = { list: 0, show: 1, update: 1, stage: 2, won: 1, lost: 1, archive: 1 };
@@ -47,8 +49,6 @@ if (["show", "update", "stage", "won", "lost", "archive"].includes(cmd) && !/^#?
 if (cmd === "stage" && !rest[1]) misused(`${at}: to which stage?`, `node scripts/deals.mjs stage ${rest[0]} won`);
 const kinds = (["open", "won", "lost"] as const).filter((k) => has(a, k));
 if (kinds.length > 1) misused(`${at}: one of --open, --won, --lost`, "node scripts/deals.mjs list --open");
-/** Whose a new deal is: --owner, else whoever is acting (--as, CRM_USER); never "AI". */
-const ownerOf = () => clean(flag(a, "owner"), 200) ?? (flag(a, "as") || process.env.CRM_USER || null);
 
 function valueFlag(current: number | null): number | null {
   if (!has(a, "value")) return current;
@@ -116,14 +116,23 @@ await withDb(async (db) => {
 
     case "add": {
       const c = await resolveCustomer(db, rest[0], at);
-      const title = clean(rest.slice(1).join(" "), 200) ?? misused(`${at}: say what the ${one} is`, `node scripts/deals.mjs add ${c.id} "New furnace" --value 6500`);
+      const lead = has(a, "lead") ? await getLead(db, (flag(a, "lead") ?? "").replace(/^#/, "")) : null;
+      if (has(a, "lead") && (!lead || lead.customer_id !== c.id || lead.status === "archived"))
+        fail(`${at}: ${c.name} has no open lead ${flag(a, "lead")}${lead?.status === "archived" ? " (it is archived; leads.mjs archive --undo opens it)" : ""}`, `node scripts/leads.mjs list --find "${c.name}"`);
+      const into = lead?.deal_id ? await getDeal(db, lead.deal_id) : null;
+      if (into) return result(into, `lead ${lead!.id} is already converted into ${fmt(into)}; left alone`, { next: show(into.id) });
+      const title = clean(rest.slice(1).join(" "), 200) ?? lead?.title ?? misused(`${at}: say what the ${one} is`, `node scripts/deals.mjs add ${c.id} "New furnace" --value 6500`);
       const stageArg = flag(a, "stage");
       const st = (stageArg ? resolveStage(active, stageArg) : await firstOpenStage(db, "deals")) ?? misused(`${at}: no stage ${stageArg ?? ""}; stages: ${stageList}`, "node scripts/stages.mjs list");
       // A re-run with the same title for the same customer, still open, is the same deal.
-      const same = (await customerDeals(db, c.id)).find((d) => !d.closed_at && d.title.toLowerCase() === title.toLowerCase());
+      const same = lead ? null : (await customerDeals(db, c.id)).find((d) => !d.closed_at && d.title.toLowerCase() === title.toLowerCase());
       if (same) return result(same, `already here, not added: ${fmt(same)}`, { lines: ["an open one with that title for them; left alone"], next: show(same.id) });
-      const input: DealInput = { title, value_cents: valueFlag(null), currency: dealsCfg.currency, owner: ownerOf(), expected_close: closeFlag(null), notes: clean(flag(a, "notes"), 10_000) };
+      const input: DealInput = { title, value_cents: valueFlag(null), currency: dealsCfg.currency, owner: ownerOf(a), expected_close: closeFlag(null), notes: clean(flag(a, "notes"), 10_000) ?? lead?.said ?? null };
       const d = (await createDeal(db, c.id, input, st.key, user)) ?? fail(`${at}: no customer ${c.id}`, "node scripts/customers.mjs list");
+      if (lead) {
+        await convertLead(db, lead.id, d.id, user);
+        return result(d, `added ${fmt(d)}`, { lines: [`lead ${lead.id} (${lead.title}) converted into it`], next: `node scripts/tasks.mjs list --customer ${c.id}` });
+      }
       return result(d, `added ${fmt(d)}`, { next: `node scripts/tasks.mjs add ${c.id} "Call ${c.name}" --on tomorrow --deal ${d.id}` });
     }
 

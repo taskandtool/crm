@@ -8,6 +8,7 @@ import { cfg, invoicesCfg, seeds } from "../src/config";
 import { fail, flag, flags, localTime, machineEnv, misused, parseArgs, type Args } from "../src/data/cli.mjs";
 import type { CustomField } from "../src/config-schema";
 import { readFields, type FieldRead } from "../src/crm/fields";
+import { clean } from "../src/crm/text";
 import type { Db } from "../src/data/db";
 import { fromPool } from "../src/data/pg";
 import { databaseUrl } from "../src/db/client";
@@ -79,6 +80,8 @@ export const run = (at: string) => at.replace(/^(\S+)/, "node scripts/$1.mjs");
 
 /** Who acted: --as, else CRM_USER, else "AI". */
 export const who = (a: Args) => flag(a, "as") || process.env.CRM_USER || "AI";
+/** Whose a new task, deal or lead is: --owner, else whoever is acting (--as, CRM_USER); never "AI". */
+export const ownerOf = (a: Args) => clean(flag(a, "owner"), 200) ?? (flag(a, "as") || process.env.CRM_USER || null);
 
 /** <who>: a customer by id, email or phone. `at` is "customers show". */
 export async function resolveCustomer(db: Db, ref: string | undefined, at: string): Promise<Customer> {

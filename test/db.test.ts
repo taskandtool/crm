@@ -16,6 +16,7 @@ import { convertLead, leadsForOpenItems, listLeads } from "../src/crm/leads";
 import { publishFields } from "../src/crm/fields";
 import { loadTeam, setTeam } from "../src/crm/people";
 import { addNote, listNotes } from "../src/customers/notes";
+import { saveLead } from "../src/customers/customer";
 import { addTask, nothingPlanned } from "../src/crm/tasks";
 import { sendDigests } from "../src/crm/digest";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, restoreStage, seedStages } from "../src/crm/stages";
@@ -653,4 +654,15 @@ test("setup saves everyone already in the tables: by email, else by phone, never
   assert.equal((await rows("select 1 from customers where name in ('Nobody Known', 'Spam Guy') or email = 'spamguy@example.com'")).length, 0);
   assert.equal(await saveEveryone(db), 0, "a second run saves no one");
   await publishFields(db, []);
+});
+
+test("converting a lead into another contact's deal (the form lets you switch) gives the call back to the deal's contact", async (t) => {
+  if (skip) return t.skip(skip);
+  const { customer: asker } = await createCustomer(db, { name: "Ask Er", email: "asker@example.com", stage: "new" }, ME);
+  const { customer: payer } = await createCustomer(db, { name: "Pay Er", email: "payer@example.com", stage: "new" }, ME);
+  const leadId = (await saveLead(db, { customerId: asker.id, source: "phone", title: "Quote for the rental" }, ME))!;
+  const [deal] = await db.sql<{ id: string }>`insert into deals (customer_id, title, stage) values (${payer.id}::bigint, 'Rental unit', 'new') returning id::text as id`;
+  assert.equal(await convertLead(db, leadId, deal.id, ME), true);
+  assert.deepEqual(await db.sql`select customer_id::text as c, title, deal_id::text as d from follow_ups where deal_id = ${deal.id}::bigint`,
+    [{ c: payer.id, title: "Call back Pay Er", d: deal.id }]);
 });

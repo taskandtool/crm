@@ -9,9 +9,9 @@ import { listUrl } from "../admin/query";
 import { formatTime } from "../booking/slots";
 import { dealsCfg, eventsCfg } from "../config";
 import type { Home } from "../crm/home";
+import { sourceText } from "../crm/leads";
 import { formatWholeMoney } from "../crm/text";
 import { Layout } from "./layout";
-import { sourceText } from "./leads";
 import { TaskItem } from "./tasks";
 import { Avatar, MESSAGES, dueDayText, timeZone } from "./ui";
 

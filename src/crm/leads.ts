@@ -8,7 +8,10 @@ import { likePattern } from "../admin/query";
 import type { Db } from "../data/db";
 import type { LeadSource } from "../customers/customer";
 import { BOOKING_PAGE, saveSubmitter } from "../forms/store";
+import { cfg, newLeadTask } from "../config";
+import { todayIn } from "../reports/sql";
 import { EVENT_OF, spliced } from "./sql";
+import { addTask } from "./tasks";
 import { present as presentTables } from "./tables";
 
 export type LeadStatus = "open" | "converted" | "archived";
@@ -90,6 +93,10 @@ export function firstText(data: Record<string, unknown> | null): string | null {
   return msg ? String(msg[1]).slice(0, 300) : null;
 }
 
+/** Where it came from, in words: "Website form · Request service", "Online booking · Free estimate", "Phone". */
+export const sourceText = (l: Pick<Lead, "source" | "title">) =>
+  l.source === "form" || l.source === "booking" ? `${SOURCE_LABELS[l.source]} · ${l.title}` : SOURCE_LABELS[l.source];
+
 const toLead = (r: Omit<Lead, "said">): Lead => ({ ...r, said: r.notes ?? firstText(r.answers) });
 
 /** The leads in one status, newest first; `q` matches the contact's name, email or phone, or the lead's title. */
@@ -133,17 +140,27 @@ export async function openLeadCount(db: Db): Promise<number> {
   return r.n;
 }
 
-/** Converted into a deal: off Open, with the deal named, and the booking it came from (if any) is the deal's. */
+/**
+ * Converted into a deal, from the page or the deals command: off Open, with
+ * the deal named; the booking it came from (if any) is the deal's; and the
+ * deal gets its first step, "Call back <name>" (the deal's contact) today
+ * for whoever converted it, unless crm.config.json's tasks.new_lead is false.
+ */
 export async function convertLead(db: Db, id: string, dealId: string, user: string): Promise<boolean> {
-  const [lead] = await db.sql<{ submission_id: string | null; booking_id: string | null }>`
-    update leads set status = 'converted', deal_id = ${dealId}::bigint, archived_reason = null, updated_at = now(), updated_by = ${user}
-    where id = ${id}::bigint and status = 'open' returning submission_id::text as submission_id, booking_id::text as booking_id`;
+  const [lead] = await db.sql<{ submission_id: string | null; booking_id: string | null; customer_id: string; name: string }>`
+    update leads l set status = 'converted', deal_id = ${dealId}::bigint, archived_reason = null, updated_at = now(), updated_by = ${user}
+    from deals d join customers c on c.id = d.customer_id
+    where l.id = ${id}::bigint and l.status = 'open' and d.id = ${dealId}::bigint
+    returning l.submission_id::text as submission_id, l.booking_id::text as booking_id, d.customer_id::text as customer_id, c.name`;
   if (lead?.booking_id) {
     await db.sql`update bookings set deal_id = ${dealId}::bigint, updated_at = now(), updated_by = ${user} where id = ${lead.booking_id}::bigint and deal_id is null`;
   }
   // Its form submission is dealt with too: done in the forms list. The CRM writes no other column of the forms skill's table.
   if (lead?.submission_id) {
     await db.sql`update submissions set status = 'done', updated_at = now(), updated_by = ${user} where id = ${lead.submission_id}::bigint and status in ('new', 'read')`;
+  }
+  if (lead && newLeadTask) {
+    await addTask(db, lead.customer_id, { kind: "call", title: `Call back ${lead.name}`, due_on: todayIn(cfg.time_zone), due_time: null, owner: user, deal_id: dealId }, user);
   }
   return !!lead;
 }

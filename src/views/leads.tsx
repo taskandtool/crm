@@ -11,7 +11,7 @@ import { StatusBadge, type StatusOption } from "../admin/status";
 import { NoteForm } from "../customers/note-form";
 import { NOTE_LABELS, type Note } from "../customers/notes";
 import { dealsCfg, vocab } from "../config";
-import { ARCHIVE_REASONS, MANUAL_SOURCES, SOURCE_LABELS, type Lead, type LeadStatus } from "../crm/leads";
+import { ARCHIVE_REASONS, MANUAL_SOURCES, SOURCE_LABELS, sourceText, type Lead, type LeadStatus } from "../crm/leads";
 import { ownerOptions, ownerSuggestions, personName } from "../crm/people";
 import type { Task } from "../crm/tasks";
 import { Layout } from "./layout";
@@ -29,10 +29,6 @@ const TABS: { value: LeadStatus; label: string }[] = [
   { value: "archived", label: "Archived" },
 ];
 const deal = dealsCfg.one.toLowerCase();
-
-/** Where it came from, in words: "Website form · Request service", "Online booking · Free estimate", "Phone". */
-export const sourceText = (l: Pick<Lead, "source" | "title">) =>
-  l.source === "form" || l.source === "booking" ? `${SOURCE_LABELS[l.source]} · ${l.title}` : SOURCE_LABELS[l.source];
 
 export type LeadFilter = { status: LeadStatus; q: string | null; source: string | null; owner: string | null };
 const params = (f: LeadFilter) => ({ status: f.status === "open" ? null : f.status, q: f.q, source: f.source, owner: f.owner });

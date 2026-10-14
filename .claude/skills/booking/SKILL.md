@@ -42,7 +42,7 @@ Version: 0.6.0 (taskandtool/skills)
   giving their address.
 - **A booker's own changes are noted.** A move or cancel through their
   manage link writes a `booking_changes` row in the same statement, so the
-  CRM's Inbox shows what the team did not do. The team's changes are not
+  CRM's notifications show what the team did not do. The team's changes are not
   noted there.
 - **One appointment table.** `bookings` also holds what the team schedules
   itself (the CRM's events): such a row may have no service (`title` names

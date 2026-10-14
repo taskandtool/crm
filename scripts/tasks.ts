@@ -7,7 +7,7 @@ import {
 } from "../src/crm/tasks";
 import { clean } from "../src/crm/text";
 import { todayIn } from "../src/reports/sql";
-import { done, fail, flag, has, limitOf, misused, noMore, out, parseArgs, resolveCustomer, usage, who, withDb } from "./lib";
+import { done, fail, flag, has, limitOf, misused, noMore, out, parseArgs, ownerOf, resolveCustomer, usage, who, withDb } from "./lib";
 
 const HELP = `tasks.mjs <command> [...] [--json] [--as <email>]      what to do next, for whom, by when
 
@@ -118,7 +118,7 @@ await withDb(async (db) => {
       // The same thing, for the same person, on the same day, still open, is already there.
       const same = (await customerTasks(db, c.id)).open.find((f) => f.title.toLowerCase() === title.toLowerCase() && f.due_on === on);
       if (same) return result(same, `already planned, not added: ${fmt(same)}`, { next: `node scripts/tasks.mjs list --customer ${c.id}` });
-      const f = (await addTask(db, c.id, { kind, title, due_on: on, due_time: time, owner: clean(flag(a, "owner"), 200) ?? (flag(a, "as") || process.env.CRM_USER || null), deal_id: dealId }, user))
+      const f = (await addTask(db, c.id, { kind, title, due_on: on, due_time: time, owner: ownerOf(a), deal_id: dealId }, user))
         ?? fail(`${at}: no customer ${c.id}`, "node scripts/customers.mjs list");
       return result(f, `added ${fmt(f)}`, { lines: [`say back the day: ${on}${time ? " at " + time : ""} (${cfg.time_zone})`], next: `node scripts/tasks.mjs list --customer ${c.id}` });
     }

@@ -1,8 +1,9 @@
 # This app: a CRM on Hono
 
-The business's customer record: an Inbox of everything that came in across the project (form
-submissions, bookings, payments), customers keyed by email, deals on a
-board of stages, tasks, notes of every call, and a schedule of events (an
+The business's customer record: Home (the figures and what needs doing
+today), leads (each enquiry from a form, an online booking or a call),
+contacts keyed by email, deals on a board of stages, tasks, notes of every
+call, a bell for what customers did themselves, and a schedule of events (an
 appointment, a job, a visit: one record each, booked online or added by the team). It runs in **dev** on this machine
 and in **production** on Cloudflare once deployed. This
 repository *is* the app: the code at the root, the skill that knows how to
@@ -30,7 +31,8 @@ Read the skill for what the owner asks before working from memory:
 Use these rather than doing the work by hand; each answers `--help`.
 
 ```bash
-node scripts/inbox.mjs --since 7d               # the Inbox, and who each matched
+node scripts/leads.mjs list                     # open enquiries, newest first; show, add (a phone call), archive --reason
+node scripts/deals.mjs add 18 --lead 5          # convert lead 5 into a deal for its contact, with a call back today
 node scripts/customers.mjs add "Ann Lee" --email ann@example.com   # "customers add: added #12 Ann Lee [Lead]", or "already here, not added"
 node scripts/events.mjs add ann@example.com "Boiler service" --at "next friday 9:30" --host Dana   # on the schedule; --at also "tomorrow 2pm", in the business's zone; say back the date it prints
 node scripts/customers.mjs find "lee"           # customers; also note, status, update, merge
@@ -48,7 +50,7 @@ node scripts/export.mjs --out customers.csv     # the list out
 
 ## Where things are
 
-- `crm.config.json` is the first lever (words, statuses, deals, fields, zone, inbox, events, booking, invoices); every key is in the crm skill's `references/levers.md`. `examples/` holds five worked configs to read, not a switch.
+- `crm.config.json` is the first lever (words, statuses, deals, fields, zone, events, booking, invoices); every key is in the crm skill's `references/levers.md`. `examples/` holds five worked configs to read, not a switch.
 - `schema.sql` is the CRM's own tables (statuses are `pipeline_stages`, tasks are `follow_ups`) and its columns on the booking skill's `bookings`, applied at every start and deploy. `customers` and `customer_notes` are the customers skill's (`src/customers/schema.sql`).
 - `src/crm/` is every query and rule, named (the customer-match SQL is `sql.ts`); routes, scripts and tests all go through it.
 - `src/app.tsx` is the Hono app: the team-only gate, the routes.

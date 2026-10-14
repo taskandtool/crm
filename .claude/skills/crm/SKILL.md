@@ -1,6 +1,6 @@
 ---
 name: crm
-description: "Runs and reshapes this CRM: customers keyed by email, what came in from the project's forms, bookings and payments, deals, tasks, notes, the schedule, its config and schema. Use for 'add a customer', 'who should I follow up with', 'add a deal', 'book Ann in', 'import my list', 'merge these two', 'shape the CRM'. Not for quotes and invoices (invoices)."
+description: "Runs and reshapes this CRM: contacts keyed by email, leads (each enquiry from a form, an online booking or a call), deals, tasks, notes, the schedule, its config and schema. Use for 'any new leads', 'add a customer', 'who should I follow up with', 'add a deal', 'book Ann in', 'import my list', 'merge these two', 'shape the CRM'. Not for quotes and invoices (invoices)."
 ---
 
 # CRM
@@ -16,6 +16,10 @@ A customer record on Hono (server-rendered JSX, htmx, SortableJS, Postgres).
   customers skill's `savePerson`, called as each submission and booking is
   written; `saveEveryone` at setup for older rows), the scripts and the
   import all use this one rule. A name never matches.
+- **A lead is one enquiry**, made as a form submission or an online booking
+  comes in (a form with `"leads": false` makes none) or added for a call.
+  It is converted into a deal (`deals.mjs add <who> --lead <id>`) or
+  archived with a reason, never deleted.
 - **Every change is a POST** behind `teamOnly()` and records who made it.
 
 ## The tables

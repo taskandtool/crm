@@ -13,7 +13,7 @@ import { teamOnly } from "./admin/guard";
 import { cut, everyPage } from "./admin/keyset";
 import { TableRows } from "./admin/list";
 import { idParam, isPartial, listUrl, localPath, str } from "./admin/query";
-import { cfg, dealsCfg, eventsCfg, invoicesCfg, newLeadTask, ownerLabel, showBooking, KEY } from "./config";
+import { cfg, dealsCfg, eventsCfg, invoicesCfg, ownerLabel, showBooking, KEY } from "./config";
 import { normalizeEmail } from "./data/email";
 import {
   createCustomer, customerChoices, facets, findMatch, getCustomer, listPage, readListCursor, saveDetails, sentTo, setArchived, setStage,
@@ -178,15 +178,6 @@ app.get("/", async (c) => {
   const h = await home(c.var.db, { timeZone: cfg.time_zone, currency: dealsCfg.currency, user: c.var.user });
   return c.html(<HomePage user={c.var.user} h={h} flash={flashOf(c)} />);
 });
-
-/**
- * A deal made from a lead gets its first step: "Call back <name>" today,
- * on the deal, for whoever made it, unless crm.config.json turns it off.
- */
-async function newLeadCall(db: Db, customer: { id: string; name: string }, dealId: string, user: string) {
-  if (!newLeadTask) return;
-  await addTask(db, customer.id, { kind: "call", title: `Call back ${customer.name}`, due_on: today(), due_time: null, owner: user, deal_id: dealId }, user);
-}
 
 // ---- the bell ---------------------------------------------------------------
 
@@ -948,12 +939,9 @@ app.post("/deals", async (c) => {
   if ("error" in who) return back(c, who.error === "last-open" ? "/stages" : "/deals/new", who.error);
   const deal = await createDeal(db, who.id, { ...input.deal, owner: input.deal.owner ?? c.var.user }, stage, c.var.user);
   if (!deal) return back(c, "/deals", "gone");
-  // Made from a lead: the lead is converted and the deal gets its first step.
+  // Made from a lead: the lead is converted (and the deal gets its first step).
   const leadId = leadRef(body.from);
-  if (leadId && (await convertLead(db, leadId, deal.id, c.var.user))) {
-    const customer = await getCustomer(db, who.id);
-    if (customer) await newLeadCall(db, customer, deal.id, c.var.user);
-  }
+  if (leadId) await convertLead(db, leadId, deal.id, c.var.user);
   return back(c, `/deals/${deal.id}`, input.invalid ? "invalid" : "deal-added");
 });
 

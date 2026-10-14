@@ -31,7 +31,7 @@ for (const script of scripts) {
 const READ: Record<string, string[]> = {
   "customers.mjs": ["list"], "events.mjs": ["list"], "stages.mjs": ["list"], "forms.mjs": ["list"],
   "quotes.mjs": ["list"], "invoices.mjs": ["list"], "import.mjs": ["file.csv"], "export.mjs": [], "migrate.mjs": [],
-  "deals.mjs": ["list"], "tasks.mjs": ["list"],
+  "deals.mjs": ["list"], "tasks.mjs": ["list"], "leads.mjs": ["list"],
 };
 test("every script is in the bad-input table", () => assert.deepEqual(Object.keys(READ).sort(), [...scripts].sort()));
 
@@ -58,6 +58,9 @@ test("stray arguments and malformed ones are misuse", () => {
   refused(run("deals.mjs", ["won", "abc"]), 2, "deals won with no id");
   refused(run("tasks.mjs", ["list", "--all", "--none"]), 2, "tasks list with two views");
   refused(run("customers.mjs", ["merge", "1"]), 2, "customers merge with one record");
+  refused(run("leads.mjs", ["archive"]), 2, "leads archive with no id");
+  refused(run("leads.mjs", ["list", "--converted", "--archived"]), 2, "leads list with two views");
+  refused(run("leads.mjs", ["archive", "1", "--reason", "Bored"]), 2, "leads archive with a reason not offered");
 });
 
 // deals, tasks and merge from chat, against a throwaway database: each
@@ -113,6 +116,27 @@ test("deals.mjs, tasks.mjs and customers merge, end to end", { skip: !process.en
     assert.match(r.stdout, /^tasks done: #\d+ was already done; left alone/);
     r = sh("tasks.mjs", "list", "--none");
     assert.match(r.stdout, /^tasks list: everyone in play has something planned/, "a customer with no open deal is not in play");
+
+    // A phone call is a lead; archived and back; then converted into a deal, which gets its call back.
+    r = sh("leads.mjs", "add", "ann@example.com", "Boiler service", "--source", "phone");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /^leads add: added #\d+  [^\n]*\[open\]  Ann Lee \(#\d+\)  Phone: Boiler service[^\n]*\n\nNext: node scripts\/deals\.mjs add \d+ --lead \d+\n$/);
+    const lead = r.stdout.match(/#(\d+)/)![1];
+    r = sh("leads.mjs", "archive", lead, "--reason", "Duplicate");
+    assert.match(r.stdout, /^leads archive: lead \d+ \(Ann Lee\) archived: Duplicate\n/);
+    r = sh("leads.mjs", "archive", lead, "--undo");
+    assert.match(r.stdout, /is open again/);
+    r = sh("deals.mjs", "add", "ann@example.com", "--lead", lead);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /^deals add: added #\d+  Boiler service  \[New\]  Ann Lee[^\n]*\n  lead \d+ \(Boiler service\) converted into it\n/);
+    r = sh("deals.mjs", "add", "ann@example.com", "--lead", lead);
+    assert.match(r.stdout, /^deals add: lead \d+ is already converted into #\d+  Boiler service/);
+    r = sh("leads.mjs", "list", "--converted");
+    assert.match(r.stdout, /\[converted\]  Ann Lee[^\n]*-> Boiler service/);
+    r = sh("tasks.mjs", "list");
+    assert.match(r.stdout, /  #(\d+)  today  call: Call back Ann Lee  for Ann Lee \(#\d+\)  re Boiler service/, "the converted lead's first step");
+    assert.equal(sh("tasks.mjs", "done", r.stdout.match(/  #(\d+)  today/)![1]).status, 0);
+
 
     r = sh("customers.mjs", "add", "Ann L", "--email", "ann@work.example", "--phone", "555 222 1111");
     const dup = r.stdout.match(/#(\d+)/)![1];
