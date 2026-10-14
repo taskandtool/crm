@@ -17,7 +17,7 @@ it is paid.
 
 `node scripts/events.mjs add <who> "<what>" --at "friday 9:30" --host Dana`
 puts one on the schedule (`--help` for the rest); `done`, `no-show` and
-`cancel` change it; a completed one counts as contact. Pages: `/events` (upcoming, past, all;
+`cancel` change it; a completed one counts as contact. Pages: `/events` (upcoming, overdue (scheduled, time passed, not marked), past, all;
 CSV), each event's page, and a section on every customer's page.
 
 ## Online booking

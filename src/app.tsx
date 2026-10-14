@@ -26,7 +26,7 @@ import { addFromInbox, formChoices, HANDLED_KINDS, inboxPage, markDone, markHand
 import { board, createDeal, customerDeals, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
 import {
   addTask, customerTasks, doneTask, taskCounts, getTask, inPlay, listTasks, moveTask, nextTasks,
-  pickTaskKind, readDay, readTime, TASK_VIEWS, type TaskView,
+  pickTaskKind, readDay, readTime,
 } from "./crm/tasks";
 import { overview } from "./crm/overview";
 import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
@@ -549,7 +549,7 @@ function readEventForm(body: Record<string, unknown>, current?: Event): { event:
 
 function readEventFilter(c: C): EventFilter {
   const view = c.req.query("view");
-  return { view: view === "past" || view === "all" ? view : "upcoming", host: idParam(c.req.query("host") ?? ""), q: clean(c.req.query("q"), 100) };
+  return { view: view === "overdue" || view === "past" || view === "all" ? view : "upcoming", host: idParam(c.req.query("host") ?? ""), q: clean(c.req.query("q"), 100) };
 }
 
 app.get("/events", async (c) => {
@@ -763,15 +763,11 @@ if (invoicesCfg) {
 
 // ---- tasks -----------------------------------------------------------
 
+// Every open task, everyone's unless the viewer narrows to theirs: a small team's list is short.
 app.get("/tasks", async (c) => {
-  const db = c.var.db;
-  const asked = c.req.query("view");
-  const view: TaskView = TASK_VIEWS.includes(asked as TaskView) ? (asked as TaskView) : "today";
-  const mine = c.req.query("who") !== "all";
-  const owner = mine ? c.var.user : null;
-  const day = today();
-  const [rows, counts] = await Promise.all([listTasks(db, view, day, owner, PAGE), taskCounts(db, day, owner)]);
-  return c.html(<TasksPage user={c.var.user} view={view} mine={mine} today={day} rows={rows.slice(0, PAGE)} more={rows.length > PAGE} counts={counts} flash={flashOf(c)} />);
+  const mine = c.req.query("who") === "mine";
+  const rows = await listTasks(c.var.db, mine ? c.var.user : null, PAGE);
+  return c.html(<TasksPage user={c.var.user} mine={mine} today={today()} rows={rows.slice(0, PAGE)} more={rows.length > PAGE} flash={flashOf(c)} />);
 });
 
 app.get("/tasks/new", async (c) => {

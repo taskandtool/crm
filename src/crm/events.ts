@@ -70,7 +70,7 @@ export type EventInput = {
 };
 
 /** The views of the list: what is still to happen (scheduled, soonest first), what is over, everything. */
-export type EventView = "upcoming" | "past" | "all";
+export type EventView = "upcoming" | "overdue" | "past" | "all";
 export type EventFilter = { view: EventView; host: string | null; q: string | null };
 
 /** How long one can be, in minutes. */
@@ -207,7 +207,8 @@ export function customerEvents(db: Db, customerId: string, limit = 100): Promise
 
 /**
  * A page of the list. Upcoming is the scheduled ones, soonest first (one past
- * its time and not marked yet sits at the top); Past is the completed,
+ * its time and not marked yet sits at the top, as an overdue task does);
+ * Overdue is only those, as Pipedrive's and Jobber's overdue filters; Past is the completed,
  * no-show and cancelled ones, and All everything, newest first. Keyset by
  * when it starts, then id.
  */
@@ -216,10 +217,11 @@ export function eventsPage(db: Db, f: EventFilter, after: Cursor | null, size: n
   const id = after?.id ?? null;
   const pat = likePattern(f.q);
   const filters = sql(db)<Event>;
-  if (f.view === "upcoming") {
+  if (f.view === "upcoming" || f.view === "overdue") {
     return filters`
       select {select} {from}
       where b.status = 'confirmed'
+        and (${f.view}::text <> 'overdue' or b.ends_at < now())
         and (${f.host}::bigint is null or b.resource_id = ${f.host}::bigint)
         and (${pat}::text is null or coalesce(b.title, t.name) ilike ${pat} or b.name ilike ${pat} or c.name ilike ${pat})
         and (${k}::timestamptz is null or (b.starts_at, b.id) > (${k}::timestamptz, ${id}::bigint))

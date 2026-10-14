@@ -58,7 +58,7 @@ test("stray arguments and malformed ones are misuse", () => {
   refused(run("deals.mjs", ["list", "--won", "--lost"]), 2, "deals list with two kinds");
   refused(run("tasks.mjs", ["done"]), 2, "tasks done with no id");
   refused(run("deals.mjs", ["won", "abc"]), 2, "deals won with no id");
-  refused(run("tasks.mjs", ["list", "--upcoming", "--none"]), 2, "tasks list with two views");
+  refused(run("tasks.mjs", ["list", "--all", "--none"]), 2, "tasks list with two views");
   refused(run("customers.mjs", ["merge", "1"]), 2, "customers merge with one record");
 });
 

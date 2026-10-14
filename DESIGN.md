@@ -30,7 +30,7 @@ light, clearly ranked. That comes from four things, in this order:
 | `--color-ink` / `ink-2` / `ink-3` | Names and figures; secondary text; metadata. Each meets 4.5:1 on surface and panel. |
 | `--color-accent` / `accent-ink` / `accent-hover` | The one action colour: a page's primary button, a count in the nav, a link, the focus ring. As a badge it is a 10% tint with accent text, never filled: a filled accent is a button. |
 | `--color-good` | Good news only: a figure up on last period, paid, won. Text or a 10% tint, never a fill. |
-| `--color-late` | Past its day, and nothing else: an overdue task ("Overdue"), an event not marked after its time ("Late"), an invoice past due ("Past due"). Always with the words; never colour alone. A figure going down is not late: it takes a neutral chip. |
+| `--color-late` | Past its day, and nothing else: an overdue task ("Overdue"), an event not marked after its time ("Overdue"), an invoice past due ("Past due"). Always with the words; never colour alone. A figure going down is not late: it takes a neutral chip. |
 | `--color-hue-1` … `hue-6` | Avatars only: initials on a 12% tint of one hue, picked from the name (`Avatar` in `src/views/ui.tsx`). Never for anything else. |
 | `--color-line` | Hairlines between rows and around cards, and a button's ring. |
 | `--color-line-strong` | An input's, select's or checkbox's edge, and a link's underline: 3:1 on every ground, as WCAG 1.4.11 asks of a field's boundary. |

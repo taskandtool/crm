@@ -31,11 +31,11 @@ runs anywhere with Node 20 and a Postgres.
   is made a deal); a payment needs nothing, so it is in Everything only. The nav counts what is to
   do. A source the project does not have yet is simply left out.
 - **Tasks**: a call, email, meeting, text or to-do due on a day, by
-  one person. Today (overdue first) and Upcoming, mine or everyone's, and
+  one person. Every open task on one list, overdue first, everyone's or mine, and
   New task; the next one at the top of a customer's page and on every
   card. Customers' "Nothing planned" filter shows who is in play with
-  nothing planned. Done goes on the timeline. A new lead gets a
-  "Call back" for that day, and a morning email lists what is due.
+  nothing planned. Done goes on the timeline. A deal made from the Inbox
+  gets a "Call back" for that day, and a morning email lists what is due.
 - **Deals**: one piece of work being won, for one customer, who may have
   many. Stages you name, a value (a quote's total until one is typed),
   an owner, an expected close; won makes them a customer, a quote's yes
@@ -53,7 +53,7 @@ runs anywhere with Node 20 and a Postgres.
   Job, Appointment), whether a customer booked it online or the team put
   it on the schedule. Scheduled, then completed, no-show or cancelled,
   with who takes it, where, an amount and its own fields (which truck,
-  which room). The Calendar (the week by person), the list (upcoming, past,
+  which room). The Calendar (the week by person), the list (upcoming, overdue, past,
   all, exported as CSV), Services (what customers can book online, with
   online booking on) and the Team (everyone's hours, time off and Google
   or Outlook calendar). The public booking page is the Website's; both use

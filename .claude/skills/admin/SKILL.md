@@ -8,7 +8,7 @@ description: "The private side of an app: lists of what came in (submissions, bo
 Private views over the project's tables: the CRM's starting surface and the
 Website's `/admin`. The other skills build their own lists on these pieces.
 
-Version: 0.2.4 (taskandtool/skills)
+Version: 0.2.5 (taskandtool/skills)
 
 ## Where private views live
 
@@ -89,8 +89,8 @@ fragment. The table, history restores, bulk forms and flash messages:
 | `csv.ts` | `csvCell`, `csvResponse`: defused, streamed, BOM-first CSV |
 | `query.ts` | `likePattern`, `listUrl`, `localPath`, `isPartial`, `formIds`, `idParam` |
 | `list.tsx` | `DataTable`, `TableRows`, `TableRow`, `LoadMoreRow`, `SearchBar`, `When`, `rowClick`, `rowLink`; `EmptyState`, `EmptyCard`, `NoMatches`, `SetupNeeded` |
-| `status.tsx` | `StatusBadge` (token tones), `StatusForm` (plain or row-swapping), `pickStatus`; `controlClass`, `inputClass`, `buttonClass`, `primaryClass`, `quietClass`, `fieldClass`, `linkClass`, `smallText`, `Select`, `FieldError`, the one look of every control |
-| `bulk.tsx` | `BulkForm`: the form the row checkboxes post to |
+| `status.tsx` | `StatusBadge` (token tones), `StatusForm` (plain or row-swapping), `pickStatus`; `controlClass`, `inputClass`, `buttonClass`, `primaryClass`, `quietClass`, `SELECTED_ONLY`, `fieldClass`, `linkClass`, `smallText`, `Select`, `FieldError`, the one look of every control |
+| `bulk.tsx` | `BulkForm`: the form the row checkboxes post to, shown only once a row is ticked (`SELECTED_ONLY`) |
 | `detail.tsx` | `Section`, `FieldList`, `JsonData` (nested, escaped) |
 | `flash.tsx` | `withFlash`, `Flash`: "Saved" after a 303 from a code in the URL |
 | `example.tsx` | `adminRoutes(getDb, opts)`: all of the above over one table, tested end to end |

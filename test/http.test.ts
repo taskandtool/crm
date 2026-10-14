@@ -305,7 +305,8 @@ test("tasks: added, listed for today, the nav's count, done onto the timeline, m
   assert.equal((await post(`/tasks/${f.id}/move`, { on: "2099-01-02", return: "/tasks" })).headers.get("location"), "/tasks?saved=task-moved");
   const [moved] = await db.sql<{ due_on: string; due_time: string }>`select to_char(due_on, 'YYYY-MM-DD') as due_on, to_char(due_time, 'HH24:MI') as due_time from follow_ups where id = ${f.id}::bigint`;
   assert.deepEqual(moved, { due_on: "2099-01-02", due_time: "09:30" }, "a day button keeps the time");
-  assert.match(await (await get("/tasks?view=upcoming", { ...ME, "x-tasktool-user": "new@team.example" })).text(), /Nothing in the next 14 days/);
+  assert.match(await (await get("/tasks", { ...ME, "x-tasktool-user": "new@team.example" })).text(), /Call about the estimate/, "everyone's by default, however far off");
+  assert.match(await (await get("/tasks?who=mine", { ...ME, "x-tasktool-user": "new@team.example" })).text(), /Nothing on your list\./);
 
   const done = await post(`/tasks/${f.id}/done`, { outcome: "Booked the visit", return: "//evil.example" });
   assert.equal(done.headers.get("location"), `/customers/${id}?saved=task-done`);
@@ -328,7 +329,7 @@ test("tasks: added, listed for today, the nav's count, done onto the timeline, m
   await post("/tasks", { customer: gus.id, title: "After the merge", on: today });
   const [merged] = await db.sql<{ customer_id: string }>`select customer_id::text as customer_id from follow_ups where title = 'After the merge'`;
   assert.equal(merged.customer_id, id);
-  assert.match(await (await get("/tasks?view=upcoming", { ...ME, "x-tasktool-user": "new@team.example" })).text(), /Nothing in the next \d+ days\.[\s\S]*A task is a call[\s\S]*href="\/tasks\/new"[^>]*>New task<\/a>/, "someone with no tasks: the empty state offers New task");
+  assert.match(await (await get("/tasks?who=mine", { ...ME, "x-tasktool-user": "new@team.example" })).text(), /Nothing on your list\.[\s\S]*A task is a call[\s\S]*href="\/tasks\/new"[^>]*>New task<\/a>/, "someone with no tasks: the empty state offers New task");
 });
 
 test("nothing planned: a customer with an open deal is in play, a scheduled event is planned, one with nothing open is not", async (t) => {
@@ -513,7 +514,7 @@ test("events: add from the customer's page, the list, its page, status, CSV", as
   // Completed through the booking pages' route, which comes back here; completed is contact and past.
   await db.sql`update bookings set starts_at = now() - interval '2 hours', ends_at = now() - interval '30 minutes' where id = ${eid}::bigint`;
   const over = await (await get(`/events/${eid}`)).text();
-  assert.match(over, />Late</, "over and not marked");
+  assert.match(over, />Overdue</, "over and not marked");
   assert.match(over, /Mark completed/);
   const status = await post(`/schedule/${eid}/status`, { status: "completed" });
   assert.equal(status.headers.get("location"), `/events/${eid}?saved=status`);

@@ -50,10 +50,6 @@ export type TaskInput = {
   deal_id: string | null;
 };
 
-/** The views of the list. */
-export const TASK_VIEWS = ["today", "upcoming"] as const;
-export type TaskView = (typeof TASK_VIEWS)[number];
-export const UPCOMING_DAYS = 14;
 
 const ID = /^\d{1,18}$/;
 export const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -174,19 +170,17 @@ export async function moveTask(db: Db, id: string, dueOn: string, dueTime: strin
 }
 
 /**
- * The open ones in a view, soonest first: today (and every day before it,
- * so nothing overdue hides) or upcoming (the next UPCOMING_DAYS days).
- * `owner` narrows to one person's; `limit` and one more.
+ * Every open task, soonest first, so the overdue lead, as Todoist's and
+ * HubSpot's open task lists run. `owner` narrows to one person's, `dueBy` to
+ * those due on or before a day (the command's "what is due": today and
+ * overdue); `limit` and one more.
  */
-export async function listTasks(db: Db, view: TaskView, today: string, owner: string | null, limit = 100): Promise<Task[]> {
-  const until = addDays(today, UPCOMING_DAYS);
+export async function listTasks(db: Db, owner: string | null, limit = 100, dueBy: string | null = null): Promise<Task[]> {
   return sql(db)<Task>`
     select {select} {from}
     where t.done_at is null and c.archived_at is null
       and (${owner}::text is null or t.owner = any(${owner ? sameAs(owner) : null}::citext[]))
-      and case ${view}::text
-            when 'today' then t.due_on <= ${today}::date
-            else t.due_on > ${today}::date and t.due_on <= ${until}::date end
+      and (${dueBy}::date is null or t.due_on <= ${dueBy}::date)
     order by t.due_on, t.due_time nulls last, t.id
     limit ${limit + 1}`;
 }

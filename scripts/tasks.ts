@@ -3,7 +3,7 @@ import { cfg, dealsCfg, vocab } from "../src/config";
 import { getDeal } from "../src/crm/deals";
 import {
   addTask, customerTasks, doneTask, getTask, listTasks, moveTask, nothingPlanned, pickTaskKind, readTime, relativeDay,
-  TASK_KINDS, UPCOMING_DAYS, type Task,
+  TASK_KINDS, type Task,
 } from "../src/crm/tasks";
 import { clean } from "../src/crm/text";
 import { todayIn } from "../src/reports/sql";
@@ -11,8 +11,8 @@ import { done, fail, flag, has, limitOf, misused, noMore, out, parseArgs, resolv
 
 const HELP = `tasks.mjs <command> [...] [--json] [--as <email>]      what to do next, for whom, by when
 
-  list [--upcoming | --none] [--owner o] [--customer <who>] [--limit 50]
-                                       due (today and overdue, overdue first); the next ${UPCOMING_DAYS} days;
+  list [--all | --none] [--owner o] [--customer <who>] [--limit 50]
+                                       due (today and overdue, overdue first); --all: every open one, soonest first;
                                        or --none: ${vocab.many.toLowerCase()} in play with nothing planned, quietest first
   add <who> "<what>" --on <day> [--at HH:MM] [--kind ${TASK_KINDS.join("|")}] [--owner o] [--deal <id>]
   done <id> [--outcome "what came of it"]   noted on their timeline; a call, email, meeting or text is contact
@@ -27,14 +27,14 @@ Prints what happened first, then Next:. A re-run says "already" and changes
 nothing. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`;
 
 const FLAGS: Record<string, string[]> = {
-  list: ["upcoming", "none", "owner", "customer", "limit"],
+  list: ["all", "none", "owner", "customer", "limit"],
   add: ["on", "at", "kind", "owner", "deal", "as"],
   done: ["outcome", "as"],
   move: ["on", "at", "as"],
 };
 const WORDS: Record<string, number> = { list: 0, done: 1, move: 1 };
 
-const a = parseArgs(process.argv.slice(2), { bare: ["upcoming", "none"] });
+const a = parseArgs(process.argv.slice(2), { bare: ["all", "none"] });
 const [cmd, ...rest] = a._;
 usage(a, cmd, Object.keys(FLAGS), HELP, "tasks", FLAGS);
 const at = `tasks ${cmd}`;
@@ -42,7 +42,7 @@ if (WORDS[cmd] !== undefined) noMore(rest, WORDS[cmd], at);
 const json = has(a, "json");
 const today = todayIn(cfg.time_zone);
 if ((cmd === "done" || cmd === "move") && !/^#?\d{1,18}$/.test(rest[0] ?? "")) misused(`${at}: name a task by its id (#12 is 12)`, "node scripts/tasks.mjs list");
-if (cmd === "list" && has(a, "upcoming") && has(a, "none")) misused(`${at}: one of --upcoming or --none`, "node scripts/tasks.mjs list --none");
+if (cmd === "list" && has(a, "all") && has(a, "none")) misused(`${at}: one of --all or --none`, "node scripts/tasks.mjs list --none");
 
 function dayFlag(): string {
   const v = flag(a, "on");
@@ -75,7 +75,7 @@ await withDb(async (db) => {
       const owner = clean(flag(a, "owner"), 200);
       const limit = limitOf(a, at);
       if (has(a, "customer")) {
-        if (has(a, "upcoming") || has(a, "none") || owner) misused(`${at}: --customer lists everything open for one person; leave out the other flags`, `node scripts/tasks.mjs list --customer ${flag(a, "customer")}`);
+        if (has(a, "all") || has(a, "none") || owner) misused(`${at}: --customer lists everything open for one person; leave out the other flags`, `node scripts/tasks.mjs list --customer ${flag(a, "customer")}`);
         const c = await resolveCustomer(db, flag(a, "customer"), at);
         const r = await customerTasks(db, c.id);
         if (!r.open.length) return result(r, `nothing planned for ${c.name}`, { next: `node scripts/tasks.mjs add ${c.id} "Call ${c.name}" --on tomorrow` });
@@ -93,11 +93,11 @@ await withDb(async (db) => {
           next: `node scripts/tasks.mjs add ${page[0].id} "Call ${page[0].name}" --on tomorrow`,
         });
       }
-      const view = has(a, "upcoming") ? "upcoming" : "today";
-      const rows = await listTasks(db, view, today, owner, limit);
+      const every = has(a, "all");
+      const rows = await listTasks(db, owner, limit, every ? null : today);
       const page = rows.slice(0, limit);
-      const what = view === "today" ? "due today or overdue" : `due in the next ${UPCOMING_DAYS} days`;
-      if (!page.length) return result(page, `nothing ${what}${owner ? ` for ${owner}` : ""}`, { next: view === "today" ? "node scripts/tasks.mjs list --none" : undefined });
+      const what = every ? "open" : "due today or overdue";
+      if (!page.length) return result(page, `nothing ${what}${owner ? ` for ${owner}` : ""}`, { next: every ? undefined : "node scripts/tasks.mjs list --none" });
       return result(page, `${page.length} ${what}${owner ? ` for ${owner}` : ""}, soonest first`, {
         lines: [...page.map(fmt), ...(rows.length > limit ? [`the first ${limit}; --limit ${Math.min(limit * 4, 1000)} for more`] : [])],
       });

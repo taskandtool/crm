@@ -1,5 +1,6 @@
-// Tasks, as HubSpot's and Todoist's: Today (overdue first, then today) and
-// Upcoming, mine or everyone's, New task; and the pieces the customer and
+// Tasks, as HubSpot's and Todoist's open task lists: every open task, soonest
+// first under its day (Overdue first, in red), everyone's or mine, New task;
+// and the pieces the customer and
 // deal pages share: one task with Done and Reschedule, and the form that adds
 // one. Plain forms; every change is a POST answered with a 303 back to where
 // it came from.
@@ -7,42 +8,36 @@ import { Flash } from "../admin/flash";
 import { EmptyCard, When } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { dealsCfg, vocab } from "../config";
-import { addDays, TASK_KINDS, TASK_LABELS, UPCOMING_DAYS, type Task, type TaskView } from "../crm/tasks";
+import { addDays, TASK_KINDS, TASK_LABELS, type Task } from "../crm/tasks";
 import { Layout } from "./layout";
 import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, CustomerPicker, primaryClass, telHref, timeText, timeZone, quietClass, ViewLink, viewsClass } from "./ui";
 import { ownerSuggestions, personName } from "../crm/people";
 
 export type TasksProps = {
   user: string;
-  view: TaskView;
+  /** Only the viewer's; everyone's by default. */
   mine: boolean;
   today: string;
   rows: Task[];
   /** More than the page shows. */
   more: boolean;
-  counts: { overdue: number; today: number };
   flash: { code?: string | null; n?: string | null };
 };
 
 export function TasksPage(p: TasksProps) {
-  const href = (view: TaskView, all = !p.mine) => listUrl("/tasks", { view: view === "today" ? null : view, who: all ? "all" : null });
-  const self = href(p.view);
-  const due = p.counts.overdue + p.counts.today;
+  const href = (mine: boolean) => listUrl("/tasks", { who: mine ? "mine" : null });
+  const self = href(p.mine);
   return (
     <Layout title="Tasks" user={p.user} section="tasks" actions={<a href="/tasks/new" class={primaryClass}>New task</a>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
-      <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <nav aria-label="Which tasks" class={viewsClass}>
-          <ViewLink href={href("today")} on={p.view === "today"}>{due ? `Today (${due})` : "Today"}</ViewLink>
-          <ViewLink href={href("upcoming")} on={p.view === "upcoming"}>Upcoming</ViewLink>
-        </nav>
+      <div class="mb-6">
         <nav aria-label="Whose" class={viewsClass}>
-          <ViewLink href={href(p.view, false)} on={p.mine}>Mine</ViewLink>
-          <ViewLink href={href(p.view, true)} on={!p.mine}>Everyone</ViewLink>
+          <ViewLink href={href(false)} on={!p.mine}>Everyone</ViewLink>
+          <ViewLink href={href(true)} on={p.mine}>Mine</ViewLink>
         </nav>
       </div>
       {p.rows.length ? (
-        // Headed by day, as task lists are: Overdue and Today under Today, each coming day under Upcoming.
+        // Headed by day, as task lists are: Overdue, Today, Tomorrow, then each day after.
         <div class="flex flex-col gap-4">
           {groups(p.rows, p.today).map(([heading, rows]) => (
             <section aria-label={heading}>
@@ -59,7 +54,7 @@ export function TasksPage(p: TasksProps) {
         </div>
       ) : (
         <EmptyCard
-          title={p.view === "today" ? "Nothing to do today." : `Nothing in the next ${UPCOMING_DAYS} days.`}
+          title={p.mine ? "Nothing on your list." : "Nothing to do."}
           action={<a href="/tasks/new" class={buttonClass}>New task</a>}
         >
           A task is a call, email, meeting or to-do for one of your {vocab.many.toLowerCase()}, on a day. Add one here or from their page.

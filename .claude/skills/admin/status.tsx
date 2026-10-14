@@ -51,6 +51,8 @@ export const inputClass = `block w-full ${controlClass}`;
 export const buttonClass = `inline-flex shrink-0 items-center justify-center gap-x-1.5 rounded-control bg-surface px-3 py-2 text-sm font-semibold text-ink no-underline shadow-card inset-ring inset-ring-line hover:bg-panel ${focusRing}`;
 /** The page's one main action. */
 export const primaryClass = `inline-flex shrink-0 items-center justify-center gap-x-1.5 rounded-control bg-accent px-3 py-2 text-sm font-semibold text-accent-ink no-underline hover:bg-accent-hover ${focusRing}`;
+/** A bulk bar, as Gmail's and Pipedrive's: hidden until a row's checkbox (`name="id"` with a `form`) is ticked. Pure CSS. */
+export const SELECTED_ONLY = "hidden [body:has(input[name=id][form]:checked)_&]:flex";
 /** A quiet action that repeats on every row or sits at a page's foot (Edit, Archive, Load more): no edge until pointed at. */
 export const quietClass = `inline-flex shrink-0 items-center justify-center gap-x-1.5 rounded-control px-2.5 py-2 text-sm font-semibold text-ink-2 no-underline hover:bg-panel hover:text-ink ${focusRing}`;
 /** A label around its control: the words above, the control below. */

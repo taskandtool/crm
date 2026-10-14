@@ -130,7 +130,7 @@ test("the private views need the team header; opening reads, Archive and spam mo
 
     let inbox = await (await app.request("https://site.example/admin/submissions?q=ann", { headers: team })).text();
     assert.match(inbox, /ann@example.com/);
-    assert.match(inbox, /Inbox \(1 new\)/);
+    assert.match(inbox, /Open \(1 new\)/);
     for (const path of ["/admin/submissions", "/admin/submissions/archived", "/admin/submissions/spam", `/admin/submissions/${id}`]) {
       assert.equal((await app.request(`https://site.example${path}`)).status, 404, path);
       assert.equal((await app.request(`https://site.example${path}`, { headers: team })).status, 200, path);
@@ -139,7 +139,7 @@ test("the private views need the team header; opening reads, Archive and spam mo
     assert.match(inbox, new RegExp(`<td[^>]*>${CONTACT_FORM.title}</td>`), "the form by its title, not its key");
     assert.match(inbox, /Email is off/, "says email is off");
 
-    // Opening it reads it: still in the Inbox, no longer new, and nobody is named as changing it.
+    // Opening it reads it: still Open, no longer new, and nobody is named as changing it.
     assert.match(await (await app.request(`https://site.example/admin/submissions/${id}`, { headers: team })).text(), /call me/);
     let [row] = await s.db.sql`select status, updated_by::text as updated_by from submissions where id = ${id}::bigint`;
     assert.deepEqual(row, { status: "read", updated_by: null });

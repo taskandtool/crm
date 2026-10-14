@@ -15,8 +15,9 @@ import { done, fieldFlags, fail, flag, has, limitOf, local, misused, noMore, out
 const OFF = 'the schedule is off: crm.config.json has "events": false (or none). Turn it on with { "one": "Event", "many": "Events", "fields": [] }.';
 const HELP = ((ev) => !ev ? OFF : `events.mjs <command> [...] [--json] [--as <email>]      ${ev.many} on the schedule
 
-  list [--past | --all] [--host <name>] [--find text] [--limit 50]
-                                       scheduled (soonest first), past (completed, no-show, cancelled), or all (newest first)
+  list [--overdue | --past | --all] [--host <name>] [--find text] [--limit 50]
+                                       scheduled (soonest first), overdue (scheduled, time passed, not marked),
+                                       past (completed, no-show, cancelled), or all (newest first)
   list --customer <who>                one customer's
   show <id>
   add <who> "<what>" --at "YYYY-MM-DD HH:MM" [--length 60] [--service <name>] [--host <name>]
@@ -38,12 +39,12 @@ nothing. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misus
 
 const FIELDS = ["at", "length", "service", "host", "where", "amount", "notes", "field", "as"];
 const FLAGS: Record<string, string[]> = {
-  list: ["past", "all", "host", "find", "limit", "customer"], show: [], add: FIELDS, update: [...FIELDS, "what"],
+  list: ["overdue", "past", "all", "host", "find", "limit", "customer"], show: [], add: FIELDS, update: [...FIELDS, "what"],
   done: ["as"], "no-show": ["as"], cancel: ["as"],
 };
 const WORDS: Record<string, number> = { list: 0, show: 1, update: 1, done: 1, "no-show": 1, cancel: 1 };
 
-const a = parseArgs(process.argv.slice(2), { bare: ["past", "all"] });
+const a = parseArgs(process.argv.slice(2), { bare: ["overdue", "past", "all"] });
 const [cmd, ...rest] = a._;
 usage(a, cmd, Object.keys(FLAGS), HELP, "events", FLAGS);
 if (!eventsCfg) fail(OFF, "node scripts/events.mjs --help");
@@ -130,10 +131,10 @@ await withDb(async (db) => {
         const page = rows.slice(0, limit);
         return result(page, page.length ? `${page.length} ${ev.many.toLowerCase()} for ${c.name}` : `no ${ev.many.toLowerCase()} for ${c.name}`, { lines: [...page.map(fmt), ...more(rows.length)] });
       }
-      const view = has(a, "all") ? "all" : has(a, "past") ? "past" : "upcoming";
+      const view = has(a, "all") ? "all" : has(a, "past") ? "past" : has(a, "overdue") ? "overdue" : "upcoming";
       const host = has(a, "host") ? await hostFlag(db, null) : null;
       const { page, next } = cut(await eventsPage(db, { view, host, q: flag(a, "find") ?? null }, null, limit), limit);
-      const what = view === "upcoming" ? "scheduled, soonest first" : view === "past" ? "past, newest first" : "newest first";
+      const what = view === "upcoming" ? "scheduled, soonest first" : view === "overdue" ? "overdue, oldest first" : view === "past" ? "past, newest first" : "newest first";
       return result(page, page.length ? `${page.length} ${ev.many.toLowerCase()} ${what}` : `no ${ev.many.toLowerCase()} ${what.split(",")[0]}`, {
         lines: [...page.map(fmt), ...(next ? more(limit + 1) : [])],
       });

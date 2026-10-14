@@ -11,7 +11,7 @@ paid appointment with questions are each a form, named for what it takes
 (`order`, `intake`), and "my orders" is that form's submissions. A new
 form or a new question is a change to a row, never a migration.
 
-Version: 0.3.5 (taskandtool/skills)
+Version: 0.3.6 (taskandtool/skills)
 
 ## The rules
 
@@ -79,7 +79,7 @@ field type with its settings.
 | `store.ts` | `loadForm`, `seedForm`, `insertSubmission`, drafts, `CONTACT_FORM` |
 | `steps.ts` | the contract a booking or payment step implements |
 | `price.ts`, `linked.ts` | what a submission costs; its booking and payment, for showing |
-| `admin.tsx` | `formsAdmin(getDb, { base, css, timeZone, nav?, Frame?, links? })`: the submissions inbox (Inbox, Archived, Spam) with each one's booking, payment and the person's notes, so it needs the `booking`, `payments` and `customers` skills' code beside it; `formEditor(getDb, { base, css, timeZone, source, submissions })`: the forms, the editor, CSV, not finished, for an app that lets the team set forms up (the CRM) |
+| `admin.tsx` | `formsAdmin(getDb, { base, css, timeZone, nav?, Frame?, links? })`: the submissions list (Open, Archived, Spam) with each one's booking, payment and the person's notes, so it needs the `booking`, `payments` and `customers` skills' code beside it; `formEditor(getDb, { base, css, timeZone, source, submissions })`: the forms, the editor, CSV, not finished, for an app that lets the team set forms up (the CRM) |
 | `files.ts` | `devFiles()`: `/_files` on the dev server (`src/server.ts`) |
 | `origin.ts`, `cart.js`, `cli.ts` | where the visitor came from; the cart; `formsCli` for `scripts/forms.mjs` |
 | `test/` | validation, rendering, steps, items, routes and admin on a scratch database |

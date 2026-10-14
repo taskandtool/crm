@@ -1,5 +1,5 @@
 // The private side of forms. formsAdmin is what came in: one list of
-// submissions from every form and the booking page, in three tabs (Inbox,
+// submissions from every form and the booking page, in three tabs (Open,
 // Archived, Spam) with a form picker and a search; one submission's page with
 // its answers, its booking (reschedule, cancel), its payment (refund) and the
 // person's notes. formEditor is for an app that lets the team set forms up
@@ -10,7 +10,7 @@
 //     base: "/admin/submissions", css: "/site.css", timeZone: "America/Chicago",
 //     links: { booking: (id) => `/admin/schedule/${id}`, payment: (id) => `/admin/payments/${id}` } }));
 //
-// Statuses: new and read are the Inbox (read once opened), done is Archived.
+// Statuses: new and read are Open (read once opened), done is Archived.
 import { Hono, type Context } from "hono";
 import type { Child } from "hono/jsx";
 import type { Db, GetDb } from "../data/db";
@@ -25,7 +25,7 @@ import { cut, everyPage, readCursor, type Cursor, type Keyed } from "../admin/ke
 import { sectionPages, SectionTabs, type Frame, type Head, type NavItem } from "../admin/layout";
 import { DataTable, EmptyCard, rowClick, rowLink, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { formIds, idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
-import { buttonClass, controlClass, FieldError, fieldClass, pickStatus, primaryClass, Select, smallText, StatusBadge, type StatusOption } from "../admin/status";
+import { buttonClass, controlClass, FieldError, fieldClass, pickStatus, primaryClass, SELECTED_ONLY, Select, smallText, StatusBadge, type StatusOption } from "../admin/status";
 import { customerByEmail, savePerson } from "../customers/customer";
 import { NoteForm } from "../customers/note-form";
 import { addNote, listNotes, NOTE_LABELS, pickNoteKind, wallTime, type Note } from "../customers/notes";
@@ -53,23 +53,23 @@ export type FormsAdminOptions = {
 
 export const STATUSES: StatusOption[] = [
   { value: "new", label: "New", tone: "accent" },
-  { value: "read", label: "Inbox", tone: "strong" },
+  { value: "read", label: "Read", tone: "strong" },
   { value: "done", label: "Archived", tone: "neutral" },
   { value: "spam", label: "Spam", tone: "muted" },
 ];
 
 /** The three tabs: which statuses each shows. */
-type View = "inbox" | "archived" | "spam";
+type View = "open" | "archived" | "spam";
 const VIEWS: Record<View, { path: string; label: string; statuses: string[]; empty: string }> = {
-  inbox: { path: "", label: "Inbox", statuses: ["new", "read"], empty: "Nothing here yet. What people send from your site's forms and booking page shows up here." },
+  open: { path: "", label: "Open", statuses: ["new", "read"], empty: "Nothing here yet. What people send from your site's forms and booking page shows up here." },
   archived: { path: "/archived", label: "Archived", statuses: ["done"], empty: "Nothing archived." },
   spam: { path: "/spam", label: "Spam", statuses: ["spam"], empty: "No spam." },
 };
-const viewOf = (status: string): View => (status === "done" ? "archived" : status === "spam" ? "spam" : "inbox");
+const viewOf = (status: string): View => (status === "done" ? "archived" : status === "spam" ? "spam" : "open");
 
 const MESSAGES: FlashMessages = {
   done: "Archived.",
-  read: "Moved to the Inbox.",
+  read: "Moved back to Open.",
   spam: "Marked as spam.",
   bulk: (n) => (n === 1 ? "Moved 1 submission." : `Moved ${n} submissions.`),
   "none-selected": { error: "Select at least one submission first." },
@@ -198,7 +198,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
         label: "From",
         cell: (r) => (
           <>
-            {view === "inbox" && r.status === "new" ? <span class="mr-2"><StatusBadge value="new" options={STATUSES} /></span> : null}
+            {view === "open" && r.status === "new" ? <span class="mr-2"><StatusBadge value="new" options={STATUSES} /></span> : null}
             <span class={r.status === "new" ? "font-semibold" : ""}>{who(r)}</span>
             {r.name && r.email ? <span class={`block break-all ${smallText} text-ink-2`}>{r.email}</span> : null}
             {r.completed_at ? null : <span class={`block ${smallText} text-ink-2`}>Not finished</span>}
@@ -218,8 +218,8 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
 
   /** What the selected rows can be moved to from this tab. */
   const MOVES: Record<View, { status: string; label: string }[]> = {
-    inbox: [{ status: "done", label: "Archive" }, { status: "spam", label: "Mark as spam" }],
-    archived: [{ status: "read", label: "Move to Inbox" }],
+    open: [{ status: "done", label: "Archive" }, { status: "spam", label: "Mark as spam" }],
+    archived: [{ status: "read", label: "Move to Open" }],
     spam: [{ status: "read", label: "Not spam" }],
   };
 
@@ -240,7 +240,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
 
     const results = (
       <div id="results">
-        <form id="bulk" method="post" action={`${base}/bulk`} aria-label="Move selected" class="mb-3 flex flex-wrap items-center gap-2">
+        <form id="bulk" method="post" action={`${base}/bulk`} aria-label="Move selected" class={`mb-3 flex-wrap items-center gap-2 ${SELECTED_ONLY}`}>
           <input type="hidden" name="return" value={self} />
           <span class="text-label text-ink-2">Selected:</span>
           {MOVES[view].map((m) => (
@@ -261,7 +261,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     if (isPartial(c)) return c.html(results);
     const tabs = (Object.keys(VIEWS) as View[]).map((k) => ({
       href: base + VIEWS[k].path || "/",
-      label: k === "inbox" && fresh ? `Inbox (${fresh} new)` : VIEWS[k].label,
+      label: k === "open" && fresh ? `Open (${fresh} new)` : VIEWS[k].label,
     }));
     return framed(
         c,
@@ -307,7 +307,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     const id = idParam(c.req.param("id"));
     if (!id) return c.notFound();
     const db = getDb(c);
-    // Opening a new one reads it: it stays in the Inbox, no longer marked new.
+    // Opening a new one reads it: it stays Open, no longer marked new.
     const [r] = await db.sql<Item & { updated_at: Date }>`
       with opened as (update submissions set status = 'read' where id = ${id}::bigint and status = 'new' returning id)
       select id::text as id, form_key, name, email::text as email, phone,
@@ -370,15 +370,15 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       </form>
     );
     const actions =
-      view === "inbox" ? <>{move("done", "Archive", true)}{move("spam", "Mark as spam")}</>
-      : view === "archived" ? <>{move("read", "Move to Inbox")}{move("spam", "Mark as spam")}</>
+      view === "open" ? <>{move("done", "Archive", true)}{move("spam", "Mark as spam")}</>
+      : view === "archived" ? <>{move("read", "Move to Open")}{move("spam", "Mark as spam")}</>
       : move("read", "Not spam");
     const head = {
-      back: { href: base + VIEWS[view].path || "/", label: view === "inbox" ? "Submissions" : VIEWS[view].label },
+      back: { href: base + VIEWS[view].path || "/", label: view === "open" ? "Submissions" : VIEWS[view].label },
       sub: (
         <p>
           {formTitle} · <When at={r.created_at} timeZone={tz} />
-          {view === "inbox" ? null : <> · <StatusBadge value={r.status} options={STATUSES} /></>}
+          {view === "open" ? null : <> · <StatusBadge value={r.status} options={STATUSES} /></>}
         </p>
       ),
       actions,
@@ -478,7 +478,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     if (!row) return c.notFound();
     // Not spam after all: their person is saved now, as on any submission that comes in.
     if (row.was === "spam" && status !== "spam") await saveSubmitter(getDb(c), id, c.get("user"));
-    // Archiving or marking spam is done with it: back to the list it left. Back to the Inbox stays on it.
+    // Archiving or marking spam is done with it: back to the list it left. Back to Open stays on it.
     return c.redirect(withFlash(status === "read" ? subUrl(id) : base + VIEWS[viewOf(row.was)].path || "/", status), 303);
   });
 

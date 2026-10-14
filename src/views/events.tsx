@@ -33,10 +33,10 @@ const many = ev.many.toLowerCase();
 /** What the forms choose from: the Team, and the Services when there are any. */
 export type Choices = { team: Resource[]; services: BookingType[] };
 
-/** A scheduled one whose time is over: still says Scheduled, and says it was not marked. */
-const late = (r: Event, now = Date.now()) => r.status === "confirmed" && new Date(r.ends_at).getTime() < now;
+/** A scheduled one whose time is over: still says Scheduled, and says it is overdue (not marked), as a task past its day is. */
+const overdue = (r: Event, now = Date.now()) => r.status === "confirmed" && new Date(r.ends_at).getTime() < now;
 
-const Late = ({ r }: { r: Event }) => (late(r) ? <span class="block text-label font-semibold text-late">Late</span> : null);
+const Overdue = ({ r }: { r: Event }) => (overdue(r) ? <span class="block text-label font-semibold text-late">Overdue</span> : null);
 
 /** A status as the team reads it: "Scheduled", "No-show". */
 export const statusLabel = (s: string) => BOOKING_STATUSES.find((o) => o.value === s)?.label ?? s;
@@ -45,7 +45,7 @@ function WhenOf({ r }: { r: Event }) {
   return (
     <>
       <When at={r.starts_at} timeZone={timeZone} />
-      <Late r={r} />
+      <Overdue r={r} />
     </>
   );
 }
@@ -157,6 +157,7 @@ export function CustomerEvents({ c, events, choices }: { c: Customer; events: Ev
 
 const VIEWS: { value: EventFilter["view"]; label: string }[] = [
   { value: "upcoming", label: "Upcoming" },
+  { value: "overdue", label: "Overdue" },
   { value: "past", label: "Past" },
   { value: "all", label: "All" },
 ];
@@ -205,7 +206,7 @@ export function EventResults(p: { filter: EventFilter; rows: Event[]; next: stri
       ) : null}
       <DataTable
         spec={eventSpec()}
-        caption={p.filter.view === "upcoming" ? `Upcoming ${many}, soonest first` : `${ev.many}, newest first`}
+        caption={p.filter.view === "upcoming" ? `Upcoming ${many}, soonest first` : p.filter.view === "overdue" ? `Overdue ${many}, oldest first` : `${ev.many}, newest first`}
         rows={p.rows}
         next={p.next}
         more={(cur) => listUrl("/events", { ...params, after: cur })}
@@ -213,7 +214,7 @@ export function EventResults(p: { filter: EventFilter; rows: Event[]; next: stri
           p.filter.host || p.filter.q ? (
             <NoMatches clear={listUrl("/events", { view: params.view })} />
           ) : (
-            <EmptyState title={p.filter.view === "upcoming" ? `Nothing scheduled.` : `No ${many} yet.`} action={<a href="/events/new" class={buttonClass}>New {one}</a>}>
+            <EmptyState title={p.filter.view === "upcoming" ? `Nothing scheduled.` : p.filter.view === "overdue" ? "Nothing overdue." : `No ${many} yet.`} action={<a href="/events/new" class={buttonClass}>New {one}</a>}>
               {p.filter.view === "upcoming" ? `Add one here or from a ${vocab.one.toLowerCase()}'s page. Online bookings show here too.` : null}
             </EmptyState>
           )
@@ -333,7 +334,7 @@ export function EventPage(p: {
           <Section title="Details">
             <ReadThenEdit
               fields={[
-                { label: "When", value: <><When at={r.starts_at} timeZone={timeZone} /> for {durationText(minutesOf(r))}<Late r={r} /></> },
+                { label: "When", value: <><When at={r.starts_at} timeZone={timeZone} /> for {durationText(minutesOf(r))}<Overdue r={r} /></> },
                 ...(r.type_name && r.title ? [{ label: "Service", value: r.type_name }] : []),
                 { label: ownerLabel, value: r.host_name },
                 { label: "Where", value: r.location ? whereText(r, { link: true, team: true }) : null },
