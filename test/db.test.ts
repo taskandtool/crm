@@ -201,7 +201,7 @@ test("Home, with none of the other apps' tables", async (t) => {
   if (skip) return t.skip(skip);
   const p = await present(db);
   assert.deepEqual(p, { submissions: false, forms: false, payments: false, quotes: false, invoices: false });
-  const h = await home(db, { timeZone: "UTC", currency: "usd", user: ME });
+  const h = await home(db, { timeZone: "UTC", currency: "USD", invoiceCurrency: "usd", user: ME });
   assert.deepEqual([h.leads, h.owed, h.newLeads, h.events, h.closing], [{ current: 0, previous: 0 }, null, [], [], []]);
   assert.match(missingSentence(p)!, /no form submissions or payments/);
   assert.equal((await everythingFrom(db, { email: "ann.lee@example.com", phone: null })).items.length, 0);

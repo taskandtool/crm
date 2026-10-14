@@ -206,7 +206,7 @@ const back = (c: C, path: string, code: string) => c.redirect(backTo(path, code)
 // ---- home -----------------------------------------------------------------
 
 app.get("/", async (c) => {
-  const h = await home(c.var.db, { timeZone: cfg.time_zone, currency: dealsCfg.currency, user: c.var.user });
+  const h = await home(c.var.db, { timeZone: cfg.time_zone, currency: dealsCfg.currency, invoiceCurrency: invoicesCfg?.currency ?? null, user: c.var.user });
   return c.html(<HomePage user={c.var.user} h={h} flash={flashOf(c)} />);
 });
 

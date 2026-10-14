@@ -119,6 +119,15 @@ test("Home: the figures and the four short lists; the form's person is a contact
   assert.equal((await get("/inbox/count")).status, 404, "the Inbox is gone");
 });
 
+test("Home's Owed is the open invoices, in the invoices' own currency", async (t) => {
+  if (skip) return t.skip(skip);
+  const before = (await (await get("/")).text()).match(/Owed<\/span><span[^>]*>([^<]+)</)![1];
+  await db.sql`insert into invoices (email, currency, status, livemode, total_cents) values ('owed@example.com', 'usd', 'open', true, 1234500)`;
+  const after = (await (await get("/")).text()).match(/Owed<\/span><span[^>]*>([^<]+)</)![1];
+  assert.equal(Number(after.replace(/[^0-9]/g, "")) - Number(before.replace(/[^0-9]/g, "")), 12345, `${before} -> ${after}`);
+  await db.sql`delete from invoices where email = 'owed@example.com'`;
+});
+
 test("the bell: a booker's own move, a quote signed or declined at its link, payments; opening it clears the count", async (t) => {
   if (skip) return t.skip(skip);
   const [b] = await db.sql<{ id: string }>`

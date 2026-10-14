@@ -43,7 +43,7 @@ function Numbers({ h }: { h: Home }) {
         h.due.overdue ? { text: `${h.due.overdue} overdue`, tone: "late" } : undefined)}
       {figure("/deals", `Open ${dealsCfg.many.toLowerCase()}`, whole(h.open.cents), count(h.open.count))}
       {figure("/deals", "Won this month", whole(h.won.cents), count(h.won.count))}
-      {h.owed ? figure(listUrl("/invoices", { status: "open" }), "Owed", whole(h.owed.cents), h.owed.count === 1 ? "1 invoice" : `${h.owed.count} invoices`) : null}
+      {h.owed ? figure(listUrl("/invoices", { status: "open" }), "Owed", formatWholeMoney(h.owed.cents, h.owed.currency), h.owed.count === 1 ? "1 invoice" : `${h.owed.count} invoices`) : null}
     </div>
   );
 }

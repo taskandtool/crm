@@ -22,15 +22,15 @@ export type Home = {
   due: { overdue: number; today: number };
   open: { count: number; cents: string };
   won: { count: number; cents: string };
-  /** Null when the project has no invoices. */
-  owed: { count: number; cents: string } | null;
+  /** In the invoices' own currency; null when the project has no invoices. */
+  owed: { count: number; cents: string; currency: string } | null;
   newLeads: Lead[];
   events: Event[];
   tasks: Task[];
   closing: Deal[];
 };
 
-export async function home(db: Db, opts: { timeZone: string; currency: string; user: string; now?: Date }): Promise<Home> {
+export async function home(db: Db, opts: { timeZone: string; currency: string; invoiceCurrency: string | null; user: string; now?: Date }): Promise<Home> {
   const today = todayIn(opts.timeZone, opts.now);
   const day = (d: string) => dayBounds(d, opts.timeZone);
   const monthStart = `${today.slice(0, 8)}01`;
@@ -43,14 +43,14 @@ export async function home(db: Db, opts: { timeZone: string; currency: string; u
       from leads where created_at >= ${day(addDays(today, -13)).start}`,
     taskCounts(db, today, opts.user),
     dealTotals(db, opts.currency, day(monthStart).start),
-    p.invoices ? invoiceTotals(db, { today, timeZone: opts.timeZone, currency: opts.currency }) : null,
+    p.invoices && opts.invoiceCurrency ? invoiceTotals(db, { today, timeZone: opts.timeZone, currency: opts.invoiceCurrency }) : null,
     listLeads(db, { status: "open" }, HOME_LIST),
     eventsBetween(db, day(today).start, day(today).end),
     listTasks(db, opts.user, HOME_LIST, today),
     closingBy(db, monthEnd, HOME_LIST),
   ]);
   return {
-    today, leads: leads[0], due, open: deals.open, won: deals.won, owed: owed ? owed.open : null,
+    today, leads: leads[0], due, open: deals.open, won: deals.won, owed: owed && opts.invoiceCurrency ? { ...owed.open, currency: opts.invoiceCurrency } : null,
     newLeads, events, tasks: tasks.slice(0, HOME_LIST), closing,
   };
 }
