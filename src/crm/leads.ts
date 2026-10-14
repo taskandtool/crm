@@ -180,6 +180,14 @@ export async function reopenLead(db: Db, id: string, user: string): Promise<bool
   return rows.length > 0;
 }
 
+/** Its own details changed: what they need, whose it is, the notes (Pipedrive's lead details are edited in place). */
+export async function saveLeadDetails(db: Db, id: string, d: { title: string; owner: string | null; notes: string | null }, user: string): Promise<boolean> {
+  const rows = await db.sql`
+    update leads set title = ${d.title.slice(0, 200)}, owner = ${d.owner}, notes = ${d.notes}, updated_at = now(), updated_by = ${user}
+    where id = ${id}::bigint returning id`;
+  return rows.length > 0;
+}
+
 /**
  * Leads for what was already waiting when leads began: each form request
  * still open (new or read, not spam) and each online booking still to come

@@ -219,6 +219,15 @@ test("leads: a form fill and a phone call; convert to a deal, archive with Undo"
   const [second] = await db.sql<{ id: string }>`select id::text as id from leads where submission_id = ${again}::bigint`;
   assert.match(await (await get(`/leads/${second.id}`)).text(), new RegExp(`href="/deals/${dealId}">Water heater`));
   assert.match(await (await get(`/customers/${lou.id}`)).text(), /<h2[^>]*>Leads<span[^>]*>2<\/span><\/h2>[\s\S]*Open[\s\S]*Converted/, "their page lists both leads, and counts them");
+  // Its own details are edited on its page, apart from the person's; its header is Convert and Archive.
+  const [lead2] = await db.sql<{ id: string }>`select id::text as id from leads where submission_id = ${again}::bigint`;
+  let leadPage = await (await get(`/leads/${lead2.id}`)).text();
+  assert.match(leadPage, /<h2[^>]*>Details<\/h2>[\s\S]*What they need/);
+  assert.doesNotMatch(leadPage.slice(0, leadPage.indexOf("<h2")), />Call</, "reaching them is the contact card's");
+  assert.equal((await post(`/leads/${lead2.id}`, { title: "Water softener", owner: "Lou's tech", notes: "Hard water" })).headers.get("location"), `/leads/${lead2.id}?saved=saved`);
+  assert.deepEqual(await db.sql`select title, owner::text as owner, notes from leads where id = ${lead2.id}::bigint`, [{ title: "Water softener", owner: "Lou's tech", notes: "Hard water" }]);
+  assert.equal((await post(`/leads/${lead2.id}`, { title: "" })).headers.get("location"), `/leads/${lead2.id}?saved=lead-needs`, "it keeps a title");
+
   // A call from their page: Add lead there makes it theirs.
   const added = await post(`/customers/${lou.id}/leads`, { title: "Softener quote", source: "phone", notes: "Called about hard water" });
   const [phoned] = await db.sql<{ id: string; customer_id: string; source: string }>`select id::text as id, customer_id::text as customer_id, source from leads where title = 'Softener quote'`;

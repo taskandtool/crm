@@ -33,7 +33,7 @@ import { isUnread, markSeen, NOTICE_LIMIT, notices, seenAt } from "./crm/notific
 import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
 import { addNote, listNotes, pickNoteKind, wallTime } from "./customers/notes";
 import { phoneKey, saveLead, savePerson } from "./customers/customer";
-import { archiveLead, ARCHIVE_REASONS, contactLeads, convertLead, dealLeads, getLead, LEAD_STATUSES, listLeads, MANUAL_SOURCES, openLeadCount, reopenLead, SOURCE_LABELS, type LeadStatus } from "./crm/leads";
+import { archiveLead, ARCHIVE_REASONS, contactLeads, convertLead, dealLeads, getLead, LEAD_STATUSES, listLeads, MANUAL_SOURCES, openLeadCount, reopenLead, saveLeadDetails, SOURCE_LABELS, type LeadStatus } from "./crm/leads";
 import { LeadPage, LeadResults, LeadsPage, NewLeadPage, type LeadFilter } from "./views/leads";
 import { addEvent, customerEvents, eventCsvColumns, eventsPage, getEvent, inviteDomain, saveEvent, startWall, tellBooker, touchFor, type Event, type EventFilter, type EventInput } from "./crm/events";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, pickKind, pickPipeline, restoreStage, stagesWithCounts, type Pipeline, type StageResult } from "./crm/stages";
@@ -847,6 +847,16 @@ app.get("/leads/:id", async (c) => {
   if (!lead) return c.notFound();
   const [tasks, notes, f] = await Promise.all([customerTasks(db, lead.customer_id), listNotes(db, lead.customer_id), facets(db)]);
   return c.html(<LeadPage user={c.var.user} lead={lead} tasks={tasks} notes={notes} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} flash={flashOf(c)} />);
+});
+
+// Its details, from the Details card's Edit: what they need, whose it is, the notes.
+app.post("/leads/:id", async (c) => {
+  const id = idParam(c.req.param("id"));
+  const body = await c.req.parseBody();
+  const title = clean(body.title, 200);
+  if (!id || !title) return back(c, `/leads/${id ?? ""}`, "lead-needs");
+  const ok = await saveLeadDetails(c.var.db, id, { title, owner: clean(body.owner, 200), notes: clean(body.notes, 10_000) }, c.var.user);
+  return ok ? back(c, `/leads/${id}`, "saved") : c.notFound();
 });
 
 // Archive, with why; the message on the list offers Undo.

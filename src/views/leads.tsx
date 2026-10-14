@@ -15,7 +15,7 @@ import { ownerOptions, ownerSuggestions, personName } from "../crm/people";
 import type { Task } from "../crm/tasks";
 import { Layout } from "./layout";
 import { TasksSection } from "./tasks";
-import { ActivitySection, AddToggle, Avatar, buttonClass, ContactCard, controlClass, Field, MESSAGES, PersonFields, primaryClass, quietClass, telHref, timeZone, ViewLink, viewsClass } from "./ui";
+import { ActivitySection, AddToggle, Avatar, buttonClass, ContactCard, controlClass, Field, MESSAGES, ReadThenEdit, PersonFields, primaryClass, quietClass, timeZone, ViewLink, viewsClass } from "./ui";
 
 const LEAD_TONES: StatusOption[] = [
   { value: "open", label: "Open", tone: "accent" },
@@ -179,12 +179,11 @@ export function LeadPage(p: {
   const l = p.lead;
   const self = `/leads/${l.id}`;
   const answers = answersOf(l);
-  const call = l.customer_phone ? <a href={telHref(l.customer_phone)} class={buttonClass}>Call</a> : null;
-  const email = l.customer_email ? <a href={`mailto:${l.customer_email}`} class={buttonClass}>Email</a> : null;
   return (
     <Layout title={l.customer_name} user={p.user} section="leads" back={{ href: "/leads", label: "Leads" }}
       sub={<span class="flex flex-wrap items-center gap-x-2 gap-y-1"><StatusBadge value={l.status} options={LEAD_TONES} />{sourceText(l)} · <When at={l.created_at} timeZone={timeZone} /></span>}
-      actions={<><Actions l={l} returnTo={self} />{call}{email}</>}>
+      // As Pipedrive's lead: Convert and Archive. Reaching them is the contact card's.
+      actions={<Actions l={l} returnTo={self} />}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       {l.status === "converted" && l.deal_id ? <p role="status" class="mb-4 rounded-card border border-line bg-panel px-4 py-2">Converted to <a href={`/deals/${l.deal_id}`}>{l.deal_title}</a>.</p> : null}
       {l.status === "archived" ? (
@@ -211,10 +210,31 @@ export function LeadPage(p: {
           <ActivitySection action={`${self}/notes`} notes={p.notes} />
         </div>
         <div class="flex flex-col gap-4">
+          {/* The lead's own details apart from the person's, as Pipedrive's lead view keeps them. */}
+          <Section title="Details">
+            <ReadThenEdit fields={[
+              { label: "What they need", value: l.title },
+              { label: "Owner", value: l.owner ? personName(l.owner) : null },
+              { label: "Source", value: SOURCE_LABELS[l.source] },
+            ]}>
+              <form method="post" action={self} class="grid gap-3">
+                <Field label="What they need">
+                  <input name="title" value={l.title} required maxlength={200} class={controlClass} />
+                </Field>
+                <Field label="Owner">
+                  <input name="owner" list="lead-owners" value={l.owner ? personName(l.owner) : ""} maxlength={200} class={controlClass} />
+                  <datalist id="lead-owners">{ownerSuggestions(p.owners).map((o) => <option value={o} />)}</datalist>
+                </Field>
+                <Field label="Notes">
+                  <textarea name="notes" rows={3} maxlength={10000} class={controlClass}>{l.notes ?? ""}</textarea>
+                </Field>
+                <div><button class={buttonClass}>Save</button></div>
+              </form>
+            </ReadThenEdit>
+          </Section>
           <ContactCard id={l.customer_id} name={l.customer_name} phone={l.customer_phone} email={l.customer_email} more={[
             { label: `Open ${deal}`, value: l.open_deal_id ? <a href={`/deals/${l.open_deal_id}`}>{l.open_deal_title}</a> : null },
             { label: "Next visit", value: l.next_event_id ? <a href={`/events/${l.next_event_id}`}><When at={l.next_event_at} timeZone={timeZone} /></a> : null },
-            { label: "Owner", value: l.owner ? personName(l.owner) : null },
           ]} />
         </div>
       </div>

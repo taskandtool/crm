@@ -382,7 +382,7 @@ export function ContactCard({ id, name, phone, email, more = [] }: { id: string;
       <p class="flex items-center gap-3"><Avatar name={name} /><a href={`/customers/${id}`} class="font-medium">{name}</a></p>
       <FieldList fields={[
         { label: "Phone", value: phone ? <a href={telHref(phone)}>{phone}</a> : null },
-        { label: "Email", value: email ? <a href={`mailto:${email}`} class="break-all">{email}</a> : null },
+        { label: "Email", value: email ? <a href={`mailto:${email}`} title={email} class="block truncate">{email}</a> : null },
         ...more,
       ]} />
     </Section>
