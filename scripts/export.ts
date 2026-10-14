@@ -13,9 +13,9 @@ import { done, fail, flag, has, misused, parseArgs, plain, withDb } from "./lib"
 
 const HELP = `export.mjs [--out customers.csv] [--status s] [--tag t] [--owner o] [--archived] [--search text]
 
-Writes customers as CSV (UTF-8 with a BOM, so Excel reads it), active ones
+Writes ${cfg.vocabulary.many.toLowerCase()} as CSV (UTF-8 with a BOM, so Excel reads it), active ones
 unless --archived, filtered like the list. Without --out it prints the CSV
-to stdout; with it, "export: wrote N customers to <path>". Errors go to
+to stdout; with it, "export: wrote N ${cfg.vocabulary.many.toLowerCase()} to <path>". Errors go to
 stderr with a Try: line; exit 1 when refused, 2 when misused.`;
 
 const a = parseArgs(process.argv.slice(2), { bare: ["archived"] });
@@ -44,6 +44,6 @@ await withDb(async (db) => {
   }
   if (target) {
     await new Promise<void>((ok) => (sink as ReturnType<typeof createWriteStream>).end(() => ok()));
-    done("export", `wrote ${n} customers to ${path}`, { next: `head -3 ${path}` });
+    done("export", `wrote ${n} ${cfg.vocabulary.many.toLowerCase()} to ${path}`, { next: `head -3 ${path}` });
   }
 });

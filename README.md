@@ -34,18 +34,20 @@ runs anywhere with Node 20 and a Postgres.
 - **Tasks**: a call, email, meeting, text or to-do due on a day, by
   one person. Every open task on one list, overdue first, everyone's or mine, and
   New task; the next one at the top of a customer's page and on every
-  card. Customers' "Nothing planned" filter shows who is in play with
+  card. Contacts' "Nothing planned" filter shows who is in play with
   nothing planned. Done goes on the timeline. A deal made from the Inbox
   gets a "Call back" for that day, and a morning email lists what is due.
 - **Deals**: one piece of work being won, for one customer, who may have
   many. Stages you name, a value (a quote's total until one is typed),
   an owner, an expected close; won makes them a customer, a quote's yes
   wins it, a lost one keeps why.
-- **Customers**, keyed by email (a phone alone is fine too), each with a
-  status (Lead, Customer, Not a fit): search by name, email, phone or
+- **Contacts**, everyone the business deals with, keyed by email (a phone
+  alone is fine too), each with a status (Lead until they buy, then
+  Customer, or Not a fit), as Pipedrive and HubSpot name them; the word is
+  the `vocabulary` setting (a dentist's Patients): search by name, email, phone or
   company, filter by status, tag and owner, export the filter as CSV,
   archive (never delete), and merge two records of one person.
-- **A customer's page**, laid out as CRMs lay out a record: tasks,
+- **A contact's page**, laid out as CRMs lay out a record: tasks,
   one Activity timeline (notes and calls, and everything they sent,
   paid and were quoted) with a note box on top, and their events;
   beside it Details (details and custom fields, Edit), their deals, quotes

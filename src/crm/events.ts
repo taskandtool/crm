@@ -245,9 +245,9 @@ export function eventCsvColumns(fields: CustomField[], timeZone: string, ownerLa
   const local = (d: Date) => wall.format(d).replace(",", "");
   return [
     { label: "ID", value: (r) => r.id },
-    { label: "Customer", value: (r) => r.customer_name ?? r.name },
-    { label: "Customer email", value: (r) => r.email },
-    { label: "Customer phone", value: (r) => r.phone },
+    { label: cfg.vocabulary.one, value: (r) => r.customer_name ?? r.name },
+    { label: `${cfg.vocabulary.one} email`, value: (r) => r.email },
+    { label: `${cfg.vocabulary.one} phone`, value: (r) => r.phone },
     { label: "What", value: (r) => r.what },
     { label: "Service", value: (r) => r.type_name },
     { label: `When (${timeZone})`, value: (r) => local(r.starts_at) },

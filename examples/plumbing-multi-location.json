@@ -1,6 +1,6 @@
 {
   "business": "A plumbing company with three locations and eight trucks: emergency calls, repairs and estimates for homes and small commercial buildings.",
-  "vocabulary": { "one": "Customer", "many": "Customers" },
+  "vocabulary": { "one": "Contact", "many": "Contacts" },
   "statuses": [
     { "key": "lead", "label": "Lead", "kind": "open" },
     { "key": "customer", "label": "Customer", "kind": "won" },

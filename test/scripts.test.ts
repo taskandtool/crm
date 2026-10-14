@@ -129,7 +129,7 @@ test("deals.mjs, tasks.mjs and customers merge, end to end", { skip: !process.en
     assert.match(r.stdout, /already merged into/);
 
     r = sh("stages.mjs", "list", "--statuses");
-    assert.match(r.stdout, /^stages list: 3 customer statuses in order/);
+    assert.match(r.stdout, /^stages list: 3 contact statuses in order/);
     r = sh("stages.mjs", "add", "Site visit");
     assert.match(r.stdout, /^stages add: added site-visit \(Site visit\)/);
   } finally {

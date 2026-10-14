@@ -1,7 +1,7 @@
 // Invoices from chat: the invoices skill's command (src/invoices/cli.ts) with
 // this CRM's settings, its customers as <who>, "from-event" and "bill". `--help` for usage.
 import { invoicesCli, problems, stripeOr } from "../src/invoices/cli";
-import { eventsCfg } from "../src/config";
+import { eventsCfg, vocab } from "../src/config";
 import type { Db } from "../src/data/db";
 import { findCustomer } from "../src/crm/customers";
 import { customerEvents, getEvent, type Event } from "../src/crm/events";
@@ -80,7 +80,7 @@ await invoicesCli(process.argv.slice(2), {
 
           bill: async (db, a, rest, by) => {
             const at = "invoices bill";
-            if (!rest[0]) misused(`${at}: name the customer by id, email or phone`, "node scripts/invoices.mjs bill ann@example.com");
+            if (!rest[0]) misused(`${at}: name the ${vocab.one.toLowerCase()} by id, email or phone`, "node scripts/invoices.mjs bill ann@example.com");
             if (rest.length > 1) misused(`${at}: unexpected ${rest.slice(1).join(" ")}`, "node scripts/invoices.mjs --help");
             if (has(a, "event") && !/^\d{1,18}$/.test(flag(a, "event") ?? "")) misused(`${at}: --event takes a ${word()}'s id`, `node scripts/events.mjs list --customer ${rest[0]}`);
             const c = await resolveCustomer(db, rest[0], at);

@@ -1,6 +1,6 @@
 {
   "business": "A family heating and cooling company with two service vans: repairs, replacements and maintenance plans for homes in one metro area.",
-  "vocabulary": { "one": "Customer", "many": "Customers" },
+  "vocabulary": { "one": "Contact", "many": "Contacts" },
   "statuses": [
     { "key": "lead", "label": "Lead", "kind": "open" },
     { "key": "customer", "label": "Customer", "kind": "won" },

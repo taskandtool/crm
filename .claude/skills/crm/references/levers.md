@@ -8,7 +8,9 @@ Everything a business wants changed is one of these.
 
 1. **`crm.config.json`**, read at start and validated (a bad file stops the
    server with the reason; `npm run check` says it first).
-   - `vocabulary`: `{ "one": "Patient", "many": "Patients" }`.
+   - `vocabulary`: what the people are called; Contact / Contacts by
+     default (everyone, before and after they buy), `{ "one": "Patient",
+     "many": "Patients" }` for a dentist.
    - `statuses`: who a customer is (`Lead`, `Customer`, `Not a fit`), as
      `{ key, label, kind }`, kind `open`, `won` or `lost`.
    - `deals`: what one piece of work being won is called (`{ "one":
@@ -104,7 +106,7 @@ The rules the code keeps, so the AI never redoes them by hand:
   paying online.
 - A done task goes on the timeline as a note of its kind, so a done
   call counts as contact; so does a quote or an invoice that went out.
-  "Nothing planned" (the Customers filter, `tasks.mjs list --none`) is
+  "Nothing planned" (the Contacts filter, `tasks.mjs list --none`) is
   everyone with an open status or an open deal and no open task or
   scheduled event.
 - The morning email lists each person's tasks due, through the

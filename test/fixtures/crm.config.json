@@ -1,8 +1,8 @@
 {
   "business": "to fill",
   "vocabulary": {
-    "one": "Customer",
-    "many": "Customers"
+    "one": "Contact",
+    "many": "Contacts"
   },
   "statuses": [
     { "key": "lead", "label": "Lead", "kind": "open" },

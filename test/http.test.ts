@@ -192,7 +192,7 @@ test("customers: create, open, edit, note, archive", async (t) => {
 
   const detail = await (await get(`/customers/${id}?saved=added`)).text();
   assert.match(detail, /Quinn Ray/);
-  assert.match(detail, /Customer added\./);
+  assert.match(detail, /Contact added\./);
   // A record page: tasks, then one Activity timeline with its note box, then Details beside them;
   // details are values with Edit, not an open form; nothing empty shows.
   assert.ok(detail.indexOf(">Tasks</h2>") < detail.indexOf(">Activity</h2>"));
@@ -450,7 +450,7 @@ test("stages page: both lists; add, refuse archiving one in use, archive with a 
   if (skip) return t.skip(skip);
   const page = await (await get("/stages")).text();
   assert.match(page, /Deal stages/);
-  assert.match(page, /Customer statuses/);
+  assert.match(page, /Contact statuses/);
   assert.equal((await post("/stages/deals", { label: "Site visit", kind: "open" })).headers.get("location"), "/stages?saved=stage-added");
   assert.equal((await post("/stages/customers", { label: "Partner", kind: "won" })).headers.get("location"), "/stages?saved=stage-added");
   const [deal] = await db.sql<{ id: string }>`select id::text as id from deals order by id limit 1`;
@@ -545,7 +545,7 @@ test("events: add from the customer's page, the list, its page, status, CSV", as
   assert.equal(csv.status, 200);
   const text = new TextDecoder().decode(new Uint8Array(await csv.arrayBuffer()).slice(3));
   const lines = text.trim().split("\r\n");
-  assert.equal(lines[0], `ID,Customer,Customer email,Customer phone,What,Service,When (${cfg.time_zone}),Status,Owner,Where,Amount (USD),Notes,Added (UTC)`);
+  assert.equal(lines[0], `ID,Contact,Contact email,Contact phone,What,Service,When (${cfg.time_zone}),Status,Owner,Where,Amount (USD),Notes,Added (UTC)`);
   assert.equal(lines.length, 2);
   assert.match(lines[1], /,Val Event,val@example\.com,555 404 0000,Boiler service and flue check,,\d{4}-\d{2}-\d{2} \d{2}:\d{2},Completed,Sam,12 Oak St,1245\.50,,/);
 
