@@ -21,7 +21,7 @@ import { done, fieldFlags, fail, flag, flags, fmtCustomer, has, limitOf, local, 
 const HELP = `customers.mjs <command> [...] [--json] [--as <email>]
 
   list [--status s] [--tag t] [--owner o] [--archived] [--limit 50]
-  find <text>                          name, email, phone or company
+  find <text> [list's flags]           name, email, phone or company
   show <who>                           details, notes, tasks, deals, events, and what they sent and paid
   add "<name>" [--email e] [--phone p] [--company c] [--address a] [--status s]
                [--source s] [--tag t]... [--owner o] [--notes n] [--field key=value]...
@@ -113,7 +113,7 @@ await withDb(async (db) => {
             : "",
           history.items.length
             ? "from this person:\n" + history.items.map((i) => `  ${local(i.at)} ${i.kind === "submission" ? i.form_title || i.form_key : i.kind} (${i.status})`).join("\n")
-            : "nothing from this person in forms or payments",
+            : "nothing from this person yet",
         ].filter(Boolean),
       });
     }

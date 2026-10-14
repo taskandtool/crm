@@ -1,6 +1,6 @@
 ---
 name: data
-description: "The project's one database, shared by every app: table rules (email links people, schema files only add), the Db handle, settings, connection calls, email and spam checks. Use before creating or changing a table, or copying another skill's code. Not for getting a database (the `database` skill)."
+description: "The project's one shared database: table rules (email links people, schema files only add), the Db handle, settings, connection calls, email and spam checks. Use before creating or changing a table or copying another skill's code. Not for getting a database (the `database` skill)."
 ---
 
 # Data
@@ -9,7 +9,7 @@ Every app in a project shares one Postgres database, so a CRM installed
 later finds the Website's form submissions, bookings and payments already
 there.
 
-Version: 0.2.0 (taskandtool/skills)
+Version: 0.2.1 (taskandtool/skills)
 
 ## The rules
 
@@ -57,10 +57,8 @@ is a parameter. A transaction is non-interactive: decide inside the SQL
 between statements. That is the shape the Neon HTTP driver allows, so it is
 the only one a snippet assumes.
 
-Every route factory takes a `GetDb`, `(c) => Db`, as its first argument,
-then its options (`base`, `css`, `timeZone`, `nav`, `pageSize`, `source` where
-they apply). In production the handle is made per request from the
-binding; in dev the function returns the app's one handle.
+Every route factory takes a `GetDb`, `(c) => Db`: made per request from the
+binding in production, the app's one handle in dev.
 
 Each app makes its handle from the driver it already uses:
 
@@ -111,7 +109,7 @@ keeping the rules above and its tests passing. Then:
    (a role that may create databases; each test makes and drops its own).
 
 A machine-only file (`cli.mjs`, a skill's `cli.ts`, booking's `sync.ts` and
-`reminders-job.ts`, reports' `print.ts`) runs only on the machine and may
+`reminders-job.ts`, reports' `print.ts`, forms' `files.ts`) runs only on the machine and may
 import Node built-ins. Nothing the production Worker imports may reach it;
 the app's `npm run check` fails if it does. A `.ts` file imports `cli.mjs`
 by its full name (`../data/cli.mjs`), and the app's `tsconfig.json` needs

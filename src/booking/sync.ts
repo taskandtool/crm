@@ -212,10 +212,10 @@ type Due = {
 };
 type Cal = { id: string; resource_id: string; provider: "google" | "microsoft"; external_id: string; receives_bookings: boolean };
 
-/** What the owner sees in their calendar. Adjust freely; keep the booker out of attendees. */
+/** The word before a booking's place in its event details, by location kind. */
 const WHERE: Record<string, string> = { their_place: "At", our_place: "At", phone: "Call", video: "Join" };
 
-/** What the person's calendar shows: what it is and who, where, and how to reach them. */
+/** What the owner sees in their calendar: what it is and who, where, and how to reach them. Adjust freely; keep the booker out of attendees. */
 export function eventText(b: Pick<Due, "id" | "name" | "email" | "phone" | "type_name" | "location_kind" | "location">): { title: string; details: string; location: string | null } {
   return {
     title: b.type_name ? `${b.type_name}: ${b.name}` : b.name,

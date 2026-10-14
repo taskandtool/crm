@@ -41,8 +41,7 @@ another slug: `stripeFrom(envOf(c), fetch, "stripe-eu")`.
    with `more: [invoiceEvents]` where the invoices skill is carried. It
    answers POST `/hooks/stripe` and reads `STRIPE_WEBHOOK_SECRET`. In a
    team-only app, mount it before the team gate: Stripe has no sign-in, only
-   the signature. Each app is its own endpoint in Stripe; never point one
-   app at another's.
+   the signature.
 2. Its URL. A public production site: `https://<production host>/hooks/stripe`
    (the machine stays asleep). Otherwise (team only, or not deployed):
    `python3 ~/tools/taskandtool.py inbound-url /hooks/stripe`, which reaches
@@ -57,8 +56,7 @@ another slug: `stripeFrom(envOf(c), fetch, "stripe-eu")`.
    `invoice.marked_uncollectible`, `invoice.deleted`.
    An app without invoices registers only the first six.
 4. The owner copies the endpoint's signing secret (`whsec_…`) into the form from
-   `python3 ~/tools/taskandtool.py request-secret STRIPE_WEBHOOK_SECRET`, for this app alone (each
-   endpoint has its own secret); then
+   `python3 ~/tools/taskandtool.py request-secret STRIPE_WEBHOOK_SECRET`; then
    `python3 ~/tools/taskandtool.py restart`. Test and live mode are separate
    endpoints with separate secrets. After an inbound URL rotation, change
    the URL in Stripe too.

@@ -9,8 +9,9 @@ there, make the form with `node scripts/forms.mjs save`, then do steps 4 and 6.
 
 1. Look: `select key, title, fields from forms`. Reuse a form that
    fits; otherwise pick a key (`quote-request`).
-2. Copy `forms/` to `src/forms/` (with `test/`), and `data/`, `admin/`
-   and the payments skill's `money.ts` if the app lacks them. In the setup script (machine only):
+2. Copy `forms/` to `src/forms/` (with `test/`), and `data/`, `admin/`,
+   `customers/`, `payments/` and `booking/` if the app lacks them (the
+   inbox shows a submission's booking and payment). In the setup script (machine only):
    `applySchema(db, readFileSync("src/forms/schema.sql", "utf8"))`, then
    `seedForm(db, { key, title, fields }, "<app slug>")`.
 3. Mount in `src/app.tsx`, below the page loop:
@@ -24,7 +25,7 @@ there, make the form with `node scripts/forms.mjs save`, then do steps 4 and 6.
    the page instead of showing nothing. On the Website, leave the page
    module out of `src/pages/index.ts` (listing it there would pre-render
    it), and add its nav link to `site.nav` by hand.
-5. Mount `formsAdmin(getDb, { base: "/admin/submissions", css, timeZone })`
+5. Mount `formsAdmin(getDb, { base: "/admin/submissions", css, timeZone, links: { booking: (id) => `/admin/schedule/${id}`, payment: (id) => `/admin/payments/${id}` } })`
    at `/admin/submissions` (see the `admin` skill for where private views
    live), and apply the `customers` skill's `schema.sql` with the forms one:
    a submission shows the person's notes.

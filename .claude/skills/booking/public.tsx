@@ -5,7 +5,7 @@
 //
 //   app.route("/book", bookingPages(getDb, {
 //     base: "/book", domain: "acme.com", css: "/site.css", source: "website",
-//     onBooked: (c, e) => afterResponse(c, sendInvite(envOf(c), { ... })),   // notify.ts
+//     onBooked: (c, e) => afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain: "acme.com" })),   // notify.ts
 //   }));
 //   // /book lists the types; a type with slug "install-estimate" is booked at /book/install-estimate
 //
@@ -15,7 +15,9 @@
 // confirm form carries the spam fields (data/spam.tsx) and asks for what
 // the type needs: an address when the visit is at theirs, a number for a
 // phone call. A deposit, when the app takes one, is `afterBook` sending the
-// booker to pay, and the manage page shows its status from payments.
+// booker to pay, and the manage page shows its status from payments. The
+// manage link is the booker's key: only its hash is stored, and its pages
+// send Referrer-Policy: no-referrer.
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { Child } from "hono/jsx";

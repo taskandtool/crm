@@ -12,8 +12,8 @@
 //     <LineChart title="Leads per week" labels={labels} series={[{ label: "This period", data }, { label: "Previous period", data: prev, previous: true }]} />
 //   </AdminLayout>
 //
-// Styled with the theme tokens only, so a report takes on the app's brand
-// (and so the client's, when brand/ is filled) with no change here.
+// Styled with the theme tokens only, so a report takes on the app's accent
+// and fonts (and so the client's, when brand/ is filled) with no change here.
 import type { Child } from "hono/jsx";
 import { decimals } from "../payments/money";
 import type { Grain } from "./sql";

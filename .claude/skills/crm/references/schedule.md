@@ -11,21 +11,14 @@ the team. There is nothing to convert. An event has when (a start and a
 length), what (a title, or the service booked), who takes it (a Team
 member, or nobody yet), where, a status (scheduled, then completed,
 no-show or cancelled; never deleted), an amount, notes, and the config's
-`events.fields`. The CRM adds `customer_id`, `amount_cents`, `currency`
-and `fields` to the table; an online booking has no `customer_id` and
-belongs to the customer its email belongs to (else its phone, where one
-side has no email). One held for a form still being paid is not an event
-until it is paid.
+`events.fields`. An online booking belongs to the customer its email (else
+phone) matches; one held for a form still being paid is not an event until
+it is paid.
 
 `node scripts/events.mjs add <who> "<what>" --at "friday 9:30" --host Dana`
 puts one on the schedule (`--help` for the rest); `done`, `no-show` and
-`cancel` change it. Completed and no-show only once it has started; a
-completed one counts as contact. Pages: `/events` (upcoming, past, all;
+`cancel` change it; a completed one counts as contact. Pages: `/events` (upcoming, past, all;
 CSV), each event's page, and a section on every customer's page.
-
-A fact about the customer is a customer field (their system, their
-insurer); a fact about one event is an event field (the truck that went,
-the party size).
 
 ## Online booking
 

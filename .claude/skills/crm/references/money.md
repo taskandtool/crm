@@ -8,15 +8,13 @@ Under Forms: every submission from the project's forms, filtered by form
 ("my orders" is the order form's), each with the booking and payment it led
 to, the ones someone started and did not finish, and the form editor. The
 Inbox filters by form too. People fill in the forms on the Website; this CRM
-shows and edits them. `node scripts/forms.mjs` lists, shows and saves forms
-(from JSON) and lists a form's submissions with their booking and payment.
-The `forms` skill has the field types (steps, things to buy, a booking step,
+shows and edits them. The `forms` skill has the field types (steps, things to buy, a booking step,
 a payment step); the `payments` skill's "Submissions, bookings and payments"
 says how the three link.
 
 ## Quotes and invoices
 
-Under Invoices: Quotes, Invoices and Tax rates. A quote is the CRM's own
+Under Invoices: the tabs Quotes, Invoices and Payments, and a Tax rates page. A quote is the CRM's own
 document, made from a customer's page ("New quote") or an event
 ("Quote"), sent as a PDF through the owner's email sender (as booking
 messages are; with none, the team copies the text into their own email

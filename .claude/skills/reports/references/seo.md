@@ -8,23 +8,12 @@ the gateway (`googleCall` in `seo.ts`). If the app does not hold it, ask with
 the Search Console and Analytics Data APIs enabled on their Google Cloud
 project.
 
-- **Data lags two to three days**: end the period three days back
-  (`lastFull("day", 28, zone, { lag: 3 })`), and say so on the page. A
-  day still unfinished is not zero: `fetchSeo` sets `gsc.incompleteFrom`
-  and `SeoReport` says the figures are partial.
-- **Lower average position is better**: its tile takes `lowerIsBetter`, its
-  chart `reverse`. A day with no impressions has no position (null), never
-  0.
-- **Totals come from rows by date**, never from top-query rows, which leave
-  out anonymised queries. Position is weighted by impressions.
-- `siteUrl` is the property exactly as Search Console names it
-  (`sc-domain:acme.com`, or `https://acme.com/` with the slash), encoded in
-  the path. GA4 takes the numeric property id; `keyEvents` is what GA4 now
-  calls conversions; totals use `metricAggregations: ["TOTAL"]`.
-- **The gateway answers only dev.** A report served in production cannot
-  reach Google: a job on the machine fetches and
-  `saveSnapshot`s, and the page renders `loadSnapshot`. The snapshot table
-  is this skill's `schema.sql`, applied at setup.
+`siteUrl` is the property exactly as Search Console names it
+(`sc-domain:acme.com`, or `https://acme.com/` with the slash). GA4 takes the
+numeric property id. The gateway answers only dev, so a report served in
+production renders `loadSnapshot` of what a job on the machine fetched and
+`saveSnapshot`ed. The figures that are easy to get wrong are in `seo.ts`'s
+header; `fetchSeo` and `SeoReport` keep them.
 
 ## The weekly SEO report for a client
 

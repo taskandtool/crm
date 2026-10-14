@@ -10,13 +10,12 @@ their timeline in `customer_notes`. The CRM lists and edits them; any other
 app (the Website's submission page) reads them and adds notes, and both see
 the same rows.
 
-Version: 0.1.1 (taskandtool/skills)
+Version: 0.1.2 (taskandtool/skills)
 
 ## The rules
 
-- **Find before making.** `customerByEmail` also finds a customer by an
-  address they gained in a merge (`other_emails`); `customerFor` makes one
-  only when there is none, as the CRM's "Add as customer" does.
+- **Find before making.** Use `customerFor`, never an insert: it finds them
+  first, by an address gained in a merge too.
 - **A note's time is a wall time** in the business's zone (`wallTime`), or
   now. A call, email, meeting or text moves `last_contact_at` forward; a
   plain note does not.

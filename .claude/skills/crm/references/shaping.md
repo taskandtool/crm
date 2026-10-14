@@ -11,17 +11,14 @@ project already knows: the owner's words, a Company Brain's notes, the
 Website's forms (`select key, title from forms`). Ask only what you cannot
 infer. Then:
 
-1. Write the config: words, statuses, deals (their name, stages and lost
-   reasons), sources, fields, owner label, time zone, inbox, events (their
-   name and fields, or `false`), the business line.
+1. Write the config (every key in `references/levers.md`), the business line included.
 2. The defaults are already rows, so make the live statuses and deal
    stages match with `scripts/stages.mjs` (`--statuses` for a customer's;
    rename, add, set kind, archive with `--move-to`). Rename in place
    rather than archive and re-add. A rename keeps the key (`new` labelled
    `Enquiry`); that is fine, since nobody sees a key and every script
    takes the label too.
-3. `python3 ~/tools/taskandtool.py restart`, `npm run check`, then show the owner
-   the Inbox, a customer and the deals board.
+3. `npm run check`, then show the owner the Inbox, a customer and the deals board.
 
 A status says who someone is (Lead, Customer); a deal stage says where one
 piece of work is (Estimate sent). A trade's per-job steps are deal stages,

@@ -7,12 +7,11 @@ description: "Quotes and invoices: quote this job, send the invoice, who owes us
 
 A quote is ours: a document the team sends through the owner's sender
 (`data/send.ts`). An invoice is Stripe's: made in the owner's Stripe
-account (Stripe Invoicing), emailed by Stripe, paid on Stripe's hosted page
-(the page lasts 30 days past the due date, at most 120, then offers to resend). Both live in the project's tables, so every app reads
+account (Stripe Invoicing), emailed by Stripe, paid on Stripe's hosted page. Both live in the project's tables, so every app reads
 what a customer was quoted, owes and paid. Builds on `data`, `admin` and
 `payments`.
 
-Version: 0.2.1 (taskandtool/skills)
+Version: 0.2.2 (taskandtool/skills)
 
 ## The rules
 
@@ -42,46 +41,23 @@ Version: 0.2.1 (taskandtool/skills)
 
 ## Keys and the webhook
 
-Invoices use the payments skill's Stripe connection (the key's
-permissions, Customers, Invoices and Tax Rates among them, are in its
-`references/setup.md`) and its endpoint. Mount the endpoint with this skill's events:
-
-```ts
-app.route("/", stripeWebhook(getDb, { more: [invoiceEvents] }));
-```
-
-A team-only app (the CRM) mounts it before the team gate: Stripe has no
-sign-in, only the signature. The owner adds the invoice events to the
-endpoint (step 3 of "The webhook" in the payments skill's `references/setup.md`). A paid invoice also writes a
-`payments` row (`kind = 'invoice'`) with its payment intent, so refunds and
+Invoices use the payments skill's Stripe key and webhook (its
+`references/setup.md` lists the key's permissions and the invoice events):
+`app.route("/", stripeWebhook(getDb, { more: [invoiceEvents] }))`. A paid
+invoice also writes a `payments` row (`kind = 'invoice'`), so refunds and
 revenue work as for any payment.
 
 ## Files
 
-- `schema.sql`: `quotes`, `quote_lines`, `invoices`, `invoice_lines`,
-  `stripe_customers`. Apply the payments schema first (its `tax_rates`).
-- `lines.ts`: reading typed lines, the line and total SQL (tax rates are
-  the payments skill's `tax.ts`).
-- `quotes.ts`: create, save (a draft only), copy, sent, accepted, declined,
-  expired; numbers `Q-0001`.
-- `invoices.ts`: create, save (a draft not yet in Stripe), from an accepted
-  quote (once), discard, `owed(db, email)`.
-- `document.tsx`: a quote or an invoice as HTML on one sheet (the
-  previews, and a quote's PDF through `reports/print.ts` where a browser
-  exists), a quote as an email that stands without the PDF; `sendQuote`.
-  An invoice's preview is ours; Stripe sends it in its own layout.
-- `stripe.ts`: `sendInvoice` (customer, tax rates, invoice, items,
-  finalize, send; safe to repeat), `payLinkForQuote`, `markPaidOutOfBand`,
-  `voidInvoice`, `markUncollectible`.
-- `cli.ts`: `quotesCli` and `invoicesCli`, what an app's
-  `scripts/quotes.mjs` and `scripts/invoices.mjs` run with its settings.
-- `webhook.ts`: `invoiceEvents` for the payments webhook.
-- `admin.tsx`: `invoicesAdmin(getDb, { base, css, source, timeZone,
-  business, Frame?, send?, print?, stripe?, links?,
-  afterDecide?, afterSend? })`, the team's pages, the invoices list opening on
-  what is outstanding, past due and paid this month (`invoiceTotals`); every
-  change is a POST from a page that says what will happen. Tax is one choice
-  per document, no tax by default (lines keep their own rate; "Different on
-  each line" keeps a per-line one). Until Stripe (or, for quotes, email) is
-  connected, the pages say so with the words to ask for it, and hold Send.
-- `test/`: against a scratch database, Stripe faked, events out of order.
+| File | What |
+|---|---|
+| `schema.sql` | `quotes`, `quote_lines`, `invoices`, `invoice_lines`, `stripe_customers`. Apply the payments schema first (its `tax_rates`) |
+| `lines.ts` | Reading typed lines; the line and total SQL |
+| `quotes.ts` | A quote's life: create, save a draft, copy, sent, accepted, declined, expired |
+| `invoices.ts` | An invoice's life before Stripe: create, save a draft, from an accepted quote, discard; `owed(db, email)` |
+| `document.tsx` | A quote or invoice as HTML on one sheet (previews, a quote's PDF); `sendQuote` |
+| `stripe.ts` | `sendInvoice` (safe to repeat), `payLinkForQuote`, `markPaidOutOfBand`, `voidInvoice`, `markUncollectible` |
+| `cli.ts` | `quotesCli`, `invoicesCli`: what the app's `scripts/quotes.mjs` and `scripts/invoices.mjs` run |
+| `webhook.ts` | `invoiceEvents` for the payments webhook |
+| `admin.tsx` | `invoicesAdmin(getDb, { base, css, source, timeZone, business, Frame?, send?, print?, stripe?, links?, afterDecide?, afterSend? })`: the team's pages, opening on what is outstanding, past due and paid this month |
+| `test/` | Against a scratch database, Stripe faked, events out of order |

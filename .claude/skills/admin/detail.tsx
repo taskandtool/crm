@@ -1,6 +1,5 @@
-// One record: its fields, the free-form JSON a form or webhook left on it,
-// and optionally a log of what happened to it with a note box. Everything
-// stored here came from a visitor, so it is rendered as text, never as HTML
+// One record: its fields and the free-form JSON a form or webhook left on it.
+// Everything stored here came from a visitor, so it is rendered as text, never as HTML
 // and never as a link (a stored "javascript:" URL is one click from running).
 //
 //   <Section title="Details"><FieldList fields={[{ label: "Email", value: r.email }]} /></Section>

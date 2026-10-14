@@ -1,9 +1,7 @@
 // The page around every private view: a header naming the app's private
-// sections and who is signed in, then the content. Styled only with the theme
-// tokens every Starter App's theme.css defines (canvas, surface, panel, ink,
-// ink-2, ink-3, line, line-strong, accent, accent-ink; radius-card,
-// radius-control; text-title, text-label, text-copy), so it takes on the
-// app's brand with no change. Pass `css` for the app's built stylesheet.
+// sections and who is signed in, then the content. It sets its own neutral
+// look (ADMIN_THEME below); only the app's accent and fonts carry through.
+// Pass `css` for the app's built stylesheet.
 //
 //   c.html(<AdminLayout title="Submissions" css="/site.css" nav={NAV} current="/admin/submissions" user={c.get("user")}>…</AdminLayout>)
 import type { Context } from "hono";
@@ -79,8 +77,8 @@ export function sectionPages(o: { Frame?: Frame; css: string; label: string; lin
  * neutral, and the same in every app. Only the accent and the fonts stay the
  * brand's. Set on <body>: every utility reads these variables (bg-canvas,
  * text-ink, text-copy, rounded-card), so a private page takes them and the
- * site's pages do not. A token renamed in design/system.yaml must be renamed
- * here too.
+ * site's pages do not. A token renamed in the app's styles/theme.css must be
+ * renamed here too.
  */
 const ADMIN_THEME = [
   "--color-canvas: #ffffff", // the page

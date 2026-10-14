@@ -49,7 +49,7 @@ runs anywhere with Node 20 and a Postgres.
   Job, Appointment), whether a customer booked it online or the team put
   it on the schedule. Scheduled, then completed, no-show or cancelled,
   with who takes it, where, an amount and its own fields (which truck,
-  which room). The Schedule (the week by person), the list (upcoming, past,
+  which room). The Calendar (the week by person), the list (upcoming, past,
   all, exported as CSV), Services (what customers can book online, with
   online booking on) and the Team (everyone's hours, time off and Google
   or Outlook calendar). The public booking page is the Website's; both use

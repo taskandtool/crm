@@ -24,24 +24,15 @@ a name like "Installation estimate", its address `install-estimate`, the
 length, a buffer for travel or set-up, notice, where it happens) and tick
 who takes it. A type no active person takes is left off `/book`.
 
-**The team's side in any app.** Mount the three route sets on its private
-routes, each given every section's address (`sections`) so one links to
-another: `bookingAdmin` (the Schedule, a week of bookings and time off by
-person; Book for someone at `/new`, which takes `name`, `email`, `phone`
-and `address` in its link so a team member starting from a customer types
-nothing twice; a booking's Reschedule, Cancel, Completed and No-show, each
-told to the booker through `onBooked`), `typeRoutes` (Services: the types
-and who takes each) and `peopleRoutes` (Team: each person's hours, time
-off and, where the app runs the sync, calendars). `Frame` puts the pages in
-the app's own layout. `returnTo` sends every link to a booking to the
-app's own page for it (the Website's submission, the CRM's event), and
-Reschedule and Cancel come back there; one it has no page for opens on
-its Reschedule, which can cancel it too; `afterStatus` runs after a status
-change; `scheduleActions` replaces Book for someone (the CRM's New event);
-`timeZone` is the Schedule's; `manageBase` is the Website's `/book`
-address, so a team booking's confirmation carries a manage link. Every app
-writes the tables the Website's `/book` reads, so a change is live on the
-next page load; nothing to sync or deploy.
+**The team's side in any app.** Mount `bookingAdmin` (the Schedule; Book
+for someone at `/new`, which takes `name`, `email`, `phone` and `address` in
+its link; a booking's Reschedule, Cancel, Completed and No-show, each told to
+the booker through `onBooked`), `typeRoutes` (Services) and `peopleRoutes`
+(Team) on the private routes, each given `sections` so they link to one
+another. Every other option is documented on `BookingAdminOptions` in
+`admin.tsx`. A booking with no page in the app opens on its Reschedule,
+which can cancel it too. Every app writes the tables `/book` reads, so a
+change is live on its next page load.
 
 **Connect a calendar** (in the CRM, which runs the sync). The job calls the endpoint `google-calendar` (the
 `google` connection, scope `calendar.events`) or `microsoft-calendar` (the

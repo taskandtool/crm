@@ -9,7 +9,7 @@ Money goes through the owner's own Stripe account, by their connection.
 Every payment is a row in `payments` naming what it pays for (`ref_type`,
 `ref_id`), so every app reads the same rows.
 
-Version: 0.4.2 (taskandtool/skills)
+Version: 0.4.3 (taskandtool/skills)
 
 ## The rules
 
@@ -66,13 +66,10 @@ payment (money)                   payments  payments
 
 ## The key and the webhook
 
-The owner pastes a restricted key (`rk_…`) as a connection delivered to
-the edge; ask with `python3 ~/tools/taskandtool.py request-connection
-stripe --why "take payments" --auth api_key --delivery edge`. Call Stripe with `stripeFrom(envOf(c))`
-in a route and `stripeFrom(process.env)` in a script: dev goes through the
-gateway, production uses the key bound to its Worker. Making the key (its
-permissions) and registering the webhook (its URL and events):
-`references/setup.md`.
+The owner connects a restricted key (`rk_…`) delivered to the edge. Call
+Stripe with `stripeFrom(envOf(c))` in a route and `stripeFrom(process.env)`
+in a script. Making the key, the request command and registering the
+webhook: `references/setup.md`.
 
 ## Files
 

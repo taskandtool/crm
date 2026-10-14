@@ -9,7 +9,7 @@ Report pages are private views (`admin`) with charts in them. The figures
 are computed on the server, in SQL or from Google's rows; the browser only
 draws them.
 
-Version: 0.2.1 (taskandtool/skills)
+Version: 0.2.2 (taskandtool/skills)
 
 ## Figures that go wrong quietly
 
@@ -26,12 +26,9 @@ Version: 0.2.1 (taskandtool/skills)
   conversion rate is total conversions over total sessions. Never average
   per-row ratios (`ratioOfSums`, `weightedMean`). Show a change in a rate in
   percentage points (`change="points"`).
-- **Money**: one figure per currency, never a sum across currencies.
-  Revenue is `coalesce(total_cents, amount_cents) - refunded_cents` (`revenueQuery`) for `paid`,
-  `partially_refunded` and `refunded` payments, dated by `paid_at` (or by
-  `created_at` when a refund handled first left `paid_at` empty), leaving
-  out `livemode = false`. Minor units are Stripe's, not Intl's (`fromMinor`: yen
-  have none, ISK counts hundredths).
+- **Money**: one figure per currency, never a sum across currencies;
+  revenue is `revenueQuery` (net of refunds, live only, dated by when it was
+  paid). Minor units through `fromMinor`, never `/ 100`.
 - **People are emails**: the funnel matches across tables on
   `lower(email::text)` within the period, and each step narrows the one
   before.
@@ -64,7 +61,7 @@ properties at draw time (`--color-accent` for the series, `--color-ink-3`
 for the previous period, `--color-line` for gridlines, `--font-body`) and
 reads them again when the theme changes. An app whose `brand/` folder is
 filled already has its theme set from it, so a report for a client is
-branded by that and nothing else: no colours in chart code, ever.
+branded by that: no colours in chart code.
 
 Tailwind 4 writes out only the theme variables some class uses. Extra
 series colours (`--color-chart-2` … `-6`, which `client.js` uses when they
@@ -109,7 +106,7 @@ hand-over is a deliverable (`work` skill), and a deliverable is a file:
 | `test/` | copy with the files and keep green |
 
 Copy `client.js` with `charts.tsx` (the charts test reads `client.js`
-from beside it), and serve `client.js` as a static file too. `ops.tsx` imports `seo-report.tsx`, which
+from beside it). `ops.tsx` imports `seo-report.tsx`, which
 imports `seo.ts`, so keep those even without Google. `print.ts` is machine
 only: leave it and `test/seo.test.ts` out of an app that deploys `src/` to
 Cloudflare until a PDF is wanted.

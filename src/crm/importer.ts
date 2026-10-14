@@ -1,8 +1,8 @@
 // CSV in: the customer list a business keeps today becomes customers,
 // without duplicates and without losing what the CRM already knows.
 //
-// - Every row is matched first by email (normalizeEmail), then by phone
-//   (phone.ts), against the CRM and against earlier rows of the same file,
+// - Every row is matched by email, then by phone (phone only where one side
+//   has no email; phone.ts), against the CRM and against earlier rows of the same file,
 //   so a list with one person on three rows makes one customer. A row with
 //   neither matches by name a customer who has neither.
 // - A matched customer only gains: an empty field is filled, tags are added,

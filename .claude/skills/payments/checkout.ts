@@ -12,7 +12,7 @@
 //     return c.redirect(url, 303);
 //   });
 //
-// A booking's deposit starts it from bookingPages' afterBook (SKILL.md).
+// A booking's deposit starts it from bookingPages' afterBook (references/recipes.md).
 //
 // The thanks page says the payment is being confirmed. It never marks
 // anything paid: the success redirect can be opened by anyone and arrives

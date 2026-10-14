@@ -49,7 +49,7 @@ export type Event = Keyed & {
   created_at: Date;
   updated_at: Date;
   updated_by: string | null;
-  /** The customer: the one it names, else the one its email belongs to. */
+  /** The customer: the one it names, else the one it matches (sql.ts isCustomer). */
   customer_id: string | null;
   customer_name: string | null;
 };
@@ -98,7 +98,7 @@ export const minutesOf = (e: Pick<Event, "starts_at" | "ends_at">) => Math.round
 export const startWall = (e: Pick<Event, "starts_at">, tz: string) => wallTime(nowIn(tz, new Date(e.starts_at)))!;
 
 // Every read joins the same way: its service and person, and its customer
-// (the one it names, else the one whose email or other address it carries).
+// (the one it names, else the one it matches: sql.ts EVENT_OF).
 // Fixed texts of this file, spliced into each statement; values stay parameters.
 const SELECT = `b.id::text as id, coalesce(b.title, t.name, 'Untitled') as what, b.title, b.type_id::text as type_id, t.name as type_name,
   b.starts_at, b.ends_at, b.resource_id::text as resource_id, r.name as host_name, b.status, b.name, b.email::text as email, b.phone,

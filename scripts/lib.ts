@@ -32,7 +32,7 @@ const at = [script, ["import", "export", "migrate"].includes(script) ? undefined
 export async function withDb<T>(fn: (db: Db, pool: pg.Pool) => Promise<T>, opts: { force?: boolean } = {}): Promise<T> {
   const url = databaseUrl();
   if (!url) {
-    fail(`${at}: the project has no database yet (DATABASE_URL is not set; off Task & Tool, put one in .env)`, "python3 ~/tools/taskandtool.py request-capability postgres");
+    fail(`${at}: the project has no database yet (DATABASE_URL is not set; off Task & Tool, set it in the environment)`, "python3 ~/tools/taskandtool.py request-capability postgres");
   }
   const pool = openPool(url);
   const db = fromPool(pool);
@@ -59,7 +59,6 @@ export async function withDb<T>(fn: (db: Db, pool: pg.Pool) => Promise<T>, opts:
 /** A connection that failed or dropped (ECONNREFUSED, ETIMEDOUT, ENOTFOUND...), not an error Postgres answered with. */
 const unreachable = (e: { code?: string }) => !!e.code && /^(ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH|EPIPE)/.test(e.code);
 
-/** "customers list" as the command that runs it: "node scripts/customers.mjs list". */
 /** `--field key=value`, repeatable, read as `defs` declare them: a key they lack, or a value they refuse, is a usage error. */
 export function fieldFlags(a: Args, defs: CustomField[], at: string, noun: string): FieldRead {
   const help = `${run(script)} --help`;
@@ -75,6 +74,7 @@ export function fieldFlags(a: Args, defs: CustomField[], at: string, noun: strin
   return r;
 }
 
+/** "customers list" as the command that runs it: "node scripts/customers.mjs list". */
 export const run = (at: string) => at.replace(/^(\S+)/, "node scripts/$1.mjs");
 
 /** Who acted: --as, else CRM_USER, else "AI". */

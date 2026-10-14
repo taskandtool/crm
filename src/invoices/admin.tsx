@@ -89,7 +89,6 @@ const INVOICE_OPTIONS: StatusOption[] = INVOICE_STATUSES.map((s) => ({
   label: INVOICE_STATUS_LABELS[s],
   tone: s === "paid" ? "accent" : s === "open" ? "strong" : s === "draft" ? "neutral" : "muted",
 }));
-/** An open invoice past its due date shows as Past due ("due"), as the list's filter names it. */
 /** What `links` gives a document's Details. */
 export type DocLinks = { customer?: string | null; more?: { label: string; value: Child }[] };
 
@@ -105,6 +104,7 @@ function Party({ doc, href }: { doc: { name: string | null; email: string; phone
   );
 }
 
+/** An open invoice past its due date shows as Past due ("due"), as the list's filter names it. */
 export const SHOWN_INVOICE: StatusOption[] = [...INVOICE_OPTIONS, { value: "due", label: "Past due", tone: "late" }];
 
 /** What is owed, how much of it is late, and what came in this month: each a link to the invoices behind it. */
@@ -908,8 +908,10 @@ export function Lines({ qt, rates }: { qt: { currency: string; subtotal_cents: s
 
 const BLANK_ROWS = 3;
 
-/** A quote or invoice, new or being edited; `submit` says which: Create quote when it posts to the list (a new one), Save when to its own page. */
-/** `currency` is the app's own (crm.config.json's): a document in it asks nothing, as Stripe takes it from the account; one in another shows the field. */
+/**
+ * A quote or invoice, new or being edited; `submit` says which: Create quote when it posts to the list (a new one), Save when to its own page.
+ * `currency` is the app's own (crm.config.json's): a document in it asks nothing, as Stripe takes it from the account; one in another shows the field.
+ */
 function DocForm({ kind, action, v, errors, rates, cancel, submit, taxPage, currency }: { kind: "quote" | "invoice"; action: string; v: FormValues; errors: Errors; rates: TaxRate[]; cancel: string; submit: string; taxPage: string; currency?: string }) {
   const ownCurrency = !!currency && v.currency.toLowerCase() === currency.toLowerCase() && !errors.currency;
   const err = (k: string) => (errors[k] ? <span class="text-ink" id={`err-${k.replace(/\./g, "-")}`}>{errors[k]}</span> : null);

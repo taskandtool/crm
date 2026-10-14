@@ -17,8 +17,9 @@ are matched to fields by name (${IMPORT_FIELDS.join(", ")},
 and each custom field's key or label); --map fixes a miss as field=Header.
 First name and last name columns are joined into the name.
 
-Each row is matched to an existing customer by email, then by phone, and
-to earlier rows of the same file the same way, so nobody is added twice. A
+Each row is matched to an existing customer by email, then by phone (phone
+only where one side has no email), and to earlier rows of the same file the
+same way, so nobody is added twice. A
 match only gains: empty fields are filled, tags are added, the last contact
 moves later. A field that already has a value is kept unless --overwrite
 (which also lets the file's status replace the current one). New customers

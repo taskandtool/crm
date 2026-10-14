@@ -6,9 +6,6 @@
 -- exists` line below as well as a place in the create.
 -- No semicolons inside a statement and no double hyphens inside a string:
 -- applySchema splits on the one and strips the other.
---
--- These are the project's tables, read by every app in it: Booking and the
--- Board show a customer's name from `customers`. A person is their email.
 
 create table if not exists pipeline_stages (
   key         text primary key check (key ~ '^[a-z0-9][a-z0-9_-]{0,39}$'),
@@ -27,7 +24,7 @@ create table if not exists pipeline_stages (
 
 -- The schedule's events live in the booking skill's `bookings` (one
 -- appointment table, whoever made it). What the CRM adds to each: the
--- customer it is for (an online booking is matched by its email instead),
+-- customer it is for (an online booking is matched by its email, else phone),
 -- what it was worth, and the business's own fields. Setup applies the
 -- booking skill's schema first, always, so the table is there.
 alter table bookings add column if not exists customer_id bigint;

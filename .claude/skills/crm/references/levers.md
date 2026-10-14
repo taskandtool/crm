@@ -24,7 +24,7 @@ Everything a business wants changed is one of these.
    - `fields`: custom fields (lever 3).
    - `owner_label`: what the owner column is called (`Technician`,
      `Dentist`, `Provider`). An owner is free text: a team member's email
-     when they sign in to Task & Tool, otherwise just their name (`Kim`).
+     when they sign in to Task & Tool, otherwise their name (`Kim`).
      The list filters by whatever is there, so use one form per person, or
      the filter splits them.
    - `time_zone`: an IANA name. Every time on a page, and the "when" of a
@@ -32,8 +32,7 @@ Everything a business wants changed is one of these.
      shaping. The machine's clock never decides.
    - `inbox`: `forms` is `"all"` or a list of form keys that count as
      people getting in touch; `exclude_forms` drops some (`newsletter`);
-     `bookings` and `payments` turn those sources off. Find the form keys
-     with `select key, title from forms`.
+     `bookings` and `payments` turn those sources off.
    - `events`: what one event on the schedule is called (`{ "one":
      "Event", "many": "Events" }`; a trade's "Job", a practice's
      "Appointment"), its own custom `fields` (same shape as lever 3), and
@@ -53,7 +52,7 @@ Everything a business wants changed is one of these.
    - `business`: one line about the business. It ships as `to fill`;
      writing the real line retires the "Shape the CRM" suggestion.
 
-   After a change: `python3 ~/tools/taskandtool.py restart`, then `npm run check`.
+   After a change: `npm run check` (dev restarts on save).
 
 2. **Statuses and deal stages are rows**, in `pipeline_stages` and
    `deal_stages`, edited on `/stages` or with `node scripts/stages.mjs`
@@ -70,13 +69,10 @@ Everything a business wants changed is one of these.
    in the import (header matched by key or label) and in the scripts
    (`--field truck="Truck 2"`). Add as customer fills a custom field from
    a form answer named with the field's key, as it fills Address and
-   Company from answers named `address` and `company`. A value the customer
-   form would refuse is left out, a customer who already has a value keeps
-   it, and a row with no phone takes the latest phone given with that
-   email. Removing a field from the config hides it; the data stays. Two limits to tell the owner when they matter: a custom
-   field holds one value per customer (which truck went to each job is an
-   event field: `references/schedule.md`), and the list cannot filter by one (for "show me
-   everyone at the North location", use a tag or lever 4).
+   Company from answers named `address` and `company`. Removing a field from
+   the config hides it; the data stays. A custom field holds one value per
+   customer, and the list cannot filter by one (for "everyone at the North
+   location", use a tag or lever 4).
 
 4. **`schema.sql`, for a real column** (indexed, filtered, joined on). It is
    applied by `applySchema` (`src/data/migrate.ts`) at every start and every
@@ -91,7 +87,7 @@ Everything a business wants changed is one of these.
    line (a `create table if not exists` skips a table that is already
    there). Never drop, rename or change a type; `applySchema` refuses a
    file that does, before running any of it. Name an index after its table. Then
-   restart, add it to `src/crm/customers.ts` and the views, `npm run check`
+   add it to `src/crm/customers.ts` and the views, `npm run check`
    and `npm test`.
 
 ## Deals and tasks

@@ -14,7 +14,7 @@ the project database reads the same rows: the Website's `/book` pages
 take bookings, the CRM sets types, hosts and hours and lists the bookings
 by email.
 
-Version: 0.5.3 (taskandtool/skills)
+Version: 0.5.4 (taskandtool/skills)
 
 ## The rules
 
@@ -31,9 +31,8 @@ Version: 0.5.3 (taskandtool/skills)
   times in *their* zone and name it ("Times are in Asia/Kolkata"); show the
   team times in the host's zone. Never format a time without `timeZone`:
   dev and production both run in UTC.
-- **Changing `slots.ts`, `book.ts` or `ics.ts`:** read `references/internals.md`
-  first (daylight saving, the booking transaction, invites, the manage link);
-  `npm test` holds them.
+- **Changing `slots.ts`, `book.ts` or `ics.ts`:** each file's header says
+  what is decided and why; `npm test` holds it.
 - **The double-booking window.** An event added to the calendar since the
   last sync is not in `busy` yet, so that time can be booked. The event
   and the booking then both show in the owner's calendar. Say so if the owner asks; syncing every
@@ -43,14 +42,10 @@ Version: 0.5.3 (taskandtool/skills)
   it), nobody assigned yet, or no email. Read it with `left join` to
   `booking_types` and `resources`. Reminders and invites go only to a
   booking with a service, someone taking it and an email.
-- **Messages go through the owner's sender only.** Task & Tool sends no
-  email for an app. The words are `bookingMessage` (`notify.ts`): booked,
-  moved, cancelled, reminder, each naming what, with whom, when in the
-  booker's zone and where. Delivery is a `Send`: `emailSend(env)` is email
-  through `data/send.ts` (Resend or Postmark, set once by `NOTIFY_FROM`
-  and `NOTIFY_VIA`, the forms skill's `references/setup.md`, "Telling the owner"). No sender:
-  nothing is sent and the booking stands; the manage page's .ics download
-  is the invite. Another connector is another `Send` (`references/messages.md`).
+- **Messages** are `bookingMessage`'s words (`notify.ts`) through a `Send`;
+  `emailSend(env)` is the owner's sender (`data/send.ts`), and Task & Tool
+  sends nothing. No sender: nothing is sent, the booking stands, and the
+  manage page's .ics is the invite. A text instead: `references/messages.md`.
 - **A customer books a type; a host takes it.** A type's time is open
   when any of its active hosts is free in their own hours and zone, using
   the type's rules. The booker may pick a host (`?host=`); otherwise the
@@ -102,7 +97,7 @@ bookings and payments".
 | `public.tsx` | `bookingPages`: what can be booked, a time, confirm, the manage page and .ics; `onBooked`, `afterBook` |
 | `admin.tsx` | `bookingAdmin`: the Schedule (a week, by person), Book for someone, a booking's reschedule, cancel, completed and no-show; `typeRoutes`: Services (what each is, who takes it); `peopleRoutes`: Team (each person's hours, time off, calendars) |
 | `ics.ts` | RFC 5545 invite builder |
-| `notify.ts` | The words (`bookingMessage`), `notifyBooking`, `emailSend`, the `Send` type, and `noticeFor` (a move or cancel made away from the booking pages, to tell the booker of) |
+| `notify.ts` | `bookingMessage` (the words), `notifyBooking`, `emailSend`/`emailSender`, the `Send` type, `runOnBooked`, `noticeFor` (a move or cancel made away from the booking pages, to tell the booker of), `sendInvite` (your own words with the invite) |
 | `reminders.ts` | `sendReminders`: claims and sends the reminders due now |
 | `reminders-job.ts` | The reminder job's command (machine only) |
 | `sync.ts` | The calendar sync job (machine only) |
@@ -113,6 +108,5 @@ bookings and payments".
 | When | Read |
 |---|---|
 | Confirmations, reminders, a text instead of an email | `references/messages.md` |
-| Changing the slot maths, the booking transaction, invites or the manage link | `references/internals.md` |
 | Connecting a calendar, the sync job, busy times | `references/calendar-sync.md` |
 | A booking page on the Website, setting up types and people, the team's side in the CRM | `references/recipes.md` |

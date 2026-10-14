@@ -14,16 +14,10 @@ lands in the new person's on the push after, as any booking with no event.
 A failed pull keeps the old rows and writes `calendars.last_error`, which the
 person's page under Team shows, and the Team list flags.
 
-**We name our events before they exist.** `bookings.event_key` is random and
-filled by the column default. Its tag (`eventTag`: key, `v`, calendar row id
-in hex) goes into every event: on Google as the event id `<tag>v<sequence>`
-(base32hex) and a private extended property; on Microsoft as a single-value
-extended property, with `<tag>v<sequence>` as the create's `transactionId`.
-So a run that dies after the create finds the event by tag instead of making
-a second one (a Google 409 on the id takes that event over). The pull
-leaves our events out by tag even when the id was never saved, while the
-owner's own event at the same time stays busy. Do not read busy times from
-Google free/busy: it merges intervals and carries no ids.
+Our events carry a tag (`eventTag`, `sync.ts`), so a run that dies after a
+create never makes a second event, and the pull leaves ours out by tag.
+Never read busy times from Google free/busy: it merges intervals and
+carries no ids.
 
 Calls go through the gateway with the machine token
 (`$PHOENIX_URL/api/machine/gateway/google-calendar/...`, `microsoft-calendar`).

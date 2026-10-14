@@ -9,7 +9,7 @@ export type Section = "inbox" | "tasks" | "deals" | "customers" | "schedule" | "
 
 /**
  * Schedule, as Jobber's and Housecall Pro's: one place for the team's days.
- * The Schedule (every event) first, then each list, then what
+ * The Calendar (every event) first, then each list, then what
  * can be booked and who takes it. Only the parts this CRM has.
  */
 export const SCHEDULE_TABS = eventsCfg
