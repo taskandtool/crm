@@ -194,6 +194,15 @@ export async function touchFor(db: Db, id: string, user: string): Promise<void> 
   if (e?.customer_id && e.status === "completed") await db.transaction([touch(e.customer_id, user)]);
 }
 
+/** One day's, from `start` to `end` (the business's day), by time; a cancelled one is not on it. Home's "Today". */
+export function eventsBetween(db: Db, start: Date, end: Date, limit = 50): Promise<Event[]> {
+  return sql(db)<Event>`
+    select {select} {from}
+    where b.status <> 'cancelled' and b.starts_at >= ${start} and b.starts_at < ${end}
+    order by b.starts_at, b.id
+    limit ${limit}`;
+}
+
 /** One customer's: the scheduled ones first, soonest first, then the rest newest first. */
 export function customerEvents(db: Db, customerId: string, limit = 100): Promise<Event[]> {
   return sql(db)<Event>`

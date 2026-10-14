@@ -9,7 +9,6 @@ import { localPath } from "../src/admin/query";
 import { backTo } from "../src/app";
 import { readFields } from "../src/crm/fields";
 import { guessMap, planRows } from "../src/crm/importer";
-import { makeInboxCursor, readInboxCursor, type InboxRow } from "../src/crm/inbox";
 import { phoneKey } from "../src/customers/customer";
 import { cleanPhone } from "../src/crm/phone";
 import type { Stage } from "../src/crm/stages";
@@ -134,19 +133,11 @@ test("small text helpers", () => {
   assert.equal(resolveStage(STAGES, "new")?.key, "new");
 });
 
-test("the inbox cursor round-trips and refuses anything else", () => {
-  const row = { kind: "booking", id: "42", k: "2026-10-02T10:00:00.123456Z" } as InboxRow;
-  assert.deepEqual(readInboxCursor(makeInboxCursor(row)), { k: row.k, r: 1, id: "42" });
-  assert.equal(readInboxCursor("garbage"), null);
-  assert.equal(readInboxCursor(Buffer.from(JSON.stringify(["2026-10-02", 1, "1"])).toString("base64url")), null);
-  assert.equal(readInboxCursor(Buffer.from(JSON.stringify([row.k, 7, "1"])).toString("base64url")), null);
-});
-
 test("one sentence for the tables a project lacks", () => {
   const none = { submissions: false, forms: false, payments: false, quotes: false, invoices: false };
-  assert.match(missingSentence(none, { payments: true })!, /no form submissions or payments yet/);
-  assert.match(missingSentence({ ...none, submissions: true, forms: true }, { payments: true })!, /no payments yet/);
-  assert.equal(missingSentence({ ...none, submissions: true, payments: true }, { payments: true }), null);
+  assert.match(missingSentence(none)!, /no form submissions or payments yet/);
+  assert.match(missingSentence({ ...none, submissions: true, forms: true })!, /no payments yet/);
+  assert.equal(missingSentence({ ...none, submissions: true, payments: true }), null);
 });
 
 // Review regressions.
@@ -186,12 +177,11 @@ test("a wall time must be a real one", () => {
   assert.equal(wallTime("2028-02-29 09:05"), "2028-02-29 09:05:00");
 });
 
-test("list and inbox cursors refuse a time Postgres would choke on", () => {
+test("the list cursor refuses a time Postgres would choke on", () => {
   const enc = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64url");
   assert.deepEqual(readListCursor(enc(["2026-10-02T10:00:00.123456Z", "5"])), { k: "2026-10-02T10:00:00.123456Z", id: "5" });
   assert.equal(readListCursor(enc(["not a time", "5"])), null);
   assert.equal(readListCursor(enc(["2026-02-30T10:00:00.000000Z", "5"])), null);
-  assert.equal(readInboxCursor(enc(["2026-02-30T10:00:00.000000Z", 1, "1"])), null);
 });
 
 test("a return path that resolves to another site goes home instead", () => {

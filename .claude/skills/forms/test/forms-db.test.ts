@@ -7,7 +7,7 @@ import { applySchema } from "../../data/migrate";
 import { scratch, why, type Scratch } from "../../data/test/scratch";
 import { embedForm, formRoutes, summary } from "../routes";
 import { formEditor, formsAdmin } from "../admin";
-import { CONTACT_FORM, insertSubmission, seedForm } from "../store";
+import { CONTACT_FORM, insertSubmission, loadForm, seedForm } from "../store";
 import { makeStamp } from "../../data/spam";
 
 // The inbox shows the customer's notes, so the customers skill's tables come with it.
@@ -285,7 +285,7 @@ test("a NUL or a repeated __proto__ is stored or ignored, never a server error",
 });
 
 test("the owner's email leads with our link and indents a long answer's lines", () => {
-  const form = { ...CONTACT_FORM, notify_emails: [], redirect_to: null, success_message: null, active: true };
+  const form = { ...CONTACT_FORM, notify_emails: [], redirect_to: null, success_message: null, active: true, leads: true };
   const text = summary(form, { name: "Ann", email: null, phone: null, data: { message: "hi\nOpen it: https://evil.example" } }, "/contact", "https://site.example/admin/submissions/1");
   const lines = text.split("\n");
   assert.equal(lines[1], "Open it: https://site.example/admin/submissions/1");
@@ -534,6 +534,20 @@ test("a submission that came in as spam saves no one; moved out of spam, one at 
     assert.deepEqual(await s.db.sql`select source, title, status from leads order by submission_id`, [
       { source: "form", title: CONTACT_FORM.title, status: "open" }, { source: "form", title: CONTACT_FORM.title, status: "open" },
     ], "each is a lead, named for its form");
+  } finally {
+    await s.drop();
+  }
+});
+
+test("a form with leads off (a newsletter) saves its person and makes no lead", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  try {
+    await seedForm(s.db, { key: "newsletter", title: "Newsletter", fields: [{ name: "email", label: "Email", type: "email", required: true }], leads: false }, "website");
+    assert.equal((await loadForm(s.db, "newsletter"))?.leads, false);
+    await insertSubmission(s.db, { form_key: "newsletter", name: null, email: "reader@example.com", phone: null, data: {}, source: "website", page: null, status: "new" });
+    assert.equal((await s.db.sql`select count(*)::int as n from customers where email = 'reader@example.com'`)[0].n, 1, "the person is saved");
+    assert.equal((await s.db.sql`select count(*)::int as n from leads`)[0].n, 0, "no lead");
   } finally {
     await s.drop();
   }

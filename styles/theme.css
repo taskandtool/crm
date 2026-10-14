@@ -47,7 +47,7 @@
 
   /* Type: one family, five sizes, figures in tabular numerals where they line up */
   --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --text-display: 1.875rem;                   /* a figure: the Inbox's numbers, a total */
+  --text-display: 1.875rem;                   /* a figure: Home's numbers, a total */
   --text-display--line-height: 2.25rem;
   --text-title: 1.5rem;                       /* a page's heading */
   --text-title--line-height: 2rem;

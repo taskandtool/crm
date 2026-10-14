@@ -24,7 +24,8 @@ Version: 0.3.6 (taskandtool/skills)
   one named `address`, `company` or a CRM custom field's key fills it on
   their customer. A submission saves its person as a customer as it comes in
   (`saveSubmitter`, through the customers skill), and again if it is marked
-  not spam.
+  not spam, and makes them a lead. Save a newsletter sign-up or a job
+  application with `"leads": false`: the person is saved, no lead.
 - **One definition** (`fields.ts`) drives the page, the server's
   validation and the editor; the browser's `required` is a convenience.
 - **A page with a form is rendered per request**, never pre-rendered: it

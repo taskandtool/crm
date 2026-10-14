@@ -59,38 +59,38 @@ function OpenTotal({ data }: { data: BoardData }) {
   return <p>{count} open{cents > 0n ? ` · ${formatWholeMoney(cents.toString(), dealsCfg.currency)}` : ""}</p>;
 }
 
-/** What a deal made from an Inbox item starts from: the item, who, what they asked and said, and their deals already open. */
+/** What a deal made from a lead starts from: the lead, who, what they asked and said, and their deals already open. */
 export type DealFrom = {
-  ref: string;
+  leadId: string;
   name: string | null;
   email: string | null;
   phone: string | null;
   title: string;
   said: string | null;
-  customerId: string | null;
+  customerId: string;
   openDeals: { id: string; title: string }[];
 };
 
 /**
  * A new deal: the person (matched by email or phone, or added) and what is
- * being won. From an Inbox item it is filled in first, as Pipedrive's
+ * being won. From a lead it is filled in first, as Pipedrive's
  * Convert to deal: the customer chosen, the title, what they wrote as its
  * notes, and the deals they already have open, so a second one is a choice.
  */
 export function NewDealPage(p: { user: string; stages: Stage[]; customers: { id: string; name: string; email: string | null }[]; from: DealFrom | null; flash: { code?: string | null; n?: string | null } }) {
   const f = p.from;
   return (
-    <Layout title={`New ${one}`} user={p.user} section="deals" back={f ? { href: "/", label: "Inbox" } : { href: "/deals", label: dealsCfg.many }}>
+    <Layout title={`New ${one}`} user={p.user} section="deals" back={f ? { href: `/leads/${f.leadId}`, label: "Lead" } : { href: "/deals", label: dealsCfg.many }}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <form method="post" action="/deals" class="grid max-w-3xl gap-3 rounded-card border border-line bg-surface shadow-card p-4 sm:grid-cols-3">
-        {f ? <input type="hidden" name="from" value={f.ref} /> : null}
+        {f ? <input type="hidden" name="from" value={`lead.${f.leadId}`} /> : null}
         {f?.openDeals.length ? (
           <p class="col-span-full rounded-control bg-panel px-3 py-2 text-ink-2">
             Already open for {f.name ?? "them"}:{" "}
             {f.openDeals.map((d, i) => <>{i ? ", " : ""}<a href={`/deals/${d.id}`}>{d.title}</a></>)}
           </p>
         ) : null}
-        <CustomerPicker customers={p.customers} selected={f ? f.customerId ?? "new" : null} person={f ?? undefined} />
+        <CustomerPicker customers={p.customers} selected={f?.customerId ?? null} person={f ?? undefined} />
         <DealInputs stages={p.stages.filter((s) => s.kind === "open")} title={f?.title} notes={f?.said} />
         <div class="sm:col-span-3">
           <button class={primaryClass}>Create {one}</button>
@@ -159,7 +159,7 @@ export function Board({ data }: { data: BoardData }) {
     <div id="pipeline">
       {!cards.length ? (
         <p class="mb-3 text-ink-2">
-          No {many} yet. Add one here, from a {vocab.one.toLowerCase()}'s page, or from the Inbox.
+          No {many} yet. Add one here, from a {vocab.one.toLowerCase()}'s page, or from a lead.
         </p>
       ) : null}
       {/* One column at a time on a phone, the next peeking in, snapping as it scrolls. */}

@@ -119,22 +119,6 @@ comment on column deals.stage_changed_at is 'When the stage last moved: a quote 
 comment on table follow_ups is 'Tasks: the next things to do for a customer: a call, email, meeting, text or to-do due on a day (in the business''s zone), by one person. Done ones keep done_at and done_by.';
 comment on table follow_up_digests is 'The morning email of due tasks, claimed once per person per day.';
 
--- What the team has dealt with in the Inbox, other than a form (a
--- submission's status says that): a booking, a payment, a booker's own
--- change (booking_changes.id) or a quote accepted online. Done takes it off
--- To do; the row it names is another skill's and is never changed.
-create table if not exists inbox_done (
-  kind text not null check (kind in ('booking', 'payment')),
-  ref_id bigint not null,
-  done_by citext,
-  done_at timestamptz not null default now(),
-  primary key (kind, ref_id)
-);
--- Its first kinds were fixed by a check; the Inbox has more now, so the check
--- goes (a loosening) and inbox.ts markHandled names the kinds.
-alter table inbox_done drop constraint if exists inbox_done_kind_check;
-comment on table inbox_done is 'What the Inbox marked done other than a form: a booking, a payment, a booker''s change or a quote accepted online. Off To do; the row named is never changed.';
-
 -- What the scripts last set up, so a script call skips setup when nothing
 -- changed: one row, the hash of the schema files setup applied.
 create table if not exists crm_setup (

@@ -11,6 +11,7 @@ create table if not exists forms (
   success_message text,
   submit_label    text,
   active          boolean not null default true,
+  leads           boolean not null default true,
   source          text,
   updated_by      citext,
   created_at      timestamptz not null default now(),
@@ -41,6 +42,8 @@ create index if not exists submissions_status on submissions (status, created_at
 create index if not exists submissions_name_trgm on submissions using gin (name gin_trgm_ops);
 create index if not exists submissions_email_trgm on submissions using gin ((email::text) gin_trgm_ops);
 
+alter table forms add column if not exists leads boolean not null default true;
+comment on column forms.leads is 'Each submission is a lead (customers skill leads). Off for a newsletter sign-up or a job application: the person is still saved.';
 comment on table forms is 'One row per form. fields is the ordered definition the renderer and validator read (forms skill).';
 comment on table submissions is 'Every form submission from every app in the project. A person is their email. No IP addresses are stored.';
 comment on column submissions.completed_at is 'When the whole form was done: its questions, then any booking step and any payment (once Stripe reports it paid). Null while a step is still to do. Rows from before this column have the time it was added.';

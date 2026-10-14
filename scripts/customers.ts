@@ -81,7 +81,7 @@ await withDb(async (db) => {
       const f = { ...NO_FILTER, q, stage: st?.key ?? null, tag: flag(a, "tag") ?? null, owner: flag(a, "owner") ?? null, archived: has(a, "archived") };
       const { page, next } = cut(await listPage(db, f, null, limit), limit);
       const many = cfg.vocabulary.many.toLowerCase();
-      if (!page.length) return result(page, q ? `no ${many} match "${q}"` : `no ${many}${st ? ` in ${st.label}` : ""}`, { next: q ? "node scripts/inbox.mjs --unmatched" : 'node scripts/customers.mjs add "<name>" --email <email>' });
+      if (!page.length) return result(page, q ? `no ${many} match "${q}"` : `no ${many}${st ? ` in ${st.label}` : ""}`, { next: 'node scripts/customers.mjs add "<name>" --email <email>' });
       return result(page, `${page.length} ${many}${q ? ` matching "${q}"` : ""}${st ? ` in ${st.label}` : ""}`, {
         lines: [...page.map((c) => fmtCustomer(c, label(c.stage))), ...(next ? [`the first ${limit}; --limit ${Math.min(limit * 4, 1000)} for more`] : [])],
       });

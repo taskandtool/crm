@@ -62,6 +62,8 @@ export interface Form {
   success_message: string | null;
   submit_label: string | null;
   active: boolean;
+  /** Each submission is a lead (customers saveLead); off for a newsletter sign-up or a job application. */
+  leads: boolean;
 }
 
 /** What a browser posts: one string per name, or several for a checkbox group. */

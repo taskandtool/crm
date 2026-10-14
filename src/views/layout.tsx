@@ -21,7 +21,7 @@ const creates = [
 /** The sidebar's name: the business on its quotes once it has one, else what this is. */
 const brand = invoicesCfg?.name && !/to fill/i.test(invoicesCfg.name) ? invoicesCfg.name : "CRM";
 
-export type Section = "inbox" | "notifications" | "leads" | "tasks" | "deals" | "customers" | "schedule" | "forms" | "invoices";
+export type Section = "home" | "notifications" | "leads" | "tasks" | "deals" | "customers" | "schedule" | "forms" | "invoices";
 
 /**
  * Schedule, as Jobber's and Housecall Pro's: one place for the team's days.
@@ -62,7 +62,7 @@ export function Layout(props: {
   // settings do in Catalyst and Linear. The stages are edited from the board
   // they shape, as Pipedrive's Edit pipeline.
   const nav: { href: string; label: string; section: Section }[] = [
-    { href: "/", label: "Inbox", section: "inbox" },
+    { href: "/", label: "Home", section: "home" },
     { href: "/leads", label: "Leads", section: "leads" },
     { href: "/tasks", label: "Tasks", section: "tasks" },
     { href: "/customers", label: vocab.many, section: "customers" },
@@ -84,9 +84,8 @@ export function Layout(props: {
       >
         <Icon name={n.section} class={"size-5 " + (on ? "text-ink" : "text-ink-3")} />
         {n.label}
-        {/* How many tasks of mine are due, and what is in the Inbox's To do: filled in after the page loads so no page waits on them. */}
+        {/* How many tasks of mine are due and how many leads are open: filled in after the page loads so no page waits on them. */}
         {n.section === "tasks" ? <span hx-get="/tasks/count" hx-trigger="load" hx-swap="outerHTML"></span> : null}
-        {n.section === "inbox" ? <span hx-get="/inbox/count" hx-trigger="load" hx-swap="outerHTML"></span> : null}
         {n.section === "leads" ? <span hx-get="/leads/count" hx-trigger="load" hx-swap="outerHTML"></span> : null}
       </a>
     );

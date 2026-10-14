@@ -12,7 +12,7 @@ A customer record on Hono (server-rendered JSX, htmx, SortableJS, Postgres).
 
 - **Email is the key**; phone is the fallback (its last ten digits, only
   where one side has no email: `phoneKey` in `src/customers/customer.ts`; in SQL, `isCustomer` in
-  `src/crm/sql.ts`). Inbox matching, saving everyone who gets in touch (the
+  `src/crm/sql.ts`). Saving everyone who gets in touch (the
   customers skill's `savePerson`, called as each submission and booking is
   written; `saveEveryone` at setup for older rows), the scripts and the
   import all use this one rule. A name never matches.
@@ -27,7 +27,8 @@ A customer record on Hono (server-rendered JSX, htmx, SortableJS, Postgres).
 - **The skills' tables it sets up and writes** (`src/db/setup.ts`): the
   forms tables (it shows submissions and edits forms), the booking tables
   (always: the schedule's events are bookings), and, when invoices are on, the payments and invoices
-  tables (quotes, invoices, tax rates, refunds, the Stripe events).
+  tables (quotes, invoices, tax rates, refunds, the Stripe events), and the
+  proposals' (`src/proposals/schema.sql`: sections, pictures, links, opens, signatures).
 
 ## Read next
 
@@ -35,7 +36,7 @@ A customer record on Hono (server-rendered JSX, htmx, SortableJS, Postgres).
 |---|---|
 | Changing words, statuses, deal stages, custom fields, a real column; deals, tasks, the morning email, merging | `references/levers.md` |
 | The schedule: events, what can be booked online, the Team's hours and calendars, booking messages | `references/schedule.md` |
-| Forms here; setting up quotes, invoices, Stripe or the email sender | `references/money.md`, then the `invoices` skill |
+| Forms here; quotes as proposals (sections, the link, signing, how they look); setting up invoices, Stripe or the email sender | `references/money.md`, then the `invoices` skill |
 | Shaping the CRM for a business; importing or exporting a list | `references/shaping.md` |
 
 ## Dev, on this machine
@@ -62,4 +63,5 @@ changed in dev. Code, config and schema wait for a deploy; customers do not
 (one shared database).
 
 If the owner asks to make production public, say what it would expose
-(names, phones, notes) and suggest a form on the Website instead.
+(names, phones, notes) and suggest a form on the Website instead. Only
+`/q`, a proposal's link, opens to customers (`references/money.md`).

@@ -21,7 +21,7 @@ Everything a business wants changed is one of these.
      running CRM the config's lists change nothing: use lever 2, then make
      the config match so a fresh install gets the same.
    - `tasks`: `{ "new_lead": false }` stops the same-day "Call back"
-     task that a deal made from the Inbox gets.
+     task that a deal made from a lead gets.
    - `sources`: suggestions for the Source field.
    - `fields`: custom fields (lever 3).
    - `owner_label`: what the owner column is called (`Technician`,
@@ -32,9 +32,6 @@ Everything a business wants changed is one of these.
    - `time_zone`: an IANA name. Every time on a page, and the "when" of a
      note, is in this zone; it ships as `UTC`, so setting it is part of
      shaping. The machine's clock never decides.
-   - `inbox`: `forms` is `"all"` or a list of form keys that count as
-     people getting in touch; `exclude_forms` drops some (`newsletter`);
-     `bookings` and `payments` turn those sources off.
    - `events`: what one event on the schedule is called (`{ "one":
      "Event", "many": "Events" }`; a trade's "Job", a practice's
      "Appointment"), its own custom `fields` (same shape as lever 3), and

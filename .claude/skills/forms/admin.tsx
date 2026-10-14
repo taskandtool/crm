@@ -316,7 +316,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       from submissions where id = ${id}::bigint`;
     if (!r) return c.notFound();
     const [formRow] = await db.sql`
-      select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active
+      select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads
       from forms where key = ${r.form_key}`;
     const form = formRow ? toForm(formRow) : null;
     const title = formTitle(r.form_key, form?.title);
@@ -701,6 +701,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
       success_message: draft.success_message || null,
       submit_label: draft.submit_label || null,
       active: draft.active,
+      leads: draft.leads,
     };
     const again = (status: 409 | 422, note?: string, version = draft.version) =>
       framed(
@@ -716,7 +717,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
       update forms
       set title = ${form.title}, fields = ${JSON.stringify(fields)}::jsonb, notify_emails = ${form.notify_emails}::citext[],
           redirect_to = ${form.redirect_to}, success_message = ${form.success_message}, submit_label = ${form.submit_label},
-          active = ${form.active}, updated_by = ${c.get("user")}, updated_at = now()
+          active = ${form.active}, leads = ${form.leads}, updated_by = ${c.get("user")}, updated_at = now()
       where key = ${form.key} and updated_at::text = ${draft.version}
       returning key`;
     if (!saved.length) {
@@ -822,7 +823,7 @@ async function allForms(db: Db) {
 
 async function formRow(db: Db, key: string) {
   const [row] = await db.sql`
-    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active,
+    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads,
            updated_at::text as version
     from forms where key = ${key}`;
   return row ? { form: toForm(row), raw: (Array.isArray(row.fields) ? row.fields : []) as Record<string, unknown>[], version: row.version as string } : null;
@@ -851,6 +852,7 @@ type Draft = {
   notify_emails: string[];
   badEmails: string[];
   active: boolean;
+  leads: boolean;
   fields: Record<string, unknown>[];
 };
 
@@ -920,6 +922,7 @@ function readEditor(body: Record<string, unknown>): Draft {
     notify_emails: [...new Set(good)],
     badEmails: emails.filter((e) => !normalizeEmail(e)),
     active: s("active") !== "",
+    leads: s("leads") !== "",
     fields,
   };
 }
@@ -998,6 +1001,13 @@ function Editor(props: {
           <label class="flex items-center gap-2">
             <input type="checkbox" name="active" value="yes" checked={form.active} class="size-4" />
             Taking submissions
+          </label>
+          <label class="flex items-start gap-2">
+            <input type="checkbox" name="leads" value="yes" checked={form.leads} class="mt-1 size-4" aria-describedby="p-leads-help" />
+            <span>
+              Each submission is a lead
+              <span id="p-leads-help" class="block font-normal text-ink-3">Off for a newsletter sign-up or a job application: the person is still saved as a contact.</span>
+            </span>
           </label>
         </div>
       </Section>

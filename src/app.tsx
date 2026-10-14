@@ -22,30 +22,28 @@ import {
 import { csvColumns } from "./crm/columns";
 import { postedFields, readFields } from "./crm/fields";
 import { everythingFrom } from "./crm/history";
-import { formChoices, inboxPage, markDone, markHandled, markUndone, readInboxCursor, requestOf, type InboxKind } from "./crm/inbox";
 import { board, createDeal, customerDeals, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
 import {
   addTask, customerTasks, doneTask, taskCounts, getTask, inPlay, listTasks, moveTask, nextTasks,
   pickTaskKind, readDay, readTime,
 } from "./crm/tasks";
-import { overview } from "./crm/overview";
-import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
+import { home } from "./crm/home";
 import { isUnread, markSeen, NOTICE_LIMIT, notices, seenAt } from "./crm/notifications";
+import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
 import { addNote, listNotes, pickNoteKind, wallTime } from "./customers/notes";
 import { phoneKey, saveLead, savePerson } from "./customers/customer";
-import { archiveLead, ARCHIVE_REASONS, contactLeads, convertLead, dealLeads, getLead, LEAD_STATUSES, leadOfItem, listLeads, MANUAL_SOURCES, openLeadCount, reopenLead, SOURCE_LABELS, type LeadStatus } from "./crm/leads";
+import { archiveLead, ARCHIVE_REASONS, contactLeads, convertLead, dealLeads, getLead, LEAD_STATUSES, listLeads, MANUAL_SOURCES, openLeadCount, reopenLead, SOURCE_LABELS, type LeadStatus } from "./crm/leads";
 import { LeadPage, LeadResults, LeadsPage, NewLeadPage, type LeadFilter } from "./views/leads";
 import { addEvent, customerEvents, eventCsvColumns, eventsPage, getEvent, inviteDomain, saveEvent, startWall, tellBooker, touchFor, type Event, type EventFilter, type EventInput } from "./crm/events";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, pickKind, pickPipeline, restoreStage, stagesWithCounts, type Pipeline, type StageResult } from "./crm/stages";
-import { missingSentence } from "./crm/tables";
 import { clean, parseAmount, parseTags, slugify } from "./crm/text";
 
 import type { AppEnv } from "./runtime";
 import { CustomerPage } from "./views/customer";
 import { CustomersPage, customerSpec, filterParams, NewCustomerPage, Results } from "./views/customers";
-import { InboxPage, InboxResults, InboxRows } from "./views/inbox";
-import { Layout, SCHEDULE_TABS, WaitingView, type Section as NavSection } from "./views/layout";
+import { HomePage } from "./views/home";
 import { NotificationsPage, UnreadCount } from "./views/notifications";
+import { Layout, SCHEDULE_TABS, WaitingView, type Section as NavSection } from "./views/layout";
 import type { Frame } from "./admin/layout";
 import { Board, CLOSED_DAYS, DealPage, DealsPage, NewDealPage, PER_COLUMN, type BoardData, type DealFrom } from "./views/deals";
 import { NewTaskPage, TasksPage } from "./views/tasks";
@@ -174,76 +172,21 @@ export function backTo(path: string, code: string): string {
 }
 const back = (c: C, path: string, code: string) => c.redirect(backTo(path, code), 303);
 
-// ---- the inbox -------------------------------------------------------------
+// ---- home -----------------------------------------------------------------
 
 app.get("/", async (c) => {
-  // To do unless asked for everything: what still needs someone.
-  const all = c.req.query("view") === "all";
-  const asked = c.req.query("form") ?? "";
-  const form = /^[a-z0-9][a-z0-9-]{0,62}$/.test(asked) ? asked : null;
-  const after = readInboxCursor(c.req.query("after"));
-  const [{ rows, next, present }, numbers] = await Promise.all([
-    inboxPage(c.var.db, { inbox: cfg.inbox, todo: !all, form }, after, PAGE),
-    isPartial(c) ? null : overview(c.var.db, { timeZone: cfg.time_zone, currency: dealsCfg.currency, user: c.var.user }),
-  ]);
-  const filter = { view: all ? "all" : null, form };
-  const self = listUrl("/", filter);
-  const more = (cur: string) => listUrl("/", { ...filter, after: cur });
-  if (isPartial(c) && after) return c.html(<InboxRows rows={rows} next={next} more={more} self={self} />);
-  const missing = missingSentence(present, { payments: false });
-  // The filter box (htmx): everything under it.
-  if (isPartial(c)) return c.html(<InboxResults rows={rows} next={next} more={more} self={self} all={all} form={form} paged={false} missing={missing} />);
-  return c.html(
-    <InboxPage user={c.var.user} rows={rows} next={next} more={more} self={self} all={all} form={form} forms={await formChoices(c.var.db, cfg.inbox)}
-      paged={!!after} missing={missing} numbers={numbers!} flash={flashOf(c)} undo={inboxRef(c.req.query("undo"))} />,
-  );
+  const h = await home(c.var.db, { timeZone: cfg.time_zone, currency: dealsCfg.currency, user: c.var.user });
+  return c.html(<HomePage user={c.var.user} h={h} flash={flashOf(c)} />);
 });
 
 /**
- * A deal made from the Inbox gets its first step: "Call back <name>" today,
+ * A deal made from a lead gets its first step: "Call back <name>" today,
  * on the deal, for whoever made it, unless crm.config.json turns it off.
  */
 async function newLeadCall(db: Db, customer: { id: string; name: string }, dealId: string, user: string) {
   if (!newLeadTask) return;
   await addTask(db, customer.id, { kind: "call", title: `Call back ${customer.name}`, due_on: today(), due_time: null, owner: user, deal_id: dealId }, user);
 }
-
-/** An Inbox item named in a form or a link, "booking.12": its kind and id, or null. */
-function inboxRef(v: unknown): { kind: InboxKind; id: string } | null {
-  const m = typeof v === "string" ? v.match(/^(submission|booking)\.(\d{1,18})$/) : null;
-  return m ? { kind: m[1] as InboxKind, id: m[2] } : null;
-}
-
-/** Take an Inbox item off To do: a submission by its status, a booking in inbox_done. */
-const markItemDone = (db: Db, ref: { kind: InboxKind; id: string }, user: string) =>
-  ref.kind === "submission" ? markDone(db, ref.id, user) : markHandled(db, ref.id, user).then((r) => r !== "missing");
-
-/** The nav's count: what is in To do, filled in after the page loads so no page waits on it. */
-app.get("/inbox/count", async (c) => {
-  const { rows, next } = await inboxPage(c.var.db, { inbox: cfg.inbox, todo: true }, null, 99);
-  if (!rows.length) return c.html(<span hidden></span>);
-  return c.html(
-    <span class="ml-auto rounded-full bg-accent px-1.5 text-label font-semibold tabular-nums text-accent-ink">
-      <span class="sr-only">, </span>{next ? "99+" : rows.length}<span class="sr-only"> to do</span>
-    </span>,
-  );
-});
-
-// Done, with Undo in its message as Gmail's archive has: the redirect names what was done.
-app.post("/inbox/done", async (c) => {
-  const body = await c.req.parseBody();
-  const ret = localPath(str(body.return), "", "/");
-  const ref = inboxRef(`${str(body.kind)}.${str(body.id)}`);
-  if (!ref || !(await markItemDone(c.var.db, ref, c.var.user))) return back(c, ret, "gone");
-  return c.redirect(`${backTo(ret, "done")}&undo=${ref.kind}.${ref.id}`, 303);
-});
-
-app.post("/inbox/undo", async (c) => {
-  const body = await c.req.parseBody();
-  const ref = inboxRef(str(body.item));
-  const undone = ref ? await markUndone(c.var.db, ref.kind, ref.id) : false;
-  return back(c, localPath(str(body.return), "", "/"), undone ? "undone" : "gone");
-});
 
 // ---- the bell ---------------------------------------------------------------
 
@@ -678,8 +621,7 @@ if (eventsCfg) {
 
 // ---- forms ---------------------------------------------------------------------
 // The forms skill's pages in the CRM's frame: the forms and their editor, and
-// every submission (the Inbox's own list, by form: "orders" is the order
-// form), each with the booking and payment it led to. The Website shows the
+// every submission (by form: "orders" is the order form), each with the booking and payment it led to. The Website shows the
 // same submissions; both read the same tables.
 
 const FORM_TABS = [
@@ -966,24 +908,22 @@ app.get("/deals", async (c) => {
   return c.html(<DealsPage user={c.var.user} data={await boardData(c)} flash={flashOf(c)} />);
 });
 
-// New deal; from an Inbox item (?from=submission.12), filled in from it first, as Pipedrive's
-// Convert to deal: the person, the deal named for what they asked, what they wrote as its
-// notes, and the deals they already have open.
+// New deal; from a lead (?from=lead.12), filled in from it first, as Pipedrive's Convert to
+// deal: the person, the deal named for what they asked, what they wrote as its notes, and
+// the deals they already have open.
 /** A lead named in a form or link, "lead.12": its id, or null. */
 const leadRef = (v: unknown) => (typeof v === "string" ? /^lead\.(\d{1,18})$/.exec(v)?.[1] ?? null : null);
 
-/** What a New deal form starts from: a lead (Convert to deal) or an Inbox item, filled in from it; null for a blank one. */
+/** What a New deal form starts from: a lead (Convert to deal), filled in from it; null for a blank one. */
 async function dealFrom(db: Db, from: unknown): Promise<DealFrom | null> {
   const leadId = leadRef(from);
   const lead = leadId ? await getLead(db, leadId) : null;
-  const ref = lead ? null : inboxRef(from);
-  const asked = lead
-    ? { name: lead.customer_name, email: lead.customer_email, phone: lead.customer_phone, title: lead.title, said: lead.said }
-    : ref ? await requestOf(db, ref.kind, ref.id) : null;
-  if (!asked) return null;
-  const customerId = lead?.customer_id ?? (await findMatch(db, asked.email, asked.phone))?.id ?? null;
-  const theirs = customerId ? await customerDeals(db, customerId) : [];
-  return { ref: lead ? `lead.${lead.id}` : `${ref!.kind}.${ref!.id}`, ...asked, customerId, openDeals: theirs.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title })) };
+  if (!lead) return null;
+  const theirs = await customerDeals(db, lead.customer_id);
+  return {
+    leadId: lead.id, name: lead.customer_name, email: lead.customer_email, phone: lead.customer_phone, title: lead.title, said: lead.said,
+    customerId: lead.customer_id, openDeals: theirs.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title })),
+  };
 }
 
 app.get("/deals/new", async (c) => {
@@ -1004,15 +944,9 @@ app.post("/deals", async (c) => {
   if ("error" in who) return back(c, who.error === "last-open" ? "/stages" : "/deals/new", who.error);
   const deal = await createDeal(db, who.id, { ...input.deal, owner: input.deal.owner ?? c.var.user }, stage, c.var.user);
   if (!deal) return back(c, "/deals", "gone");
-  // Made from a lead or an Inbox item: the lead is converted, the item it came from is dealt
-  // with, and the deal gets its first step.
-  const ref = inboxRef(body.from);
-  const leadId = leadRef(body.from) ?? (ref ? await leadOfItem(db, ref.kind, ref.id) : null);
-  if (ref || leadId) {
-    const lead = leadId ? await getLead(db, leadId) : null;
-    if (leadId) await convertLead(db, leadId, deal.id, c.var.user);
-    const item = ref ?? (lead?.submission_id ? { kind: "submission" as const, id: lead.submission_id } : lead?.booking_id ? { kind: "booking" as const, id: lead.booking_id } : null);
-    if (item) await markItemDone(db, item, c.var.user);
+  // Made from a lead: the lead is converted and the deal gets its first step.
+  const leadId = leadRef(body.from);
+  if (leadId && (await convertLead(db, leadId, deal.id, c.var.user))) {
     const customer = await getCustomer(db, who.id);
     if (customer) await newLeadCall(db, customer, deal.id, c.var.user);
   }

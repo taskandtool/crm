@@ -28,7 +28,9 @@ const HELP = `forms.mjs <command> [...] [--json]      the project's forms and wh
   show <key>                           one form's definition, as JSON to edit
   save <key> --file <form.json>        make the form, or change it; the file holds
                                        { "title", "fields": [...], "success_message"?, "submit_label"?,
-                                         "redirect_to"?, "notify_emails"?: [], "active"? }
+                                         "redirect_to"?, "notify_emails"?: [], "active"?, "leads"? };
+                                       without "notify_emails", new submissions are emailed to the owner
+                                       "leads": false for a newsletter or job form: no lead per submission
   submissions [--form <key>] [--limit 20]
                                        newest first, each with what was bought, its booking and payment,
                                        and "not complete" while a booking or payment step is still to do
@@ -84,7 +86,7 @@ export async function formsCli(argv: string[], cli: FormsCli): Promise<void> {
       }
 
       case "show": {
-        const [row] = await db.sql`select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active from forms where key = ${key}`;
+        const [row] = await db.sql`select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads from forms where key = ${key}`;
         if (!row) fail(`forms show: no form ${key}`, "node scripts/forms.mjs list");
         return out(true, row, () => "");
       }
@@ -119,14 +121,14 @@ export async function formsCli(argv: string[], cli: FormsCli): Promise<void> {
         const str = (k: string) => (typeof def[k] === "string" && (def[k] as string).trim() ? (def[k] as string).trim() : null);
         // Only a real change is written, so saving the same file twice says so.
         const [r] = await db.sql<{ made: boolean }>`
-          insert into forms (key, title, fields, notify_emails, redirect_to, success_message, submit_label, active, source)
+          insert into forms (key, title, fields, notify_emails, redirect_to, success_message, submit_label, active, leads, source)
           values (${key}, ${title}, ${JSON.stringify(fields)}::jsonb, ${emails}::citext[], ${redirect}, ${str("success_message")}, ${str("submit_label")},
-                  ${def.active !== false}, ${cli.source})
+                  ${def.active !== false}, ${def.leads !== false}, ${cli.source})
           on conflict (key) do update set title = excluded.title, fields = excluded.fields, notify_emails = excluded.notify_emails,
             redirect_to = excluded.redirect_to, success_message = excluded.success_message, submit_label = excluded.submit_label,
-            active = excluded.active, updated_at = now()
-          where (forms.title, forms.fields, forms.notify_emails, forms.redirect_to, forms.success_message, forms.submit_label, forms.active)
-            is distinct from (excluded.title, excluded.fields, excluded.notify_emails, excluded.redirect_to, excluded.success_message, excluded.submit_label, excluded.active)
+            active = excluded.active, leads = excluded.leads, updated_at = now()
+          where (forms.title, forms.fields, forms.notify_emails, forms.redirect_to, forms.success_message, forms.submit_label, forms.active, forms.leads)
+            is distinct from (excluded.title, excluded.fields, excluded.notify_emails, excluded.redirect_to, excluded.success_message, excluded.submit_label, excluded.active, excluded.leads)
           returning (xmax = 0) as made`;
         const steps = stepsOf(fields);
         const outcome = !r ? "unchanged" : r.made ? "made" : "changed";

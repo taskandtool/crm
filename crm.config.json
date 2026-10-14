@@ -27,12 +27,6 @@
   "fields": [],
   "owner_label": "Owner",
   "time_zone": "UTC",
-  "inbox": {
-    "forms": "all",
-    "exclude_forms": [],
-    "bookings": true,
-    "payments": true
-  },
   "events": {
     "one": "Event",
     "many": "Events",

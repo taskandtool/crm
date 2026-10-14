@@ -1,11 +1,11 @@
 # CRM
 
 The customer record for a small business: everyone who got in touch, in
-one place, and what happens next. Its first screen is the **Inbox**:
-everything that came in across the project (form submissions from the
-Website, bookings, payments), newest first, each matched to a customer by email or offered as a new one
-or a new deal, under four figures: leads this week, tasks due, the
-open pipeline and what was won this month. Then the tasks due, the
+one place, and what happens next. Its first screen is **Home**: the
+figures (new leads this week, your tasks due, the open pipeline, what was
+won this month, what is owed), then the newest leads, today's schedule,
+your tasks due and the deals closing this month. Then the leads, each
+enquiry from a form or an online booking; the tasks; the
 deals on a board you drag between stages, the customers themselves, a
 timeline of notes and calls per customer, and a schedule of events (an
 appointment, a job, a visit): when, who, where, for how much. It works the minute it
@@ -19,14 +19,10 @@ runs anywhere with Node 20 and a Postgres.
 
 ## What is in the box
 
-- **Inbox**: form submissions (not spam) and online bookings from the
-  project's other apps. Everyone who gets in touch is saved as a customer
-  on their own, matched by email, else by phone, never by name. Each has
-  New deal (the New deal form, filled in from it; a returning customer's
-  new enquiry too) and Done, which offers Undo. It opens on To do, which
-  empties as you work: anything leaves once it is done or made a deal,
-  and a booking once it is no longer scheduled. The nav counts what is to
-  do. A source the project does not have yet is simply left out.
+- **Home**: the figures, each opening its list, then four short lists
+  (new leads, today, your tasks due, closing this month), each with the
+  way to the whole list. Everyone who gets in touch is saved as a contact
+  on their own, matched by email, else by phone, never by name.
 - **Notifications**: the bell beside the business's name. What happened
   without the team doing it, newest first: a booker's own reschedule or
   cancel, a quote the customer accepted by paying it online, and money
@@ -42,7 +38,7 @@ runs anywhere with Node 20 and a Postgres.
   one person. Every open task on one list, overdue first, everyone's or mine, and
   New task; the next one at the top of a customer's page and on every
   card. Contacts' "Nothing planned" filter shows who is in play with
-  nothing planned. Done goes on the timeline. A deal made from the Inbox
+  nothing planned. Done goes on the timeline. A deal made from a lead
   gets a "Call back" for that day, and a morning email lists what is due.
 - **Deals**: one piece of work being won, for one customer, who may have
   many. Stages you name, a value (a quote's total until one is typed),
@@ -82,7 +78,7 @@ runs anywhere with Node 20 and a Postgres.
 - **The AI's hands**: scripts to find, add, update, note, tag, merge,
   import and export customers from chat, add and move deals, plan and
   tick off tasks, schedule and close events, quote and invoice,
-  and list the Inbox. Sending anything to a customer, and a merge,
+  and read the form submissions. Sending anything to a customer, and a merge,
   waits for your yes.
 
 ## Shaping it
@@ -116,19 +112,19 @@ Edit stages on the board. A field that deserves a real column is an additive lin
 ## Layout
 
 ```
-crm.config.json          the levers: words, statuses, deals, sources, fields, zone, inbox
+crm.config.json          the levers: words, statuses, deals, sources, fields, zone, events, invoices
 schema.sql               the tables, additive only, applied at start and deploy
 src/app.tsx              the Hono app: the team-only gate, the routes
-src/crm/                 customers, stages, deals, tasks, events, the inbox, history, merge, import
-src/views/               inbox, tasks, deals, customers, a customer, events, stages
+src/crm/                 home, customers, leads, stages, deals, tasks, events, notifications, history, merge, import
+src/views/               home, leads, tasks, deals, customers, a customer, events, notifications, stages
 src/booking/             a copy of the booking skill: the Schedule, Services and Team, the calendar sync job
 src/customers/           a copy of the customers skill: the customers and notes tables, the note box
-src/forms/               a copy of the forms skill: the submissions inbox, the form editor
+src/forms/               a copy of the forms skill: the submissions list, the form editor
 src/invoices/            a copy of the invoices skill: quotes, invoices, tax rates, Stripe
 src/data/  src/admin/    copies of the data and admin business skills, and what is
 src/payments/ src/reports/   used of payments and reports
-scripts/                 customers, deals, tasks, events, forms, quotes, invoices, inbox, stages, import, export, migrate (--help)
-styles/  static/         the tokens; the built CSS, vendored htmx and SortableJS, crm.js
+scripts/                 customers, deals, tasks, events, forms, quotes, invoices, stages, import, export, migrate (--help)
+styles/  static/         the tokens (proposal.css: the proposal's own); the built CSS, vendored htmx and SortableJS, crm.js
 examples/                hvac, dental, restaurant, plumbing, counselor configs
 test/                    node:test
 .claude/skills/crm/      the skill the AI reads (Claude or Codex)

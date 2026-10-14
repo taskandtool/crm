@@ -46,7 +46,7 @@ One family (`--font-body`, the system UI face) and five sizes:
 
 | Class | Size | For |
 |---|---|---|
-| `text-display` | 30px | A figure: the Inbox's numbers, a total that is the point of the page. |
+| `text-display` | 30px | A figure: Home's numbers, a total that is the point of the page. |
 | `text-title` | 24px | The page's heading. One per page. |
 | `text-heading` | 16px | A section's heading on a record page, the sidebar's name. |
 | `text-copy` | 14px | Everything else: rows, cells, cards, forms, buttons. The body default. |
@@ -81,7 +81,7 @@ parts joined by a middle dot), then what it was (`text-copy`, `ink-2`).
 - Depth: `shadow-card` with `ring-1 ring-line` on a card or the panel;
   `shadow-lift` on something that floats (a menu, a dragged card). A card
   never has both a border and a ring.
-- Not everything is a card. Figures, the Inbox's rows and section
+- Not everything is a card. Figures, Home's lists, the leads and section
   headings sit straight on the panel. A card is for a group that is one
   thing: a section of a record page, a deal, a table.
 
@@ -116,20 +116,20 @@ The sidebar layout of Catalyst and Tailwind Plus, with what a CRM adds
   event), a page of its own. A record's page reads as values with **Edit**
   for the form; who added it is one quiet line at its foot, beside Merge
   and Archive.
-- **Figures** (the Inbox's four) are a row with no boxes: a hairline
+- **Figures** (Home's) are a row with no boxes: a hairline
   above, the label (`text-copy` medium, `ink-2`), the figure
   (`text-display` semibold), then one `text-label` line of context. Where
   it moved, a chip leads that line: `+2` in good, `3 overdue` in late, a
   fall in neutral. Each figure links to the list behind it.
-- **The Inbox** is a list, not a table, so a row wraps on a phone: the
-  avatar, then the name with its status badge, the metadata line (source,
-  when, email, phone), then what they said or booked, two lines at most.
+- **The leads** are a list, not a table, so a row wraps on a phone: the
+  avatar, then the name, the metadata line (source, when), then what they
+  said, two lines at most.
 - **Row actions:** at most two in view, the row's point as a secondary
-  button and clearing it as a quiet one (the Inbox's New deal and Done);
+  button and clearing it as a quiet one (a lead's Convert to deal and Archive);
   more than that go in a menu (below). An action that repeats on every
   row and is not the row's point (Edit on a stage, Reschedule on a task)
   is a quiet button. A page of rows is never a wall of outlined buttons.
-- **Views of one list** (To do and Everything; Today and Upcoming; Mine
+- **Views of one list** (Open, Converted and Archived; Today and Upcoming; Mine
   and Everyone) are a segmented control (`viewsClass` and `ViewLink`): a
   panel track with the current view raised on it. **Pages of one section**
   (Calendar, Events, Services, Team) are tabs underlined in the accent,
@@ -154,7 +154,7 @@ The sidebar layout of Catalyst and Tailwind Plus, with what a CRM adds
   shows as soon as anything is searched or filtered, and a filter left at
   "Any" stays out of the address, so it reads `/customers?stage=lead`.
 - **Dates** drop the year in this one and the time where the day is the
-  point (last contact, closed). Totals on the board and the Inbox are
+  point (last contact, closed). Totals on the board and Home are
   whole units; quotes and invoices keep cents.
 
 ## Badges, chips and counts

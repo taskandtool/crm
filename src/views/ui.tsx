@@ -205,7 +205,7 @@ export function AddToggle({ label, open, children }: { label: string; open?: boo
  */
 export function CustomerPicker({ customers, selected, person }: {
   customers: { id: string; name: string; email: string | null }[];
-  /** Already chosen (a deal from an Inbox item): this customer, or "new" with `person` filled in. */
+  /** Already chosen (a deal from a lead): this customer, or "new" with `person` filled in. */
   selected?: string | null;
   person?: { name: string | null; email: string | null; phone: string | null };
 }) {
@@ -327,8 +327,6 @@ export const MESSAGES: FlashMessages = {
   "note-empty": { error: "Write something in the note first." },
   archived: `${vocab.one} archived. Nothing was deleted; Unarchive brings them back.`,
   unarchived: `${vocab.one} is back from the archive.`,
-  done: "Marked done.",
-  undone: "Back on To do.",
   "lead-added": "Lead added.",
   "lead-archived": "Lead archived.",
   "lead-reopened": "Lead unarchived.",

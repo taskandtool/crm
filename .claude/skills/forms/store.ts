@@ -8,7 +8,7 @@ import type { Charge } from "./price";
 /** The form with this key, or null. A broken field in the row is left out, never rendered half-made. */
 export async function loadForm(db: Db, key: string): Promise<Form | null> {
   const [row] = await db.sql`
-    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active
+    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads
     from forms where key = ${key}`;
   return row ? toForm(row) : null;
 }
@@ -23,6 +23,7 @@ export function toForm(row: Record<string, any>): Form {
     success_message: row.success_message ?? null,
     submit_label: row.submit_label ?? null,
     active: row.active !== false,
+    leads: row.leads !== false,
   };
 }
 
@@ -32,9 +33,9 @@ export function toForm(row: Record<string, any>): Form {
  */
 export async function seedForm(db: Db, form: { key: string; title: string; fields: Field[] } & Partial<Form>, source: string): Promise<void> {
   await db.sql`
-    insert into forms (key, title, fields, notify_emails, redirect_to, success_message, submit_label, source)
+    insert into forms (key, title, fields, notify_emails, redirect_to, success_message, submit_label, leads, source)
     values (${form.key}, ${form.title}, ${JSON.stringify(form.fields)}::jsonb, ${form.notify_emails ?? []}::citext[],
-            ${form.redirect_to ?? null}, ${form.success_message ?? null}, ${form.submit_label ?? null}, ${source})
+            ${form.redirect_to ?? null}, ${form.success_message ?? null}, ${form.submit_label ?? null}, ${form.leads !== false}, ${source})
     on conflict (key) do nothing`;
 }
 
@@ -55,19 +56,20 @@ export async function insertSubmission(
  * The person behind a submission, saved as a customer the moment it comes in
  * (customers savePerson: by email, else phone, never name), with the form's
  * title as where they came from and its answers for their address, company
- * and custom fields, and the submission as their lead (saveLead). Not for
- * spam, nor the booking page's copy of a booking (the booking saves its
- * booker). Also run when spam is marked not spam.
+ * and custom fields, and the submission as their lead (saveLead) unless the
+ * form's `leads` is off (a newsletter sign-up). Not for spam, nor the booking
+ * page's copy of a booking (the booking saves its booker). Also run when spam
+ * is marked not spam.
  */
 export async function saveSubmitter(db: Db, id: string | number, user: string | null = null): Promise<CustomerRef | null> {
-  const [s] = await db.sql<{ name: string | null; email: string | null; phone: string | null; data: Record<string, unknown> | null; created_at: Date; source: string }>`
-    select s.name, s.email::text as email, s.phone, s.data, s.created_at, coalesce(f.title, s.form_key) as source
+  const [s] = await db.sql<{ name: string | null; email: string | null; phone: string | null; data: Record<string, unknown> | null; created_at: Date; source: string; leads: boolean }>`
+    select s.name, s.email::text as email, s.phone, s.data, s.created_at, coalesce(f.title, s.form_key) as source, coalesce(f.leads, true) as leads
     from submissions s left join forms f on f.key = s.form_key
     where s.id = ${String(id)}::bigint and s.status <> 'spam' and s.form_key <> ${BOOKING_PAGE.key}`;
   if (!s) return null;
   const who = await savePerson(db, { name: s.name, email: s.email, phone: s.phone, source: s.source, at: s.created_at, answers: s.data }, user);
   // The enquiry itself is a lead, named for the form (customers saveLead; once per submission).
-  if (who) await saveLead(db, { customerId: who.id, source: "form", title: s.source, submissionId: String(id), at: s.created_at }, user);
+  if (who && s.leads) await saveLead(db, { customerId: who.id, source: "form", title: s.source, submissionId: String(id), at: s.created_at }, user);
   return who;
 }
 
@@ -213,7 +215,7 @@ export async function submissionById(db: Db, id: string) {
 /**
  * The submissions a booking page makes (the Website's business.tsx): no form
  * row, so the name is here. The CRM shows the booking itself, so it leaves
- * these out of its Inbox and timeline.
+ * these out of its leads and timeline.
  */
 export const BOOKING_PAGE = { key: "book", title: "Booking" };
 

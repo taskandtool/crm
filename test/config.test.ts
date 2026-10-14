@@ -128,16 +128,10 @@ test("events: off (with online booking off too), or words, their own fields and 
   assert.ok(validate(d).some((x) => x.includes("events must be false or an object")));
 });
 
-test("time zone and inbox rules are checked", () => {
+test("the time zone is checked", () => {
   const c = good();
   c.time_zone = "Mars/Olympus";
-  c.inbox = { forms: "some" };
-  const p = validate(c);
-  assert.ok(p.some((x) => x.includes("IANA")));
-  assert.ok(p.some((x) => x.includes("inbox.forms")));
-  const e = good();
-  e.inbox = { forms: ["contact", "quote"], exclude_forms: ["newsletter"], bookings: false };
-  assert.deepEqual(validate(e), []);
+  assert.ok(validate(c).some((x) => x.includes("IANA")));
 });
 
 test("schema.sql only adds", () => {

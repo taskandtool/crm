@@ -7,9 +7,11 @@ import { normalizeEmail } from "../data/email";
 import { readCursor, type Cursor, type Keyed } from "../admin/keyset";
 import { likePattern } from "../admin/query";
 import { sameAs } from "./people";
-import { phoneKey } from "../customers/customer";
+import { phoneKey, savePerson } from "../customers/customer";
+import { BOOKING_PAGE, saveSubmitter } from "../forms/store";
 import { cleanPhone } from "./phone";
-import { NOTHING_PLANNED, phoneKeyOf, spliced } from "./sql";
+import { byEmail, isCustomer, NOTHING_PLANNED, phoneKeyOf, spliced } from "./sql";
+import { present as presentTables } from "./tables";
 
 const texts = spliced({ nothing_planned: NOTHING_PLANNED, phone_key: phoneKeyOf("c.phone") });
 
@@ -330,4 +332,47 @@ export async function sentTo(db: Db, emailIn: string, user: string): Promise<voi
   await db.sql`
     update customers set last_contact_at = greatest(last_contact_at, now()), updated_at = now(), updated_by = ${user}
     where email = ${email}::citext or other_emails @> array[${email}::text]`;
+}
+
+// Who each row is: the one rule (sql.ts), by email, else by phone.
+const { sql: everyoneSql } = spliced({ sub_is: isCustomer("s"), booking_is: isCustomer("b"), pay_email: byEmail("p") });
+
+/**
+ * Everyone already in the project's tables who is not a customer yet, saved
+ * through the customers skill's savePerson, the way the forms and booking
+ * skills save each person as they arrive: what came in before they did, or
+ * through an app on an older copy of them. Every submission (not spam),
+ * booking and payment is looked at, none left for later. Run by setup at
+ * start and deploy, never per request. Returns how many it saved.
+ */
+export async function saveEveryone(db: Db): Promise<number> {
+  const p = await presentTables(db);
+  const count = async () => (await db.sql<{ n: number }>`select count(*)::int as n from customers`)[0].n;
+  const before = await count();
+  if (p.submissions) {
+    const subs = await everyoneSql(db)<{ id: string }>`
+      select s.id::text as id from submissions s
+      where s.status <> 'spam' and s.form_key <> ${BOOKING_PAGE.key} and (s.email is not null or s.phone is not null)
+        and not exists (select 1 from customers c where {sub_is})
+      order by s.created_at, s.id`;
+    for (const s of subs) await saveSubmitter(db, s.id);
+  }
+  const bookings = await everyoneSql(db)<{ name: string | null; email: string | null; phone: string | null; created_at: Date; type_name: string | null; address: string | null }>`
+    select b.name, b.email::text as email, b.phone, b.created_at, t.name as type_name,
+           case when b.location_kind = 'their_place' then b.location end as address
+    from bookings b left join booking_types t on t.id = b.type_id
+    where (b.email is not null or b.phone is not null) and not exists (select 1 from customers c where {booking_is})
+    order by b.created_at, b.id`;
+  for (const b of bookings) {
+    await savePerson(db, { name: b.name, email: b.email, phone: b.phone, source: b.type_name ? `Booking: ${b.type_name}` : "Booking", at: b.created_at, answers: b.address ? { address: b.address } : null }, null);
+  }
+  if (p.payments) {
+    const paid = await everyoneSql(db)<{ name: string | null; email: string; created_at: Date }>`
+      select p.name, p.email::text as email, p.created_at from payments p
+      where p.status in ('paid', 'refunded', 'partially_refunded') and p.email is not null
+        and not exists (select 1 from customers c where {pay_email})
+      order by p.created_at, p.id`;
+    for (const r of paid) await savePerson(db, { name: r.name, email: r.email, phone: null, source: "Payment", at: r.created_at }, null);
+  }
+  return (await count()) - before;
 }

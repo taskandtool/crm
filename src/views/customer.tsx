@@ -23,7 +23,7 @@ import type { Stage } from "../crm/stages";
 import type { Event } from "../crm/events";
 import { missingSentence, type Present } from "../crm/tables";
 import { formatMoney } from "../payments/money";
-import { firstText } from "../crm/inbox";
+import { firstText } from "../crm/leads";
 import type { Lead } from "../crm/leads";
 import { LeadList } from "./leads";
 import { Layout } from "./layout";
@@ -64,7 +64,7 @@ export function CustomerPage(p: {
   const self = `/customers/${c.id}`;
   // A status another app wrote, or one archived since, still shows and stays selectable.
   const stages = p.stages.some((s) => s.key === c.stage) ? p.stages : [...p.stages, { key: c.stage, label: c.stage, position: 999, kind: "open" as const, archived: true }];
-  const missing = missingSentence(p.present, { payments: true });
+  const missing = missingSentence(p.present);
   const money = p.money && (p.money.quotes.length || p.money.invoices.length) ? p.money : null;
   return (
     <Layout

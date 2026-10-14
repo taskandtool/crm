@@ -7,11 +7,12 @@ import { q, type Db } from "../src/data/db";
 import { applySchema } from "../src/data/migrate";
 import { moveVisits, setup, setupKey, setupOnce } from "../src/db/setup";
 import { cut } from "../src/admin/keyset";
-import { createCustomer, findCustomer, findMatch, getCustomer, listPage, NO_FILTER, readListCursor, patchCustomer, retag, saveDetails, setArchived, setStage } from "../src/crm/customers";
+import { createCustomer, findCustomer, findMatch, getCustomer, listPage, NO_FILTER, readListCursor, patchCustomer, retag, saveDetails, saveEveryone, setArchived, setStage } from "../src/crm/customers";
 import { everythingFrom } from "../src/crm/history";
 import { parseCsv } from "../src/crm/csv-read";
 import { guessMap, planRows, runImport } from "../src/crm/importer";
-import { inboxPage, markDone, markHandled, markUndone, readInboxCursor, requestOf, saveEveryone, type InboxRow } from "../src/crm/inbox";
+import { home } from "../src/crm/home";
+import { convertLead, leadsForOpenItems, listLeads } from "../src/crm/leads";
 import { publishFields } from "../src/crm/fields";
 import { loadTeam, setTeam } from "../src/crm/people";
 import { addNote, listNotes } from "../src/customers/notes";
@@ -20,7 +21,7 @@ import { sendDigests } from "../src/crm/digest";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, restoreStage, seedStages } from "../src/crm/stages";
 import { missingSentence, present } from "../src/crm/tables";
 import { addEvent, customerEvents, eventsPage, getEvent, saveEvent, setEventStatus, type Event, type EventInput } from "../src/crm/events";
-import type { CustomField, StageConfig } from "../src/config-schema";
+import type { StageConfig } from "../src/config-schema";
 import { scratch, type Scratch } from "./scratch";
 
 const STAGES: StageConfig[] = [
@@ -35,7 +36,6 @@ const DEAL_STAGES: StageConfig[] = [
   { key: "lost", label: "Lost", kind: "lost" },
 ];
 const SEEDS = { statuses: STAGES, dealStages: DEAL_STAGES };
-const INBOX = { forms: "all" as const, exclude_forms: ["newsletter"] };
 const ME = "ann@team.example";
 
 let s: Scratch | null = null;
@@ -196,29 +196,29 @@ test("stages: add, rename, kind, move, archive (refused while in use or last ope
   assert.ok((await restoreStage(db, "customers", "contacted", ME)).ok);
 });
 
-test("the inbox, with none of the other apps' tables", async (t) => {
+test("Home, with none of the other apps' tables", async (t) => {
   if (skip) return t.skip(skip);
   const p = await present(db);
   assert.deepEqual(p, { submissions: false, forms: false, payments: false, quotes: false, invoices: false });
-  const page = await inboxPage(db, { inbox: INBOX }, null, 10);
-  assert.deepEqual(page.rows, []);
-  assert.match(missingSentence(page.present, { payments: true })!, /no form submissions or payments/);
-  assert.equal(await requestOf(db, "submission", "1"), null);
+  const h = await home(db, { timeZone: "UTC", currency: "usd", user: ME });
+  assert.deepEqual([h.leads, h.owed, h.newLeads, h.events, h.closing], [{ current: 0, previous: 0 }, null, [], [], []]);
+  assert.match(missingSentence(p)!, /no form submissions or payments/);
   assert.equal((await everythingFrom(db, { email: "ann.lee@example.com", phone: null })).items.length, 0);
 });
 
-test("the inbox, across submissions and bookings; payments are the bell's", async (t) => {
+test("setup saves everyone and makes a lead of each open request: by email, else by phone; not spam, not a form with leads off", async (t) => {
   if (skip) return t.skip(skip);
   await applySchema(db, readFileSync("test/fixtures/other-apps.sql", "utf8"));
   await db.transaction([
-    q`insert into forms (key, title) values ('quote', 'Quote request'), ('newsletter', 'Newsletter')`,
+    q`insert into forms (key, title) values ('quote', 'Quote request')`,
+    q`insert into forms (key, title, leads) values ('newsletter', 'Newsletter', false)`,
     q`insert into submissions (form_key, name, email, phone, data, source, status, created_at) values
         ('quote', 'Jo Park', 'JO@example.com', null, '{"message": "Need a new furnace"}', 'website', 'new', '2026-10-01 10:00:00.000001+00'),
         ('quote', 'Jo Park', 'jo@example.com', null, '{}', 'website', 'read', '2026-10-01 10:00:00.000001+00'),
         ('quote', 'Spammer', 'spam@example.com', null, '{}', 'website', 'spam', '2026-10-01 11:00:00+00'),
         ('newsletter', 'News', 'news@example.com', null, '{}', 'website', 'new', '2026-10-01 12:00:00+00'),
         ('quote', null, null, '555 777 1234', '{}', 'website', 'new', '2026-10-01 09:00:00+00'),
-        -- The Website's copy of Ann's booking (booking page): the Inbox and her timeline show the booking once.
+        -- The Website's copy of Ann's booking (booking page): her timeline shows the booking once.
         ('book', 'Ann Lee', 'ann.lee@example.com', null, '{"service": "Estimate visit"}', 'website', 'new', '2026-10-01 10:00:00.000002+00')`,
     q`insert into resources (name, time_zone) values ('Sam', 'America/Chicago')`,
     q`insert into booking_types (slug, name, location_kind) values ('estimate', 'Estimate visit', 'their_place')`,
@@ -229,57 +229,31 @@ test("the inbox, across submissions and bookings; payments are the bell's", asyn
         ('kim@example.com', 'Kim', 12500, 'usd', 'paid', '2026-10-02 08:00+00'),
         ('kim@example.com', 'Kim', 999, 'usd', 'pending', '2026-10-02 09:00+00')`,
   ]);
-  const page = await inboxPage(db, { inbox: INBOX }, null, 50);
-  const kinds = page.rows.map((r) => `${r.kind}:${r.name ?? r.phone}`);
-  // Newest first; spam and the excluded newsletter are left out.
-  assert.deepEqual(kinds, ["booking:Ann Lee", "submission:Jo Park", "submission:Jo Park", "submission:555 777 1234"]);
-  assert.equal(page.rows[0].customer_name, "Ann Lee", "matched by email");
-  assert.equal(page.rows[3].customer_name, "Ed", "a phone-only submission matches a phone-only customer");
-  const sub = page.rows.find((r) => r.kind === "submission") as Extract<InboxRow, { kind: "submission" }>;
-  assert.equal(sub.form_title, "Quote request");
-
-  // Paging one at a time walks every row once, through ties in the same microsecond.
-  const seen: string[] = [];
-  let cur = null;
-  for (let i = 0; i < 10; i++) {
-    const pg = await inboxPage(db, { inbox: INBOX }, cur, 1);
-    seen.push(...pg.rows.map((r) => `${r.kind}:${r.id}`));
-    if (!pg.next) break;
-    cur = readInboxCursor(pg.next);
-  }
-  assert.deepEqual(seen, page.rows.map((r) => `${r.kind}:${r.id}`));
-
-  const unmatched = await inboxPage(db, { inbox: INBOX, unmatched: true }, null, 50);
-  assert.deepEqual(unmatched.rows.map((r) => r.name), ["Jo Park", "Jo Park"]);
-  const onlyQuote = await inboxPage(db, { inbox: { forms: ["quote"], bookings: false, payments: false } }, null, 50);
-  assert.ok(onlyQuote.rows.every((r) => r.kind === "submission"));
-});
-
-test("saving everyone from the Inbox, a New deal's request, and Mark done and Undo", async (t) => {
-  if (skip) return t.skip(skip);
   const [jo] = await rows("select id::text as id, created_at from submissions where name = 'Jo Park' and status = 'new'");
   await saveEveryone(db);
+  await leadsForOpenItems(db);
   const saved = (await findCustomer(db, "jo@example.com"))!;
   assert.deepEqual([saved.name, saved.source, saved.stage], ["Jo Park", "Quote request", "new"]);
   assert.equal(new Date(saved.last_contact_at!).getTime(), new Date(jo.created_at).getTime(), "first contact is when they wrote");
   assert.equal((await findCustomer(db, "kim@example.com"))?.source, "Payment");
   assert.equal(await findCustomer(db, "spam@example.com"), null, "spam saves no one");
+  assert.ok(await findCustomer(db, "news@example.com"), "a newsletter sign-up is a contact");
 
-  // What New deal starts from: the person, the form's title, what they wrote. Spam is nothing.
-  assert.deepEqual(await requestOf(db, "submission", jo.id), { name: "Jo Park", email: "JO@example.com", phone: null, title: "Quote request", said: "Need a new furnace" });
-  const [spam] = await rows("select id::text as id from submissions where status = 'spam'");
-  assert.equal(await requestOf(db, "submission", spam.id), null);
+  // A lead per open request, on its person: Jo's two, and the phone-only one on the phone-only customer.
+  // Not the newsletter, not spam, not the booking page's copy, not Ann's booking (it is past).
+  const leads = await listLeads(db, { status: "open" });
+  assert.deepEqual(leads.map((l) => `${l.customer_name}: ${l.title}`).sort(), ["Ed: Quote request", "Jo Park: Quote request", "Jo Park: Quote request"]);
+  const joLead = leads.find((l) => l.submission_id === jo.id)!;
+  assert.equal(joLead.said, "Need a new furnace", "what they wrote");
 
-  assert.equal(await markDone(db, jo.id, ME), true);
-  assert.equal(await markDone(db, jo.id, ME), false, "already done");
+  // Converted into a deal, its request is done in the forms list too.
+  const [deal] = await db.sql<{ id: string }>`insert into deals (customer_id, title, stage) values (${saved.id}::bigint, 'Furnace', 'new') returning id::text as id`;
+  assert.equal(await convertLead(db, joLead.id, deal.id, ME), true);
+  assert.equal(await convertLead(db, joLead.id, deal.id, ME), false, "already converted");
   const [done] = await rows(`select status, updated_by::text as by from submissions where id = ${Number(jo.id)}`);
   assert.deepEqual(done, { status: "done", by: ME });
   const history = await everythingFrom(db, saved);
   assert.deepEqual(history.items.map((i) => `${i.kind}:${i.status}`), ["submission:read", "submission:done"]);
-  // Undo puts it back, opened; a second Undo changes nothing.
-  assert.equal(await markUndone(db, "submission", jo.id), true);
-  assert.equal(await markUndone(db, "submission", jo.id), false);
-  assert.equal((await rows(`select status from submissions where id = ${Number(jo.id)}`))[0].status, "read");
   const ann = (await findCustomer(db, "ann.lee@example.com"))!;
   assert.deepEqual((await everythingFrom(db, ann)).items, [], "her booking is not on the timeline");
   assert.deepEqual((await customerEvents(db, ann.id)).map((e) => e.what), ["Estimate visit"], "it is one of her events");
@@ -410,9 +384,6 @@ test("a phone with an extension matches the same number without one, in every qu
   assert.equal((await findMatch(db, null, "(555) 606-1000"))?.id, customer.id);
   assert.equal((await createCustomer(db, { name: "Ext Office", phone: "+1 555 606 1000", stage: "new" }, ME)).created, false);
   await db.sql`insert into submissions (form_key, name, phone, source, data) values ('quote', 'Front desk', '555 606 1000 x9', 'website', '{"message": "ext test"}')`;
-  const page = await inboxPage(db, { inbox: INBOX }, null, 50);
-  const row = page.rows.find((r) => r.kind === "submission" && r.name === "Front desk");
-  assert.equal(row?.customer_id, customer.id);
   const history = await everythingFrom(db, customer);
   assert.ok(history.items.some((i) => i.kind === "submission"), "the submission shows on the customer");
   const plan = planRows(parseCsv("Name,Phone,Company\nOffice,5556061000 x 3,Ext Co"), { name: "Name", phone: "Phone", company: "Company" }, [], await listStages(db, "customers"));
@@ -475,10 +446,11 @@ test("events: scheduled, then completed, no-show or cancelled; completed is cont
   assert.equal(later.ends_at.toISOString(), "2099-01-15T17:00:00.000Z");
   assert.deepEqual([later.what, later.status, later.customer_id, later.host_name, later.email, later.source], ["Tune-up", "confirmed", customer.id, "Sam", "event@example.com", "crm"]);
   assert.equal((await getCustomer(db, customer.id))!.last_contact_at, null, "scheduled is not contact");
-  // Someone with one coming up is not waiting on a task, and a team-made one is not news in the Inbox.
+  // Someone with one coming up is not waiting on a task, and a team-made one is not a lead.
   await db.sql`update customers set last_contact_at = now() - interval '60 days' where id = ${customer.id}::bigint`;
   assert.ok(!(await nothingPlanned(db, null, 500)).some((c) => c.id === customer.id));
-  assert.ok(!(await inboxPage(db, { inbox: INBOX }, null, 200)).rows.some((r) => r.kind === "booking" && r.id === later.id));
+  await leadsForOpenItems(db);
+  assert.equal((await db.sql`select 1 from leads where booking_id = ${later.id}::bigint`).length, 0);
 
   const past = await addEvent(db, customer, { ...base, title: "Repair", at: "2026-09-30 14:00:00", amount_cents: 24500 }, ME);
   assert.equal(past!.amount_cents, "24500");
@@ -530,7 +502,7 @@ test("an event carries its customer's details as they change", async (t) => {
   assert.deepEqual({ ...b }, { name: "Pho Found", email: "found@example.com", phone: "555 919 7002" }, "the invoice and the booker's emails reach the new address");
 });
 
-test("an online booking is an event of the customer its email belongs to; added from the Inbox, it brings their address", async (t) => {
+test("an online booking is an event of the customer its email belongs to; saved at setup, it brings their address and is their lead", async (t) => {
   if (skip) return t.skip(skip);
   const [type] = await db.sql<{ id: string }>`insert into booking_types (slug, name, location_kind) values ('install', 'Installation', 'their_place') returning id::text as id`;
   const [b] = await db.sql<{ id: string }>`
@@ -540,16 +512,17 @@ test("an online booking is an event of the customer its email belongs to; added 
     returning id::text as id`;
   const before = await getEvent(db, b.id);
   assert.deepEqual([before!.what, before!.customer_id, before!.name], ["Installation", null, "Joy Park"], "not a customer yet");
-  assert.ok((await inboxPage(db, { inbox: INBOX, todo: true }, null, 200)).rows.some((r) => r.kind === "booking" && r.id === b.id), "an online booking is news");
 
   await saveEveryone(db);
+  await leadsForOpenItems(db);
   const added = (await findCustomer(db, "joy@example.com"))!;
   assert.deepEqual([added.address, added.source], ["44 Birch Road", "Booking: Installation"], "their place is their address");
   assert.equal((await getEvent(db, b.id))!.customer_id, added.id, "matched by email");
   assert.ok((await customerEvents(db, added.id)).some((e) => e.id === b.id));
+  assert.deepEqual((await db.sql`select title, customer_id::text as c from leads where booking_id = ${b.id}::bigint`), [{ title: "Installation", c: added.id }], "it is their lead");
 });
 
-test("an online booking with no email is the event of the customer its phone belongs to, as in the Inbox", async (t) => {
+test("an online booking with no email is the event of the customer its phone belongs to", async (t) => {
   if (skip) return t.skip(skip);
   const { customer } = await createCustomer(db, { name: "Cal Phone", email: null, phone: "(555) 404-7070", stage: "new" }, ME);
   const [b] = await db.sql<{ id: string }>`
@@ -557,11 +530,9 @@ test("an online booking with no email is the event of the customer its phone bel
     values (now() + interval '4 days', now() + interval '4 days 1 hour', 'Cal', '555 404 7070 x2', 'phone', 'website') returning id::text as id`;
   assert.equal((await getEvent(db, b.id))!.customer_id, customer.id);
   assert.ok((await customerEvents(db, customer.id)).some((e) => e.id === b.id));
-  const row = (await inboxPage(db, { inbox: INBOX }, null, 200)).rows.find((r) => r.kind === "booking" && r.id === b.id);
-  assert.equal(row?.customer_id, customer.id, "the Inbox and the event agree");
 });
 
-test("a booking held for a form still being paid is no one's event: not listed, not planned, not news", async (t) => {
+test("a booking held for a form still being paid is no one's event: not listed, not planned, not a lead", async (t) => {
   if (skip) return t.skip(skip);
   const { customer } = await createCustomer(db, { name: "Hal Held", email: "held@example.com", stage: "new" }, ME);
   await db.sql`update customers set last_contact_at = now() - interval '30 days' where id = ${customer.id}::bigint`;
@@ -573,7 +544,8 @@ test("a booking held for a form still being paid is no one's event: not listed, 
   assert.ok(!(await customerEvents(db, customer.id)).some((e) => e.id === b.id));
   assert.ok(!(await eventsPage(db, { view: "upcoming", host: null, q: null }, null, 500)).some((e) => e.id === b.id));
   assert.ok((await nothingPlanned(db, null, 500)).some((c) => c.id === customer.id), "a held time is not something planned");
-  assert.ok(!(await inboxPage(db, { inbox: INBOX }, null, 200)).rows.some((r) => r.kind === "booking" && r.id === b.id));
+  await leadsForOpenItems(db);
+  assert.equal((await db.sql`select 1 from leads where booking_id = ${b.id}::bigint`).length, 0);
   // Paid: the hold ends and it is theirs.
   await db.sql`update bookings set hold_until = null where id = ${b.id}::bigint`;
   assert.equal((await getEvent(db, b.id))!.customer_id, customer.id);
@@ -633,32 +605,6 @@ test("a team member written by name or by email is one person: shown by name, fi
   }
 });
 
-test("Mark done takes a scheduled booking off To do and changes nothing; a finished one is never to do", async (t) => {
-  if (skip) return t.skip(skip);
-  await applySchema(db, readFileSync("test/fixtures/other-apps.sql", "utf8"));
-  const [type] = await db.sql<{ id: string }>`insert into booking_types (slug, name, location_kind) values ('noshow', 'Phone consult', 'phone') returning id::text as id`;
-  const [host] = await db.sql<{ id: string }>`insert into resources (name, time_zone) values ('Lou', 'UTC') returning id::text as id`;
-  const [b] = await db.sql<{ id: string }>`
-    insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, status, location_kind)
-    values (${type.id}::bigint, ${host.id}::bigint, now() + interval '2 days', now() + interval '2 days' + interval '20 minutes', 'Nora Show', 'nora@example.com', 'confirmed', 'phone')
-    returning id::text as id`;
-  const todo = async (id = b.id) => (await inboxPage(db, { inbox: INBOX, todo: true }, null, 200)).rows.filter((r) => r.kind === "booking" && r.id === id);
-  assert.equal((await todo()).length, 1, "a scheduled online booking is to do until someone marks it");
-  // One already finished (a no-show, completed or cancelled) was dealt with: it is never to do.
-  const [gone] = await db.sql<{ id: string }>`
-    insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, status, location_kind)
-    values (${type.id}::bigint, ${host.id}::bigint, now() - interval '2 days', now() - interval '2 days' + interval '20 minutes', 'Nora Show', 'nora@example.com', 'no_show', 'phone')
-    returning id::text as id`;
-  assert.equal((await todo(gone.id)).length, 0);
-  assert.equal(await markHandled(db, b.id, ME), "done");
-  assert.equal((await todo()).length, 0);
-  assert.equal(await markHandled(db, b.id, ME), "already");
-  assert.equal(await markHandled(db, "999999", ME), "missing");
-  const all = (await inboxPage(db, { inbox: INBOX }, null, 200)).rows.find((r) => r.kind === "booking" && r.id === b.id);
-  assert.ok(all && all.kind === "booking" && all.handled, "Everything still lists it, marked done");
-  assert.equal((await db.sql<{ status: string }>`select status from bookings where id = ${b.id}::bigint`)[0].status, "confirmed", "the booking itself is unchanged");
-});
-
 test("the morning email reaches a team member a task names by name, at the team list's email", async (t) => {
   if (skip) return t.skip(skip);
   await applySchema(db, readFileSync("test/fixtures/other-apps.sql", "utf8"));
@@ -691,6 +637,4 @@ test("setup saves everyone already in the tables: by email, else by phone, never
   assert.equal((await rows("select 1 from customers where name in ('Nobody Known', 'Spam Guy') or email = 'spamguy@example.com'")).length, 0);
   assert.equal(await saveEveryone(db), 0, "a second run saves no one");
   await publishFields(db, []);
-  const todo = await inboxPage(db, { inbox: INBOX, todo: true }, null, 200);
-  assert.ok(todo.rows.some((r) => r.kind === "submission" && r.name === "Rae Fox"));
 });

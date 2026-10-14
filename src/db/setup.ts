@@ -14,7 +14,7 @@ import { q, type Db } from "../data/db";
 import { applySchema } from "../data/migrate";
 import type { CustomField, StageConfig } from "../config-schema";
 import { publishFields } from "../crm/fields";
-import { saveEveryone } from "../crm/inbox";
+import { saveEveryone } from "../crm/customers";
 import { leadsForOpenItems } from "../crm/leads";
 import { seedStages } from "../crm/stages";
 
@@ -52,7 +52,7 @@ export async function setup(db: Db, seeds: Seeds, opts: SetupOpts = { invoices: 
   }
   const seeded = (await seedStages(db, "customers", seeds.statuses)) + (await seedStages(db, "deals", seeds.dealStages));
   // Then the people: the custom fields every app's savePerson fills, anyone not yet saved
-  // (inbox.ts saveEveryone), and a lead for each enquiry still waiting (leads.ts leadsForOpenItems).
+  // (customers.ts saveEveryone), and a lead for each enquiry still waiting (leads.ts leadsForOpenItems).
   await publishFields(db, seeds.fields ?? []);
   await saveEveryone(db);
   await leadsForOpenItems(db);

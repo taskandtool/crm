@@ -31,7 +31,6 @@
   ],
   "owner_label": "Tech",
   "time_zone": "America/Chicago",
-  "inbox": { "forms": "all", "exclude_forms": ["newsletter"], "bookings": true, "payments": true },
   "events": {
     "one": "Job",
     "many": "Jobs",

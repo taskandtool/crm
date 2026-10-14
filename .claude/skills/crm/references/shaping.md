@@ -18,7 +18,7 @@ infer. Then:
    rather than archive and re-add. A rename keeps the key (`new` labelled
    `Enquiry`); that is fine, since nobody sees a key and every script
    takes the label too.
-3. `npm run check`, then show the owner the Inbox, a customer and the deals board.
+3. `npm run check`, then show the owner Home, a lead, a contact and the deals board.
 
 A status says who someone is (Lead, Customer); a deal stage says where one
 piece of work is (Estimate sent). A trade's per-job steps are deal stages,

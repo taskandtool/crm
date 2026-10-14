@@ -1,5 +1,5 @@
 -- The project's customers and their notes: one set of rows every app reads.
--- A note the team logs on a submission (the forms inbox) is on that
+-- A note the team logs on a submission (the forms list) is on that
 -- customer's timeline in the CRM, and one logged in the CRM shows on the
 -- submission. Whichever app runs first makes the tables; the other's run
 -- then changes nothing. Additive only (data/SKILL.md).

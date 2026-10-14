@@ -208,7 +208,7 @@ comment on column bookings.notes is 'The team''s notes. The booker''s own words 
 -- What a booker changed themselves, through their manage link: a move (from
 -- one start to another) or a cancel, one row each, written in the same
 -- statement as the change. The team's own changes are on the booking. The
--- CRM's Inbox shows these, so the team sees what it did not do.
+-- CRM's notifications show these, so the team sees what it did not do.
 create table if not exists booking_changes (
   id bigserial primary key,
   booking_id bigint not null references bookings (id) on delete cascade,

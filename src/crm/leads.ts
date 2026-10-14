@@ -8,7 +8,6 @@ import { likePattern } from "../admin/query";
 import type { Db } from "../data/db";
 import type { LeadSource } from "../customers/customer";
 import { BOOKING_PAGE, saveSubmitter } from "../forms/store";
-import { firstText } from "./inbox";
 import { EVENT_OF, spliced } from "./sql";
 import { present as presentTables } from "./tables";
 
@@ -83,6 +82,14 @@ const WITH_SUBMISSIONS = leadTexts(true);
 const WITHOUT_SUBMISSIONS = leadTexts(false);
 const sqlFor = async (db: Db) => ((await presentTables(db)).submissions ? WITH_SUBMISSIONS : WITHOUT_SUBMISSIONS).sql(db);
 
+/** The first answer worth reading: a message if there is one, else the first text. */
+export function firstText(data: Record<string, unknown> | null): string | null {
+  if (!data) return null;
+  const entries = Object.entries(data).filter(([k, v]) => !k.startsWith("_") && typeof v === "string" && v.trim());
+  const msg = entries.find(([k]) => /message|comment|note|details|question|enquiry|inquiry|about|reason|issue|problem|describe/i.test(k)) ?? entries[0];
+  return msg ? String(msg[1]).slice(0, 300) : null;
+}
+
 const toLead = (r: Omit<Lead, "said">): Lead => ({ ...r, said: r.notes ?? firstText(r.answers) });
 
 /** The leads in one status, newest first; `q` matches the contact's name, email or phone, or the lead's title. */
@@ -120,15 +127,6 @@ export async function dealLeads(db: Db, dealId: string): Promise<Lead[]> {
   return rows.map(toLead);
 }
 
-/** The lead a form submission or an online booking made, when it made one. */
-export async function leadOfItem(db: Db, kind: string, id: string): Promise<string | null> {
-  if (!/^\d{1,18}$/.test(id) || (kind !== "submission" && kind !== "booking")) return null;
-  const [r] = kind === "submission"
-    ? await db.sql<{ id: string }>`select id::text as id from leads where submission_id = ${id}::bigint`
-    : await db.sql<{ id: string }>`select id::text as id from leads where booking_id = ${id}::bigint`;
-  return r?.id ?? null;
-}
-
 /** How many are open: the sidebar's count. */
 export async function openLeadCount(db: Db): Promise<number> {
   const [r] = await db.sql<{ n: number }>`select count(*)::int as n from leads where status = 'open'`;
@@ -137,10 +135,14 @@ export async function openLeadCount(db: Db): Promise<number> {
 
 /** Converted into a deal: off Open, with the deal named. */
 export async function convertLead(db: Db, id: string, dealId: string, user: string): Promise<boolean> {
-  const rows = await db.sql`
+  const [lead] = await db.sql<{ submission_id: string | null }>`
     update leads set status = 'converted', deal_id = ${dealId}::bigint, archived_reason = null, updated_at = now(), updated_by = ${user}
-    where id = ${id}::bigint and status = 'open' returning id`;
-  return rows.length > 0;
+    where id = ${id}::bigint and status = 'open' returning submission_id::text as submission_id`;
+  // Its form submission is dealt with too: done in the forms list. The CRM writes no other column of the forms skill's table.
+  if (lead?.submission_id) {
+    await db.sql`update submissions set status = 'done', updated_at = now(), updated_by = ${user} where id = ${lead.submission_id}::bigint and status in ('new', 'read')`;
+  }
+  return !!lead;
 }
 
 /** Archived with a reason (Not a fit, Spam, ...). */
@@ -162,8 +164,7 @@ export async function reopenLead(db: Db, id: string, user: string): Promise<bool
 /**
  * Leads for what was already waiting when leads began: each form request
  * still open (new or read, not spam) and each online booking still to come
- * that the team did not make and nobody marked done. Run by setup at start
- * and deploy; once each (saveLead keeps one per submission and booking).
+ * that the team did not make. Run by setup at start and deploy; once each (saveLead keeps one per submission and booking).
  */
 export async function leadsForOpenItems(db: Db): Promise<number> {
   const before = (await db.sql<{ n: number }>`select count(*)::int as n from leads`)[0].n;
@@ -181,7 +182,6 @@ export async function leadsForOpenItems(db: Db): Promise<number> {
     join lateral (select c.id from customers c where {event_of} order by c.id limit 1) c on true
     where b.status = 'confirmed' and b.starts_at >= now() and b.hold_until is null and b.submission_id is null
       and coalesce(b.source, '') <> 'crm'
-      and not exists (select 1 from inbox_done x where x.kind = 'booking' and x.ref_id = b.id)
       and not exists (select 1 from leads l where l.booking_id = b.id)
     on conflict do nothing`;
   return (await db.sql<{ n: number }>`select count(*)::int as n from leads`)[0].n - before;

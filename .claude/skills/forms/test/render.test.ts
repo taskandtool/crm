@@ -11,6 +11,7 @@ const form: Form = {
   success_message: null,
   submit_label: null,
   active: true,
+  leads: true,
   fields: [
     { name: "name", label: "Name", type: "text", required: true },
     { name: "email", label: "Email", type: "email", required: true, help: "We reply here." },

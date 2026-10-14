@@ -75,7 +75,7 @@ export function Results(p: { stages: Stage[]; filter: ListFilter; rows: Customer
             "Nothing is archived."
           ) : (
             <EmptyState title={`No ${vocab.many.toLowerCase()} yet.`} action={<a href="/customers/new" class={primaryClass}>New {vocab.one.toLowerCase()}</a>}>
-              Add one here, add them from the Inbox as they get in touch, or ask the AI to import your spreadsheet.
+              Add one here, or ask the AI to import your spreadsheet. Everyone who fills in a form or books online is added as they do.
             </EmptyState>
           )
         }

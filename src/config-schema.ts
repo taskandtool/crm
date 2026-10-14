@@ -5,19 +5,11 @@ export type StageKind = "open" | "won" | "lost";
 export type StageConfig = { key: string; label: string; kind?: StageKind };
 export type FieldType = "text" | "number" | "date" | "select" | "phone" | "email";
 export type CustomField = { key: string; label: string; type: FieldType; options?: string[] };
-export type InboxConfig = {
-  /** Which form keys count as people getting in touch: "all", or a list of form keys. */
-  forms: "all" | string[];
-  /** Form keys never shown (a newsletter sign-up, a careers form). */
-  exclude_forms?: string[];
-  bookings?: boolean;
-  payments?: boolean;
-};
 /** The events on the schedule (an appointment, a job, a visit): their words, their own custom fields, the currency their amounts are in. */
 export type EventsConfig = { one: string; many: string; fields: CustomField[]; currency?: string };
 /** Deals: what one piece of work being won is called, the stages seeded on the first run, the currency of their values, and the reasons offered when one is lost. */
 export type DealsConfig = { one: string; many: string; stages: StageConfig[]; currency?: string; lost_reasons?: string[] };
-/** Tasks: whether a lead added from the Inbox gets a "Call back" due that day. On unless false. */
+/** Tasks: whether a deal made from a lead gets a "Call back" due that day. On unless false. */
 export type TasksConfig = { new_lead?: boolean };
 /** Quotes and invoices: the name printed on them, their currency, standing terms, days to pay. */
 export type InvoicesConfig = { name: string; currency?: string; terms?: string; days_until_due?: number };
@@ -32,7 +24,6 @@ export type Config = {
   fields: CustomField[];
   owner_label?: string;
   time_zone: string;
-  inbox: InboxConfig;
   /** The schedule: its events, the Calendar and the Team. false (or absent) turns it off. */
   events?: EventsConfig | false;
   /** Online booking: the Services customers book, their reminders. Needs events. On unless false. */
@@ -46,7 +37,6 @@ export type Config = {
 export const KEY = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 export const FIELD_TYPES: FieldType[] = ["text", "number", "date", "select", "phone", "email"];
 export const STAGE_KINDS: StageKind[] = ["open", "won", "lost"];
-const FORM_KEY = /^[a-z0-9][a-z0-9-]{0,62}$/;
 // Custom field keys share the CSV header row and the scripts' flags with the
 // built-in columns, so they may not reuse a built-in name.
 // The built-in columns' CSV headers (crm/columns.ts): a custom field labelled
@@ -89,18 +79,6 @@ export function validate(raw: unknown): string[] {
   out.push(...fieldProblems(c.fields, "fields", BUILT_IN, BUILT_IN_HEADERS));
   if (c.owner_label !== undefined && (typeof c.owner_label !== "string" || !c.owner_label.trim())) out.push("owner_label must be a word such as Owner or Technician");
   if (typeof c.time_zone !== "string" || !validTimeZone(c.time_zone)) out.push(`time_zone must be an IANA zone name such as "America/Chicago" or "UTC" (got ${JSON.stringify(c.time_zone)})`);
-
-  const ib = c.inbox;
-  if (!ib || typeof ib !== "object") out.push('inbox must be an object, e.g. { "forms": "all" }');
-  else {
-    if (ib.forms !== "all" && !(Array.isArray(ib.forms) && ib.forms.every((k) => typeof k === "string" && FORM_KEY.test(k)))) {
-      out.push('inbox.forms must be "all" or a list of form keys');
-    }
-    if (ib.exclude_forms !== undefined && !(Array.isArray(ib.exclude_forms) && ib.exclude_forms.every((k) => typeof k === "string" && FORM_KEY.test(k)))) {
-      out.push("inbox.exclude_forms must be a list of form keys");
-    }
-    for (const k of ["bookings", "payments"] as const) if (ib[k] !== undefined && typeof ib[k] !== "boolean") out.push(`inbox.${k} must be true or false`);
-  }
 
   if (c.booking !== undefined && typeof c.booking !== "boolean") out.push("booking must be true or false");
   if (c.booking_page !== undefined && !(typeof c.booking_page === "string" && /^https:\/\/[^\s/]+(\/\S*)?$/.test(c.booking_page))) {

@@ -253,6 +253,16 @@ export async function setDealArchived(db: Db, id: string, archived: boolean, use
   return rows.length > 0;
 }
 
+/** Open deals expected to close by `day`, soonest first (one past its date first of all): Home's "Closing this month". */
+export async function closingBy(db: Db, day: string, limit: number): Promise<Deal[]> {
+  const { sql } = await dealSql(db);
+  return sql<Deal>`
+    select {deal} from deals d join customers c on c.id = d.customer_id join deal_stages s on s.key = d.stage
+    where d.archived_at is null and s.kind = 'open' and d.expected_close <= ${day}::date
+    order by d.expected_close, d.id
+    limit ${limit}`;
+}
+
 /** Deals for the script's list: by one stage or a kind of stage, an owner, a customer; most recently changed first, `limit` and one more. */
 export async function listDeals(db: Db, f: { stage: string | null; kind: StageKind | null; owner: string | null; customerId: string | null }, limit: number): Promise<Deal[]> {
   const { sql } = await dealSql(db);

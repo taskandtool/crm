@@ -13,7 +13,7 @@ const ORDER: Field[] = [
   { name: "how", label: "Pickup or delivery", type: "radio", options: ["Pickup", "Delivery"], required: true },
   { name: "pay", label: "Pay", type: "payment", fees: [{ label: "Delivery", price_cents: 1000, when: { field: "how", is: "Delivery" } }], tax_rate_id: "1" },
 ];
-const form = (fields: Field[]): Form => ({ key: "order", title: "Order", fields, notify_emails: [], redirect_to: null, success_message: null, submit_label: null, active: true });
+const form = (fields: Field[]): Form => ({ key: "order", title: "Order", fields, notify_emails: [], redirect_to: null, success_message: null, submit_label: null, active: true, leads: true });
 
 test("an items field and a payment step's fees are checked like any field", () => {
   assert.deepEqual(checkFields(ORDER).problems, {});
