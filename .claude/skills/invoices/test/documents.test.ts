@@ -81,7 +81,7 @@ test("a quote's totals come from its lines in SQL, exclusive and inclusive tax a
     ]);
   }));
 
-test("a draft is edited in place; once sent it refuses and a copy is a new draft", (t) =>
+test("a quote is edited in place, sent too; once accepted it refuses and a copy is a new draft", (t) =>
   withDb(t, async (s) => {
     const r = await createQuote(s.db, { ...ann, lines: [{ description: "A", unit: "10" }] }, BY, "crm");
     assert.ok(r.ok);
@@ -93,6 +93,9 @@ test("a draft is edited in place; once sent it refuses and a copy is a new draft
     assert.deepEqual((await quoteById(s.db, id))!.lines.map((l) => l.description), ["B"]);
 
     assert.ok((await markSent(s.db, id, BY)).ok);
+    const sentEdit = await saveQuote(s.db, id, { ...ann, lines: [{ description: "B", quantity: "3", unit: "5" }] }, BY);
+    assert.ok(sentEdit.ok, "sent, it still changes");
+    assert.ok((await decideQuote(s.db, id, "accepted", BY)).ok);
     const late = await saveQuote(s.db, id, { ...ann, lines: [{ description: "C", unit: "999" }] }, BY);
     assert.ok(!late.ok && late.errors.status);
     const after = await quoteById(s.db, id);
@@ -158,7 +161,7 @@ test("numbers are unique and follow the id", (t) =>
     for (const r of made) if (r.ok) assert.equal(r.value.number, "Q-" + r.value.id.padStart(4, "0"));
   }));
 
-test("an invoice from an accepted quote: its lines and totals, once", (t) =>
+test("an invoice from an accepted quote: its lines and totals; clicks that saw none make one", (t) =>
   withDb(t, async (s) => {
     const rate = await createTaxRate(s.db, { name: "Sales tax", percent: "10" }, BY);
     assert.ok(rate.ok);
@@ -168,7 +171,7 @@ test("an invoice from an accepted quote: its lines and totals, once", (t) =>
     assert.deepEqual(await invoiceFromQuote(s.db, id, BY, "crm"), { ok: false, reason: "not_accepted" });
     await decideQuote(s.db, id, "accepted", BY);
 
-    const tries = await Promise.all([1, 2, 3].map(() => invoiceFromQuote(s.db, id, BY, "crm")));
+    const tries = await Promise.all([1, 2, 3].map(() => invoiceFromQuote(s.db, id, BY, "crm", 30, { seen: 0 })));
     const made = tries.filter((x) => x.ok);
     assert.equal(made.length, 1);
     const inv = made[0].ok ? made[0].value : assert.fail();
@@ -187,7 +190,7 @@ test("an invoice from an accepted quote: its lines and totals, once", (t) =>
     assert.ok(await discardInvoice(s.db, inv.id, BY));
     assert.equal((await invoiceById(s.db, inv.id))!.status, "void");
     assert.equal(await discardInvoice(s.db, inv.id, BY), false);
-    const again = await invoiceFromQuote(s.db, id, BY, "crm");
+    const again = await invoiceFromQuote(s.db, id, BY, "crm", 30, { seen: 0 });
     assert.ok(again.ok);
     assert.deepEqual((await invoicesFor(s.db, { quoteId: id })).map((i) => i.status), ["draft", "void"]);
   }));

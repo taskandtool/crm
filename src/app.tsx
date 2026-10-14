@@ -1,9 +1,10 @@
 // The Hono app: the team-only gate, the database for the request, the
-// routes. The whole CRM is private: every path but /healthz and Stripe's
-// signed /hooks/stripe needs the
-// X-TaskTool-User header Task & Tool's edge sets for a signed-in team member
-// (admin/guard.ts), and answers 404 without it. Every change is a POST,
-// checked same-origin by the same guard, and records who made it.
+// routes. The whole CRM is private: every path but /healthz, Stripe's
+// signed /hooks/stripe and a proposal's link (/q/<token>, a capability the
+// customer was sent) needs the X-TaskTool-User header Task & Tool's edge
+// sets for a signed-in team member (admin/guard.ts), and answers 404
+// without it. Every change is a POST, checked same-origin by the same
+// guard, and records who made it.
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
 import type { Child } from "hono/jsx";
@@ -54,6 +55,13 @@ import { allPeople, allTypes } from "./booking/hours";
 import { confirmFormBooking } from "./booking/confirm";
 import { emailSend, emailSender, notifyBooking } from "./booking/notify";
 import { envOf } from "./data/env";
+import { sendEmail } from "./data/send";
+import { stripeFrom } from "./payments/stripe";
+import { proposalAdmin, proposalDocument, proposalPanel } from "./proposals/admin";
+import { linkBase, readyHere } from "./proposals/link";
+import { proposalPages } from "./proposals/public";
+import { afterAccepted, onAcceptSentence, type AnswerDeps } from "./proposals/sign";
+import { ensureProposal, freezeSections, markEmailed, newLink, storePage, type ProposalOpts } from "./proposals/store";
 import { afterResponse } from "./data/send";
 import type { Db } from "./data/db";
 import { primaryClass } from "./views/ui";
@@ -109,14 +117,8 @@ if (invoicesCfg) {
   // first with a sender (booking/confirm.ts); a failed send is a 500, so
   // Stripe delivers again.
   app.route("/", stripeWebhook((c) => (c as unknown as C).var.db, {
-    // An invoice paid through a quote's Pay button accepts the quote; its deal is won with it.
-    more: [{
-      handles: invoiceEvents.handles,
-      apply: async (db, e) => {
-        await invoiceEvents.apply(db, e);
-        await winFromQuotes(db, "Stripe");
-      },
-    }],
+    // Stripe's invoice events: the only thing that moves an invoice past open.
+    more: [invoiceEvents],
     afterPaid: async (c, paymentId) => {
       const db = (c as unknown as C).var.db;
       const id = await completePaidSubmission(db, paymentId);
@@ -125,6 +127,35 @@ if (invoicesCfg) {
       const sent = await confirmFormBooking(db, id, emailSender(envOf(c)), { domain: book ? new URL(book).host : "localhost", manageBase: book });
       if (sent.status === "failed") throw new Error(`booking confirmation for submission ${id}: ${sent.error}`);
     },
+  }));
+}
+
+// ---- proposals: the customer's link ---------------------------------------------
+// What the business tells a proposal, and what a customer's answer can do:
+// Stripe and the sender as this runtime has them, the PDF where it prints.
+
+const PROPOSAL_OPTS: ProposalOpts = {
+  business: invoicesCfg?.name ?? "", word: invoicesCfg?.word ?? "Quote", timeZone: cfg.time_zone, terms: invoicesCfg?.terms ?? null,
+};
+const answerDeps = (c: Context): AnswerDeps => ({
+  opts: PROPOSAL_OPTS,
+  stripe: () => stripeFrom(envOf(c)),
+  send: (mail) => sendEmail(envOf(c), mail),
+  print: (c as unknown as C).env.runtime.print ? (html) => (c as unknown as C).env.runtime.print!(html) : undefined,
+  daysUntilDue: invoicesCfg?.days_until_due ?? 30,
+});
+/** Where a proposal's link points: production (Task & Tool says where, on the machine), or this host in production. */
+const linkBaseOf = (c: Context) => linkBase(c, (c as unknown as C).env.runtime.production);
+
+if (invoicesCfg) {
+  // Public: the token in the link is the customer's key, and the page says nothing without one.
+  app.route("/q", proposalPages({
+    db: (c) => {
+      const opened = (c as unknown as C).env.runtime.open();
+      return opened.db ? { db: opened.db, close: opened.close } : { db: null };
+    },
+    deps: answerDeps,
+    reasons: dealsCfg.lost_reasons,
   }));
 }
 
@@ -649,9 +680,10 @@ app.route(
 
 /** The Invoices section's tabs: the invoices skill's pages and the payments skill's, one set. */
 const INVOICE_TABS = [
-  { href: "/invoices/quotes", label: "Quotes" },
+  { href: "/invoices/quotes", label: `${invoicesCfg?.word ?? "Quote"}s` },
   { href: "/invoices", label: "Invoices" },
   { href: "/invoices/payments", label: "Payments" },
+  { href: "/proposals", label: `${invoicesCfg?.word ?? "Quote"} sections` },
 ];
 
 if (invoicesCfg) {
@@ -667,6 +699,10 @@ if (invoicesCfg) {
       navLabel: "Quotes and invoices",
     }),
   );
+  // A quote's proposal and the library of sections, before the invoice pages take /invoices/*.
+  app.route("/", proposalAdmin(dbOf, {
+    opts: PROPOSAL_OPTS, Frame: frameIn("invoices"), css: "/crm.css", nav: INVOICE_TABS, quotes: "/invoices/quotes", base: linkBaseOf,
+  }));
   app.route(
     "/invoices",
     invoicesAdmin(dbOf, {
@@ -677,13 +713,45 @@ if (invoicesCfg) {
       business: invoicesCfg.name,
       currency: invoicesCfg.currency,
       terms: invoicesCfg.terms,
+      word: invoicesCfg.word,
+      // A quote is the customer's page at a link they read and accept (src/proposals).
+      proposal: {
+        document: (c, qt) => proposalDocument(dbOf(c), qt, PROPOSAL_OPTS),
+        saved: async (c, qt) => {
+          await ensureProposal(dbOf(c), qt, PROPOSAL_OPTS);
+          const r = await storePage(dbOf(c), qt.id, PROPOSAL_OPTS);
+          if (!r.ok) console.error(`quote ${qt.id}: its page: ${r.why}`);
+        },
+        panel: (c, qt) => proposalPanel(dbOf(c), qt, { opts: PROPOSAL_OPTS, quotes: "/invoices/quotes", timeZone: cfg.time_zone }),
+        linkReady: (c) => readyHere(c, (c as unknown as C).env.runtime.production),
+        // Sending: the library's words are copied in and the page made from them, then the link.
+        mintLink: async (c, qt) => {
+          const b = await linkBaseOf(c);
+          if (!b.ok) throw new Error(`no link: ${b.why}`);
+          await freezeSections(dbOf(c), qt.id, PROPOSAL_OPTS);
+          const stored = await storePage(dbOf(c), qt.id, PROPOSAL_OPTS);
+          if (!stored.ok) throw new Error(stored.why);
+          return newLink(dbOf(c), qt.id, (c as unknown as C).var.user, b.base);
+        },
+        emailed: (c, qt) => markEmailed(dbOf(c), qt.id),
+        onAccept: (c, qt) => onAcceptSentence(dbOf(c), qt),
+      },
       print: (c, html) => (c as unknown as C).env.runtime.print?.(html) ?? Promise.resolve(null),
       Frame: frameIn("invoices"),
       daysUntilDue: invoicesCfg.days_until_due,
-      // A quote or an invoice that went out is contact with the customer.
-      afterSend: async (c, doc) => sentTo(dbOf(c), doc.email, (c as unknown as C).var.user),
-      // A yes on the quote's page wins the deal it is for.
-      afterDecide: async (c) => void (await winFromQuotes(dbOf(c), (c as unknown as C).var.user)),
+      // A quote or an invoice that went out is contact with the customer; a quote sent keeps its own words from then on.
+      afterSend: async (c, doc) => {
+        await sentTo(dbOf(c), doc.email, (c as unknown as C).var.user);
+        if (doc.kind === "quote") {
+          await freezeSections(dbOf(c), doc.id, PROPOSAL_OPTS);
+          await storePage(dbOf(c), doc.id, PROPOSAL_OPTS);
+        }
+      },
+      // A yes on the quote's page wins the deal it is for, and does what "After they sign" says.
+      afterDecide: async (c, qt) => {
+        await winFromQuotes(dbOf(c), (c as unknown as C).var.user);
+        if (qt.status === "accepted") await afterAccepted(dbOf(c), qt, (c as unknown as C).var.user, answerDeps(c));
+      },
       nav: INVOICE_TABS,
       // In a quote's or an invoice's Details: the customer's name opens their record, then the
       // request and the event it is for.

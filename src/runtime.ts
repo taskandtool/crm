@@ -6,6 +6,7 @@
 // here: it is the X-TaskTool-User header, read by admin/guard.ts the same
 // way in both.
 import type { Db } from "./data/db";
+import type { Production } from "./proposals/serving";
 
 export type DbState = "no-url" | "connecting" | "migrating" | "ready" | "error";
 
@@ -19,6 +20,9 @@ export type Runtime = {
   open(): Opened;
   // A document's HTML as a PDF, where this runtime has a browser (dev only).
   print?(html: string): Promise<Uint8Array | null>;
+  // Production's address, asked of Task & Tool (dev only): a proposal's link
+  // points there. Production itself has no need: its own host is it.
+  production?(): Promise<Production | null>;
 };
 
 export type AppEnv = {

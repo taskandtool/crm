@@ -1,17 +1,18 @@
 ---
 name: invoices
-description: "Quotes and invoices: quote this job, send the invoice, who owes us. Quotes go through the owner's email sender; invoices are made, emailed and collected by their Stripe, paid only by its webhook. Use for a quote, estimate, invoice, Pay button or what a customer owes. Not for website payments (payments)."
+description: "Quotes and invoices: quote this job, send the invoice, who owes us. Quotes go through the owner's email sender, or as the app's page at a link; invoices are made, emailed and collected by their Stripe, paid only by its webhook. Use for a quote, estimate, proposal, deposit, invoice or what a customer owes. Not for website payments (payments)."
 ---
 
 # Invoices
 
 A quote is ours: a document the team sends through the owner's sender
-(`data/send.ts`). An invoice is Stripe's: made in the owner's Stripe
+(`data/send.ts`), or, in an app that has its own page for it (the CRM's
+proposals), a link the customer reads and accepts at. An invoice is Stripe's: made in the owner's Stripe
 account (Stripe Invoicing), emailed by Stripe, paid on Stripe's hosted page. Both live in the project's tables, so every app reads
 what a customer was quoted, owes and paid. Builds on `data`, `admin` and
 `payments`.
 
-Version: 0.2.2 (taskandtool/skills)
+Version: 0.3.0 (taskandtool/skills)
 
 ## The rules
 
@@ -26,15 +27,19 @@ Version: 0.2.2 (taskandtool/skills)
   price rounded, tax per line, the document's totals summed on every save.
   Never write a total.
 - **Statuses only move forward.** Quotes: draft, sent, then accepted,
-  declined or expired, set by a person. Invoices: a draft is ours; once
+  declined or expired, set by a person or by the customer at its link
+  (`decided_by` is `ONLINE`'s "signed online" or "declined online"); a sent
+  one the customer opened shows as Viewed (`viewed_at`). Invoices: a draft is ours; once
   sent it is Stripe's, and open, paid, void and uncollectible arrive only
   from the verified webhook (`webhook.ts`). Mark paid, void and
   uncollectible ask Stripe and wait for its event.
-- **Never delete.** A sent quote is copied, not edited; a draft invoice is
-  discarded (void); a sent one is voided in Stripe.
-- **A proposal's Pay button** (`send --pay`, or the box on the send page):
-  the quote's invoice is made in Stripe without Stripe's email, the quote
-  carries its payment page, and paying it accepts the quote.
+- **A quote is edited until it is accepted or declined**, sent or not;
+  after that it is copied, never changed.
+- **Invoices belong to the customer.** A quote makes as many as asked:
+  `from-quote` all of it while it has none, `--deposit 50` a share of each
+  tax rate's lines, `--rest` what is not billed yet. Never before the yes.
+- **Never delete.** A draft invoice is discarded (void); a sent one is
+  voided in Stripe.
 - **Money** is minor units per currency (`payments/money.ts`), one figure
   per currency, and test mode (`livemode = false`) is never money owed or
   earned.
@@ -53,11 +58,11 @@ revenue work as for any payment.
 |---|---|
 | `schema.sql` | `quotes`, `quote_lines`, `invoices`, `invoice_lines`, `stripe_customers`. Apply the payments schema first (its `tax_rates`) |
 | `lines.ts` | Reading typed lines; the line and total SQL |
-| `quotes.ts` | A quote's life: create, save a draft, copy, sent, accepted, declined, expired |
-| `invoices.ts` | An invoice's life before Stripe: create, save a draft, from an accepted quote, discard; `owed(db, email)` |
-| `document.tsx` | A quote or invoice as HTML on one sheet (previews, a quote's PDF); `sendQuote` |
-| `stripe.ts` | `sendInvoice` (safe to repeat), `payLinkForQuote`, `markPaidOutOfBand`, `voidInvoice`, `markUncollectible` |
+| `quotes.ts` | A quote's life: create, save until decided, copy, sent, viewed, accepted, declined, expired |
+| `invoices.ts` | An invoice's life before Stripe: create, save a draft, from an accepted quote (all, a deposit, the rest), discard; `owed(db, email)` |
+| `document.tsx` | A quote or invoice as HTML on one sheet (previews, a quote's PDF); `sendQuote`, with a link or without |
+| `stripe.ts` | `sendInvoice` (safe to repeat), `markPaidOutOfBand`, `voidInvoice`, `markUncollectible` |
 | `cli.ts` | `quotesCli`, `invoicesCli`: what the app's `scripts/quotes.mjs` and `scripts/invoices.mjs` run |
 | `webhook.ts` | `invoiceEvents` for the payments webhook |
-| `admin.tsx` | `invoicesAdmin(getDb, { base, css, source, timeZone, business, Frame?, send?, print?, stripe?, links?, afterDecide?, afterSend? })`: the team's pages, opening on what is outstanding, past due and paid this month |
+| `admin.tsx` | `invoicesAdmin(getDb, { base, css, source, timeZone, business, word?, proposal?, Frame?, send?, print?, stripe?, links?, afterDecide?, afterSend? })`: the team's pages, opening on what is outstanding, past due and paid this month. `proposal` (`ProposalHooks`) makes a quote the app's own page at a link |
 | `test/` | Against a scratch database, Stripe faked, events out of order |

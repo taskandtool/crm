@@ -17,6 +17,8 @@ const children = [
   // `--watch=always` keeps watching when stdin is closed, which it is under a
   // service; plain --watch exits then and would take the server down with it.
   spawn("npm", ["run", "--silent", "css:watch"], { stdio: "inherit" }),
+  // The proposal's own stylesheet, compiled into src/proposals/style.ts: the server restarts with it.
+  spawn("node", ["scripts/proposal-css.mjs", "--watch"], { stdio: "inherit" }),
   spawn("node_modules/.bin/tsx", ["watch", "--clear-screen=false", "--include", "crm.config.json", "--include", "schema.sql", "src/server.ts"], { stdio: "inherit" }),
 ];
 

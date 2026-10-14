@@ -2,6 +2,8 @@
 @import "tailwindcss" source(none);
 @import "./theme.css";
 @source "../src";
+/* The proposal's compiled stylesheet (styles/proposal.css) is not a source of the CRM's. */
+@source not "../src/proposals/style.ts";
 
 @layer base {
   html {

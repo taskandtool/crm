@@ -139,17 +139,25 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     assert.equal(sent!.status, "sent");
     assert.deepEqual(went, ["quote ann@example.com"]);
 
-    // Sent: no more edits.
+    // Sent, it is still edited: the customer has not answered.
+    assert.equal((await app.request(...get(`/invoices/quotes/${id}/edit`))).status, 200);
+    res = await app.request(...post(`/invoices/quotes/${id}`, {
+      email: "ann@example.com", name: "Ann Lee", currency: "usd", valid_until: "2026-11-30", visit_id: "12", deal_id: "5", notes: "Gate included.", terms: "Net 30.",
+      description: ["Fence repair"], quantity: ["2"], unit: ["450.00"], tax: "",
+    }));
+    assert.equal(res.status, 303);
+    assert.equal((await quoteById(s.db, id))!.status, "sent");
+
+    // Their answer, once.
+    res = await app.request(...post(`/invoices/quotes/${id}/decide`, { answer: "accepted" }));
+    assert.match(res.headers.get("location")!, /saved=accepted$/);
+    // Accepted: no more edits.
     res = await app.request(...post(`/invoices/quotes/${id}`, {
       email: "ann@example.com", currency: "usd", description: ["Other"], quantity: [""], unit: ["1"], tax: "",
     }));
     assert.equal(res.status, 422);
     assert.match(await res.text(), /Copy it to a new quote/);
     assert.equal((await app.request(...get(`/invoices/quotes/${id}/edit`))).status, 302);
-
-    // Their answer, once.
-    res = await app.request(...post(`/invoices/quotes/${id}/decide`, { answer: "accepted" }));
-    assert.match(res.headers.get("location")!, /saved=accepted$/);
     res = await app.request(...post(`/invoices/quotes/${id}/decide`, { answer: "declined" }));
     assert.match(res.headers.get("location")!, /saved=not-now$/);
     assert.deepEqual(decided, ["accepted 5"], "afterDecide runs once, for the answer that took");
@@ -208,6 +216,70 @@ test("before Stripe and email are connected: the pages say what to ask for, hold
     assert.match(doc, /Bill to[\s\S]*Ann Lee/);
     assert.match(doc, /Amount due<\/dt><dd class="due">\$900\.00/);
     assert.match(doc, /Thanks!/);
+  } finally {
+    await s.drop();
+  }
+});
+
+test("with the app's page (proposal): the email carries a link and no PDF, Copy link shows one once, Mark accepted says what follows", async (t) => {
+  const s = await scratch();
+  if (!s) return t.skip(why);
+  try {
+    await applySchema(s.db, schema);
+    const mail: Email[] = [];
+    const calls: string[] = [];
+    let ready: string | null = null;
+    let n = 0;
+    const app = new Hono();
+    app.route("/invoices", invoicesAdmin(() => s.db, {
+      base: "/invoices", css: "/site.css", source: "crm", timeZone: "UTC", business: "Acme", word: "Proposal",
+      send: async (_c, m) => (mail.push(m), { status: "sent", via: "fake" }),
+      print: async () => new TextEncoder().encode("%PDF"),
+      proposal: {
+        document: async (_c, qt) => `<!doctype html><p>the proposal ${qt.number}</p>`,
+        saved: async (_c, qt) => void calls.push(`saved ${qt.id}`),
+        panel: async () => "<section>the sections</section>",
+        linkReady: async () => ready,
+        mintLink: async () => ({ url: `https://crm.example/q/token${++n}`, keep: async () => void calls.push("kept") }),
+        emailed: async (_c, qt) => void calls.push(`emailed ${qt.id}`),
+        onAccept: async () => "A $500.00 deposit invoice is sent and they are taken to pay it.",
+      },
+    }));
+    let res = await app.request(...post("/invoices/quotes", { email: "ann@example.com", currency: "usd", description: ["Fence"], quantity: [""], unit: ["1000"], tax: "" }));
+    const id = /\/quotes\/(\d+)\?/.exec(res.headers.get("location")!)![1];
+    assert.deepEqual(calls, [`saved ${id}`], "a new quote's page is made at once");
+    let html = await (await app.request(...get(`/invoices/quotes/${id}`))).text();
+    assert.match(html, /Proposal Q-\d{4}/);
+    assert.match(html, /the sections/);
+    assert.equal(await (await app.request(...get(`/invoices/quotes/${id}/document`))).text(), `<!doctype html><p>the proposal Q-${id.padStart(4, "0")}</p>`);
+
+    html = await (await app.request(...get(`/invoices/quotes/${id}/send`))).text();
+    assert.match(html, /Review and accept your proposal: \(the link, made when you send\)/);
+    assert.match(html, /Copy link/);
+    res = await app.request(...post(`/invoices/quotes/${id}/send`, { how: "email" }));
+    assert.match(res.headers.get("location")!, /saved=sent-link$/);
+    assert.match(mail[0].text, /Review and accept your proposal: https:\/\/crm\.example\/q\/token1/);
+    assert.equal(mail[0].attachments, undefined, "the link is the proposal: nothing attached");
+    assert.deepEqual(calls.slice(1), ["kept", `emailed ${id}`], "the link is kept once its email went");
+
+    res = await app.request(...post(`/invoices/quotes/${id}/send`, { how: "link" }));
+    html = await res.text();
+    assert.equal(res.status, 200);
+    assert.match(html, /value="https:\/\/crm\.example\/q\/token2"/);
+    assert.equal(mail.length, 1, "Copy link emails nothing");
+
+    // No link possible: the PDF of the app's page, and the page says why.
+    ready = "this app has no production address yet.";
+    html = await (await app.request(...get(`/invoices/quotes/${id}/send`))).text();
+    assert.match(html, /It goes without a link this time: this app has no production address yet\./);
+    assert.doesNotMatch(html, /Copy link/);
+    res = await app.request(...post(`/invoices/quotes/${id}/send`, { how: "email" }));
+    assert.match(res.headers.get("location")!, /saved=sent$/);
+    assert.equal(mail[1].attachments![0].filename, `Proposal Q-${id.padStart(4, "0")}.pdf`);
+
+    html = await (await app.request(...get(`/invoices/quotes/${id}/accept`))).text();
+    assert.match(html, /A \$500\.00 deposit invoice is sent and they are taken to pay it\./);
+    assert.equal((await quoteById(s.db, id))!.status, "sent", "the page asks; it changes nothing");
   } finally {
     await s.drop();
   }

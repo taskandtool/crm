@@ -24,12 +24,12 @@ import {
   createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, owed, saveInvoice, INVOICE_STATUSES,
   type Invoice, type InvoiceFields, type InvoiceStatus,
 } from "./invoices";
-import { amountInput, type LineInput } from "./lines";
+import { amountInput, type LineInput, type SavedLine } from "./lines";
 import {
   createQuote, decideQuote, expireQuote, markSent, quoteById, quotesFor, quotesPage, saveQuote, shownStatus, QUOTE_STATUSES,
   type Quote, type QuoteFields, type QuoteStatus,
 } from "./quotes";
-import { closePayLink, markPaidOutOfBand, markUncollectible, payLinkForQuote, sendInvoice, voidInvoice } from "./stripe";
+import { markPaidOutOfBand, markUncollectible, sendInvoice, voidInvoice } from "./stripe";
 
 /** Someone a quote or invoice is for, as the app knows them. */
 export type Person = { email: string | null; name: string | null; phone: string | null; address: string | null };
@@ -61,6 +61,23 @@ export type InvoicesCli = {
   afterDecide?: (db: Db, qt: Quote, by: string) => Promise<string[]>;
   /** The app's own commands: their help lines, what each does, and the flags each takes (unchecked when not given). */
   more?: { help: string; commands: Record<string, Extra>; flags?: Record<string, string[]> };
+  /** What the business calls a quote: "Quote" (default), "Proposal" or "Estimate". */
+  word?: string;
+  /** Quotes as the app's own pages at a link the customer reads and accepts (the CRM's proposals). */
+  proposal?: {
+    /** After a quote is added or edited here: the app keeps its page current. */
+    saved: (db: Db, qt: Quote) => Promise<void>;
+    /** Whether it can go as a link now: null, or why not, in a sentence. */
+    ready: (db: Db, qt: Quote) => Promise<string | null>;
+    /** A new link for the quote; it replaces the earlier one only once `keep` runs (after its email went). */
+    mint: (db: Db, qt: Quote, by: string) => Promise<{ url: string; keep: () => Promise<void> }>;
+    /** The email carrying the link went out now. */
+    emailed: (db: Db, qt: Quote) => Promise<void>;
+    /** The quote as its customer reads it, for the PDF when it goes without a link. */
+    document: (db: Db, qt: Quote & { lines: SavedLine[] }) => Promise<string>;
+    /** What accepting it does, in a sentence; null when nothing. Accept waits for --confirm when there is one. */
+    onAccept: (db: Db, qt: Quote) => Promise<string | null>;
+  };
 };
 
 /** Who acted: --as, else APP_USER, else AI. */
@@ -122,8 +139,8 @@ export const problems = (errors: Record<string, string>) =>
 
 const QUOTE_FIELDS = ["line", "name", "phone", "address", "valid-until", "notes", "terms", "event", "deal", "currency", "as"];
 const QUOTE_FLAGS: Record<string, string[]> = {
-  list: ["status", "find", "limit", "customer"], show: [], add: QUOTE_FIELDS, edit: QUOTE_FIELDS, send: ["pay", "confirm", "as"],
-  "mark-sent": ["as"], accept: ["as"], decline: ["as"], expire: ["as"], "tax-rates": [], "tax-rate": ["inclusive", "as"],
+  list: ["status", "find", "limit", "customer"], show: [], add: QUOTE_FIELDS, edit: QUOTE_FIELDS, send: ["link", "confirm", "as"],
+  "mark-sent": ["as"], accept: ["confirm", "as"], decline: ["as"], expire: ["as"], "tax-rates": [], "tax-rate": ["inclusive", "as"],
 };
 const QUOTE_ARITY: Record<string, number> = { list: 0, show: 1, add: 1, edit: 1, send: 1, "mark-sent": 1, accept: 1, decline: 1, expire: 1, "tax-rates": 0, "tax-rate": 2 };
 const DONE: Record<string, string> = { "mark-sent": "marked sent", accept: "accepted", decline: "declined", expire: "expired" };
@@ -138,12 +155,13 @@ export async function quotesCli(argv: string[], cli: InvoicesCli): Promise<void>
   show <id>
   add <who> --line "<what>|[qty|]<price>[|<tax rate>]"... [--name n] [--phone p] [--address a]
             [--valid-until YYYY-MM-DD] [--notes n] [--terms t] [--event <id>] [--deal <id>] [--currency ${cli.currency}]
-  edit <id> [the same flags]           a draft only; --line replaces every line
-  send <id> [--pay]                    prints exactly what would go to whom; sends nothing. --pay adds a
-                                       Pay button: Stripe's page for these lines; paying it accepts the quote
-  send <id> [--pay] --confirm          sends it: when the owner asked for it, or said yes to the preview
+  edit <id> [the same flags]           until it is accepted or declined; --line replaces every line
+  send <id>                            prints exactly what would go to whom; sends nothing
+  send <id> --confirm                  sends it: when the owner asked for it, or said yes to the preview${cli.proposal ? `
+  send <id> --link --confirm           makes its link for the owner to pass on themselves; emails nothing` : ""}
   mark-sent <id>                       the owner emailed it themselves
-  accept <id> | decline <id> | expire <id>
+  accept <id> [--confirm] | decline <id> | expire <id>${cli.proposal ? `
+                                       accept prints what accepting it does first, and waits for --confirm` : ""}
   tax-rates                            the rates a line can carry
   tax-rate "<name>" <percent> [--inclusive]
 ${cli.more?.help ?? ""}
@@ -152,8 +170,8 @@ email. A line is "Fence repair|450.00", "Hours|2.5|80" or "Install|1|450|Sales t
 Prices are in the quote's currency; totals are computed from the lines. --as records who acted.
 
 Prints what happened first, then Next:. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`;
-  // --pay and --inclusive take no value: `send --pay 3` keeps 3 as the id.
-  const a = parseArgs(argv, { bare: ["pay", "inclusive"] });
+  // --link and --inclusive take no value: `send --link 3` keeps 3 as the id.
+  const a = parseArgs(argv, { bare: ["link", "inclusive"] });
   const [cmd, ...rest] = a._;
   if (cli.off && has(a, "help")) console.log(cli.off + "\n");
   const commands = ["list", "show", "add", "edit", "send", "mark-sent", "accept", "decline", "expire", "tax-rates", "tax-rate", ...Object.keys(cli.more?.commands ?? {})];
@@ -163,7 +181,8 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
   if (QUOTE_ARITY[cmd] !== undefined) noMore(rest, QUOTE_ARITY[cmd], at);
   const limit = cmd === "list" ? limitOf(a, at) : 50;
   const json = has(a, "json");
-  const doc = { business: cli.business, timeZone: cli.timeZone };
+  const W = cli.word ?? "Quote", word = W.toLowerCase();
+  const doc = { business: cli.business, timeZone: cli.timeZone, word: W };
   const local = (d: Date | string) => localTime(d, cli.timeZone);
   const fmt = (r: Quote) =>
     [`#${r.id}`, r.number, `[${shownStatus(r, todayIn(cli.timeZone))}]`, r.name ? `${r.name} <${r.email}>` : r.email, money(r.total_cents, r.currency),
@@ -236,36 +255,55 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         if (has(a, "line")) f.lines = lineFlags(a, rates, "quotes");
         const r = current ? await saveQuote(db, current.id, f, by) : await createQuote(db, f, by, cli.source);
         if (!r.ok) fail(`${at}: not saved\n${problems(r.errors)}`, "node scripts/quotes.mjs --help");
+        await cli.proposal?.saved(db, r.value);
         if (json) return out(true, r.value, String);
         return done(at, `${current ? "saved" : "added"} ${fmt(r.value)}`, { next: `node scripts/quotes.mjs send ${r.value.id}` });
       }
 
       case "send": {
         const qt = await quoteOr(db, rest[0]);
-        if (qt.status !== "draft" && qt.status !== "sent") fail(`${at}: quote ${qt.number} is ${qt.status}; only a draft or sent quote is sent`, `node scripts/quotes.mjs show ${qt.id}`);
+        if (qt.status !== "draft" && qt.status !== "sent") fail(`${at}: ${word} ${qt.number} is ${qt.status}; only a draft or sent ${word} is sent`, `node scripts/quotes.mjs show ${qt.id}`);
         const rates = await taxRates(db);
-        const pay = has(a, "pay");
+        const noLink = cli.proposal ? await cli.proposal.ready(db, qt) : "";
+        const withLink = noLink === null;
+        if (has(a, "link") && !withLink) fail(`${at}: there is no link to give: ${noLink || "this app has no page for it"}`, `node scripts/quotes.mjs send ${qt.id} --confirm, to email it without a link`);
         if (!has(a, "confirm")) {
-          const m = quoteMessage(qt, rates, doc, pay ? "<the payment page Stripe makes>" : null);
-          if (json) return out(true, { to: qt.email, subject: m.subject, text: m.text }, String);
-          return done(at, `quote ${qt.number} to ${qt.email}, ${money(qt.total_cents, qt.currency)}`, {
-            lines: [`Subject: ${m.subject}`, `Attached: Quote ${qt.number}.pdf, when this machine can print it`, "", m.text, ""],
-            waits: `node scripts/quotes.mjs send ${qt.id}${pay ? " --pay" : ""}`,
+          const m = quoteMessage(qt, rates, doc, withLink ? "<its link, made when it is sent>" : null);
+          if (json) return out(true, { to: qt.email, subject: m.subject, text: m.text, link: withLink, why_no_link: withLink ? null : noLink || null }, String);
+          if (has(a, "link")) return done(at, `${word} ${qt.number}: a link for the owner to pass on to ${qt.email}; nothing is emailed`, { waits: `node scripts/quotes.mjs send ${qt.id} --link` });
+          return done(at, `${word} ${qt.number} to ${qt.email}, ${money(qt.total_cents, qt.currency)}`, {
+            lines: [
+              ...(cli.proposal && !withLink ? [`No link this time: ${noLink} They reply to accept.`] : []),
+              `Subject: ${m.subject}`, withLink ? "Attached: nothing; the link always shows the current one" : `Attached: ${W} ${qt.number}.pdf, when this machine can print it`, "", m.text, "",
+            ],
+            waits: `node scripts/quotes.mjs send ${qt.id}`,
           });
         }
-        let payUrl: string | null = null;
-        if (pay) {
-          const link = await payLinkForQuote(db, stripeOr(cli.env, at), qt.id, by, cli.source, cli.daysUntilDue ?? 30);
-          if (!link.ok) fail(`${at}: nothing was sent: the Pay button could not be made: ${link.message}`, `node scripts/quotes.mjs send ${qt.id} --confirm, without --pay`);
-          payUrl = link.url;
+        if (has(a, "link")) {
+          const made = await cli.proposal!.mint(db, qt, by);
+          await made.keep();
+          const link = made.url;
+          const r = await markSent(db, qt.id, by);
+          if (r.ok) await cli.afterSend?.(db, { kind: "quote", id: qt.id, email: qt.email }, by);
+          if (json) return out(true, { link }, String);
+          return done(at, `${word} ${qt.number}'s link, for the owner to send ${qt.name ?? qt.email} themselves`, {
+            lines: [link, "Anyone with it can open and accept it. Sending again makes a new one, and this one stops working."],
+            next: `node scripts/quotes.mjs show ${qt.id}`,
+          });
         }
-        const r = await sendQuote(db, qt, rates, doc, { send: (mail) => sendEmail(cli.env, mail), print: cli.print, replyTo: flag(a, "as") ?? null, by, payUrl });
+        const made = withLink ? await cli.proposal!.mint(db, qt, by) : null;
+        const link = made?.url ?? null;
+        const html = cli.proposal && !link ? await cli.proposal.document(db, qt) : undefined;
+        const r = await sendQuote(db, qt, rates, doc, { send: (mail) => sendEmail(cli.env, mail), print: cli.print, html, replyTo: flag(a, "as") ?? null, by, link });
         if (r.sent.status === "none") fail(`${at}: nothing was sent: ${r.sent.why}\n  Give the owner the text to send themselves, then mark it sent`, `node scripts/quotes.mjs send ${qt.id}, without --confirm, for the text; then node scripts/quotes.mjs mark-sent ${qt.id}`);
         if (r.sent.status === "failed") fail(`${at}: the email did not go: ${r.sent.error}`, "python3 ~/tools/taskandtool.py list-connections, to check the email sender");
+        if (made) {
+          await made.keep();
+          await cli.proposal!.emailed(db, qt);
+        }
         await cli.afterSend?.(db, { kind: "quote", id: qt.id, email: qt.email }, by);
-        if (json) return out(true, { sent: true, pdf: r.pdf }, String);
-        return done(at, `sent quote ${qt.number} to ${qt.email}${r.pdf ? " with its PDF" : r.printError ? ` without a PDF (${r.printError})` : " (no browser here: the lines are in the email)"}`, {
-          lines: payUrl ? [`with a Pay button: ${payUrl}`] : [],
+        if (json) return out(true, { sent: true, pdf: r.pdf, link: !!link }, String);
+        return done(at, `sent ${word} ${qt.number} to ${qt.email}${link ? " with its link" : r.pdf ? " with its PDF" : r.printError ? ` without a PDF (${r.printError})` : " (no browser here: the lines are in the email)"}`, {
           next: `node scripts/quotes.mjs show ${qt.id}`,
         });
       }
@@ -274,22 +312,26 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
       case "accept":
       case "decline":
       case "expire": {
-        const id = (await quoteOr(db, rest[0])).id;
+        const qt = await quoteOr(db, rest[0]);
+        const id = qt.id;
+        // What accepting it does (its first invoice, sent or not) is shown first, as Mark accepted's page does.
+        const does = cmd === "accept" && cli.proposal ? await cli.proposal.onAccept(db, qt) : null;
+        if (does && !has(a, "confirm") && (qt.status === "draft" || qt.status === "sent" || qt.status === "expired")) {
+          if (json) return out(true, { accept: qt.id, does }, String);
+          return done(at, `${word} ${qt.number} accepted would also do this: ${does}`, { waits: `node scripts/quotes.mjs accept ${qt.id}` });
+        }
         const r = cmd === "mark-sent" ? await markSent(db, id, by)
           : cmd === "expire" ? await expireQuote(db, id, by)
           : await decideQuote(db, id, cmd === "accept" ? "accepted" : "declined", by);
         if (!r.ok && r.status === TO[cmd]) {
-          // a decline that stopped before its Pay link was voided finishes here
-          const note = cmd === "decline" ? await closePayLink(db, () => stripeOr(cli.env, at), id, by) : null;
           if (json) return out(true, await quoteById(db, id), String);
-          return done(at, `quote ${id} is already ${r.status}; left alone`, { lines: note ? [note] : [], next: `node scripts/quotes.mjs show ${id}` });
+          return done(at, `${word} ${id} is already ${r.status}; left alone`, { next: `node scripts/quotes.mjs show ${id}` });
         }
-        if (!r.ok) fail(r.reason === "not_found" ? `${at}: no quote ${id}` : `${at}: quote ${id} is ${r.status}; nothing changed`, `node scripts/quotes.mjs show ${id}`);
+        if (!r.ok) fail(r.reason === "not_found" ? `${at}: no ${word} ${id}` : `${at}: ${word} ${id} is ${r.status}; nothing changed`, `node scripts/quotes.mjs show ${id}`);
         if (cmd === "mark-sent") await cli.afterSend?.(db, { kind: "quote", id, email: r.value.email }, by);
-        const note = cmd === "decline" ? await closePayLink(db, () => stripeOr(cli.env, at), id, by) : null;
         const after = (cmd === "accept" || cmd === "decline") && cli.afterDecide ? await cli.afterDecide(db, r.value, by) : [];
         if (json) return out(true, r.value, String);
-        return done(at, `${DONE[cmd]} ${fmt(r.value)}`, { lines: [...(note ? [note] : []), ...after], next: cmd === "accept" ? `node scripts/invoices.mjs from-quote ${id}` : undefined });
+        return done(at, `${DONE[cmd]} ${fmt(r.value)}`, { lines: after, next: cmd === "accept" ? `node scripts/invoices.mjs from-quote ${id}` : undefined });
       }
 
       case "tax-rates": {
@@ -321,7 +363,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
 
 const INVOICE_FIELDS = ["line", "days", "notes", "event", "currency", "as"];
 const INVOICE_FLAGS: Record<string, string[]> = {
-  list: ["status", "find", "limit", "customer"], show: [], owed: [], add: INVOICE_FIELDS, edit: INVOICE_FIELDS, "from-quote": ["as"],
+  list: ["status", "find", "limit", "customer"], show: [], owed: [], add: INVOICE_FIELDS, edit: INVOICE_FIELDS, "from-quote": ["deposit", "rest", "as"],
   discard: ["as"], send: ["confirm", "as"], "mark-paid": ["confirm", "as"], void: ["confirm", "as"], uncollectible: ["confirm", "as"],
 };
 const INVOICE_ARITY: Record<string, number> = { list: 0, show: 1, owed: 1, add: 1, edit: 1, "from-quote": 1, discard: 1, send: 1, "mark-paid": 1, void: 1, uncollectible: 1 };
@@ -335,7 +377,9 @@ export async function invoicesCli(argv: string[], cli: InvoicesCli): Promise<voi
   show <id>
   owed <who>                           open invoices, live money only, per currency
   add <who> --line "<what>|[qty|]<price>[|<tax rate>]"... [--days ${days}] [--notes n] [--event <id>] [--currency ${cli.currency}]
-  from-quote <quote id>                an accepted quote's lines, once
+  from-quote <quote id>                an accepted quote's lines, when it has no invoice yet
+  from-quote <quote id> --deposit 50   a deposit: that percent of each tax rate's lines, when it has no invoice yet
+  from-quote <quote id> --rest         what its invoices have not billed yet
   edit <id> [the add flags]            a draft not yet in Stripe; --line replaces every line
   discard <id>                         a draft not yet in Stripe: kept as void
   send <id> | mark-paid <id> | void <id> | uncollectible <id>
@@ -443,11 +487,21 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
 
       case "from-quote": {
         if (!rest[0] || !ID.test(rest[0])) misused(`${at}: name the quote by its id (#12 is 12)`, "node scripts/quotes.mjs list --status accepted");
-        const r = await invoiceFromQuote(db, rest[0], by, cli.source, days);
+        const dep = flag(a, "deposit");
+        if (dep !== undefined && (!/^\d{1,3}$/.test(dep) || Number(dep) < 1 || Number(dep) > 100)) misused(`${at}: --deposit ${dep} is not a percent from 1 to 100`, `node scripts/invoices.mjs from-quote ${rest[0]} --deposit 50`);
+        if (dep !== undefined && has(a, "rest")) misused(`${at}: a deposit or the rest, not both`, `node scripts/invoices.mjs from-quote ${rest[0]} --rest`);
+        // Run twice, the whole quote and a deposit make one invoice: they are made only while it has none. The rest bills what is left.
+        const seen = has(a, "rest") ? (await invoicesFor(db, { quoteId: rest[0] })).filter((i) => i.status !== "void").length : 0;
+        const share = has(a, "rest") ? { kind: "rest" as const } : dep !== undefined ? { kind: "percent" as const, percent: Number(dep) } : { kind: "all" as const };
+        const r = await invoiceFromQuote(db, rest[0], by, cli.source, days, { share, seen });
         if (!r.ok && r.reason === "invoiced" && r.invoiceId) {
           const inv = await invoiceById(db, r.invoiceId);
           if (json) return out(true, inv, String);
-          return done(at, `quote #${rest[0]} already has invoice #${r.invoiceId}; left alone`, { next: `node scripts/invoices.mjs show ${r.invoiceId}` });
+          return done(at, `quote #${rest[0]} already has invoice #${r.invoiceId}; left alone`, { next: `node scripts/invoices.mjs show ${r.invoiceId}, or from-quote ${rest[0]} --rest for what is left` });
+        }
+        if (!r.ok && r.reason === "nothing_left") {
+          if (json) return out(true, null, String);
+          return done(at, `quote #${rest[0]} is invoiced in full already; left alone`, { next: `node scripts/quotes.mjs show ${rest[0]}` });
         }
         if (!r.ok) fail(r.reason === "not_accepted" ? `${at}: quote #${rest[0]} is not accepted; only an accepted quote is invoiced` : `${at}: no quote ${rest[0]}`,
           r.reason === "not_accepted" ? `node scripts/quotes.mjs accept ${rest[0]}, once the customer said yes` : "node scripts/quotes.mjs list --status accepted");

@@ -1,6 +1,7 @@
 // The CRM's only client script: drag on the deal board, the current tab
 // kept in view on a narrow screen, a menu closing as a menu does, the
-// sidebar's drawer on a phone, "/" to search, and clean filter addresses. Everything else is plain forms and htmx attributes.
+// sidebar's drawer on a phone, "/" to search, clean filter addresses, and a
+// proposal's picture shrunk before upload. Everything else is plain forms and htmx attributes.
 // A drop posts the same stage change the card's own select makes, and the
 // server's answer (the whole pipeline) replaces the board, so a drop that
 // fails leaves nothing pretending it worked. Without this file, or without
@@ -126,6 +127,34 @@
     var summary = form.querySelector("details > summary");
     if (summary) summary.textContent = used ? "Filters (" + used + ")" : "Filters";
   }
+  // A picture for a proposal (input[data-resize=1600]) is made at most that
+  // many pixels wide, as a JPEG, before it is uploaded: the page carries it
+  // whole. Without this the server takes one already small enough.
+  document.addEventListener("change", function (e) {
+    var input = e.target;
+    if (!input.matches || !input.matches("input[type=file][data-resize]") || !input.files || !input.files[0]) return;
+    var file = input.files[0], max = Number(input.dataset.resize) || 1600;
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type) || !window.createImageBitmap || !window.DataTransfer) return;
+    createImageBitmap(file).then(function (img) {
+      var scale = Math.min(1, max / img.width);
+      // A small PNG (a logo with a clear background) stays as it is.
+      if (scale === 1 && file.size <= 400 * 1024) return;
+      var canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(function (blob) {
+        if (!blob) return;
+        var dt = new DataTransfer();
+        dt.items.add(new File([blob], file.name.replace(/\.[a-z0-9]+$/i, "") + ".jpg", { type: "image/jpeg" }));
+        input.files = dt.files;
+      }, "image/jpeg", 0.85);
+    });
+  });
+  // A link shown once (data-select-all) is selected when it is clicked, ready to copy.
+  document.addEventListener("focusin", function (e) {
+    if (e.target.matches && e.target.matches("input[data-select-all]")) e.target.select();
+  });
   document.addEventListener("change", searchState);
   document.addEventListener("input", searchState);
   document.addEventListener("DOMContentLoaded", showCurrent);

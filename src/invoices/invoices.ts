@@ -10,6 +10,7 @@
 //
 //   const r = await createInvoice(db, { email, currency: "usd", lines: [...] }, by, "crm");
 //   const inv = await invoiceFromQuote(db, quoteId, by, "crm");   // an accepted quote's lines
+//   const dep = await invoiceFromQuote(db, quoteId, by, "crm", 30, { share: { kind: "percent", percent: 50 } });
 import { likePattern } from "../admin/query";
 import { q, type Db } from "../data/db";
 import { taxRates } from "../payments/tax";
@@ -117,40 +118,90 @@ export async function saveInvoice(db: Db, id: string, f: InvoiceFields, by: stri
   return { ok: true, value: toInvoice(out[5][0]) };
 }
 
-export type FromQuote = { ok: true; value: Invoice } | { ok: false; reason: "not_found" | "not_accepted" | "invoiced"; invoiceId?: string };
+export type FromQuote = { ok: true; value: Invoice } | { ok: false; reason: "not_found" | "not_accepted" | "invoiced" | "nothing_left"; invoiceId?: string };
+
+/** How much of a quote an invoice bills: all its lines, a share of it (a deposit), or what no invoice has billed yet. */
+export type Share = { kind: "all" } | { kind: "percent"; percent: number } | { kind: "rest" };
 
 /**
- * A draft invoice from an accepted quote (or, for a proposal's Pay button,
- * one still waiting for its answer: `beforeAnswer`): its customer, appointment, lines and
- * totals, in one statement. A quote has one invoice that is not void; asking
- * again answers `invoiced` with that invoice's id.
+ * A draft invoice from an accepted quote, in one transaction behind a lock
+ * on the quote. Invoices belong to the customer, so a quote makes as many as
+ * asked; `seen`, the invoices (not void) the asking page showed for the
+ * quote, keeps a second click from making a second one: it then answers
+ * `invoiced` with the newest.
+ *
+ * - `all` (the default): its customer, appointment, lines and totals.
+ * - `percent`: one line per tax rate the quote uses, "Deposit (50%) for
+ *   Q-0012", carrying the same share of each rate's lines, so the tax is the
+ *   same share too.
+ * - `rest`: what the quote's invoices (not void) have not billed yet, per tax
+ *   rate, "Balance for Q-0012"; all its lines when none has.
  */
-export async function invoiceFromQuote(db: Db, quoteId: string, by: string, source: string, days = 30, opts: { beforeAnswer?: boolean } = {}): Promise<FromQuote> {
+export async function invoiceFromQuote(db: Db, quoteId: string, by: string, source: string, days = 30, opts: { share?: Share; seen?: number } = {}): Promise<FromQuote> {
   if (!/^\d{1,18}$/.test(quoteId)) return { ok: false, reason: "not_found" };
+  const share = opts.share ?? { kind: "all" };
+  const pct = share.kind === "percent" ? Math.round(share.percent) : null;
+  if (pct !== null && !(pct >= 1 && pct <= 100)) throw new Error(`a deposit is 1 to 100 percent, not ${share.kind === "percent" ? share.percent : ""}`);
+  const seen = opts.seen ?? null;
   const out = await db.transaction([
-    // Lock the quote: two clicks make one invoice.
+    // Lock the quote: two clicks wait for each other, and the second sees the first's invoice.
     q`select status from quotes where id = ${quoteId}::bigint for update`,
-    q`with made as (
-        insert into invoices (quote_id, visit_id, email, name, phone, address, currency, subtotal_cents, tax_cents, total_cents,
-                              days_until_due, notes, source, created_by, updated_by)
-        select qt.id, qt.visit_id, qt.email, qt.name, qt.phone, qt.address, qt.currency, qt.subtotal_cents, qt.tax_cents, qt.total_cents,
-               ${days}, qt.notes, ${source}, ${by}, ${by}
-        from quotes qt
-        where qt.id = ${quoteId}::bigint and qt.status = any(${opts.beforeAnswer ? ["draft", "sent", "accepted"] : ["accepted"]}::text[])
-          and not exists (select 1 from invoices i where i.quote_id = qt.id and i.status <> 'void')
+    q`with qt as (
+        select * from quotes
+        where id = ${quoteId}::bigint and status = 'accepted'
+          and (${seen}::int is null or (select count(*) from invoices i where i.quote_id = quotes.id and i.status <> 'void') = ${seen}::int)),
+      billed as (
+        select l.tax_rate_id, sum(l.amount_cents) as amount from invoice_lines l join invoices i on i.id = l.invoice_id
+        where i.quote_id = ${quoteId}::bigint and i.status <> 'void' group by l.tax_rate_id),
+      groups as (
+        select l.tax_rate_id, sum(l.amount_cents) as amount, min(l.position) as first
+        from quote_lines l where l.quote_id = ${quoteId}::bigint group by l.tax_rate_id),
+      -- A share of each rate's lines: the deposit's percent, or what is left to bill.
+      shares as (
+        select g.tax_rate_id, g.first,
+               case when ${pct}::int is not null then round(g.amount * ${pct}::int / 100.0)::bigint
+                    else g.amount - coalesce(b.amount, 0) end as amount
+        from groups g left join billed b on b.tax_rate_id is not distinct from g.tax_rate_id),
+      whole as (select ${share.kind}::text = 'all' or (${share.kind}::text = 'rest' and not exists (select 1 from billed)) as yes),
+      made as (
+        insert into invoices (quote_id, visit_id, email, name, phone, address, currency, days_until_due, notes, source, created_by, updated_by)
+        select qt.id, qt.visit_id, qt.email, qt.name, qt.phone, qt.address, qt.currency, ${days}, qt.notes, ${source}, ${by}, ${by}
+        from qt, whole
+        where whole.yes or exists (select 1 from shares where amount > 0)
         returning *),
-      lines as (
+      copied as (
         insert into invoice_lines (invoice_id, position, description, quantity, unit_cents, tax_rate_id, amount_cents, tax_cents)
         select made.id, l.position, l.description, l.quantity, l.unit_cents, l.tax_rate_id, l.amount_cents, l.tax_cents
-        from made, quote_lines l where l.quote_id = ${quoteId}::bigint)
-      select *, to_char(due_date, 'YYYY-MM-DD') as due_day from made`,
+        from made, whole, quote_lines l where whole.yes and l.quote_id = ${quoteId}::bigint
+        returning id),
+      parts as (
+        insert into invoice_lines (invoice_id, position, description, quantity, unit_cents, tax_rate_id, amount_cents, tax_cents)
+        select made.id, row_number() over (order by s.first),
+               case when ${pct}::int is not null then 'Deposit (' || ${pct}::int || '%) for ' else 'Balance for ' end || qt.number
+                 || case when (select count(*) from groups) > 1 then coalesce(' (' || t.name || ')', ' (no tax)') else '' end,
+               1, s.amount, s.tax_rate_id, s.amount,
+               coalesce(case when t.inclusive then s.amount - round(s.amount * 10000.0 / (10000 + t.percent_bp))
+                             else round(s.amount * t.percent_bp / 10000.0) end, 0)::bigint
+        from made, whole, qt, shares s left join tax_rates t on t.id = s.tax_rate_id
+        where not whole.yes and s.amount > 0
+        returning id)
+      select made.id::text as id, (select count(*) from copied) + (select count(*) from parts) as lines from made`,
+    // Its totals from its lines, as sumLines does; the invoice made in this transaction is the one created now().
+    q`update invoices set subtotal_cents = s.subtotal, tax_cents = s.tax, total_cents = s.subtotal + s.exclusive, updated_at = now()
+      from (select l.invoice_id, coalesce(sum(l.amount_cents), 0) as subtotal, coalesce(sum(l.tax_cents), 0) as tax,
+                   coalesce(sum(l.tax_cents) filter (where not coalesce(t.inclusive, false)), 0) as exclusive
+            from invoice_lines l left join tax_rates t on t.id = l.tax_rate_id group by l.invoice_id) s
+      where invoices.quote_id = ${quoteId}::bigint and invoices.created_at = now() and invoices.status = 'draft' and s.invoice_id = invoices.id
+      returning invoices.*, to_char(invoices.due_date, 'YYYY-MM-DD') as due_day`,
     // After the insert, so it sees an invoice another request made while this one waited for the lock.
-    q`select id::text from invoices where quote_id = ${quoteId}::bigint and status <> 'void' order by id limit 1`,
+    q`select max(id)::text as id, count(*)::int as n from invoices where quote_id = ${quoteId}::bigint and status <> 'void'`,
   ]);
   if (!out[0][0]) return { ok: false, reason: "not_found" };
-  if (out[1][0]) return { ok: true, value: toInvoice(out[1][0]) };
-  if (out[2][0]) return { ok: false, reason: "invoiced", invoiceId: out[2][0].id };
-  return { ok: false, reason: "not_accepted" };
+  if (out[2][0]) return { ok: true, value: toInvoice(out[2][0]) };
+  if (out[0][0].status !== "accepted") return { ok: false, reason: "not_accepted" };
+  const now = out[3][0];
+  if (seen !== null && now.n !== seen) return { ok: false, reason: "invoiced", invoiceId: now.id };
+  return { ok: false, reason: "nothing_left" };
 }
 
 /** Discard a draft that never went to Stripe: it turns void and stays on record. */
@@ -213,7 +264,7 @@ export async function owed(db: Db, email: string): Promise<{ currency: string; c
   const rows = await db.sql`
     select currency, sum(total_cents)::text as cents, count(*)::int as count from invoices
     where email = ${email}::citext and status = 'open' and livemode is true
-      -- A proposal's Pay button is not owed until its quote is accepted.
+      -- A quote's invoice is owed once its quote is accepted.
       and (quote_id is null or exists (select 1 from quotes q where q.id = invoices.quote_id and q.status = 'accepted'))
     group by currency order by currency`;
   return rows.map((r) => ({ currency: r.currency, cents: r.cents, count: Number(r.count) }));
@@ -222,7 +273,7 @@ export async function owed(db: Db, email: string): Promise<{ currency: string; c
 /**
  * The money at a glance, in one currency, live mode only: what is owed
  * (open), the part of it past due, and what was paid this calendar month in
- * `timeZone`. A proposal's Pay button is not owed until its quote is accepted.
+ * `timeZone`. A quote's invoice is owed once its quote is accepted.
  */
 export async function invoiceTotals(db: Db, opts: { today: string; timeZone: string; currency: string }) {
   const [r] = await db.sql`

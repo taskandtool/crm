@@ -27,5 +27,11 @@ export const eventsCfg = cfg.events ? { ...cfg.events, currency: cfg.events.curr
 export const showBooking = !!eventsCfg && cfg.booking !== false;
 /** Quotes and invoices, or null when the config turns them off. The name is blank until the business has given it. */
 export const invoicesCfg = cfg.invoices
-  ? { ...cfg.invoices, name: cfg.invoices.name === "to fill" ? "" : cfg.invoices.name.trim(), currency: (cfg.invoices.currency ?? eventsCfg?.currency ?? "USD").toLowerCase() }
+  ? {
+      ...cfg.invoices,
+      name: cfg.invoices.name === "to fill" ? "" : cfg.invoices.name.trim(),
+      currency: (cfg.invoices.currency ?? eventsCfg?.currency ?? "USD").toLowerCase(),
+      /** What a quote is called on every page, email and proposal. */
+      word: cfg.invoices.quote_word ?? "Quote",
+    }
   : null;

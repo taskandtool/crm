@@ -1,0 +1,68 @@
+/* The proposal's own look: what the customer reads, apart from the team's
+   CRM (styles/theme.css). `npm run css` compiles it, with its fonts inlined,
+   into src/proposals/style.ts, which every proposal page carries whole: the
+   page loads nothing else. Change the tokens here to make proposals look
+   like the business; copy a Website's colours and fonts from its
+   styles/theme.css. A font is a WOFF2 file in static/fonts/ named in an
+   @font-face below (url("/fonts/<file>.woff2")), never a font service. */
+@import "tailwindcss" source(none);
+/* The page's own files only: the team's proposal pages (admin.tsx) are the CRM's look. */
+@source "../src/proposals/sections";
+@source "../src/proposals/page.tsx";
+@source "../src/proposals/public.tsx";
+
+@theme {
+  --color-canvas: #ffffff;
+  --color-panel: #f5f6f8;
+  --color-ink: #15171c;
+  --color-muted: #5a606c;
+  --color-line: #e2e4e9;
+  --color-line-strong: #c5c9d1;
+  --color-accent: #1d4ed8;
+  --color-accent-ink: #ffffff;
+
+  --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --text-display: clamp(2.25rem, 6vw, 3.25rem);
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.025em;
+  --text-display--font-weight: 600;
+  --text-section: 1.625rem;
+  --text-section--line-height: 1.2;
+  --text-section--letter-spacing: -0.015em;
+  --text-section--font-weight: 600;
+  --text-lede: 1.1875rem;
+  --text-lede--line-height: 1.55;
+  --text-body: 1.0625rem;
+  --text-body--line-height: 1.65;
+  --text-small: 0.9375rem;
+  --text-small--line-height: 1.5;
+  --text-label: 0.75rem;
+  --text-label--line-height: 1.3;
+  --text-label--letter-spacing: 0.08em;
+  --text-label--font-weight: 600;
+  --text-total: 1.75rem;
+  --text-total--line-height: 1.1;
+  --text-total--letter-spacing: -0.02em;
+  --text-total--font-weight: 600;
+
+  --container-read: 42.5rem;
+  --radius-box: 0.75rem;
+  --radius-control: 0.5rem;
+}
+
+@layer base {
+  html { background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+  body { margin: 0; }
+  a { color: var(--color-accent); text-underline-offset: 0.2em; }
+  :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+  input, select, textarea, button { font: inherit; color: inherit; }
+  /* Markdown from the owner: paragraphs and lists, spaced as one text. */
+  .prose > * + * { margin-top: 0.85em; }
+  .prose ul { list-style: disc; padding-left: 1.25em; }
+  .prose ol { list-style: decimal; padding-left: 1.4em; }
+  .prose li + li { margin-top: 0.35em; }
+  .prose strong { font-weight: 600; }
+  @page { margin: 16mm 14mm; }
+}

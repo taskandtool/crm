@@ -296,53 +296,66 @@ test("the pages: a GET asks, the POST sends; Mark paid waits for Stripe; from a 
     assert.match(first, /\/invoices\/\d+\?saved=invoice-created$/);
     res = await post(`/invoices/quotes/${qid}/invoice`);
     assert.equal(res.headers.get("location"), first.replace("invoice-created", "invoiced"));
-    assert.match(await (await get(`/invoices/quotes/${qid}`)).text(), /Draft invoice<\/a><\/p>/);
+    html = await (await get(`/invoices/quotes/${qid}`)).text();
+    assert.match(html, /Draft invoice<\/a>/);
+    assert.match(html, /Invoice the rest/, "a second one bills what is left");
+    res = await post(`/invoices/quotes/${qid}/invoice`, { seen: "1" });
+    assert.match(res.headers.get("location")!, /saved=nothing-left$/, "the first billed it all");
   }));
 
-test("a proposal's Pay button: the invoice made in Stripe without its email, the link in the quote, paying it accepts the quote", (t) =>
+test("a quote is edited until it is decided, sent or not; an invoice is never made before the yes", (t) =>
   withDb(t, async (s) => {
-    const { createQuote, quoteById, markSent } = await import("../quotes");
-    const { payLinkForQuote } = await import("../stripe");
-    const { quoteMessage } = await import("../document");
-    const q = await createQuote(s.db, { email: "ann@example.com", name: "Ann", currency: "usd", lines: [{ description: "Fence", quantity: "1", unit: "100.00" }] }, BY, "crm");
+    const { createQuote, saveQuote, decideQuote, markSent, quoteById } = await import("../quotes");
+    const { invoiceFromQuote } = await import("../invoices");
+    const fence = (unit: string) => ({ email: "ann@example.com", currency: "usd", lines: [{ description: "Fence", quantity: "1", unit }] });
+    const q = await createQuote(s.db, fence("100.00"), BY, "crm");
     assert.ok(q.ok);
     await markSent(s.db, q.value.id, BY);
-    const f = fakeStripe();
-    // The invoice's lines must be in Stripe before it finalizes: the fake keeps them.
-    const link = await payLinkForQuote(s.db, f.stripe, q.value.id, BY, "crm");
-    assert.ok(link.ok, JSON.stringify(link));
-    assert.equal(link.url, "https://invoice.stripe.com/i/1");
-    assert.ok(!f.calls.some((c) => c.path.endsWith("/send")), "Stripe emails nothing: the quote carries the link");
-    const again = await payLinkForQuote(s.db, f.stripe, q.value.id, BY, "crm");
-    assert.ok(again.ok && again.url === link.url, "asked twice, one invoice");
-    assert.equal(f.calls.filter((c) => c.path === "/v1/invoices").length, 1);
-    const full = await quoteById(s.db, q.value.id);
-    assert.match(quoteMessage(full!, [], { business: "Acme" }, link.url).text, /To accept and pay: https:\/\/invoice\.stripe\.com\/i\/1/);
-
-    const send = hook(s);
-    await s.db.sql`update invoices set stripe_invoice_id = 'in_live_1' where quote_id = ${q.value.id}::bigint`;
-    await send("invoice.paid", stripeInvoice("paid"));
-    const after = await quoteById(s.db, q.value.id);
-    assert.deepEqual([after!.status, after!.decided_by], ["accepted", "paid online"]);
+    const edit = await saveQuote(s.db, q.value.id, fence("120.00"), BY);
+    assert.ok(edit.ok, "a sent quote still changes");
+    assert.equal(edit.value.total_cents, "12000");
+    assert.deepEqual(await invoiceFromQuote(s.db, q.value.id, BY, "crm"), { ok: false, reason: "not_accepted" });
+    await decideQuote(s.db, q.value.id, "accepted", BY);
+    const late = await saveQuote(s.db, q.value.id, fence("1.00"), BY);
+    assert.ok(!late.ok && /accepted, so it no longer changes/.test(late.errors.status));
+    assert.equal((await quoteById(s.db, q.value.id))!.lines[0].unit_cents, 12000, "the lines it was accepted with");
   }));
 
-test("a quote with a Pay button out no longer changes; declining it voids the button; it is not owed until accepted", (t) =>
+test("invoices from a quote: a deposit carries each rate's share, the rest bills what is left, a second click makes nothing", (t) =>
   withDb(t, async (s) => {
-    const { createQuote, saveQuote, decideQuote } = await import("../quotes");
-    const { payLinkForQuote, closePayLink } = await import("../stripe");
-    const { owed, invoicesFor } = await import("../invoices");
-    const q = await createQuote(s.db, { email: "ann@example.com", currency: "usd", lines: [{ description: "Fence", quantity: "1", unit: "100.00" }] }, BY, "crm");
+    const { createQuote, decideQuote } = await import("../quotes");
+    const { invoiceFromQuote, invoiceById } = await import("../invoices");
+    const rate = await createTaxRate(s.db, { name: "Sales tax", percent: "10", inclusive: false }, BY);
+    assert.ok(rate.ok);
+    const q = await createQuote(s.db, { email: "ann@example.com", currency: "usd", lines: [
+      { description: "Fence", quantity: "1", unit: "1000.00", tax_rate_id: rate.value.id },
+      { description: "Design", quantity: "2", unit: "250.00" },
+    ] }, BY, "crm");
     assert.ok(q.ok);
-    const f = fakeStripe({ livemode: true });
-    assert.ok((await payLinkForQuote(s.db, f.stripe, q.value.id, BY, "crm")).ok);
-    const edit = await saveQuote(s.db, q.value.id, { email: "ann@example.com", currency: "usd", lines: [{ description: "Fence", quantity: "1", unit: "1.00" }] }, BY);
-    assert.ok(!edit.ok && /Pay button out/.test(edit.errors.status));
-    assert.deepEqual(await owed(s.db, "ann@example.com"), [], "not owed before the yes");
-    await decideQuote(s.db, q.value.id, "declined", BY);
-    assert.equal(await closePayLink(s.db, () => f.stripe, q.value.id, BY), "Its Pay button is voided in Stripe.");
-    assert.ok(f.calls.some((c) => c.path === "/v1/invoices/in_1/void"));
-    // The void arrives by the webhook; nothing open is left to void after it.
-    await s.db.sql`update invoices set status = 'void'`;
-    assert.equal(await closePayLink(s.db, () => { throw new Error("no Stripe needed"); }, q.value.id, BY), null);
-    assert.equal((await invoicesFor(s.db, { quoteId: q.value.id }))[0].status, "void");
+    await decideQuote(s.db, q.value.id, "accepted", BY);
+
+    const dep = await invoiceFromQuote(s.db, q.value.id, BY, "crm", 30, { share: { kind: "percent", percent: 50 }, seen: 0 });
+    assert.ok(dep.ok, JSON.stringify(dep));
+    const d = (await invoiceById(s.db, dep.value.id))!;
+    assert.deepEqual(d.lines.map((l) => [l.description, l.amount_cents, l.tax_cents]), [
+      [`Deposit (50%) for ${q.value.number} (Sales tax)`, "50000", "5000"],
+      [`Deposit (50%) for ${q.value.number} (no tax)`, "25000", "0"],
+    ]);
+    assert.deepEqual([d.subtotal_cents, d.tax_cents, d.total_cents], ["75000", "5000", "80000"], "half the quote's 1,600 with half its tax");
+
+    const again = await invoiceFromQuote(s.db, q.value.id, BY, "crm", 30, { share: { kind: "percent", percent: 50 }, seen: 0 });
+    assert.deepEqual(again, { ok: false, reason: "invoiced", invoiceId: dep.value.id }, "the page saw none; one exists now");
+
+    const rest = await invoiceFromQuote(s.db, q.value.id, BY, "crm", 30, { share: { kind: "rest" }, seen: 1 });
+    assert.ok(rest.ok);
+    const r = (await invoiceById(s.db, rest.value.id))!;
+    assert.deepEqual(r.lines.map((l) => [l.description, l.amount_cents]), [
+      [`Balance for ${q.value.number} (Sales tax)`, "50000"], [`Balance for ${q.value.number} (no tax)`, "25000"],
+    ]);
+    assert.equal(r.total_cents, "80000");
+    assert.deepEqual(await invoiceFromQuote(s.db, q.value.id, BY, "crm", 30, { share: { kind: "rest" }, seen: 2 }), { ok: false, reason: "nothing_left" });
+    // A voided invoice no longer counts as billed.
+    await s.db.sql`update invoices set status = 'void' where id = ${rest.value.id}::bigint`;
+    const redo = await invoiceFromQuote(s.db, q.value.id, BY, "crm", 30, { share: { kind: "rest" }, seen: 1 });
+    assert.ok(redo.ok && (await invoiceById(s.db, redo.value.id))!.total_cents === "80000");
   }));

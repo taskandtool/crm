@@ -27,6 +27,7 @@ export const BOOKING_SCHEMA_FILE = fileURLToPath(new URL("../booking/schema.sql"
 export const FORMS_SCHEMA_FILE = fileURLToPath(new URL("../forms/schema.sql", import.meta.url));
 export const PAYMENTS_SCHEMA_FILE = fileURLToPath(new URL("../payments/schema.sql", import.meta.url));
 export const INVOICES_SCHEMA_FILE = fileURLToPath(new URL("../invoices/schema.sql", import.meta.url));
+export const PROPOSALS_SCHEMA_FILE = fileURLToPath(new URL("../proposals/schema.sql", import.meta.url));
 
 export async function setup(db: Db, seeds: Seeds, opts: SetupOpts = { invoices: true, forms: true }): Promise<{ seeded: number }> {
   // On Neon the app's login may not create extensions; they are there
@@ -49,6 +50,8 @@ export async function setup(db: Db, seeds: Seeds, opts: SetupOpts = { invoices: 
   if (opts.invoices !== false) {
     await applySchema(db, readFileSync(PAYMENTS_SCHEMA_FILE, "utf8"));
     await applySchema(db, readFileSync(INVOICES_SCHEMA_FILE, "utf8"));
+    // A quote as the customer's page: its sections, link, opens and signature.
+    await applySchema(db, readFileSync(PROPOSALS_SCHEMA_FILE, "utf8"));
   }
   const seeded = (await seedStages(db, "customers", seeds.statuses)) + (await seedStages(db, "deals", seeds.dealStages));
   // Then the people: the custom fields every app's savePerson fills, anyone not yet saved
@@ -70,6 +73,7 @@ export function setupKey(opts: SetupOpts): string {
     ["crm", SCHEMA_FILE],
     ["payments", opts.invoices !== false && PAYMENTS_SCHEMA_FILE],
     ["invoices", opts.invoices !== false && INVOICES_SCHEMA_FILE],
+    ["proposals", opts.invoices !== false && PROPOSALS_SCHEMA_FILE],
   ];
   const h = createHash("sha256");
   for (const [name, file] of files) if (file) h.update(name).update(readFileSync(file));

@@ -24,7 +24,12 @@ function Said({ n }: { n: Notice }) {
       ? <>{who} moved {what} to <When at={n.starts_at} timeZone={timeZone} /></>
       : <>{who} cancelled {what} on <When at={n.was_starts_at} timeZone={timeZone} /></>;
   }
-  if (n.kind === "quote") return <>{who} accepted Quote {n.number} and paid {formatMoney(n.total_cents, n.currency)}</>;
+  const word = invoicesCfg?.word ?? "Quote";
+  if (n.kind === "quote") {
+    return n.answer === "accepted"
+      ? <>{who} signed {word} {n.number}, {formatMoney(n.total_cents, n.currency)}</>
+      : <>{who} declined {word} {n.number}</>;
+  }
   return (
     <>
       Payment of {formatMoney(n.amount_cents, n.currency)} from {who}
@@ -59,7 +64,7 @@ export function NotificationsPage({ user, rows, seen }: { user: string; rows: No
         </ul>
       ) : (
         <EmptyCard title="Nothing yet">
-          A customer moving or cancelling their own booking, a quote paid online and payments show up here.
+          A customer moving or cancelling their own booking, signing or declining a {(invoicesCfg?.word ?? "Quote").toLowerCase()} at its link, and payments show up here.
         </EmptyCard>
       )}
     </Layout>

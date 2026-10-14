@@ -1,12 +1,14 @@
-// Quotes: a CRM document, not Stripe's. Made as a draft, edited while it is a
-// draft, sent through the owner's own sender, then accepted or declined by a
-// person. Its status only moves forward:
+// Quotes: a CRM document, not Stripe's. Made as a draft, sent through the
+// owner's own sender (or at a link the app serves), then accepted or declined,
+// by a person or by the customer at that link. Its status only moves forward:
 //
 //   draft -> sent -> accepted | declined | expired
 //   draft -> accepted | declined | expired      (a yes on the phone before it went out)
 //   expired -> accepted | declined               (a late yes still counts)
 //
-// A sent quote is never edited: copy it to a new draft. Nothing is deleted.
+// It is edited until it is accepted or declined, sent or not: the customer's
+// link always shows the current one. Once decided it never changes: copy it
+// to a new draft. Nothing is deleted.
 //
 //   const r = await createQuote(db, { email, name, currency: "usd", lines: [...] }, by, "crm");
 //   await markSent(db, r.value.id, by);
@@ -20,9 +22,15 @@ import { clearLines, insertLines, readLines, sumLines, toLine, type Errors, type
 
 export const QUOTE_STATUSES = ["draft", "sent", "accepted", "declined", "expired"] as const;
 export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
-export const QUOTE_STATUS_LABELS: Record<QuoteStatus, string> = {
-  draft: "Draft", sent: "Sent", accepted: "Accepted", declined: "Declined", expired: "Expired",
+/** What a list shows: the statuses, and Viewed for a sent quote the customer has opened (viewed_at). */
+export type ShownQuoteStatus = QuoteStatus | "viewed";
+export const SHOWN_QUOTE_STATUSES: ShownQuoteStatus[] = ["draft", "sent", "viewed", "accepted", "declined", "expired"];
+export const QUOTE_STATUS_LABELS: Record<ShownQuoteStatus, string> = {
+  draft: "Draft", sent: "Sent", viewed: "Viewed", accepted: "Accepted", declined: "Declined", expired: "Expired",
 };
+/** The statuses a quote is still edited in. */
+export const EDITABLE: QuoteStatus[] = ["draft", "sent", "expired"];
+export const isEditable = (qt: Pick<Quote, "status">) => EDITABLE.includes(qt.status);
 
 export type Quote = {
   id: string;
@@ -42,6 +50,8 @@ export type Quote = {
   sent_at: Date | null;
   decided_at: Date | null;
   decided_by: string | null;
+  /** When the customer first opened it at its link. */
+  viewed_at: Date | null;
   visit_id: string | null;
   deal_id: string | null;
   source: string | null;
@@ -129,8 +139,9 @@ export async function createQuote(db: Db, f: QuoteFields, by: string, source: st
 }
 
 /**
- * Replace a draft's customer, terms and lines. A quote that is no longer a
- * draft is refused (errors.status) and nothing changes: copy it instead.
+ * Replace a quote's customer, terms and lines, until it is accepted or
+ * declined. A decided one is refused (errors.status) and nothing changes:
+ * copy it instead.
  */
 export async function saveQuote(db: Db, id: string, f: QuoteFields, by: string): Promise<Saved<Quote>> {
   if (!/^\d{1,18}$/.test(id)) return { ok: false, errors: { status: "No such quote." } };
@@ -139,12 +150,11 @@ export async function saveQuote(db: Db, id: string, f: QuoteFields, by: string):
   const h = r.value.head;
   const out = await db.transaction([
     // Lock the quote first, so two saves cannot interleave their lines.
-    q`select status, exists (select 1 from invoices i where i.quote_id = quotes.id and i.status <> 'void') as invoiced
-      from quotes where id = ${id}::bigint for update`,
+    q`select status from quotes where id = ${id}::bigint for update`,
     q`update quotes set email = ${h.email}, name = ${h.name}, phone = ${h.phone}, address = ${h.address}, currency = ${h.currency},
         valid_until = ${h.valid_until}::date, notes = ${h.notes}, terms = ${h.terms}, visit_id = ${h.visit_id}::bigint, deal_id = ${h.deal_id}::bigint,
         updated_by = ${by}, updated_at = now()
-      where id = ${id}::bigint and status = 'draft' and not exists (select 1 from invoices i where i.quote_id = quotes.id and i.status <> 'void')`,
+      where id = ${id}::bigint and status = any(${EDITABLE}::text[])`,
     clearLines("quote", id),
     insertLines("quote", id, r.value.lines),
     sumLines("quote", id),
@@ -152,8 +162,7 @@ export async function saveQuote(db: Db, id: string, f: QuoteFields, by: string):
   ]);
   const before = out[0][0];
   if (!before) return { ok: false, errors: { status: "No such quote." } };
-  if (before.status !== "draft") return { ok: false, errors: { status: "This quote was sent, so it no longer changes. Copy it to a new quote." } };
-  if (before.invoiced) return { ok: false, errors: { status: "This quote has a Pay button out, so it no longer changes: the customer would pay the old lines. Copy it to a new quote." } };
+  if (!EDITABLE.includes(before.status)) return { ok: false, errors: { status: `This quote was ${before.status}, so it no longer changes. Copy it to a new quote.` } };
   return { ok: true, value: toQuote(out[5][0]) };
 }
 
@@ -178,12 +187,12 @@ export async function quotesFor(db: Db, by: { email?: string | null; visitId?: s
 }
 
 export type QuoteRow = Quote & { k: string };
-export type QuoteFilter = { q: string | null; status: QuoteStatus | null };
+export type QuoteFilter = { q: string | null; status: ShownQuoteStatus | null };
 
 /**
  * The quotes list, newest first, keyset paged on (created_at, id). `status`
  * filters by what the list shows, so "expired" includes a draft or sent
- * quote past its date (shownStatus).
+ * quote past its date and "viewed" is a sent one the customer opened (shownStatus).
  */
 export async function quotesPage(db: Db, f: QuoteFilter, after: { k: string; id: string } | null, size: number, today: string): Promise<QuoteRow[]> {
   const pat = likePattern(f.q);
@@ -192,7 +201,8 @@ export async function quotesPage(db: Db, f: QuoteFilter, after: { k: string; id:
     select *, to_char(valid_until, 'YYYY-MM-DD') as valid_day, created_at::text as k from quotes
     where (${pat}::text is null or number ilike ${pat} or email::text ilike ${pat} or name ilike ${pat})
       and (${f.status}::text is null
-           or (case when status in ('draft', 'sent') and valid_until < ${today}::date then 'expired' else status end) = ${f.status})
+           or (case when status in ('draft', 'sent') and valid_until < ${today}::date then 'expired'
+                    when status = 'sent' and viewed_at is not null then 'viewed' else status end) = ${f.status})
       and (${k}::timestamptz is null or (created_at, id) < (${k}::timestamptz, ${id}::bigint))
     order by created_at desc, id desc limit ${size + 1}`;
   return rows.map((r) => ({ ...toQuote(r), k: r.k }));
@@ -219,9 +229,15 @@ async function move(db: Db, id: string, to: QuoteStatus, from: QuoteStatus[], by
 /** Sent (again): a draft or an already sent quote. sent_at is the latest send. */
 export const markSent = (db: Db, id: string, by: string) => move(db, id, "sent", ["draft", "sent"], by);
 
-/** The customer's answer, recorded by a person (or the AI on the owner's word). */
+/**
+ * The customer's answer: recorded by a person (or the AI on the owner's word),
+ * or by the customer at the quote's link (`by` ONLINE[answer]).
+ */
 export const decideQuote = (db: Db, id: string, answer: "accepted" | "declined", by: string) =>
   move(db, id, answer, ["draft", "sent", "expired"], by);
+
+/** `decided_by` when the customer answered at the link themselves: the Inbox shows these, not the team's. */
+export const ONLINE = { accepted: "signed online", declined: "declined online" } as const;
 
 export const expireQuote = (db: Db, id: string, by: string) => move(db, id, "expired", ["draft", "sent"], by);
 
@@ -245,9 +261,10 @@ export async function copyQuote(db: Db, id: string, by: string, source: string):
   return rows[0] ? toQuote(rows[0]) : null;
 }
 
-/** What a list shows: a draft or sent quote past its valid-until date reads as expired. */
-export function shownStatus(qt: Pick<Quote, "status" | "valid_until">, today: string): QuoteStatus {
-  return (qt.status === "draft" || qt.status === "sent") && qt.valid_until && qt.valid_until < today ? "expired" : qt.status;
+/** What a list shows: a draft or sent quote past its valid-until date reads as expired; a sent one the customer opened, as viewed. */
+export function shownStatus(qt: Pick<Quote, "status" | "valid_until"> & { viewed_at?: Date | null }, today: string): ShownQuoteStatus {
+  if ((qt.status === "draft" || qt.status === "sent") && qt.valid_until && qt.valid_until < today) return "expired";
+  return qt.status === "sent" && qt.viewed_at ? "viewed" : qt.status;
 }
 
 // Every read selects `*` and valid_until as text (valid_day): pg reads a `date` as local midnight.
@@ -269,6 +286,7 @@ export const toQuote = (r: Record<string, any>): Quote => ({
   sent_at: r.sent_at ? new Date(r.sent_at) : null,
   decided_at: r.decided_at ? new Date(r.decided_at) : null,
   decided_by: r.decided_by ?? null,
+  viewed_at: r.viewed_at ? new Date(r.viewed_at) : null,
   visit_id: r.visit_id ?? null,
   deal_id: r.deal_id ?? null,
   source: r.source ?? null,

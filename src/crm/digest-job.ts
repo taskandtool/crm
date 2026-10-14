@@ -8,7 +8,7 @@
 // person with tasks due gets one email that day. One run; exits 1 when
 // a send failed, so the job's run history shows why.
 import pg from "pg";
-import { cfg } from "../config";
+import { cfg, invoicesCfg } from "../config";
 import { emailSend } from "../booking/notify";
 import { checkFlags, fail, flag, has, machineEnv, misused, parseArgs } from "../data/cli.mjs";
 import { fromPool } from "../data/pg";
@@ -45,7 +45,7 @@ if (!env.DATABASE_URL) fail("task emails: DATABASE_URL is not set, so there is n
 
 const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 2 });
 try {
-  const r = await sendDigests(fromPool(pool), emailSend(env), { timeZone: cfg.time_zone, hour });
+  const r = await sendDigests(fromPool(pool), emailSend(env), { timeZone: cfg.time_zone, hour, word: invoicesCfg?.word });
   const parts = [`${r.sent} sent`];
   if (r.none) parts.push(`${r.none} not sent (no email sender connected; recorded, not retried)`);
   if (r.failed) parts.push(`${r.failed} failed (not retried today)`);

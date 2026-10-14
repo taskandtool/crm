@@ -77,8 +77,9 @@ test("quotes and invoices, end to end short of sending", { skip: !process.env.TE
     r = q("send", id);
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, new RegExp(`^quotes send: quote .* to ann@example\\.com, \\$450\\.00\\n[\\s\\S]*  Nothing was sent\\. If the owner asked for it: node scripts/quotes\\.mjs send ${id} --confirm\\n$`));
-    r = q("send", "--pay", id);
-    assert.equal(r.status, 0, "--pay takes no value, so the id stays an argument: " + r.stderr);
+    r = q("send", "--link", id);
+    assert.equal(r.status, 1, "no page to link to here");
+    assert.match(r.stderr, /^quotes send: there is no link to give/);
     r = q("show", "999");
     assert.equal(r.status, 1);
     assert.equal(r.stderr, "quotes show: no quote 999\n  Try: node scripts/quotes.mjs list\n");
@@ -101,7 +102,9 @@ test("quotes and invoices, end to end short of sending", { skip: !process.env.TE
     const inv = /#(\d+)/.exec(r.stdout)![1];
     r = i("from-quote", id);
     assert.equal(r.status, 0, "a second run is already done");
-    assert.equal(r.stdout, `invoices from-quote: quote #${id} already has invoice #${inv}; left alone\n\nNext: node scripts/invoices.mjs show ${inv}\n`);
+    assert.equal(r.stdout, `invoices from-quote: quote #${id} already has invoice #${inv}; left alone\n\nNext: node scripts/invoices.mjs show ${inv}, or from-quote ${id} --rest for what is left\n`);
+    r = i("from-quote", id, "--rest");
+    assert.match(r.stdout, /is invoiced in full already; left alone/);
     r = i("send", inv);
     assert.match(r.stdout, new RegExp(`\\n  Nothing was sent\\. If the owner asked for it: node scripts/invoices\\.mjs send ${inv} --confirm\\n$`));
     r = i("send", inv, "--confirm");

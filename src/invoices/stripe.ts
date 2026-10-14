@@ -14,7 +14,7 @@ import type { Db } from "../data/db";
 import { StripeError, type Stripe } from "../payments/stripe";
 import { formatMoney } from "../payments/money";
 import { stripeTaxRate, taxRates } from "../payments/tax";
-import { discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, toInvoice, type Invoice } from "./invoices";
+import { invoiceById, toInvoice, type Invoice } from "./invoices";
 
 export type StripeResult = { ok: true; invoice: Invoice } | { ok: false; reason: "not_found" | "status" | "empty" | "stripe"; message: string };
 
@@ -27,7 +27,7 @@ const fail = (reason: "not_found" | "status" | "empty" | "stripe", message: stri
  * again. The number, the hosted page and the PDF are stored from Stripe's
  * answer, and the invoice is open.
  */
-export async function sendInvoice(db: Db, stripe: Stripe, id: string, by: string, opts: { email?: boolean } = {}): Promise<StripeResult> {
+export async function sendInvoice(db: Db, stripe: Stripe, id: string, by: string): Promise<StripeResult> {
   const inv = await invoiceById(db, id);
   if (!inv) return fail("not_found", "No such invoice.");
   // An open one not yet emailed: a send that stopped after Stripe finalized it.
@@ -87,8 +87,7 @@ export async function sendInvoice(db: Db, stripe: Stripe, id: string, by: string
       }
     }
     if (si.status === "draft") si = await stripe<StripeInvoice>("POST", `/v1/invoices/${sid}/finalize`, { auto_advance: false }, { idempotencyKey: `finalize-${key}` });
-    // A proposal's Pay button carries the page itself, so Stripe emails nothing (email: false).
-    if (si.status === "open" && !inv.sent_at && opts.email !== false) si = await stripe<StripeInvoice>("POST", `/v1/invoices/${sid}/send`, {}, { idempotencyKey: `send-${key}` });
+    if (si.status === "open" && !inv.sent_at) si = await stripe<StripeInvoice>("POST", `/v1/invoices/${sid}/send`, {}, { idempotencyKey: `send-${key}` });
 
     const taxes = Array.isArray(si.total_taxes) ? si.total_taxes.reduce((n, t) => n + (t.amount ?? 0), 0) : null;
     const [row] = await db.sql`
@@ -113,40 +112,6 @@ type StripeInvoice = {
   id: string; status: string; number?: string | null; hosted_invoice_url?: string | null; invoice_pdf?: string | null;
   due_date?: number | null; subtotal: number; total: number; total_taxes?: { amount?: number }[];
 };
-
-/**
- * A proposal's Pay button: the quote's invoice, made from its lines once and
- * finalized in Stripe without Stripe's own email, and the page that pays it.
- * Paying it accepts the quote (webhook.ts). Made when the owner asks, as sending.
- */
-export async function payLinkForQuote(db: Db, stripe: Stripe, quoteId: string, by: string, source: string, days = 30): Promise<{ ok: true; url: string; invoice: Invoice } | { ok: false; message: string }> {
-  const made = await invoiceFromQuote(db, quoteId, by, source, days, { beforeAnswer: true });
-  const id = made.ok ? made.value.id : made.reason === "invoiced" ? made.invoiceId! : null;
-  if (!id) return { ok: false, message: made.ok ? "" : made.reason === "not_found" ? "No such quote." : "Only a quote still waiting for its answer, or accepted, gets a Pay button." };
-  const existing = await invoiceById(db, id);
-  if (existing?.hosted_url && existing.status === "open") return { ok: true, url: existing.hosted_url, invoice: existing };
-  const r = await sendInvoice(db, stripe, id, by, { email: false });
-  if (!r.ok) return { ok: false, message: r.message };
-  return r.invoice.hosted_url ? { ok: true, url: r.invoice.hosted_url, invoice: r.invoice } : { ok: false, message: "Stripe gave no payment page for the invoice." };
-}
-
-/**
- * A declined quote's Pay button stops working: its invoice is voided in
- * Stripe, or discarded when it never got there. Says what happened, for the
- * page or the script to show. `stripe` is called only when there is one to void.
- */
-export async function closePayLink(db: Db, stripe: () => Stripe, quoteId: string, by: string): Promise<string | null> {
-  const open = (await invoicesFor(db, { quoteId })).filter((i) => i.status === "draft" || i.status === "open");
-  for (const inv of open) {
-    if (!inv.stripe_invoice_id) {
-      await discardInvoice(db, inv.id, by);
-      continue;
-    }
-    const r = await voidInvoice(db, stripe(), inv.id);
-    if (!r.ok) return `Its Pay button could not be voided in Stripe: ${r.message}. Void invoice ${inv.number ?? inv.id} there.`;
-  }
-  return open.length ? "Its Pay button is voided in Stripe." : null;
-}
 
 /** Ask Stripe for a change to a sent invoice; the status here follows when Stripe's event arrives. */
 async function ask(db: Db, stripe: Stripe, id: string, allowed: Invoice["status"][], path: (sid: string) => string, keyPrefix: string): Promise<StripeResult> {

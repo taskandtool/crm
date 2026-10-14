@@ -11,6 +11,8 @@
 // `send` and `print` are how a quote leaves: `send` defaults to the owner's
 // connected sender (data/send.ts); `print` makes the PDF and exists only on
 // the machine (reports/print.ts). Without it, the email carries the lines.
+// With `proposal` (the CRM's), a quote is the app's own page at a link the
+// customer reads and accepts, and the email carries that link instead.
 // An invoice leaves through `stripe` (payments/stripe.ts), and Stripe emails it.
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -32,19 +34,45 @@ import { addDays, invoiceHtml, quoteHtml, quoteMessage, sendQuote, taxSummary, t
 import { createTaxRate, percentText, setTaxRateActive, taxRates, type TaxRate } from "../payments/tax";
 import { amountInput, type Errors, type SavedLine } from "./lines";
 import {
-  copyQuote, createQuote, decideQuote, expireQuote, markSent, QUOTE_STATUSES, QUOTE_STATUS_LABELS, quoteById, quotesPage, saveQuote, shownStatus,
-  type Quote, type QuoteRow, type QuoteStatus,
+  copyQuote, createQuote, decideQuote, expireQuote, isEditable, markSent, QUOTE_STATUS_LABELS, quoteById, quotesPage, saveQuote, SHOWN_QUOTE_STATUSES, shownStatus,
+  type Quote, type QuoteRow, type ShownQuoteStatus,
 } from "./quotes";
 import {
   createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, INVOICE_STATUSES, INVOICE_STATUS_LABELS, invoiceTotals, pastDue, saveInvoice,
   type Invoice, type InvoiceRow, type InvoiceStatus,
 } from "./invoices";
-import { closePayLink, markPaidOutOfBand, markUncollectible, payLinkForQuote, sendInvoice, voidInvoice } from "./stripe";
+import { markPaidOutOfBand, markUncollectible, sendInvoice, voidInvoice } from "./stripe";
 
 type Ctx = Context<{ Variables: TeamVars }>;
 export type { Frame } from "../admin/layout";
 /** What went out, and to whom. */
 export type SentDoc = { kind: "quote" | "invoice"; id: string; email: string };
+type QuoteWithLines = Quote & { lines: SavedLine[] };
+
+/**
+ * A quote as the app's own page (the CRM's proposal), which the customer
+ * reads and accepts at a link. Each hook may throw only for a real fault.
+ */
+export type ProposalHooks = {
+  /** The quote as its customer reads it: Preview, and the PDF when it goes without a link. */
+  document: (c: Ctx, qt: QuoteWithLines) => Promise<string>;
+  /** After the team made or saved a quote here: the app keeps its page current. */
+  saved: (c: Ctx, qt: Quote) => Promise<void>;
+  /** The app's part of the quote's page: its sections, its link, who opened it, the signature. */
+  panel: (c: Ctx, qt: QuoteWithLines) => Promise<Child>;
+  /** Whether the quote can go as a link now: null, or why not, in a sentence. */
+  linkReady: (c: Ctx, qt: Quote) => Promise<string | null>;
+  /**
+   * A new link for the quote, shown once. It works, and any earlier one stops
+   * working, only once `keep` runs: after the email carrying it went, so a
+   * send that fails leaves the link the customer has.
+   */
+  mintLink: (c: Ctx, qt: Quote) => Promise<{ url: string; keep: () => Promise<void> }>;
+  /** The email carrying the link went out now. */
+  emailed: (c: Ctx, qt: Quote) => Promise<void>;
+  /** What accepting it does, in a sentence, shown before Mark accepted; null when nothing. */
+  onAccept: (c: Ctx, qt: Quote) => Promise<string | null>;
+};
 
 export type InvoicesAdminOptions = {
   base: string;
@@ -59,6 +87,10 @@ export type InvoicesAdminOptions = {
   currency?: string;
   /** Standing terms a new quote starts with ("Payment due within 14 days of the work."). */
   terms?: string | null;
+  /** What the business calls a quote: "Quote" (default), "Proposal" or "Estimate". */
+  word?: string;
+  /** Quotes as the app's own pages at a link (ProposalHooks). */
+  proposal?: ProposalHooks;
   nav?: NavItem[];
   pageSize?: number;
   /** The app's own page frame (the CRM's layout and nav) instead of AdminLayout. */
@@ -76,7 +108,7 @@ export type InvoicesAdminOptions = {
   links?: (c: Ctx, doc: { kind: "quote"; quote: Quote } | { kind: "invoice"; invoice: Invoice }) => Promise<DocLinks>;
   /** After a quote or an invoice goes to its customer (sent, or marked sent): the CRM counts it as contact. Throwing shows nothing; the send stands. */
   afterSend?: (c: Ctx, doc: SentDoc) => Promise<void>;
-  /** After a person marks a quote accepted or declined here: the CRM wins the deal it is for. Throwing shows nothing; the answer stands. */
+  /** After a person marks a quote accepted or declined here: the CRM wins the deal it is for, and does what accepting it says. Throwing shows nothing; the answer stands. */
   afterDecide?: (c: Ctx, qt: Quote) => Promise<void>;
   /** Days a new invoice gives to pay; default 30. */
   daysUntilDue?: number;
@@ -140,16 +172,17 @@ function RecordFoot({ made, by, timeZone, children }: { made: Date; by: string |
 /** A quiet action in a record's foot: a POST, or a link to a page that says what will happen. */
 const footLink = "text-ink-2 underline decoration-line-strong underline-offset-2 hover:decoration-current";
 
-export const QUOTE_OPTIONS: StatusOption[] = QUOTE_STATUSES.map((s) => ({
+export const QUOTE_OPTIONS: StatusOption[] = SHOWN_QUOTE_STATUSES.map((s) => ({
   value: s,
   label: QUOTE_STATUS_LABELS[s],
-  tone: s === "accepted" ? "accent" : s === "sent" ? "strong" : s === "draft" ? "neutral" : "muted",
+  tone: s === "accepted" ? "accent" : s === "sent" || s === "viewed" ? "strong" : s === "draft" ? "neutral" : "muted",
 }));
 
 const MESSAGES: FlashMessages = {
   created: "Quote made. Preview it, then send it.",
   saved: "Saved.",
   sent: "Sent.",
+  "sent-link": "Sent with its link. You will see here when they open it.",
   "sent-no-pdf": "Sent, with the lines in the email: the PDF could not be made.",
   "marked-sent": "Marked as sent.",
   accepted: "Marked accepted.",
@@ -163,7 +196,8 @@ const MESSAGES: FlashMessages = {
   "asked-paid": "Stripe has it as paid. The invoice turns paid here when Stripe confirms, usually within seconds.",
   "asked-void": "Stripe is voiding it. It turns void here when Stripe confirms.",
   "asked-uncollectible": "Stripe has it written off. It changes here when Stripe confirms.",
-  invoiced: "This quote already has an invoice: here it is.",
+  invoiced: "That invoice is made already: here it is.",
+  "nothing-left": "Everything on it is invoiced already.",
   "rate-added": "Tax rate added.",
   "rate-saved": "Saved.",
   gone: "That is no longer there.",
@@ -217,18 +251,18 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   const qbase = `${base}/quotes`;
   const size = opts.pageSize ?? 50;
   const links = opts.nav ?? [
-    { href: qbase, label: "Quotes" },
+    { href: qbase, label: `${opts.word ?? "Quote"}s` },
     { href: base, label: "Invoices" },
   ];
   const stripeOf = opts.stripe ?? ((c: Ctx) => stripeFrom(envOf(c)));
-  const doc = { business: opts.business, timeZone: opts.timeZone };
+  const doc = { business: opts.business, timeZone: opts.timeZone, word: opts.word };
   const send = opts.send ?? ((c: Ctx, mail: Email) => sendEmail(envOf(c), mail));
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
 
   const framed = sectionPages({ Frame: opts.Frame, css: opts.css, label: "Quotes and invoices", links, messages: MESSAGES });
   const back = (c: Ctx, path: string, code: string) => c.redirect(withFlash(path, code), 303);
-  // What sending needs: the owner's Stripe for invoices (and a quote's Pay button), their email for quotes.
+  // What sending needs: the owner's Stripe for invoices, their email for quotes.
   // A caller passed in (a test, another app) counts as there; null (Stripe not reachable just now) is not a no.
   const stripeReady = async (c: Ctx) => (opts.stripe ? true : (await stripeConnected(envOf(c))) !== false);
   const emailReady = (c: Ctx) => !!opts.send || typeof senderOf(envOf(c)) !== "string";
@@ -248,11 +282,12 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 
   // ---- quotes --------------------------------------------------------------
 
+  const W = opts.word ?? "Quote", w = W.toLowerCase();
   const spec: TableSpec<QuoteRow> = {
     id: "quotes",
     href: (r) => `${qbase}/${r.id}`,
     columns: [
-      { label: "Quote", cell: (r) => <span class="whitespace-nowrap">{r.number}</span> },
+      { label: W, cell: (r) => <span class="whitespace-nowrap">{r.number}</span> },
       { label: "Customer", cell: (r) => r.name ?? r.email },
       { label: "Total", cell: (r) => money(r.total_cents, r.currency), class: "text-right" },
       { label: "Status", cell: (r) => <StatusBadge value={shownStatus(r, todayIn(opts.timeZone))} options={QUOTE_OPTIONS} /> },
@@ -263,7 +298,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   app.get("/quotes", async (c) => {
     const q = (c.req.query("q") ?? "").trim().slice(0, 100) || null;
     const asked = c.req.query("status");
-    const status = QUOTE_STATUSES.includes(asked as QuoteStatus) ? (asked as QuoteStatus) : null;
+    const status = SHOWN_QUOTE_STATUSES.includes(asked as ShownQuoteStatus) ? (asked as ShownQuoteStatus) : null;
     const after = readCursor(c.req.query("after"));
     const { page, next } = cut(await quotesPage(getDb(c), { q, status }, after, size, todayIn(opts.timeZone)), size);
     const params = { q, status };
@@ -273,19 +308,19 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const results = (
       <div id="results">
         {after ? <p class="mb-3 text-label"><a href={self}>Back to the start</a></p> : null}
-        <DataTable spec={spec} caption="Quotes, newest first" rows={page} next={next} more={more}
+        <DataTable spec={spec} caption={`${W}s, newest first`} rows={page} next={next} more={more}
           empty={q || status ? <NoMatches clear={qbase} /> : (
-            <EmptyState title="No quotes yet." action={<a href={`${qbase}/new`} class={primaryClass}>New quote</a>}>
-              A quote is the price you send before the work. Once it is accepted, invoice it.
+            <EmptyState title={`No ${w}s yet.`} action={<a href={`${qbase}/new`} class={primaryClass}>New {w}</a>}>
+              A {w} is the price you send before the work. Once it is accepted, invoice it.
             </EmptyState>
           )} />
       </div>
     );
     if (isPartial(c)) return c.html(results);
-    return framed(c, qbase, { title: "Quotes", actions: <a href={`${qbase}/new`} class={primaryClass}>New quote</a> }, (
+    return framed(c, qbase, { title: `${W}s`, actions: <a href={`${qbase}/new`} class={primaryClass}>New {w}</a> }, (
       <>
         {emailReady(c) ? null : needEmail}
-        <SearchBar action={qbase} target="#results" q={q} placeholder="Search quotes"
+        <SearchBar action={qbase} target="#results" q={q} placeholder={`Search ${w}s`}
           filters={[{ name: "status", label: "Status", options: QUOTE_OPTIONS, value: status, any: "Any status" }]} />
         {results}
       </>
@@ -294,7 +329,12 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 
   const editor = async (c: Ctx, p: { title: string; action: string; values: FormValues; errors: Errors; current: string }, status = 200) => {
     const rates = await taxRates(getDb(c));
-    return framed(c, p.current, p.title, <DocForm kind="quote" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === qbase ? "Create quote" : "Save"} taxPage={`${base}/tax-rates`} currency={opts.currency} />, status);
+    return framed(c, p.current, p.title, <DocForm kind="quote" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === qbase ? `Create ${w}` : "Save"} taxPage={`${base}/tax-rates`} currency={opts.currency} />, status);
+  };
+
+  // The app keeps its page of the quote current; a failure is logged, the save stands.
+  const saved = async (c: Ctx, qt: Quote) => {
+    if (opts.proposal) await opts.proposal.saved(c, qt).catch((e) => console.error(`quote ${qt.id}: saved: ${e instanceof Error ? e.message : e}`));
   };
 
   // Prefilled from the query: a customer's page or an appointment hands over who, and the first line.
@@ -306,13 +346,14 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       valid_until: addDays(todayIn(opts.timeZone), 30), notes: "", terms: opts.terms ?? "", days_until_due: "", visit_id: qy("event"), deal_id: qy("deal"),
       lines: qy("line") ? [{ description: qy("line"), quantity: "1", unit: qy("unit"), tax_rate_id: "" }] : [],
     };
-    return editor(c, { title: "New quote", action: qbase, values, errors: {}, current: qbase });
+    return editor(c, { title: `New ${w}`, action: qbase, values, errors: {}, current: qbase });
   });
 
   app.post("/quotes", async (c) => {
     const values = readForm(await c.req.parseBody({ all: true }));
     const r = await createQuote(getDb(c), values, c.get("user"), opts.source);
-    if (!r.ok) return editor(c, { title: "New quote", action: qbase, values, errors: r.errors, current: qbase }, 422);
+    if (!r.ok) return editor(c, { title: `New ${w}`, action: qbase, values, errors: r.errors, current: qbase }, 422);
+    await saved(c, r.value);
     return back(c, `${qbase}/${r.value.id}`, "created");
   });
 
@@ -327,12 +368,13 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const rates = await taxRates(getDb(c));
     const self = `${qbase}/${qt.id}`;
     const shown = shownStatus(qt, todayIn(opts.timeZone));
-    const open = qt.status === "draft" || qt.status === "sent" || qt.status === "expired";
+    const open = isEditable(qt);
     const linked = opts.links ? await opts.links(c, { kind: "quote", quote: qt }) : {};
     const invoices = (await invoicesFor(getDb(c), { quoteId: qt.id })).filter((i) => i.status !== "void");
+    const panel = opts.proposal ? await opts.proposal.panel(c, qt) : null;
     return framed(c, qbase, {
-      title: `Quote ${qt.number}`,
-      back: { href: qbase, label: "Quotes" },
+      title: `${W} ${qt.number}`,
+      back: { href: qbase, label: `${W}s` },
       sub: (
         <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <StatusBadge value={shown} options={QUOTE_OPTIONS} />
@@ -341,7 +383,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       ),
       actions: (
         <>
-          {qt.status === "draft" ? <a href={`${self}/edit`} class={buttonClass}>Edit</a> : null}
+          {open ? <a href={`${self}/edit`} class={buttonClass}>Edit</a> : null}
           <a href={`${self}/document`} class={buttonClass} target="_blank">Preview</a>
           {qt.status === "draft" || qt.status === "sent" ? (
             <a href={`${self}/send`} class={primaryClass}>{qt.status === "sent" ? "Send again" : "Send"}</a>
@@ -362,25 +404,35 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
                 {qt.terms ? <p class="mt-2 whitespace-pre-wrap break-words text-ink-2">{qt.terms}</p> : null}
               </Section>
             ) : null}
+            {panel}
           </div>
           <div class="flex flex-col gap-4">
             {open ? (
               <Section title="Their answer">
                 <p class="mb-3 text-label text-ink-3">When they say yes or no, by reply or on the phone.</p>
                 <div class="flex flex-wrap gap-2">
-                  <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="accepted" /><button class={buttonClass}>Mark accepted</button></form>
+                  {opts.proposal
+                    ? <a href={`${self}/accept`} class={buttonClass}>Mark accepted</a>
+                    : <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="accepted" /><button class={buttonClass}>Mark accepted</button></form>}
                   <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="declined" /><button class={buttonClass}>Mark declined</button></form>
                   {qt.status !== "expired" ? <form method="post" action={`${self}/expire`}><button class={buttonClass}>Mark expired</button></form> : null}
                 </div>
               </Section>
             ) : null}
             {qt.status === "accepted" ? (
-              <Section title="Invoice">
-                {invoices.length ? (
-                  invoices.map((i) => <p class="flex flex-wrap items-center gap-2"><a href={`${base}/${i.id}`}>{i.number ? `Invoice ${i.number}` : "Draft invoice"}</a>{i.number ? <StatusBadge value={i.status} options={INVOICE_OPTIONS} /> : null}</p>)
-                ) : (
-                  <form method="post" action={`${self}/invoice`}><button class={primaryClass}>Make the invoice</button></form>
-                )}
+              <Section title="Invoices">
+                {invoices.map((i) => (
+                  <p class="mb-2 flex flex-wrap items-center gap-2">
+                    <a href={`${base}/${i.id}`}>{i.number ? `Invoice ${i.number}` : "Draft invoice"}</a>
+                    <span class="text-ink-2">{money(i.total_cents, i.currency)}</span>
+                    {i.number ? <StatusBadge value={i.status} options={INVOICE_OPTIONS} /> : null}
+                  </p>
+                ))}
+                {/* `seen`: a second click finds the invoice the first one made, and makes nothing. */}
+                <form method="post" action={`${self}/invoice`}>
+                  <input type="hidden" name="seen" value={String(invoices.length)} />
+                  <button class={invoices.length ? buttonClass : primaryClass}>{invoices.length ? "Invoice the rest" : "Make the invoice"}</button>
+                </form>
               </Section>
             ) : null}
             <Section title="Details">
@@ -389,6 +441,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
                 { label: "Address", value: qt.address },
                 { label: "Valid until", value: qt.valid_until ? <When at={`${qt.valid_until}T00:00:00Z`} timeZone="UTC" day /> : null },
                 { label: "Sent", value: qt.sent_at ? <When at={qt.sent_at} timeZone={opts.timeZone} /> : null },
+                { label: "Opened", value: qt.viewed_at ? <When at={qt.viewed_at} timeZone={opts.timeZone} /> : null },
                 { label: QUOTE_STATUS_LABELS[qt.status], value: qt.decided_at ? <><When at={qt.decided_at} timeZone={opts.timeZone} />{qt.decided_by ? ` by ${qt.decided_by}` : ""}</> : null },
                 ...(linked.more ?? []),
               ]} />
@@ -396,7 +449,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
           </div>
         </div>
         <RecordFoot made={qt.created_at} by={qt.created_by} timeZone={opts.timeZone}>
-          <form method="post" action={`${self}/copy`}><button class={footLink}>Copy to a new quote</button></form>
+          <form method="post" action={`${self}/copy`}><button class={footLink}>Copy to a new {w}</button></form>
         </RecordFoot>
       </>
     ));
@@ -405,13 +458,13 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   app.get("/quotes/:id/edit", async (c) => {
     const qt = await load(c);
     if (!qt) return c.notFound();
-    if (qt.status !== "draft") return c.redirect(`${qbase}/${qt.id}`, 302);
+    if (!isEditable(qt)) return c.redirect(`${qbase}/${qt.id}`, 302);
     const values: FormValues = {
       email: qt.email, name: qt.name ?? "", phone: qt.phone ?? "", address: qt.address ?? "", currency: qt.currency,
       valid_until: qt.valid_until ?? "", notes: qt.notes ?? "", terms: qt.terms ?? "", days_until_due: "", visit_id: qt.visit_id ?? "", deal_id: qt.deal_id ?? "",
       lines: linesOf(qt),
     };
-    return editor(c, { title: `Edit quote ${qt.number}`, action: `${qbase}/${qt.id}`, values, errors: {}, current: `${qbase}/${qt.id}` });
+    return editor(c, { title: `Edit ${w} ${qt.number}`, action: `${qbase}/${qt.id}`, values, errors: {}, current: `${qbase}/${qt.id}` });
   });
 
   app.post("/quotes/:id", async (c) => {
@@ -421,16 +474,17 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const r = await saveQuote(getDb(c), id, values, c.get("user"));
     if (!r.ok) {
       if (r.errors.status && !(await quoteById(getDb(c), id))) return c.notFound();
-      return editor(c, { title: "Edit quote", action: `${qbase}/${id}`, values, errors: r.errors, current: `${qbase}/${id}` }, 422);
+      return editor(c, { title: `Edit ${w}`, action: `${qbase}/${id}`, values, errors: r.errors, current: `${qbase}/${id}` }, 422);
     }
+    await saved(c, r.value);
     return back(c, `${qbase}/${id}`, "saved");
   });
 
-  // The document exactly as it is printed and sent.
+  // The document exactly as it is printed and sent: the app's own page when it has one.
   app.get("/quotes/:id/document", async (c) => {
     const qt = await load(c);
     if (!qt) return c.notFound();
-    return c.html(quoteHtml(qt, await taxRates(getDb(c)), doc));
+    return c.html(opts.proposal ? await opts.proposal.document(c, qt) : quoteHtml(qt, await taxRates(getDb(c)), doc));
   });
 
   // What will go to whom. Sending is the POST below; this page never sends.
@@ -439,40 +493,52 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     if (!qt) return c.notFound();
     const self = `${qbase}/${qt.id}`;
     if (qt.status !== "draft" && qt.status !== "sent") return c.redirect(self, 302);
-    // A Pay button already made (a send that failed after it): the text to copy carries it.
-    const payUrl = (await invoicesFor(getDb(c), { quoteId: qt.id })).find((i) => i.status === "open" && i.hosted_url)?.hosted_url ?? null;
-    const msg = quoteMessage(qt, await taxRates(getDb(c)), doc, payUrl);
+    const rates = await taxRates(getDb(c));
+    const noLink = opts.proposal ? await opts.proposal.linkReady(c, qt) : "";
+    const withLink = noLink === null;
+    const msg = quoteMessage(qt, rates, doc, withLink ? "(the link, made when you send)" : null);
     const problem = c.req.query("problem");
-    const [canEmail, canPay] = [emailReady(c), await stripeReady(c)];
-    return framed(c, qbase, { title: `Send quote ${qt.number}`, back: { href: self, label: `Quote ${qt.number}` } }, (
+    const canEmail = emailReady(c);
+    return framed(c, qbase, { title: `Send ${w} ${qt.number}`, back: { href: self, label: `${W} ${qt.number}` } }, (
       <>
         {problem ? <p role="alert" class={"mb-4 " + alertClass}>{problem}</p> : null}
+        {opts.proposal && !withLink ? (
+          <p role="status" class="mb-4 max-w-prose rounded-card border border-line-strong bg-panel px-4 py-3">
+            It goes without a link this time: {noLink} They reply to accept, and you mark it accepted.
+          </p>
+        ) : null}
         {canEmail ? null : needEmail}
         <Section title="The email">
           <FieldList fields={[
             { label: "To", value: <span class="break-all">{qt.email}</span> },
             { label: "Replies go to", value: <span class="break-all">{c.get("user")}</span> },
             { label: "Subject", value: msg.subject },
-            { label: "Attached", value: opts.print ? `Quote ${qt.number}.pdf, where this server can print it; the lines are in the email either way` : "Nothing: the lines are in the email" },
+            { label: "Attached", value: withLink ? "Nothing: the link always shows the current one" : opts.print ? `${W} ${qt.number}.pdf, where this server can print it; the lines are in the email either way` : "Nothing: the lines are in the email" },
           ]} />
           <pre class="mt-3 whitespace-pre-wrap break-words rounded-card border border-line bg-canvas p-3 font-body text-copy">{msg.text}</pre>
-          <a href={`${self}/document`} target="_blank" class={buttonClass + " mt-3"}>Preview the quote</a>
+          <a href={`${self}/document`} target="_blank" class={buttonClass + " mt-3"}>Preview the {w}</a>
+          {withLink && qt.status === "sent" ? <p class="mt-3 text-label text-ink-3">Sending again makes a new link; the one sent before stops working.</p> : null}
           {canEmail ? (
-            <form method="post" action={`${self}/send`} class="mt-3 flex flex-col gap-3">
-              {canPay ? (
-                <label class="flex items-start gap-2">
-                  <input type="checkbox" name="pay" value="1" class="mt-1" checked={!!payUrl} />
-                  <span>Add a Pay button: Stripe makes the invoice for these lines, the email links to its payment page, and paying it accepts the quote.</span>
-                </label>
-              ) : null}
-              <div><button class={primaryClass}>Send to {qt.email}</button></div>
+            <form method="post" action={`${self}/send`} class="mt-3">
+              <input type="hidden" name="how" value="email" />
+              <button class={primaryClass}>Send to {qt.email}</button>
             </form>
           ) : null}
         </Section>
-        <Section title="Sent it yourself?" class="mt-4">
-          <p class="mb-2 text-label text-ink-3">If you emailed this text from your own mail, mark the quote sent.</p>
-          <form method="post" action={`${self}/sent`}><button class={buttonClass}>Mark as sent</button></form>
-        </Section>
+        {withLink ? (
+          <Section title="Or give them the link yourself" class="mt-4">
+            <p class="mb-2 text-label text-ink-3">For a text message or your own email. The link is shown once; New link makes another.</p>
+            <form method="post" action={`${self}/send`}>
+              <input type="hidden" name="how" value="link" />
+              <button class={buttonClass}>Copy link</button>
+            </form>
+          </Section>
+        ) : (
+          <Section title="Sent it yourself?" class="mt-4">
+            <p class="mb-2 text-label text-ink-3">If you emailed this text from your own mail, mark the {w} sent.</p>
+            <form method="post" action={`${self}/sent`}><button class={buttonClass}>Mark as sent</button></form>
+          </Section>
+        )}
       </>
     ));
   });
@@ -487,14 +553,32 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     if (!qt) return c.notFound();
     const self = `${qbase}/${qt.id}`;
     if (qt.status !== "draft" && qt.status !== "sent") return back(c, self, "not-now");
-    let payUrl: string | null = null;
-    if (str((await c.req.parseBody()).pay) === "1") {
-      const link = await payLinkForQuote(getDb(c), stripeOf(c), qt.id, c.get("user"), opts.source, opts.daysUntilDue ?? 30);
-      if (!link.ok) return c.redirect(listUrl(`${self}/send`, { problem: `Nothing was sent: the Pay button could not be made. ${link.message}` }), 303);
-      payUrl = link.url;
+    const how = str((await c.req.parseBody()).how);
+    const proposal = opts.proposal;
+    const withLink = !!proposal && (await proposal.linkReady(c, qt)) === null;
+
+    // The link, for them to pass on: shown once, and the quote counts as sent.
+    if (how === "link") {
+      if (!proposal || !withLink) return back(c, `${self}/send`, "not-now");
+      const made = await proposal.mintLink(c, qt);
+      await made.keep();
+      const link = made.url;
+      const r = await markSent(getDb(c), qt.id, c.get("user"));
+      if (r.ok) await sent(c, { kind: "quote", id: qt.id, email: qt.email });
+      return framed(c, qbase, { title: `The link to ${w} ${qt.number}`, back: { href: self, label: `${W} ${qt.number}` } }, (
+        <Section title="Copy it now">
+          <p class="mb-3 max-w-prose">Anyone with this link can open the {w} and accept it, so send it only to {qt.name ?? qt.email}. It is shown once: New link on the {w}'s page makes another and this one stops working.</p>
+          <input readonly value={link} aria-label="The link" class={controlClass + " w-full font-mono"} data-select-all />
+          <p class="mt-3"><a href={self} class={buttonClass}>Done</a></p>
+        </Section>
+      ));
     }
+
+    const made = withLink ? await proposal!.mintLink(c, qt) : null;
+    const link = made?.url ?? null;
     const r = await sendQuote(getDb(c), qt, await taxRates(getDb(c)), doc, {
-      payUrl,
+      link,
+      html: proposal && !link ? await proposal.document(c, qt) : undefined,
       send: (mail) => send(c, mail),
       print: opts.print ? (html) => opts.print!(c, html) : undefined,
       replyTo: c.get("user"),
@@ -503,12 +587,16 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     if (r.printError) console.error(`quote ${qt.number}: the PDF failed: ${r.printError}`);
     if (r.sent.status !== "sent") {
       const problem = r.sent.status === "none"
-        ? `Nothing was sent: ${r.sent.why}. Copy the text below into your own email, then mark it sent.`
+        ? `Nothing was sent: ${r.sent.why}. ${link ? "Use Copy link instead, or connect your email." : "Copy the text below into your own email, then mark it sent."}`
         : `The email did not go: ${r.sent.error}`;
       return c.redirect(listUrl(`${self}/send`, { problem }), 303);
     }
+    if (made) {
+      await made.keep();
+      await proposal!.emailed(c, qt).catch((e) => console.error(`quote ${qt.id}: emailed: ${e instanceof Error ? e.message : e}`));
+    }
     await sent(c, { kind: "quote", id: qt.id, email: qt.email });
-    return back(c, self, r.printError ? "sent-no-pdf" : "sent");
+    return back(c, self, link ? "sent-link" : r.printError ? "sent-no-pdf" : "sent");
   });
 
   app.post("/quotes/:id/sent", async (c) => {
@@ -520,6 +608,26 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     return back(c, `${qbase}/${id}`, r.ok ? "marked-sent" : "not-now");
   });
 
+  // Mark accepted, with the app's page: first what accepting it does (its first invoice, sent or not), then the POST.
+  app.get("/quotes/:id/accept", async (c) => {
+    const qt = await load(c);
+    if (!qt) return c.notFound();
+    const self = `${qbase}/${qt.id}`;
+    if (!isEditable(qt)) return back(c, self, "not-now");
+    const does = opts.proposal ? await opts.proposal.onAccept(c, qt) : null;
+    return framed(c, qbase, { title: `Mark ${w} ${qt.number} accepted`, back: { href: self, label: `${W} ${qt.number}` } }, (
+      <Section title="What happens" class="max-w-2xl">
+        <p class="mb-2 max-w-prose">For a yes by reply or on the phone. The {w} no longer changes after this.</p>
+        <p class="mb-4 max-w-prose">{does ?? "Nothing else: make its invoice from its page when you are ready."}</p>
+        <form method="post" action={`${self}/decide`} class="flex items-center gap-4">
+          <input type="hidden" name="answer" value="accepted" />
+          <button class={primaryClass}>Mark accepted</button>
+          <a href={self} class="text-label text-ink-2">Cancel</a>
+        </form>
+      </Section>
+    ));
+  });
+
   app.post("/quotes/:id/decide", async (c) => {
     const id = idParam(c.req.param("id"));
     if (!id) return c.notFound();
@@ -528,10 +636,6 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const r = await decideQuote(getDb(c), id, answer, c.get("user"));
     if (!r.ok && r.reason === "not_found") return c.notFound();
     if (r.ok && opts.afterDecide) await opts.afterDecide(c, r.value).catch((e) => console.error(`quote ${id}: afterDecide: ${e instanceof Error ? e.message : e}`));
-    if (r.ok && answer === "declined") {
-      const note = await closePayLink(getDb(c), () => stripeOf(c), id, c.get("user"));
-      if (note?.startsWith("Its Pay button could not")) return c.redirect(listUrl(`${qbase}/${id}`, { saved: "declined", problem: note }), 303);
-    }
     return back(c, `${qbase}/${id}`, r.ok ? answer : "not-now");
   });
 
@@ -547,18 +651,21 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const id = idParam(c.req.param("id"));
     if (!id) return c.notFound();
     const copy = await copyQuote(getDb(c), id, c.get("user"), opts.source);
+    if (copy) await saved(c, copy);
     return copy ? back(c, `${qbase}/${copy.id}/edit`, "copied") : c.notFound();
   });
 
-  // From an accepted quote: its lines, once.
+  // From an accepted quote: its lines the first time, then what is left to bill.
   app.post("/quotes/:id/invoice", async (c) => {
     const id = idParam(c.req.param("id"));
     if (!id) return c.notFound();
-    const r = await invoiceFromQuote(getDb(c), id, c.get("user"), opts.source, opts.daysUntilDue ?? 30);
+    const raw = str((await c.req.parseBody()).seen);
+    const seen = /^\d{1,4}$/.test(raw) ? Number(raw) : 0;
+    const r = await invoiceFromQuote(getDb(c), id, c.get("user"), opts.source, opts.daysUntilDue ?? 30, { share: { kind: "rest" }, seen });
     if (r.ok) return back(c, `${base}/${r.value.id}`, "invoice-created");
     if (r.reason === "not_found") return c.notFound();
     if (r.reason === "invoiced") return back(c, `${base}/${r.invoiceId}`, "invoiced");
-    return back(c, `${qbase}/${id}`, "not-now");
+    return back(c, `${qbase}/${id}`, r.reason === "nothing_left" ? "nothing-left" : "not-now");
   });
 
   // ---- invoices --------------------------------------------------------------

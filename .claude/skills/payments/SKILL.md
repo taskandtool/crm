@@ -51,8 +51,8 @@ payment (money)                   payments  payments
   - **Pay now** on our page (an order, a paid booking, a deposit): a form's
     `payment` step (`form-step.tsx`), which opens Checkout with the form's
     lines and tax rate.
-  - **Pay later** from an email (an invoice, a proposal's Pay button): a
-    Stripe invoice, the CRM's invoices skill.
+  - **Pay later** from an email (an invoice, a deposit when a proposal is
+    signed): a Stripe invoice, the CRM's invoices skill.
   - **A standing link** (a bio, a flyer): a one-page form with a `payment`
     step, at `/forms/<key>/start`; each click opens a fresh Checkout.
   Never make Stripe Payment Links: their payments name nothing here. A link

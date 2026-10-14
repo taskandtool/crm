@@ -1,0 +1,284 @@
+// Proposals over HTTP, as the team and the customer use them: a quote's
+// sections and words, its page, the link given by hand and by email, the
+// customer opening it signed out, a page changed under them, the signature
+// and what it does (deal won, deposit invoice), a decline, mail scanners, a
+// dead link. Skipped without TEST_DATABASE_URL.
+import { after, before, test } from "node:test";
+import assert from "node:assert/strict";
+import app from "../src/app";
+import { seeds } from "../src/config";
+import type { Db } from "../src/data/db";
+import { setup } from "../src/db/setup";
+import { invoiceById, invoicesFor } from "../src/invoices/invoices";
+import { quoteById } from "../src/invoices/quotes";
+import { markEmailed } from "../src/proposals/store";
+import { fill, markdown, unknownPlaceholders } from "../src/proposals/text";
+import type { Runtime } from "../src/runtime";
+import { scratch, type Scratch } from "./scratch";
+
+const HOST = "https://crm.example";
+const ME = { "x-tasktool-user": "pat@team.example", host: "crm.example" };
+const NOBODY = { host: "crm.example" };
+
+let s: Scratch | null = null;
+let skip: string | false = false;
+let db: Db;
+let runtime: Runtime;
+const realFetch = globalThis.fetch;
+const mail: { to: string[]; subject: string; text: string }[] = [];
+
+before(async () => {
+  delete process.env.ADMIN_DEV_USER;
+  const r = await scratch("proposals");
+  if (typeof r === "string") {
+    skip = r;
+    return;
+  }
+  s = r;
+  db = r.db;
+  await setup(db, seeds);
+  runtime = { open: () => ({ db }) };
+  // Production is this app (its /q/ answers as proposals do); the owner's sender is Resend, faked.
+  process.env.PROPOSAL_BASE_URL = HOST;
+  process.env.RESEND_API_KEY = "re_test";
+  process.env.NOTIFY_FROM = "Acme <hello@acme.example>";
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url.startsWith(HOST)) return app.request(url, { ...init, headers: NOBODY }, { runtime });
+    if (url.startsWith("https://api.resend.com")) {
+      mail.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ id: "em_1" }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return realFetch(input, init);
+  }) as typeof fetch;
+});
+after(async () => {
+  globalThis.fetch = realFetch;
+  for (const k of ["PROPOSAL_BASE_URL", "RESEND_API_KEY", "NOTIFY_FROM"]) delete process.env[k];
+  await s?.drop();
+});
+
+const get = (path: string, headers: Record<string, string> = ME) => app.request(HOST + path, { headers }, { runtime });
+const post = (path: string, form: Record<string, string | string[]> | FormData, headers: Record<string, string> = ME) => {
+  const body = form instanceof FormData ? form : new URLSearchParams();
+  if (!(form instanceof FormData)) for (const [k, v] of Object.entries(form)) for (const x of Array.isArray(v) ? v : [v]) (body as URLSearchParams).append(k, x);
+  return app.request(HOST + path, { method: "POST", body, headers: { ...headers, origin: HOST } }, { runtime });
+};
+const tokenOf = (html: string) => /value="https:\/\/crm\.example\/q\/([A-Za-z0-9_-]{43})"/.exec(html)![1];
+const shaOf = (html: string) => /name="page" value="([0-9a-f]{64})"/.exec(html)![1];
+
+async function customerWithDeal(name: string, email: string) {
+  const [c] = await db.sql`insert into customers (name, email, stage) values (${name}, ${email}, 'lead') returning id::text as id`;
+  const [d] = await db.sql`insert into deals (customer_id, title, stage) values (${c.id}::bigint, ${"Fence for " + name}, 'quoted') returning id::text as id`;
+  return { customer: c.id as string, deal: d.id as string };
+}
+
+async function newQuote(email: string, name: string, deal: string, unit = "2000.00") {
+  const res = await post("/invoices/quotes", {
+    email, name, currency: "usd", valid_until: "2099-12-31", deal_id: deal, visit_id: "", notes: "", terms: "",
+    description: ["Cedar fence", ""], quantity: ["", ""], unit: [unit, ""], tax: "",
+  });
+  assert.equal(res.status, 303, await res.text());
+  return /\/invoices\/quotes\/(\d+)\?saved=created/.exec(res.headers.get("location")!)![1];
+}
+
+test("the words: Markdown is escaped, links only to the web or email; placeholders fill, others are named", () => {
+  assert.equal(markdown("Hi <script>alert(1)</script>"), "<p>Hi &lt;script&gt;alert(1)&lt;/script&gt;</p>");
+  assert.equal(markdown("- **Gate**\n- [Plans](https://acme.example/plans)"), '<ul><li><strong>Gate</strong></li><li><a href="https://acme.example/plans" rel="noopener noreferrer">Plans</a></li></ul>');
+  assert.equal(markdown("[x](javascript:alert(1))"), "<p>[x](javascript:alert(1))</p>");
+  assert.equal(fill("Thanks, {customer}, for {nope}.", { customer: "Ann" }), "Thanks, Ann, for {nope}.");
+  assert.deepEqual(unknownPlaceholders("{customer} {client} {client}"), ["{client}"]);
+});
+
+test("a proposal end to end: built, linked, opened, changed under them, signed; its deal won and its deposit drafted", async (t) => {
+  if (skip) return t.skip(skip);
+  const { deal } = await customerWithDeal("Ann Lee", "ann@example.com");
+  const id = await newQuote("ann@example.com", "Ann Lee", deal);
+
+  // The proposal: a bad placeholder is named and nothing is saved.
+  let res = await post(`/invoices/quotes/${id}/proposal`, { title: "A new fence", "summary.ticked": "1", "summary.text.heard": "Hi {client}", first_invoice: "draft", deposit_percent: "50" });
+  assert.equal(res.status, 422);
+  assert.match(await res.text(), /\{client\} is not a placeholder/);
+
+  // A picture, for the cover's logo.
+  const form = new FormData();
+  form.append("image", new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])], "logo.jpg", { type: "image/jpeg" }));
+  form.append("name", "Our logo");
+  res = await post("/proposals/images", form);
+  assert.match(res.headers.get("location")!, /saved=image-added/);
+  const [img] = await db.sql`select id::text as id from proposal_images`;
+
+  res = await post(`/invoices/quotes/${id}/proposal`, {
+    title: "A new fence for {customer}", "cover.entry.logo": img.id, "summary.ticked": "1", "summary.title": "Summary",
+    "summary.text.heard": "Your old fence is **down**.", "summary.text.propose": "A cedar fence.", "terms.ticked": "1", "terms.title": "Terms",
+    "terms.text.terms": "Payment due within 30 days.", first_invoice: "draft", deposit_percent: "50",
+  });
+  assert.match(res.headers.get("location")!, /saved=proposal-saved/, await res.text());
+  let html = await (await get(`/invoices/quotes/${id}`)).text();
+  assert.match(html, /The quote/);
+  assert.match(html, /A draft invoice for a 50% deposit of \$1,000\.00 is made for you to review/);
+
+  const doc = await (await get(`/invoices/quotes/${id}/document`)).text();
+  assert.match(doc, /A new fence for Ann Lee/);
+  assert.match(doc, /<strong>down<\/strong>/);
+  assert.match(doc, /src="data:image\/jpeg;base64,/, "the logo travels inside the page");
+  assert.match(doc, /A preview: on the customer(&#39;|')s page this form signs it/);
+  assert.doesNotMatch(doc, /<script/);
+
+  // Copy link: shown once, the quote sent.
+  html = await (await get(`/invoices/quotes/${id}/send`)).text();
+  assert.match(html, /Copy link/);
+  res = await post(`/invoices/quotes/${id}/send`, { how: "link" });
+  const token = tokenOf(await res.text());
+  assert.equal((await quoteById(db, id))!.status, "sent");
+
+  // The customer, signed out: the page, its headers, an open counted.
+  res = await get(`/q/${token}`, NOBODY);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("x-proposals"), "1");
+  assert.match(res.headers.get("content-security-policy")!, /default-src 'none'/);
+  assert.equal(res.headers.get("referrer-policy"), "no-referrer");
+  assert.equal(res.headers.get("cache-control"), "no-store, no-transform");
+  html = await res.text();
+  assert.match(html, /Type your full name/);
+  assert.match(html, /Review and accept the quote/, "the bar to Accept");
+  assert.ok((await quoteById(db, id))!.viewed_at, "Viewed");
+  await get(`/q/${token}`, ME);
+  assert.deepEqual((await db.sql`select who from quote_views where quote_id = ${id}::bigint order by id`).map((r) => r.who), ["customer", "team"]);
+
+  // A change the team makes while they read: the same link shows the new page, and the old one cannot be signed.
+  const oldSha = shaOf(html);
+  res = await post(`/invoices/quotes/${id}`, {
+    email: "ann@example.com", name: "Ann Lee", currency: "usd", valid_until: "2099-12-31", deal_id: deal, visit_id: "", notes: "", terms: "",
+    description: ["Cedar fence", "Gate", ""], quantity: ["", "", ""], unit: ["2000.00", "400.00", ""], tax: "",
+  });
+  assert.equal(res.status, 303);
+  res = await post(`/q/${token}`, { name: "Ann Lee", agree: "1", page: oldSha }, NOBODY);
+  assert.equal(res.status, 409);
+  html = await res.text();
+  assert.match(html, /was updated since you opened it/);
+  assert.match(html, /\$2,400\.00/, "they see the new total");
+  assert.equal((await quoteById(db, id))!.status, "sent");
+
+  // Another site cannot sign for them; a missing name or box is said.
+  assert.equal((await app.request(HOST + `/q/${token}`, { method: "POST", body: new URLSearchParams({ name: "X", agree: "1", page: shaOf(html) }), headers: { ...NOBODY, origin: "https://evil.example" } }, { runtime })).status, 403);
+  res = await post(`/q/${token}`, { name: "Ann Lee", page: shaOf(html) }, NOBODY);
+  assert.equal(res.status, 422);
+  assert.match(await res.text(), /Tick the box/);
+
+  res = await post(`/q/${token}`, { name: "Ann Lee", agree: "1", page: shaOf(html) }, NOBODY);
+  assert.equal(res.status, 303);
+  const qt = (await quoteById(db, id))!;
+  assert.deepEqual([qt.status, qt.decided_by], ["accepted", "signed online"]);
+  const [sig] = await db.sql`select name, email::text as email, page_html, page_sha256 from quote_signatures where quote_id = ${id}::bigint`;
+  assert.deepEqual([sig.name, sig.email], ["Ann Lee", "ann@example.com"]);
+  assert.match(sig.page_html, /Signed on/);
+  assert.match(sig.page_sha256, /^[0-9a-f]{64}$/);
+  assert.equal((await db.sql`select stage from deals where id = ${deal}::bigint`)[0].stage, "won");
+  const invoices = await invoicesFor(db, { quoteId: id });
+  assert.equal(invoices.length, 1);
+  const dep = (await invoiceById(db, invoices[0].id))!;
+  assert.deepEqual([dep.status, dep.lines[0].description, dep.total_cents], ["draft", `Deposit (50%) for ${qt.number}`, "120000"]);
+  assert.match(mail.at(-1)!.subject, /^You signed quote Q-\d{4} with Acme Test Co$/);
+  assert.match(mail.at(-1)!.text, new RegExp(`Your copy, with what happens next: ${HOST}/q/${token}`));
+
+  // The link is now their copy; the quote no longer changes.
+  html = await (await get(`/q/${token}`, NOBODY)).text();
+  assert.match(html, /Signed on/);
+  assert.match(html, /Coming by email/);
+  assert.doesNotMatch(html, /Type your full name/);
+  res = await post(`/invoices/quotes/${id}/proposal`, { title: "Changed" });
+  assert.equal(res.status, 422);
+});
+
+test("emailed: the link goes by the owner's sender with nothing attached; an open in the first minute is a mail scanner", async (t) => {
+  if (skip) return t.skip(skip);
+  const { deal } = await customerWithDeal("Bo Ray", "bo@example.com");
+  const id = await newQuote("bo@example.com", "Bo Ray", deal);
+  const before = mail.length;
+  const res = await post(`/invoices/quotes/${id}/send`, { how: "email" });
+  assert.match(res.headers.get("location")!, /saved=sent-link$/);
+  const m = mail[before];
+  assert.deepEqual(m.to, ["bo@example.com"]);
+  const token = /\/q\/([A-Za-z0-9_-]{43})/.exec(m.text)![1];
+  assert.equal((m as unknown as { attachments?: unknown[] }).attachments, undefined);
+  await get(`/q/${token}`, NOBODY);
+  assert.equal((await db.sql`select who from quote_views where quote_id = ${id}::bigint`)[0].who, "scanner");
+  assert.equal((await quoteById(db, id))!.viewed_at, null, "a scanner does not make it Viewed");
+  // A new link: the old one stops working.
+  const again = await post(`/invoices/quotes/${id}/proposal/link`, {});
+  const fresh = tokenOf(await again.text());
+  assert.notEqual(fresh, token);
+  const dead = await get(`/q/${token}`, NOBODY);
+  assert.equal(dead.status, 404);
+  assert.match(await dead.text(), /This link no longer works\.[\s\S]*Ask Acme Test Co for a new one\./);
+  await markEmailed(db, id);
+});
+
+test("declined at the link: the quote declined, its deal lost with their reason; an expired or unknown link is dead", async (t) => {
+  if (skip) return t.skip(skip);
+  const { deal } = await customerWithDeal("Cy Lo", "cy@example.com");
+  const id = await newQuote("cy@example.com", "Cy Lo", deal);
+  const token = tokenOf(await (await post(`/invoices/quotes/${id}/send`, { how: "link" })).text());
+  const html = await (await get(`/q/${token}`, NOBODY)).text();
+  assert.match(html, /Not going ahead\?/);
+  const res = await post(`/q/${token}/decline`, { reason: "Price", note: "Too much for now.", page: shaOf(html) }, NOBODY);
+  assert.equal(res.status, 303);
+  const qt = (await quoteById(db, id))!;
+  assert.deepEqual([qt.status, qt.decided_by], ["declined", "declined online"]);
+  const [d] = await db.sql`select stage, lost_reason from deals where id = ${deal}::bigint`;
+  assert.deepEqual([d.stage, d.lost_reason], ["lost", "Price: Too much for now."]);
+  assert.match(await (await get(`/q/${token}`, NOBODY)).text(), /You declined this quote/);
+
+  // Past its date, a link is dead; so is one that never was; /q/ says it serves proposals.
+  const other = await newQuote("cy@example.com", "Cy Lo", deal);
+  const t2 = tokenOf(await (await post(`/invoices/quotes/${other}/send`, { how: "link" })).text());
+  await db.sql`update quotes set valid_until = '2020-01-01' where id = ${other}::bigint`;
+  assert.equal((await get(`/q/${t2}`, NOBODY)).status, 404);
+  assert.equal((await get(`/q/${"A".repeat(43)}`, NOBODY)).status, 404);
+  const q = await get("/q/", NOBODY);
+  assert.equal(q.headers.get("x-proposals"), "1");
+  assert.equal((await get("/invoices/quotes", NOBODY)).status, 404, "the rest stays the team's");
+});
+
+test("the morning: a proposal three days from expiring unsigned gets a follow-up task, once; one opened since yesterday is in its maker's email", async (t) => {
+  if (skip) return t.skip(skip);
+  const { sendDigests } = await import("../src/crm/digest");
+  const { todayIn } = await import("../src/invoices/document");
+  const { deal } = await customerWithDeal("Di Moe", "di@example.com");
+  const id = await newQuote("di@example.com", "Di Moe", deal);
+  await post(`/invoices/quotes/${id}/send`, { how: "link" });
+  const today = todayIn("UTC");
+  await db.sql`update quotes set valid_until = ${today}::date + 2, viewed_at = now() - interval '2 hours' where id = ${id}::bigint`;
+  const sent: { to: string; subject: string; text: string }[] = [];
+  const send = async (m: { to: string; subject: string; text: string }) => (sent.push(m), { status: "sent" as const, via: "fake" });
+  await sendDigests(db, send, { timeZone: "UTC", hour: 0, word: "Quote" });
+  const tasks = await db.sql`select title, owner::text as owner, to_char(due_on, 'YYYY-MM-DD') as due from follow_ups where title like 'Follow up with Di Moe%'`;
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].owner, "pat@team.example");
+  assert.equal(tasks[0].due, today);
+  const mine = sent.find((m) => m.to === "pat@team.example")!;
+  assert.match(mine.text, /Follow up with Di Moe on quote Q-\d{4}/);
+  assert.match(mine.text, /Opened, not signed yet\n- Quote Q-\d{4} \(Di Moe\)/);
+  // Run again tomorrow's way: no second task.
+  await db.sql`delete from follow_up_digests`;
+  await sendDigests(db, send, { timeZone: "UTC", hour: 0, word: "Quote" });
+  assert.equal((await db.sql`select count(*)::int as n from follow_ups where title like 'Follow up with Di Moe%'`)[0].n, 1);
+});
+
+test("in production the edge's header says whether /q is open; a visitor's own header is the edge's to drop", async () => {
+  const { Hono } = await import("hono");
+  const { readyHere } = await import("../src/proposals/link");
+  const saved = process.env.PROPOSAL_BASE_URL;
+  delete process.env.PROPOSAL_BASE_URL;
+  try {
+    const app = new Hono();
+    app.get("/", async (c) => c.text((await readyHere(c)) ?? "ready"));
+    const ask = async (h: Record<string, string>) => (await app.request("https://crm.example/", { headers: { host: "crm.example", ...h } })).text();
+    assert.equal(await ask({ "x-tasktool-public-paths": "/q" }), "ready");
+    assert.equal(await ask({ "x-tasktool-public-paths": "/reports,/q" }), "ready");
+    assert.match(await ask({}), /customers cannot open \/q\/ on production yet/);
+  } finally {
+    if (saved !== undefined) process.env.PROPOSAL_BASE_URL = saved;
+  }
+});

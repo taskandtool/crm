@@ -8,7 +8,7 @@
 // status move named by the statuses it may come from:
 //
 //   invoice.finalized              draft -> open; number, hosted page, PDF
-//   invoice.paid                   draft | open | uncollectible -> paid; the payments row; its quote accepted
+//   invoice.paid                   draft | open | uncollectible -> paid; the payments row
 //   invoice_payment.paid           the payments row, with its payment intent (refunds need it)
 //   invoice.payment_failed         noted; the invoice stays open
 //   invoice.voided                 draft | open | uncollectible -> void
@@ -127,13 +127,6 @@ export async function applyInvoiceEvent(db: Db, event: StripeEvent, ch: InvoiceC
           and not exists (select 1 from payments p where p.ref_type = 'invoice' and p.ref_id = inv.id::text and p.kind = 'invoice')
         on conflict (stripe_payment_intent_id) do nothing
         returning id),
-      accepted as (
-        -- A proposal paid through its Pay button: the quote is accepted by the payment.
-        update quotes qt set status = 'accepted', decided_at = coalesce(qt.decided_at, now()), decided_by = coalesce(qt.decided_by, 'paid online'),
-               updated_at = now()
-        from inv
-        where ${ch.move?.to === "paid"} and inv.status = 'paid' and qt.id = inv.quote_id and qt.status in ('draft', 'sent', 'expired')
-        returning qt.id),
       fill as (
         update payments p set stripe_payment_intent_id = ${ch.intent}::text, updated_at = now()
         from inv

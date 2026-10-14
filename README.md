@@ -25,8 +25,8 @@ runs anywhere with Node 20 and a Postgres.
   on their own, matched by email, else by phone, never by name.
 - **Notifications**: the bell beside the business's name. What happened
   without the team doing it, newest first: a booker's own reschedule or
-  cancel, a quote the customer accepted by paying it online, and money
-  paid. Opening the bell clears its count; what was new is in bold that
+  cancel, a proposal the customer signed or declined at its link, and
+  money paid. Opening the bell clears its count; what was new is in bold that
   once. Each opens its record.
 - **Leads**: one enquiry each, as Pipedrive's leads and Jobber's
   requests: a form fill or an online booking makes one as it comes in, and
@@ -66,12 +66,17 @@ runs anywhere with Node 20 and a Postgres.
   or Outlook calendar). The public booking page is the Website's; both use
   the same table. Turned off for a business that keeps its schedule
   elsewhere.
-- **Quotes and invoices**: a quote with lines and tax, previewed and
-  emailed as a PDF from your own email sender, marked accepted or declined;
-  then an invoice made in your Stripe account, which emails it and takes
-  the payment by card or bank on Stripe's page. Cash or a
-  check is marked paid there too. A customer's page shows what was
-  quoted, what they owe now and what they paid.
+- **Proposals, quotes and invoices**: a quote with lines and tax and the
+  sections you tick (summary, scope, timeline, team, testimonials, case
+  studies, terms...), each from a library you word once and change per
+  quote. It goes out as a private link from your own email sender (or one
+  you copy); the customer reads a clean page, types their name to accept
+  or says why not, and you see when they opened it. Signing can make the
+  first invoice, a deposit too, and take them straight to pay. The
+  invoice is made in your Stripe account, which emails it and takes the
+  payment by card or bank on Stripe's page. Cash or a check is marked paid
+  there too. A customer's page shows what was quoted, what they owe now
+  and what they paid.
 - **The deals board**: a column per stage with its count and total, drag
   between them, or a select on each card on a phone or without JavaScript.
 - **CSV import** of the list you keep today, matched by email then phone
@@ -122,6 +127,7 @@ src/booking/             a copy of the booking skill: the Schedule, Services and
 src/customers/           a copy of the customers skill: the customers and notes tables, the note box
 src/forms/               a copy of the forms skill: the submissions list, the form editor
 src/invoices/            a copy of the invoices skill: quotes, invoices, tax rates, Stripe
+src/proposals/           a quote as the customer's page: sections, the link at /q, signing, opens
 src/data/  src/admin/    copies of the data and admin business skills, and what is
 src/payments/ src/reports/   used of payments and reports
 scripts/                 customers, deals, tasks, events, forms, quotes, invoices, stages, import, export, migrate (--help)

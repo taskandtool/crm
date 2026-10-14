@@ -14,6 +14,7 @@ import type { Db } from "../data/db";
 import { fromPool } from "../data/pg";
 import type { DbState, Runtime } from "../runtime";
 import { printPdf } from "../pdf";
+import { production } from "../proposals/serving";
 import { openPool } from "./pool";
 import { setup } from "./setup";
 
@@ -74,5 +75,5 @@ export async function start(log: (msg: string) => void = console.log): Promise<v
 
 // Dev's runtime: the one handle this server keeps, once it is ready.
 export function machineRuntime(): Runtime {
-  return { open: () => (state === "ready" && db ? { db } : { db: null, state, error: lastError }), print: printPdf };
+  return { open: () => (state === "ready" && db ? { db } : { db: null, state, error: lastError }), print: printPdf, production };
 }

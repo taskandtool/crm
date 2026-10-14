@@ -1,27 +1,14 @@
 // The bell: what happened without the team doing it, newest first, as
 // Jobber's activity feed (docs/plans/crm-contacts-leads-deals.md).
 // A booker's own move or cancel (the booking skill's booking_changes), a
-// quote the customer accepted by paying it online, and money paid through
-// Stripe. News, not work: no Done. Each person's notifications_seen
+// proposal the customer signed or declined at its link, and money paid
+// through Stripe. News, not work: no Done. Each person's notifications_seen
 // row says when they last opened the bell, which clears its count as
 // HubSpot's does; unread is anything newer. Tables the project does not have
 // are skipped (tables.ts).
 import type { Db } from "../data/db";
-import { spliced } from "./sql";
+import { ONLINE } from "../invoices/quotes";
 import { present as presentTables } from "./tables";
-
-/** A quote's `decided_by` when its Pay button was paid: the invoices skill's webhook writes it. */
-const PAID_ONLINE = "paid online";
-// Money that moved. A quote's own invoice paid through its Pay button is the
-// quote's notice ("accepted and paid"), where the project has quotes.
-const paymentSql = (quotes: boolean) =>
-  spliced({
-    not_a_quote: quotes
-      ? `not exists (select 1 from invoices i join quotes qt on qt.id = i.quote_id
-          where pm.ref_type = 'invoice' and i.id::text = pm.ref_id and qt.decided_by = '${PAID_ONLINE}')`
-      : "true",
-  });
-const PAYMENTS = paymentSql(true), PAYMENTS_NO_QUOTES = paymentSql(false);
 
 /** The newest this many, as Jobber's feed: the bell's list, and the most its count says. */
 export const NOTICE_LIMIT = 100;
@@ -36,7 +23,8 @@ export type ChangeNotice = Base & {
   /** The new start of a move; null for a cancel. */
   starts_at: Date | null;
 };
-export type QuoteNotice = Base & { kind: "quote"; number: string; total_cents: string; currency: string };
+/** A quote the customer answered at its link themselves: signed (accepted) or declined. One the team marked is not news. */
+export type QuoteNotice = Base & { kind: "quote"; answer: "accepted" | "declined"; number: string; total_cents: string; currency: string };
 export type PaymentNotice = Base & { kind: "payment"; amount_cents: string; currency: string; description: string | null; livemode: boolean | null };
 export type Notice = ChangeNotice | QuoteNotice | PaymentNotice;
 
@@ -54,19 +42,20 @@ export async function notices(db: Db, limit = NOTICE_LIMIT): Promise<Notice[]> {
     limit ${limit}`);
   if (p.quotes) {
     jobs.push(db.sql<QuoteNotice>`
-      select 'quote' as kind, qt.id::text as id, qt.decided_at as at, qt.name, qt.email::text as email,
+      select 'quote' as kind, qt.id::text as id, qt.decided_at as at, qt.name, qt.email::text as email, qt.status as answer,
              qt.number, qt.total_cents::text as total_cents, qt.currency
       from quotes qt
-      where qt.status = 'accepted' and qt.decided_by = ${PAID_ONLINE} and qt.decided_at is not null
+      where ((qt.status = 'accepted' and qt.decided_by = ${ONLINE.accepted}) or (qt.status = 'declined' and qt.decided_by = ${ONLINE.declined}))
+        and qt.decided_at is not null
       order by qt.decided_at desc, qt.id desc
       limit ${limit}`);
   }
   if (p.payments) {
-    jobs.push((p.invoices && p.quotes ? PAYMENTS : PAYMENTS_NO_QUOTES).sql(db)<PaymentNotice>`
+    jobs.push(db.sql<PaymentNotice>`
       select 'payment' as kind, pm.id::text as id, coalesce(pm.paid_at, pm.created_at) as at, pm.name, pm.email::text as email,
              pm.amount_cents::text as amount_cents, pm.currency, pm.description, pm.livemode
       from payments pm
-      where pm.status in ('paid', 'refunded', 'partially_refunded') and {not_a_quote}
+      where pm.status in ('paid', 'refunded', 'partially_refunded')
       order by coalesce(pm.paid_at, pm.created_at) desc, pm.id desc
       limit ${limit}`);
   }

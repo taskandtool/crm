@@ -5,6 +5,7 @@
 //
 //   const html = quoteHtml(quote, rates, { business: "Acme Plumbing" });
 //   const { subject, text } = quoteMessage(quote, rates, { business: "Acme Plumbing" });
+//   const withLink = quoteMessage(quote, rates, { business: "Acme Plumbing", word: "Proposal" }, "https://…/q/…");
 import type { Db } from "../data/db";
 import type { Email, Sent } from "../data/send";
 import { formatMoney } from "../payments/money";
@@ -13,8 +14,11 @@ import type { SavedLine } from "./lines";
 import type { Invoice } from "./invoices";
 import { markSent, type Quote } from "./quotes";
 
-/** The business's name, and its zone: the quote's date is the day it is there. */
-export type DocOptions = { business: string; timeZone?: string; locale?: string };
+/**
+ * The business's name, and its zone: the quote's date is the day it is there.
+ * `word` is what the business calls a quote ("Quote", "Proposal", "Estimate").
+ */
+export type DocOptions = { business: string; timeZone?: string; locale?: string; word?: string };
 
 /** "2026-11-30" as "November 30, 2026"; the date is a calendar day, read in UTC. */
 export function dayText(day: string | null, locale = "en-US"): string {
@@ -46,15 +50,36 @@ export function taxSummary(lines: SavedLine[], rates: TaxRate[]): { label: strin
 
 const qty = (l: SavedLine) => (l.quantity === "1" ? "" : `${l.quantity} x `);
 
-/** The email that sends a quote: every line in the body, so it stands without the PDF. */
-export function quoteMessage(qt: Quote & { lines: SavedLine[] }, rates: TaxRate[], o: DocOptions, payUrl?: string | null): { subject: string; text: string } {
+/**
+ * The email that sends a quote. With its `link` (the page the customer reads
+ * and accepts), a short note that points there; without, every line in the
+ * body, so it stands without the PDF.
+ */
+export function quoteMessage(qt: Quote & { lines: SavedLine[] }, rates: TaxRate[], o: DocOptions, link?: string | null): { subject: string; text: string } {
   const m = (c: string | number) => formatMoney(c, qt.currency, o.locale);
+  const word = o.word ?? "Quote";
+  const subject = `${word} ${qt.number}${o.business ? ` from ${o.business}` : ""}`;
+  if (link) {
+    const short = [
+      `Hello${qt.name ? " " + qt.name : ""},`,
+      "",
+      `Here is our ${word.toLowerCase()} ${qt.number} for ${m(qt.total_cents)}.`,
+      "",
+      `Review and accept your ${word.toLowerCase()}: ${link}`,
+      ...(qt.valid_until ? ["", `It is open until ${dayText(qt.valid_until, o.locale)}.`] : []),
+      ...(qt.notes ? ["", qt.notes] : []),
+      "",
+      "Reply to this email with any questions.",
+      ...(o.business ? ["", o.business] : []),
+    ];
+    return { subject, text: short.join("\n") };
+  }
   const lines = qt.lines.map((l) => `  ${l.description}: ${qty(l)}${m(l.unit_cents)} = ${m(l.amount_cents)}`);
   const taxes = taxSummary(qt.lines, rates).map((t) => `  ${t.label}${t.inclusive ? " (included)" : ""}: ${m(t.cents)}`);
   const body = [
     `Hello${qt.name ? " " + qt.name : ""},`,
     "",
-    `Here is our quote ${qt.number} for ${m(qt.total_cents)}.`,
+    `Here is our ${word.toLowerCase()} ${qt.number} for ${m(qt.total_cents)}.`,
     "",
     ...lines,
     "",
@@ -64,10 +89,10 @@ export function quoteMessage(qt: Quote & { lines: SavedLine[] }, rates: TaxRate[
     ...(qt.notes ? ["", qt.notes] : []),
     ...(qt.terms ? ["", qt.terms] : []),
     "",
-    ...(payUrl ? [`To accept and pay: ${payUrl}`, "", "Or reply to this email with any questions."] : ["To accept, reply to this email."]),
+    "To accept, reply to this email.",
     ...(o.business ? ["", o.business] : []),
   ];
-  return { subject: `Quote ${qt.number}${o.business ? ` from ${o.business}` : ""}`, text: body.join("\n") };
+  return { subject, text: body.join("\n") };
 }
 
 // Print styles: plain greys on white, sized for A4 and Letter alike.
@@ -106,7 +131,8 @@ const STYLE = `
 `;
 
 type Paper = {
-  kind: "Quote" | "Invoice";
+  /** "Invoice", or what the business calls a quote. */
+  kind: string;
   number: string | null;
   to: string;
   facts: [string, string][];
@@ -197,13 +223,13 @@ function Paper(p: Paper) {
   );
 }
 
-export function QuoteDocument({ qt, rates, o, payUrl }: { qt: Quote & { lines: SavedLine[] }; rates: TaxRate[]; o: DocOptions; payUrl?: string | null }) {
+export function QuoteDocument({ qt, rates, o }: { qt: Quote & { lines: SavedLine[] }; rates: TaxRate[]; o: DocOptions }) {
   return (
-    <Paper kind="Quote" number={qt.number} to={[qt.name, qt.email, qt.phone, qt.address].filter(Boolean).join("\n")}
+    <Paper kind={o.word ?? "Quote"} number={qt.number} to={[qt.name, qt.email, qt.phone, qt.address].filter(Boolean).join("\n")}
       facts={[["Date", dayText(todayIn(o.timeZone ?? "UTC", qt.sent_at ?? qt.created_at), o.locale)], ...(qt.valid_until ? [["Valid until", dayText(qt.valid_until, o.locale)] as [string, string]] : [])]}
       headline={["Total", formatMoney(qt.total_cents, qt.currency, o.locale)]}
       currency={qt.currency} lines={qt.lines} subtotal={qt.subtotal_cents} total={qt.total_cents} rates={rates} o={o}
-      pay={payUrl ? { href: payUrl, text: "Accept and pay online" } : undefined} notes={qt.notes} terms={qt.terms} />
+      notes={qt.notes} terms={qt.terms} />
   );
 }
 
@@ -230,8 +256,8 @@ export function InvoiceDocument({ inv, rates, o }: { inv: Invoice & { lines: Sav
 }
 
 /** The whole document as text, for the preview route and the printer. */
-export const quoteHtml = (qt: Quote & { lines: SavedLine[] }, rates: TaxRate[], o: DocOptions, payUrl?: string | null): string =>
-  "<!doctype html>" + (<QuoteDocument qt={qt} rates={rates} o={o} payUrl={payUrl} />).toString();
+export const quoteHtml = (qt: Quote & { lines: SavedLine[] }, rates: TaxRate[], o: DocOptions): string =>
+  "<!doctype html>" + (<QuoteDocument qt={qt} rates={rates} o={o} />).toString();
 
 /** An invoice's preview as text. */
 export const invoiceHtml = (inv: Invoice & { lines: SavedLine[] }, rates: TaxRate[], o: DocOptions): string =>
@@ -242,33 +268,36 @@ export type SendQuote = {
   send: (mail: Email) => Promise<Sent>;
   /** The PDF of the document's HTML, or null where nothing can print. */
   print?: (html: string) => Promise<Uint8Array | null>;
+  /** The document to print, when the app has its own (the CRM's proposal); default quoteHtml. */
+  html?: string;
   /** Where replies go: the team member sending it. */
   replyTo: string | null;
   by: string;
-  /** A proposal's Pay button: the invoice's payment page (stripe.ts payLinkForQuote). */
-  payUrl?: string | null;
+  /** The page the customer reads and accepts the quote at: the email points there and attaches nothing. */
+  link?: string | null;
 };
 
 /**
  * Email a draft or sent quote, with its PDF where one can be printed (a
- * print that fails sends without it), and mark it sent only once the sender
- * took it. Only for a quote the owner said yes to sending.
+ * print that fails sends without it) unless it goes as a link, and mark it
+ * sent only once the sender took it. Only for a quote the owner said yes to
+ * sending.
  */
 export async function sendQuote(db: Db, qt: Quote & { lines: SavedLine[] }, rates: TaxRate[], o: DocOptions, how: SendQuote): Promise<{ sent: Sent; pdf: boolean; printError: string | null }> {
   if (qt.status !== "draft" && qt.status !== "sent") return { sent: { status: "none", why: `the quote is ${qt.status}` }, pdf: false, printError: null };
-  const msg = quoteMessage(qt, rates, o, how.payUrl);
+  const msg = quoteMessage(qt, rates, o, how.link);
   let pdf: Uint8Array | null = null;
   let printError: string | null = null;
-  if (how.print) {
+  if (how.print && !how.link) {
     try {
-      pdf = await how.print(quoteHtml(qt, rates, o, how.payUrl));
+      pdf = await how.print(how.html ?? quoteHtml(qt, rates, o));
     } catch (e) {
       printError = (e as Error).message;
     }
   }
   const sent = await how.send({
     to: [qt.email], subject: msg.subject, text: msg.text, replyTo: how.replyTo,
-    attachments: pdf ? [{ filename: `Quote ${qt.number}.pdf`, content: pdf, contentType: "application/pdf" }] : undefined,
+    attachments: pdf ? [{ filename: `${o.word ?? "Quote"} ${qt.number}.pdf`, content: pdf, contentType: "application/pdf" }] : undefined,
   });
   if (sent.status === "sent") await markSent(db, qt.id, how.by);
   return { sent, pdf: !!pdf, printError };

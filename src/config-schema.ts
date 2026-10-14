@@ -11,8 +11,9 @@ export type EventsConfig = { one: string; many: string; fields: CustomField[]; c
 export type DealsConfig = { one: string; many: string; stages: StageConfig[]; currency?: string; lost_reasons?: string[] };
 /** Tasks: whether a deal made from a lead gets a "Call back" due that day. On unless false. */
 export type TasksConfig = { new_lead?: boolean };
-/** Quotes and invoices: the name printed on them, their currency, standing terms, days to pay. */
-export type InvoicesConfig = { name: string; currency?: string; terms?: string; days_until_due?: number };
+/** Quotes and invoices: the name printed on them, their currency, standing terms, days to pay, and what a quote is called. */
+export type InvoicesConfig = { name: string; currency?: string; terms?: string; days_until_due?: number; quote_word?: "Quote" | "Proposal" | "Estimate" };
+export const QUOTE_WORDS = ["Quote", "Proposal", "Estimate"] as const;
 export type Config = {
   business: string;
   vocabulary: { one: string; many: string };
@@ -92,6 +93,7 @@ export function validate(raw: unknown): string[] {
       if (iv.currency !== undefined && !validCurrency(iv.currency)) out.push(`invoices.currency must be a currency code such as "USD" (got ${JSON.stringify(iv.currency)})`);
       if (iv.terms !== undefined && (typeof iv.terms !== "string" || iv.terms.length > 2000)) out.push("invoices.terms must be text of up to 2000 characters");
       if (iv.days_until_due !== undefined && !(Number.isInteger(iv.days_until_due) && iv.days_until_due >= 0 && iv.days_until_due <= 365)) out.push("invoices.days_until_due must be a whole number of days, 0 to 365");
+      if (iv.quote_word !== undefined && !QUOTE_WORDS.includes(iv.quote_word)) out.push(`invoices.quote_word is what a quote is called: ${QUOTE_WORDS.map((x) => `"${x}"`).join(", ")} (got ${JSON.stringify(iv.quote_word)})`);
     }
   }
   if (c.events !== undefined && c.events !== false) {

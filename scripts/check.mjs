@@ -10,6 +10,7 @@
 //   - only the dev-only files under src/ import a Node built-in, so the
 //     code production runs on Cloudflare stays portable
 //   - the manifest, the skill, the vendored scripts are there
+//   - src/proposals/style.ts is what styles/proposal.css compiles to
 //   - the typecheck passes
 // Exit 1 with the findings when something is off.
 import { spawnSync } from "node:child_process";
@@ -69,7 +70,7 @@ for (const file of walk("src").filter((f) => f.endsWith(".tsx") && !isTest(f))) 
 
 // production runs the same app on Cloudflare: Node built-ins only in the
 // files that run in dev alone
-const nodeOnly = new Set(["src/server.ts", "src/db/client.ts", "src/db/setup.ts", "src/booking/sync.ts", "src/booking/reminders-job.ts", "src/pdf.ts", "src/reports/print.ts", "src/data/cli.mjs", "src/invoices/cli.ts", "src/forms/cli.ts", "src/forms/files.ts", "src/crm/xlsx-read.ts"]);
+const nodeOnly = new Set(["src/server.ts", "src/db/client.ts", "src/db/setup.ts", "src/booking/sync.ts", "src/booking/reminders-job.ts", "src/pdf.ts", "src/reports/print.ts", "src/data/cli.mjs", "src/invoices/cli.ts", "src/forms/cli.ts", "src/forms/files.ts", "src/crm/xlsx-read.ts", "src/proposals/serving.ts"]);
 for (const file of walk("src").filter((f) => /\.tsx?$/.test(f) && !nodeOnly.has(f) && !isTest(f))) {
   // Imports only: a comment that shows a Node import (src/data/migrate.ts) is not one.
   const code = readFileSync(file, "utf8").split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
@@ -81,6 +82,10 @@ for (const file of walk("src").filter((f) => /\.tsx?$/.test(f) && !nodeOnly.has(
 if (!existsSync("starter-app.json")) findings.push("starter-app.json is missing");
 if (!existsSync(".claude/skills/crm/SKILL.md")) findings.push(".claude/skills/crm/SKILL.md is missing");
 if (!existsSync("static/vendor/htmx.min.js") || !existsSync("static/vendor/Sortable.min.js")) findings.push("static/vendor is missing: run npm run vendor");
+
+// the proposal's stylesheet module is what styles/proposal.css and src/proposals make
+const pc = spawnSync("node", ["scripts/proposal-css.mjs", "--check"], { encoding: "utf8" });
+if (pc.status !== 0) findings.push((pc.stderr || pc.stdout).trim());
 
 // typecheck
 const tc = spawnSync("node_modules/.bin/tsc", ["--noEmit", "-p", "."], { encoding: "utf8" });

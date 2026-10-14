@@ -119,7 +119,7 @@ test("Home: the figures and the four short lists; the form's person is a contact
   assert.equal((await get("/inbox/count")).status, 404, "the Inbox is gone");
 });
 
-test("the bell: a booker's own move, a quote paid online (once, not again as its payment) and a payment; opening it clears the count", async (t) => {
+test("the bell: a booker's own move, a quote signed or declined at its link, payments; opening it clears the count", async (t) => {
   if (skip) return t.skip(skip);
   const [b] = await db.sql<{ id: string }>`
     insert into bookings (starts_at, ends_at, name, email, status, location_kind, source)
@@ -129,7 +129,10 @@ test("the bell: a booker's own move, a quote paid online (once, not again as its
     values (${b.id}::bigint, 'rescheduled', '2099-04-30 15:00+00', '2099-05-01 15:00+00')`;
   const [paid] = await db.sql<{ id: string }>`
     insert into quotes (number, email, name, status, currency, total_cents, decided_at, decided_by)
-    values ('Q-9001', 'rae.fox@example.com', 'Rae Fox', 'accepted', 'usd', 238000, now(), 'paid online') returning id::text as id`;
+    values ('Q-9001', 'rae.fox@example.com', 'Rae Fox', 'accepted', 'usd', 238000, now(), 'signed online') returning id::text as id`;
+  await db.sql`
+    insert into quotes (number, email, name, status, currency, total_cents, decided_at, decided_by)
+    values ('Q-9003', 'max@example.com', 'Max Bell', 'declined', 'usd', 9000, now(), 'declined online')`;
   await db.sql`
     insert into quotes (number, email, name, status, currency, total_cents, decided_at, decided_by)
     values ('Q-9002', 'rae.fox@example.com', 'Rae Fox', 'accepted', 'usd', 5000, now(), 'ann@team.example')`;
@@ -141,21 +144,22 @@ test("the bell: a booker's own move, a quote paid online (once, not again as its
       ('nope@example.com', 'Never Paid', 500, 500, 'usd', 'pending', 'full', null, null, null, true)`;
 
   const count = async () => (await (await get("/notifications/count")).text()).match(/>(\d+\+?)<span class="sr-only"> unread/)?.[1] ?? "0";
-  assert.equal(await count(), "3");
+  assert.equal(await count(), "5");
   const html = await (await get("/notifications")).text();
   assert.match(html, /Rae Fox<\/span> moved <span[^>]*>/, "what they did");
   assert.match(html, new RegExp(`data-href="/events/${b.id}"`), "it opens the booking");
-  assert.match(html, /accepted Quote Q-9001 and paid \$2,380\.00/);
+  assert.match(html, /signed Quote Q-9001, \$2,380\.00/);
+  assert.match(html, /declined Quote Q-9003/);
   assert.match(html, new RegExp(`data-href="/invoices/quotes/${paid.id}"`));
   assert.match(html, /Payment of \$189\.00 from <span[^>]*>Max Bell/);
-  assert.doesNotMatch(html, /Invoice for Q-9001/, "the quote's own payment is the quote's notice");
+  assert.match(html, /Invoice for Q-9001/, "a quote's invoice paid is a payment like any other");
   assert.doesNotMatch(html, /Q-9002|Never Paid/, "the team's own mark and money that never moved are not news");
-  assert.equal((html.match(/Unread: /g) ?? []).length, 3, "what is new since the last look, in bold");
+  assert.equal((html.match(/Unread: /g) ?? []).length, 5, "what is new since the last look, in bold");
 
   assert.equal(await count(), "0", "opening the bell saw them");
   assert.doesNotMatch(await (await get("/notifications")).text(), /Unread: /);
   // Read state is each person's own.
-  assert.match(await (await get("/notifications/count", { ...ME, "x-tasktool-user": "bo@team.example" })).text(), /3<span class="sr-only"> unread/);
+  assert.match(await (await get("/notifications/count", { ...ME, "x-tasktool-user": "bo@team.example" })).text(), /5<span class="sr-only"> unread/);
 });
 
 test("leads: a form fill and a phone call; convert to a deal, archive with Undo", async (t) => {

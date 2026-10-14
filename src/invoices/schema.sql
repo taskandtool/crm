@@ -41,6 +41,8 @@ create index if not exists quotes_visit on quotes (visit_id);
 alter table quotes add column if not exists deal_id bigint;
 create index if not exists quotes_deal on quotes (deal_id) where deal_id is not null;
 create index if not exists quotes_recent on quotes (created_at desc, id desc);
+-- When the customer first opened it, set by the app that serves its page (the CRM's proposal link).
+alter table quotes add column if not exists viewed_at timestamptz;
 
 -- amount_cents is quantity x unit_cents, rounded; tax_cents the tax on it
 -- (inside it when the rate is inclusive). Both are computed by the insert.
@@ -119,7 +121,7 @@ create table if not exists stripe_customers (
   primary key (email, livemode)
 );
 
-comment on table quotes is 'Quotes the team sends through the owner''s own sender (invoices skill). Status moves forward only.';
+comment on table quotes is 'Quotes the team sends through the owner''s own sender (invoices skill). Editable until accepted or declined. Status moves forward only.';
 comment on table invoices is 'Invoices made, sent and collected by the owner''s Stripe account (invoices skill). Past draft, status changes only from verified Stripe webhooks.';
 comment on column invoices.status is 'draft until sent with Stripe; then Stripe''s, moved only by the webhook, never backwards.';
 

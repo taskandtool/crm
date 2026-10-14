@@ -20,6 +20,7 @@ Read the skill for what the owner asks before working from memory:
   statuses and stages, custom fields, shaping the CRM: `crm`.
 - "Send Ann the invoice" for finished work: run `node scripts/invoices.mjs bill <who> --confirm` straight away (with two finished events it lists them to ask which).
 - "Quote this job", "who owes us", a tax rate, other invoice work: `invoices`.
+- A proposal: its sections and words, sending its link, how it looks: the crm skill's `references/money.md`.
 - "Show me the orders", a form's questions, what someone filled in: `forms`.
 - The Stripe key, the webhook, a payment or a refund: `payments`.
 - What can be booked, hours, calendar sync: `booking`. A public booking
@@ -42,7 +43,8 @@ node scripts/deals.mjs add ann@example.com "New furnace" --value 6500   # a deal
 node scripts/events.mjs list                    # what is scheduled; done, no-show, cancel, update --amount
 node scripts/stages.mjs list                    # deal stages (--statuses: a customer's); rename, add, archive --move-to
 node scripts/forms.mjs submissions --form order # a form's submissions with their booking and payment; list, show, save
-node scripts/quotes.mjs send 7                  # prints the email; --confirm sends it
+node scripts/quotes.mjs proposal 7 --sections summary,scope,terms --text summary.heard="..."   # its sections and words
+node scripts/quotes.mjs send 7                  # prints the email; --confirm sends it with its link
 node scripts/invoices.mjs send 3                # one invoice: what Stripe will do; --confirm does it
 node scripts/import.mjs file.csv --dry-run      # a list in; always the dry run first
 node scripts/export.mjs --out customers.csv     # the list out
@@ -59,6 +61,10 @@ node scripts/export.mjs --out customers.csv     # the list out
   `src/runtime.ts` is all that differs between them.
 - `src/<skill>/` (`booking`, `customers`, `forms`, `invoices`, `payments`,
   `reports`, `data`, `admin`) are copies of the business skills' code.
+- `src/proposals/` is a quote as the customer's page: its sections
+  (`sections/<name>.tsx`), the page, the link at `/q/<token>`, signing.
+  `styles/proposal.css` is its own look, compiled by `npm run css` into
+  `src/proposals/style.ts`.
 - `styles/theme.css` is the design as tokens; `DESIGN.md` explains them.
   `static/` is served as-is (the built CSS, the vendored htmx and
   SortableJS, `crm.js`).
@@ -88,9 +94,13 @@ node scripts/export.mjs --out customers.csv     # the list out
   a task is done. A merge waits for the owner's yes.
 - Other apps' rows are written only through the skills' code in `src/<skill>/` and `src/crm/events.ts` (the CRM's events are rows in `bookings`); a submission's status and a confirmed refund are the only other changes.
 - Identity comes from the platform: `X-TaskTool-User`, or 404; only
-  `/healthz` and Stripe's signed `/hooks/stripe` answer without it. The CRM
-  builds no login.
-- Production stays team only; it is the business's customer list.
+  `/healthz`, Stripe's signed `/hooks/stripe` and a proposal's link
+  (`/q/<token>`, the token is the customer's key) answer without it. The
+  CRM builds no login.
+- Production stays team only; it is the business's customer list. Only
+  `/q` opens to customers, by a person in Task & Tool.
+- A proposal's page runs no script and loads nothing; the owner's words are
+  escaped Markdown. A signed one never changes.
 - Colours and sizes are tokens in `styles/theme.css`. Markup never carries
   a hex value or a Tailwind default colour; `npm run check` refuses both.
   No em dashes in interface copy.
