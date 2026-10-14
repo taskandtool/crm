@@ -14,7 +14,7 @@ the project database reads the same rows: the Website's `/book` pages
 take bookings, the CRM sets types, hosts and hours and lists the bookings
 by email.
 
-Version: 0.6.0 (taskandtool/skills)
+Version: 0.6.1 (taskandtool/skills)
 
 ## The rules
 
@@ -50,8 +50,9 @@ Version: 0.6.0 (taskandtool/skills)
   `booking_types` and `resources`. Reminders and invites go only to a
   booking with a service, someone taking it and an email.
 - **Messages** are `bookingMessage`'s words (`notify.ts`) through a `Send`;
-  `emailSend(env)` is the owner's sender (`data/send.ts`), and Task & Tool
-  sends nothing. No sender: nothing is sent, the booking stands, and the
+  `emailSend(env)` is the app's sender (`data/send.ts`). A booker needs
+  Resend or Postmark: Task & Tool email reaches only the team. No sender
+  for them: nothing is sent, the booking stands, and the
   manage page's .ics is the invite. A text instead: `references/messages.md`.
 - **A customer books a type; a host takes it.** A type's time is open
   when any of its active hosts is free in their own hours and zone, using

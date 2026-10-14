@@ -2,6 +2,7 @@
 // same submissions table.
 import { saveLead, savePerson, type CustomerRef } from "../customers/customer";
 import { q, type Db } from "../data/db";
+import type { Sent } from "../data/send";
 import { checkFields, sitePath, type Field, type Form, type Submission } from "./fields";
 import type { Charge } from "./price";
 
@@ -37,6 +38,22 @@ export async function seedForm(db: Db, form: { key: string; title: string; field
     values (${form.key}, ${form.title}, ${JSON.stringify(form.fields)}::jsonb, ${form.notify_emails ?? []}::citext[],
             ${form.redirect_to ?? null}, ${form.success_message ?? null}, ${form.submit_label ?? null}, ${form.leads !== false}, ${source})
     on conflict (key) do nothing`;
+}
+
+/**
+ * What came of telling the team about a submission, kept on it in one line
+ * the admin shows: "Emailed pat@acme.com" or "Not emailed: <why>".
+ */
+export async function recordNotified(db: Db, id: number | string, to: string[], sent: Sent): Promise<void> {
+  let line: string;
+  if (sent.status === "sent") {
+    const skipped = sent.skipped ?? [];
+    const went = to.filter((e) => !skipped.some((s) => s.toLowerCase() === e.toLowerCase()));
+    line = `Emailed ${went.join(", ")}` + (skipped.length ? `. Not emailed: ${skipped.join(", ")} (cannot open this app in Task & Tool)` : "");
+  } else {
+    line = `Not emailed: ${sent.status === "none" ? sent.why : `the send failed (${sent.error.slice(0, 120)})`}`;
+  }
+  await db.sql`update submissions set notified = ${line.slice(0, 500)} where id = ${id}::bigint`;
 }
 
 /** A form with no steps, sent whole: complete as it arrives (completed_at's default). */

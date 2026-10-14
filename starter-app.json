@@ -3,7 +3,10 @@
   "slug": "crm",
   "version": "0.5.0",
   "needs": {
-    "capabilities": [{ "kind": "postgres", "strength": "required" }]
+    "capabilities": [{ "kind": "postgres", "strength": "required" }],
+    "connections": [
+      { "provider": "taskandtool", "strength": "suggested", "why": "Email your team their morning tasks and new submissions" }
+    ]
   },
   "ready": { "service": "web" },
   "suggestions": [

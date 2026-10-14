@@ -79,13 +79,17 @@ When a form sells things, load `cart.js` on every page (the Website:
 
 ## Telling the owner
 
-The owner is emailed once the questions are answered, with what was
-ordered and its total; a booking and a payment follow it, and the
-submission shows them. Sending is configured once for every skill that
-sends (bookings use the same settings):
-`NOTIFY_FROM`, an address on a domain verified with the vendor, and
-`NOTIFY_VIA=resend` or `postmark`, with `:<slug>` when the connection's
-endpoint slug is not the vendor's name.
+The form's `notify_emails` are emailed once the questions are answered,
+with what was ordered and its total; a booking and a payment follow it, and
+the submission shows them, with who the email reached (`notified`). A form
+saved without a list goes to the owner.
+
+**Task & Tool email** sends it with nothing to set up, to people who can
+open this app in Task & Tool (`python3 ~/tools/taskandtool.py request-connection taskandtool --why "email the team new submissions"` if it is not on).
+Anyone else on the list needs Resend or Postmark, configured once for
+every skill that sends: `NOTIFY_FROM`, an address on a domain verified
+with the vendor, and `NOTIFY_VIA=resend` or `postmark`, with `:<slug>`
+when the connection's endpoint slug is not the vendor's name.
 
 | Where | What it needs |
 |---|---|

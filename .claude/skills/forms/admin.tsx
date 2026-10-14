@@ -16,7 +16,7 @@ import type { Child } from "hono/jsx";
 import type { Db, GetDb } from "../data/db";
 import { normalizeEmail } from "../data/email";
 import { envOf, setting } from "../data/env";
-import { senderOf } from "../data/send";
+import { senderOf, teamOf, type Person } from "../data/send";
 import { FieldList, JsonData, Section } from "../admin/detail";
 import { csvResponse, type CsvColumn } from "../admin/csv";
 import { alertClass, withFlash, type FlashMessages } from "../admin/flash";
@@ -139,17 +139,18 @@ function EmailNote({ c, forms }: { c: Context; forms: FormInfo[] }) {
   const env = envOf(c);
   const sender = senderOf(env);
   const to = [...new Set(forms.filter((f) => f.active).flatMap((f) => f.notify_emails))];
-  if (typeof sender === "string" || !setting(env, "NOTIFY_FROM")) {
+  const ours = typeof sender !== "string" && sender.vendor === "taskandtool";
+  if (typeof sender === "string" || (!ours && !setting(env, "NOTIFY_FROM"))) {
     return (
       <p class="mb-4 rounded-card border border-line bg-panel/60 px-4 py-3 text-copy text-ink">
         <strong>Email is off.</strong> No email sender is connected, so nobody is emailed about new submissions and customers get no
-        booking confirmations. Ask the AI to connect one to turn it on.
+        booking confirmations. Ask the AI to turn on Task &amp; Tool email for your team, or to connect Resend to email customers too.
       </p>
     );
   }
   const text = to.length
-    ? `New form submissions are emailed to ${to.join(", ")}.`
-    : "Nobody is emailed about new submissions. Ask the AI to email them to you.";
+    ? `New form submissions are emailed to ${to.join(", ")}.${ours ? " Customers get no confirmation emails until Resend or Postmark is connected." : ""}`
+    : "Nobody is emailed about new submissions. Add yourself to a form's list.";
   return <p class={`mb-4 ${smallText} text-ink-2`}>{text}</p>;
 }
 
@@ -308,11 +309,11 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     if (!id) return c.notFound();
     const db = getDb(c);
     // Opening a new one reads it: it stays Open, no longer marked new.
-    const [r] = await db.sql<Item & { updated_at: Date }>`
+    const [r] = await db.sql<Item & { updated_at: Date; notified: string | null }>`
       with opened as (update submissions set status = 'read' where id = ${id}::bigint and status = 'new' returning id)
       select id::text as id, form_key, name, email::text as email, phone,
              case when exists (select 1 from opened) then 'read' else status end as status,
-             page, source, created_at, completed_at, updated_by::text as updated_by, updated_at, created_at::text as k, data
+             page, source, created_at, completed_at, updated_by::text as updated_by, updated_at, created_at::text as k, data, notified
       from submissions where id = ${id}::bigint`;
     if (!r) return c.notFound();
     const [formRow] = await db.sql`
@@ -438,6 +439,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
                     { label: "Form", value: title },
                     { label: "Page", value: r.page },
                     { label: "Found you through", value: from },
+                    { label: "Team email", value: r.notified },
                     { label: "Last changed by", value: r.updated_by ? <>{r.updated_by}, <When at={r.updated_at} timeZone={tz} /></> : null },
                   ]}
                 />
@@ -652,6 +654,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
 
   // A title is all a new form needs; its key (its address) is made from it,
   // numbered when taken. A key given (the AI, a script) is used as given.
+  // Whoever makes it is told of its submissions until they change the list.
   app.post("/", async (c) => {
     const body = await c.req.parseBody();
     const given = str(body.key).trim().toLowerCase();
@@ -665,8 +668,8 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
       for (let n = 1; n <= (given ? 1 : 20); n++) {
         const key = n === 1 ? stem : `${stem}-${n}`;
         const made = await db.sql`
-          insert into forms (key, title, fields, source, updated_by)
-          values (${key}, ${title}, ${JSON.stringify(CONTACT_FORM.fields)}::jsonb, ${opts.source}, ${c.get("user")})
+          insert into forms (key, title, fields, notify_emails, source, updated_by)
+          values (${key}, ${title}, ${JSON.stringify(CONTACT_FORM.fields)}::jsonb, ${[c.get("user")]}::citext[], ${opts.source}, ${c.get("user")})
           on conflict (key) do nothing
           returning key`;
         if (made.length) return c.redirect(withFlash(`${base}/form/${key}`, "created"), 303);
@@ -679,7 +682,8 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
   app.get("/form/:key", async (c) => {
     const found = await formRow(getDb(c), c.req.param("key"));
     if (!found) return c.notFound();
-    return framed(c, base, editorHead(found.form), <Editor base={base} form={found.form} raw={found.raw} version={found.version} />);
+    const team = await teamOf(envOf(c));
+    return framed(c, base, editorHead(found.form), <Editor base={base} form={found.form} raw={found.raw} version={found.version} team={team} />);
   });
 
   app.post("/form/:key", async (c) => {
@@ -691,6 +695,11 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
     const formProblems: Errors = {};
     if (!draft.title) formProblems.title = "Give the form a title.";
     if (draft.badEmails.length) formProblems.notify_emails = `These are not email addresses: ${draft.badEmails.join(", ")}.`;
+    // Task & Tool email reaches only the people on this app: name anyone else before they are missed.
+    const team = await teamOf(envOf(c));
+    const outside = team ? draft.notify_emails.filter((e) => !team.some((p) => p.email.toLowerCase() === e.toLowerCase())) : [];
+    if (outside.length && !formProblems.notify_emails)
+      formProblems.notify_emails = `${outside.join(", ")} cannot open this app in Task & Tool, so Task & Tool email will not reach them. Invite them to the app, or connect Resend or Postmark.`;
     if (draft.redirect_to && !sitePath(draft.redirect_to)) formProblems.redirect_to = "Use a path on this site that starts with /, like /thank-you.";
     const form: Form = {
       key: found.form.key,
@@ -708,7 +717,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
           c,
           base,
           editorHead(found.form),
-          <Editor base={base} form={form} raw={draft.fields} version={version} problems={problems} formProblems={formProblems} note={note} />, status);
+          <Editor base={base} form={form} raw={draft.fields} version={version} problems={problems} formProblems={formProblems} note={note} team={team} />, status);
     if (Object.keys(problems).length || Object.keys(formProblems).length) return again(422);
 
     // Saved only over the version the editor opened, so two people editing at
@@ -954,8 +963,10 @@ function Editor(props: {
   problems?: Errors;
   formProblems?: Errors;
   note?: string;
+  /** Who Task & Tool email reaches, when it is the sender (data/send.ts teamOf). */
+  team?: Person[] | null;
 }) {
-  const { base, form, raw, version, problems = {}, formProblems = {}, note } = props;
+  const { base, form, raw, version, problems = {}, formProblems = {}, note, team } = props;
   const text = (v: unknown) => (typeof v === "string" ? v : "");
   return (
     <form method="post" action={`${base}/form/${form.key}`} class="flex flex-col gap-6">
@@ -995,7 +1006,11 @@ function Editor(props: {
           <label class={fieldClass}>
             Email each submission to
             <input name="notify_emails" value={form.notify_emails.join(", ")} placeholder="you@example.com" class={controlClass} aria-invalid={formProblems.notify_emails ? "true" : undefined} aria-describedby="p-notify-help p-notify" />
-            <span id="p-notify-help" class="font-normal text-ink-3">Needs an email sender connected to this app (Resend or Postmark).</span>
+            <span id="p-notify-help" class="font-normal text-ink-3">
+              {team
+                ? `Task & Tool email reaches the people who can open this app: ${team.map((p) => p.name).join(", ") || "nobody yet"}. Anyone else needs Resend or Postmark connected.`
+                : "Sent through this app's email sender: Task & Tool email for the people on this app, or Resend or Postmark for anyone."}
+            </span>
             <FieldError id="p-notify" text={formProblems.notify_emails} />
           </label>
           <label class="flex items-center gap-2">

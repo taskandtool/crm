@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { Hono } from "hono";
 import { envOf, envVar, keyName } from "../env";
 import { gatewayFetch } from "../gateway";
-import { sendEmail, senderOf } from "../send";
+import { sendEmail, senderOf, teamOf } from "../send";
+import { emailSender } from "../../booking/notify";
 
 const msg = { to: ["owner@example.com"], subject: "New\r\nBcc: x", text: "Hi", replyTo: "ann@example.com" };
 
@@ -64,7 +65,7 @@ test("with no sender nothing is sent and the reason is given", async () => {
   assert.deepEqual(await sendEmail({}, msg, r.f), { status: "none", why: "no email sender is connected to this app" });
   assert.equal((await sendEmail({ RESEND_API_KEY: "k" }, msg, r.f)).status, "none"); // no From
   assert.equal((await sendEmail({ RESEND_API_KEY: "k", NOTIFY_FROM: "a@b.example" }, { ...msg, to: [] }, r.f)).status, "none");
-  assert.match(String(senderOf({ NOTIFY_VIA: "mailgun" })), /resend or postmark/);
+  assert.match(String(senderOf({ NOTIFY_VIA: "mailgun" })), /resend, postmark or taskandtool/);
   assert.match(String(senderOf({ NOTIFY_VIA: "resend:resend-2", RESEND_API_KEY: "k" })), /RESEND_2_API_KEY/);
   assert.equal(r.calls.length, 0);
 });
@@ -115,4 +116,64 @@ test("a vendor refusal or a network failure is reported, never thrown", async ()
     throw new Error("connection reset");
   }) as unknown as typeof fetch;
   assert.deepEqual(await sendEmail({ RESEND_API_KEY: "k", NOTIFY_FROM: "a@b.example" }, msg, down), { status: "failed", via: "resend", error: "connection reset" });
+});
+
+// ── Task & Tool email ────────────────────────────────────────────────────────
+
+const OURS = { TASKANDTOOL_EMAIL_API_KEY: "tt_key", TASKANDTOOL_API_URL: "https://tt.example/" };
+
+function answering(body: unknown, status = 200) {
+  const calls: { url: string; headers: Headers; body: any }[] = [];
+  const f = (async (url: string, init: RequestInit = {}) => {
+    calls.push({ url, headers: new Headers(init.headers), body: init.body ? JSON.parse(String(init.body)) : null });
+    return new Response(JSON.stringify(body), { status });
+  }) as unknown as typeof fetch;
+  return { calls, f };
+}
+
+test("Task & Tool email is the sender only when no Resend or Postmark key is here", () => {
+  assert.equal((senderOf(OURS) as { vendor: string }).vendor, "taskandtool");
+  assert.equal((senderOf({ ...OURS, RESEND_API_KEY: "re" }) as { vendor: string }).vendor, "resend");
+  assert.equal((senderOf({ ...OURS, RESEND_API_KEY: "re", NOTIFY_VIA: "taskandtool" }) as { vendor: string }).vendor, "taskandtool");
+});
+
+test("team mail goes to our route with the app's key; no From is needed", async () => {
+  const r = answering({ sent: ["owner@example.com"], skipped: ["ann@example.com"], failed: [] });
+  const out = await sendEmail(OURS, { ...msg, to: ["owner@example.com", "ann@example.com"], team: true }, r.f);
+  assert.deepEqual(out, { status: "sent", via: "taskandtool", skipped: ["ann@example.com"] });
+  assert.equal(r.calls[0].url, "https://tt.example/api/email/emails");
+  assert.equal(r.calls[0].headers.get("authorization"), "Bearer tt_key");
+  assert.deepEqual(r.calls[0].body, { to: ["owner@example.com", "ann@example.com"], subject: "New Bcc: x", text: "Hi", reply_to: "ann@example.com" });
+});
+
+test("nobody on the app is not sent, and says who", async () => {
+  const r = answering({ sent: [], skipped: ["ann@example.com"], failed: [] });
+  assert.deepEqual(await sendEmail(OURS, { ...msg, to: ["ann@example.com"], team: true }, r.f), {
+    status: "none",
+    why: "ann@example.com cannot open this app in Task & Tool",
+  });
+});
+
+test("a customer's email never reaches Task & Tool", async () => {
+  const r = answering({});
+  const out = await sendEmail(OURS, msg, r.f);
+  assert.equal(out.status, "none");
+  assert.match((out as { why: string }).why, /connect Resend or Postmark/);
+  assert.equal(r.calls.length, 0);
+  assert.equal(emailSender(OURS), null, "booking confirmations need a sender that reaches customers");
+});
+
+test("a refusal is a failure with its reason", async () => {
+  const r = answering({ error: "subject is required" }, 422);
+  const out = await sendEmail(OURS, { ...msg, team: true }, r.f);
+  assert.equal(out.status, "failed");
+  assert.match((out as { error: string }).error, /422 .*subject is required/);
+});
+
+test("teamOf lists who Task & Tool email reaches, and is null for any other sender", async () => {
+  const r = answering({ people: [{ name: "Pat", email: "pat@example.com" }] });
+  assert.deepEqual(await teamOf(OURS, r.f), [{ name: "Pat", email: "pat@example.com" }]);
+  assert.equal(r.calls[0].url, "https://tt.example/api/email/people");
+  assert.equal(await teamOf({ RESEND_API_KEY: "re", NOTIFY_FROM: "a@b.example" }, r.f), null);
+  assert.equal(await teamOf(OURS, answering({}, 401).f), null);
 });

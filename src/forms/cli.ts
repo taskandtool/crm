@@ -6,7 +6,7 @@
 //   await formsCli(process.argv.slice(2), { withDb, source: "website", timeZone: "America/Denver" });
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { done, fail, flag, has, limitOf, localTime, misused, noMore, out, parseArgs, usage } from "../data/cli.mjs";
+import { done, fail, flag, has, limitOf, localTime, machineEnv, misused, noMore, out, parseArgs, usage } from "../data/cli.mjs";
 import type { Db } from "../data/db";
 import { checkFields, FORM_KEY, sitePath, stepsOf, type Field } from "./fields";
 import { linkedTo } from "./linked";
@@ -33,7 +33,8 @@ const HELP = `forms.mjs <command> [...] [--json]      the project's forms and wh
                                        "leads": false for a newsletter or job form: no lead per submission
   submissions [--form <key>] [--limit 20]
                                        newest first, each with what was bought, its booking and payment,
-                                       and "not complete" while a booking or payment step is still to do
+                                       "not complete" while a booking or payment step is still to do,
+                                       and who the team email reached
   unfinished [--form <key>]            forms with steps someone started and did not finish
 
 A field is { "name", "label", "type", "required"? }; types: text, email, tel, textarea, select,
@@ -115,7 +116,11 @@ export async function formsCli(argv: string[], cli: FormsCli): Promise<void> {
             fail(`forms save: ${key} not saved; tax_rate_id ${taxed.tax_rate_id} is not a tax rate in use\n  ${rates.length ? `In use: ${rates.map((r) => `${r.id} (${r.name}, ${percentText(r.percent_bp)})`).join(", ")}` : "The project has no tax rates yet; the CRM adds them (its invoices skill)"}`,
               `node scripts/forms.mjs save ${key} --file ${file}, ${rates.length ? "with one of those ids or " : ""}without tax_rate_id`);
         }
-        const emails = Array.isArray(def.notify_emails) ? def.notify_emails.filter((e): e is string => typeof e === "string") : [];
+        // Without a list, the owner hears of each submission: a form that tells nobody is one nobody reads.
+        const owner = machineEnv().OWNER_EMAIL?.trim();
+        const emails = Array.isArray(def.notify_emails)
+          ? def.notify_emails.filter((e): e is string => typeof e === "string")
+          : owner ? [owner] : [];
         const redirect = def.redirect_to === undefined || def.redirect_to === null ? null : sitePath(def.redirect_to);
         if (def.redirect_to && !redirect) fail(`forms save: "redirect_to" must be a path on this site, like /thank-you`, `"redirect_to": "/thank-you" in ${file}`);
         const str = (k: string) => (typeof def[k] === "string" && (def[k] as string).trim() ? (def[k] as string).trim() : null);
@@ -142,8 +147,8 @@ export async function formsCli(argv: string[], cli: FormsCli): Promise<void> {
       case "submissions": {
         await known(db);
         const form = only;
-        const rows = await db.sql<{ id: string; form_key: string; name: string | null; email: string | null; status: string; data: Record<string, unknown>; created_at: Date; completed_at: Date | null }>`
-          select id::text as id, form_key, name, email::text as email, status, data, created_at, completed_at from submissions
+        const rows = await db.sql<{ id: string; form_key: string; name: string | null; email: string | null; status: string; data: Record<string, unknown>; created_at: Date; completed_at: Date | null; notified: string | null }>`
+          select id::text as id, form_key, name, email::text as email, status, data, created_at, completed_at, notified from submissions
           where status <> 'spam' and (${form}::text is null or form_key = ${form})
           order by created_at desc, id desc limit ${limit}`;
         const linked = await linkedTo(db, rows.map((r) => r.id));
@@ -167,7 +172,7 @@ export async function formsCli(argv: string[], cli: FormsCli): Promise<void> {
           lines: [
             ...shaped.map((r) => [`#${r.id}`, localTime(r.created_at, cli.timeZone), r.form_key, `[${r.status}]`, r.name ? `${r.name} <${r.email ?? ""}>` : r.email ?? "",
                 r.total ? `order ${r.total}` : "", r.booking ? `booked ${localTime(r.booking.starts_at, cli.timeZone)}${r.booking.status === "cancelled" ? " (cancelled)" : ""}` : "",
-                r.payment ?? "", r.completed_at ? "" : "not complete"].filter(Boolean).join("  ")),
+                r.payment ?? "", r.completed_at ? "" : "not complete", r.notified ?? ""].filter(Boolean).join("  ")),
             ...(shaped.length === limit && limit < 200 ? [`the newest ${limit}; --limit 200 for more`] : []),
           ],
         });

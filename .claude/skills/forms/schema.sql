@@ -48,6 +48,8 @@ comment on table forms is 'One row per form. fields is the ordered definition th
 comment on table submissions is 'Every form submission from every app in the project. A person is their email. No IP addresses are stored.';
 comment on column submissions.completed_at is 'When the whole form was done: its questions, then any booking step and any payment (once Stripe reports it paid). Null while a step is still to do. Rows from before this column have the time it was added.';
 comment on column submissions.data is 'Every answer that is not name, email or phone, keyed by field name. _consent holds the wording of each consent box ticked; _utm (source, medium, campaign) and _referrer (a host) say where the visitor came from.';
+alter table submissions add column if not exists notified text;
+comment on column submissions.notified is 'The email telling the team about it, in one line: who it went to, or why it was not sent (forms/store.ts recordNotified). Null when none was tried.';
 
 -- A form with steps, while someone is still answering it. A draft is written
 -- at the end of the first step and updated at each one after; when the last

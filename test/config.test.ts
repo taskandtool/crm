@@ -145,7 +145,9 @@ test("the manifest follows the platform's rules", () => {
   assert.equal(m.schema_version, 1);
   assert.equal(m.slug, "crm");
   assert.match(m.version, /^\d+\.\d+\.\d+$/);
-  assert.deepEqual(m.needs, { capabilities: [{ kind: "postgres", strength: "required" }] });
+  assert.deepEqual(m.needs.capabilities, [{ kind: "postgres", strength: "required" }]);
+  // Task & Tool email, so the morning email and new submissions reach the team with nothing set up.
+  assert.deepEqual(m.needs.connections.map((c: { provider: string; strength: string }) => [c.provider, c.strength]), [["taskandtool", "suggested"]]);
   assert.deepEqual(m.ready, { service: "web" });
   const ids = new Set<string>();
   for (const s of m.suggestions) {

@@ -77,6 +77,42 @@ test("a submission is stored with the email lowered and the rest in data, then 3
   }
 });
 
+test("the team is emailed through Task & Tool email, and the submission keeps who it went to", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  const real = globalThis.fetch;
+  const sent: any[] = [];
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    sent.push({ url, body: JSON.parse(String(init.body)) });
+    return Response.json({ sent: ["owner@example.com"], skipped: ["office@example.com"], failed: [] });
+  }) as typeof fetch;
+  try {
+    await s.db.sql`update forms set notify_emails = '{owner@example.com,office@example.com}' where key = 'contact'`;
+    const env = { TASKANDTOOL_EMAIL_API_KEY: "tt_key", TASKANDTOOL_API_URL: "https://tt.example" };
+    const res = await site(s).request(
+      "https://site.example/forms/contact",
+      {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", host: "site.example" },
+        body: new URLSearchParams({ name: "Ann", email: "ann@example.com", message: "Hi", company_website: "", _started: await oldStamp() }).toString(),
+      },
+      env,
+    );
+    assert.equal(res.status, 303);
+    let notified: string | null = null;
+    for (let i = 0; i < 100 && !notified; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+      notified = (await s.db.sql`select notified from submissions`)[0].notified;
+    }
+    assert.equal(notified, "Emailed owner@example.com. Not emailed: office@example.com (cannot open this app in Task & Tool)");
+    assert.equal(sent[0].url, "https://tt.example/api/email/emails");
+    assert.equal(sent[0].body.reply_to, "ann@example.com");
+  } finally {
+    globalThis.fetch = real;
+    await s.drop();
+  }
+});
+
 test("errors re-render in the app's page with 422 and keep the stamp; nothing is stored", async (t) => {
   const s = await setUp(t);
   if (!s) return;

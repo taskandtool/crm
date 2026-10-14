@@ -30,7 +30,7 @@ import { cameFrom, originFields, readOrigin, REFERRER_FIELD, UTM_FIELD, type Ori
 import { FormView, StepFrame } from "./render";
 import { priceOf, withLines, type Price } from "./price";
 import { formatMoney } from "../payments/money";
-import { draftByKey, finishDraft, finishStep, insertSubmission, loadForm, rewindDraft, saveStep, startDraft, submissionById, type Draft } from "./store";
+import { draftByKey, finishDraft, finishStep, insertSubmission, loadForm, recordNotified, rewindDraft, saveStep, startDraft, submissionById, type Draft } from "./store";
 
 /** Wraps a body in the app's own page and its content width, so a form with errors looks like the rest of the site. */
 export type PageRenderer = (c: Context, title: string, body: Child) => string | Promise<string>;
@@ -123,7 +123,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     }
   }
 
-  /** Tell the form's notify_emails, through the owner's sender, after the response. */
+  /** Tell the form's notify_emails (the team's mail: data/send.ts), after the response, and keep what came of it on the submission. */
   function notifyOwner(c: Context, form: Form, id: number | string, sub: Submission, page: string | null, origin: Origin) {
     if (opts.notify === false || !form.notify_emails.length) return;
     const link = `${new URL(c.req.url).origin}${opts.adminPath ?? "/admin/submissions"}/${id}`;
@@ -134,9 +134,8 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
         subject: `New ${form.title} submission from ${sub.name || sub.email || "someone"}`,
         text: summary(form, sub, page, link, origin),
         replyTo: sub.email,
-      }).then((n) => {
-        if (n.status === "failed") console.error(`forms: telling the owner about submission ${id} failed via ${n.via}: ${n.error}`);
-      }),
+        team: true,
+      }).then((n) => recordNotified(getDb(c), id, form.notify_emails, n)),
     );
   }
 

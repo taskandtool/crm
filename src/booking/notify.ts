@@ -11,8 +11,8 @@
 // Another connector is another Send: a text through the owner's Twilio,
 // written by the app's AI against the gateway, takes the same message and
 // returns the same `Sent`. The reminder job (reminders-job.ts) takes one too.
-import { setting, type Env } from "../data/env";
-import { sendEmail, senderOf, type Sent } from "../data/send";
+import type { Env } from "../data/env";
+import { emailsCustomers, sendEmail, type Sent } from "../data/send";
 import type { Db } from "../data/db";
 import { resourceById, toBooking, typeById, whereText, type Booking, type BookingType, type Resource } from "./book";
 import { icsContentType, invite, type IcsMethod } from "./ics";
@@ -26,14 +26,20 @@ export type Message = {
   replyTo?: string | null;
   /** The calendar invite, for a sender that can attach one. */
   ics?: { text: string; method: IcsMethod } | null;
+  /** For the people who can open this app (the morning email), not a booker (data/send.ts). */
+  team?: boolean;
 };
 
 /** Delivers one message; never throws (a failure is a `failed` Sent). */
 export type Send = (m: Message) => Promise<Sent>;
 
-/** emailSend, or null when this app has no sender set up (no connection, or no NOTIFY_FROM): say so before claiming work only a sender can do. */
+/**
+ * emailSend, or null when this app cannot email a customer (no sender, no
+ * NOTIFY_FROM, or only Task & Tool email, which reaches the team alone): say
+ * so before claiming work only a sender can do.
+ */
 export function emailSender(env: Env, doFetch: typeof fetch = fetch): Send | null {
-  return typeof senderOf(env) === "string" || !setting(env, "NOTIFY_FROM") ? null : emailSend(env, doFetch);
+  return emailsCustomers(env) ? emailSend(env, doFetch) : null;
 }
 
 /** Email through the connected sender, the invite attached. */
@@ -46,6 +52,7 @@ export function emailSend(env: Env, doFetch: typeof fetch = fetch): Send {
         subject: m.subject,
         text: m.text,
         replyTo: m.replyTo,
+        team: m.team,
         attachments: m.ics
           ? [{ filename: m.ics.method === "CANCEL" ? "cancel.ics" : "invite.ics", content: m.ics.text, contentType: icsContentType(m.ics.method) }]
           : undefined,

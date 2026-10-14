@@ -3,7 +3,8 @@
 // in the business's zone, listing what is overdue and what is due today
 // (with the follow-ups proposals about to expire unsigned get), the
 // proposals opened, and how many leads came in since yesterday. Through a `Send`
-// (booking/notify.ts; the owner's connected sender), never Task & Tool's.
+// (booking/notify.ts) as team mail: Task & Tool email reaches whoever can open
+// the CRM, Resend or Postmark anyone.
 // Edge-safe; the job's command is digest-job.ts (machine only).
 //
 // Each person's email is claimed in follow_up_digests (email, day) before it
@@ -90,5 +91,5 @@ export function digestMessage(to: string, items: Due[], today: string, leads: nu
     "",
     "Tick them off on the CRM's Tasks page.",
   ].join("\n");
-  return { to, subject, text };
+  return { to, subject, text, team: true };
 }

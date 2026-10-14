@@ -33,10 +33,11 @@ what was left alone, and exits 1 when a send failed. Each reminder is
 claimed in `booking_reminders` before it is sent, so it goes once
 (`reminders.ts` lists which go); with no sender each is recorded as `none`.
 
-**Sending uses the owner's connection.** Email is Resend or Postmark
+**Sending to a booker uses the owner's connection** (Task & Tool email
+reaches only the team). Email is Resend or Postmark
 (`python3 ~/tools/taskandtool.py list-connections`; ask with `python3 ~/tools/taskandtool.py request-connection resend --why "…" --delivery edge` if
 neither is granted), then `NOTIFY_FROM` on a domain verified there. For a
 text instead, or as well, write a `Send` against the owner's Twilio
 connection through the gateway (the `connections` skill) and pass it to
 `notifyBooking` and `sendReminders`; the words and the once-only rules stay
-the same. Never send through an address of Task & Tool's.
+the same.

@@ -18,7 +18,7 @@ const CMD = "npx tsx src/crm/digest-job.ts";
 const USAGE = `usage: ${CMD} [--hour H]
 
 Emails each team member their tasks due (overdue and today), once a
-day, through the owner's email sender.
+day, through this app's email sender (Task & Tool email reaches anyone who can open the CRM).
 
   --hour H     the hour it goes, 0 to 23, in ${cfg.time_zone} (default ${DEFAULT_HOUR})
   --help, -h   this text

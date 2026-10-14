@@ -11,7 +11,7 @@ paid appointment with questions are each a form, named for what it takes
 (`order`, `intake`), and "my orders" is that form's submissions. A new
 form or a new question is a change to a row, never a migration.
 
-Version: 0.3.6 (taskandtool/skills)
+Version: 0.4.0 (taskandtool/skills)
 
 ## The rules
 
@@ -40,8 +40,10 @@ Version: 0.3.6 (taskandtool/skills)
   the exact words agreed to. A contact form is not permission to market.
 - **A photo field stores `/_files/<id>`**; open one at
   `localhost:<port>/_files/<id>`.
-- **The owner is emailed only through their own sender** (`data/send.ts`);
-  Task & Tool sends nothing. No sender: say so.
+- **A form's `notify_emails` hear of each submission** (`team: true`
+  mail, `data/send.ts`), through Task & Tool email or the owner's Resend or
+  Postmark; the submission's `notified` says who it reached or why not.
+  No sender: say so.
 
 ## Steps, things to buy, a time and a payment
 

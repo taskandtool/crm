@@ -9,7 +9,7 @@ Every app in a project shares one Postgres database, so a CRM installed
 later finds the Website's form submissions, bookings and payments already
 there.
 
-Version: 0.2.2 (taskandtool/skills)
+Version: 0.3.0 (taskandtool/skills)
 
 ## The rules
 
@@ -84,9 +84,11 @@ Each app makes its handle from the driver it already uses:
   owner bound to the production Worker (`delivery="edge"`).
   That key's env name is the connection's `env_name` in `python3 ~/tools/taskandtool.py list-connections`
   (`<SLUG>_API_KEY`); read it there rather than assuming it.
-- **Email** (`send.ts`): `sendEmail(env, mail)` through the owner's Resend or
-  Postmark, set once by `NOTIFY_FROM` and `NOTIFY_VIA`
-  (`resend|postmark[:slug]`); it never throws. Run it with
+- **Email** (`send.ts`): `sendEmail(env, mail)` through Resend or Postmark
+  (the owner's, to anyone; `NOTIFY_FROM` and `NOTIFY_VIA`), else Task & Tool
+  email (ours, free, nothing to set). Task & Tool email sends only mail
+  marked `team: true`, and only to people who can open this app in Task &
+  Tool; to email anyone else, connect Resend or Postmark. It never throws. Run it with
   `afterResponse(c, …)` so the visitor does not wait and the Worker does not
   stop before it is sent.
 - **Spam** (`spam.tsx`): every public form carries `<SpamFields>` and is
@@ -114,7 +116,7 @@ keeping the rules above and its tests passing. Then:
 A machine-only file (`cli.mjs`, a skill's `cli.ts`, booking's `sync.ts` and
 `reminders-job.ts`, reports' `print.ts`, forms' `files.ts`) runs only on the machine and may
 import Node built-ins. Nothing the production Worker imports may reach it;
-the app's `npm run check` fails if it does. A `.ts` file imports `cli.mjs`
+the app's `npm run check:code` fails if it does. A `.ts` file imports `cli.mjs`
 by its full name (`../data/cli.mjs`), and the app's `tsconfig.json` needs
 `"allowJs": true`.
 

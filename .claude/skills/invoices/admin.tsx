@@ -27,7 +27,7 @@ import { idParam, isPartial, listUrl, str } from "../admin/query";
 import { buttonClass, controlClass, FieldError, fieldClass, primaryClass, Select, StatusBadge, type StatusOption } from "../admin/status";
 import type { GetDb } from "../data/db";
 import { envOf } from "../data/env";
-import { senderOf, sendEmail, type Email, type Sent } from "../data/send";
+import { emailsCustomers, sendEmail, type Email, type Sent } from "../data/send";
 import { formatMoney } from "../payments/money";
 import { stripeConnected, stripeFrom, type Stripe } from "../payments/stripe";
 import { addDays, invoiceHtml, quoteHtml, quoteMessage, sendQuote, taxSummary, todayIn } from "./document";
@@ -265,7 +265,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   // What sending needs: the owner's Stripe for invoices, their email for quotes.
   // A caller passed in (a test, another app) counts as there; null (Stripe not reachable just now) is not a no.
   const stripeReady = async (c: Ctx) => (opts.stripe ? true : (await stripeConnected(envOf(c))) !== false);
-  const emailReady = (c: Ctx) => !!opts.send || typeof senderOf(envOf(c)) !== "string";
+  const emailReady = (c: Ctx) => !!opts.send || emailsCustomers(envOf(c));
   const needStripe = (
     <SetupNeeded title="Connect Stripe to send invoices" ask="Connect my Stripe account so I can send invoices.">
       Invoices are made in your own Stripe account, which emails them with a Pay button and tells this app when they are paid.
@@ -274,7 +274,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   );
   const needEmail = (
     <SetupNeeded title="Connect your email to send quotes" ask="Connect my email so I can send quotes.">
-      Quotes go out from your own email address. Make sure an email sender is connected to this app in Task & Tool, on the app's Connections tab.
+      Quotes go out from your own email address, so connect Resend or Postmark to this app in Task &amp; Tool, on the app's Connections tab. Task &amp; Tool email reaches only your team.
       You can write and preview quotes now, or send the text yourself and mark them sent.
     </SetupNeeded>
   );
