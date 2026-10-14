@@ -527,9 +527,13 @@ test("a submission that came in as spam saves no one; moved out of spam, one at 
     const [a, b] = await Promise.all(["one@example.com", "two@example.com"].map((email) =>
       insertSubmission(s.db, { form_key: "contact", name: email.split("@")[0], email, phone: null, data: {}, source: "website", page: null, status: "spam" })));
     assert.equal((await s.db.sql`select count(*)::int as n from customers`)[0].n, 0, "spam saves no one");
+    assert.equal((await s.db.sql`select count(*)::int as n from leads`)[0].n, 0, "nor makes a lead");
     await post(app, `/admin/submissions/${a}/status`, { status: "read" }, team);
     await post(app, "/admin/submissions/bulk", { id: String(b), status: "read", return: "/admin/submissions" }, team);
     assert.deepEqual((await s.db.sql`select email::text as email from customers order by email`).map((r) => r.email), ["one@example.com", "two@example.com"]);
+    assert.deepEqual(await s.db.sql`select source, title, status from leads order by submission_id`, [
+      { source: "form", title: CONTACT_FORM.title, status: "open" }, { source: "form", title: CONTACT_FORM.title, status: "open" },
+    ], "each is a lead, named for its form");
   } finally {
     await s.drop();
   }

@@ -31,6 +31,13 @@ runs anywhere with Node 20 and a Postgres.
   it is done or made a deal, and a booking once it is no longer scheduled;
   a payment needs nothing, so it is in Everything only. The nav counts what is to
   do. A source the project does not have yet is simply left out.
+- **Leads**: one enquiry each, as Pipedrive's leads and Jobber's
+  requests: a form fill or an online booking makes one as it comes in, and
+  New lead adds a phone call or a walk-in. Open, Converted or Archived. A
+  lead shows who, where it came from, what they said, and what they
+  already have (an open deal, a visit); Convert to deal opens the deal form
+  filled in, Add to deal joins it to their open deal instead of making a
+  second, and Archive asks why and offers Undo.
 - **Tasks**: a call, email, meeting, text or to-do due on a day, by
   one person. Every open task on one list, overdue first, everyone's or mine, and
   New task; the next one at the top of a customer's page and on every

@@ -15,6 +15,7 @@ import { applySchema } from "../data/migrate";
 import type { CustomField, StageConfig } from "../config-schema";
 import { publishFields } from "../crm/fields";
 import { saveEveryone } from "../crm/inbox";
+import { leadsForOpenItems } from "../crm/leads";
 import { seedStages } from "../crm/stages";
 
 /** What the first run seeds (crm.config.json's statuses and deals.stages), and its custom fields, published on every run. */
@@ -50,9 +51,11 @@ export async function setup(db: Db, seeds: Seeds, opts: SetupOpts = { invoices: 
     await applySchema(db, readFileSync(INVOICES_SCHEMA_FILE, "utf8"));
   }
   const seeded = (await seedStages(db, "customers", seeds.statuses)) + (await seedStages(db, "deals", seeds.dealStages));
-  // Then the people: the custom fields every app's savePerson fills, and anyone not yet saved (inbox.ts saveEveryone).
+  // Then the people: the custom fields every app's savePerson fills, anyone not yet saved
+  // (inbox.ts saveEveryone), and a lead for each enquiry still waiting (leads.ts leadsForOpenItems).
   await publishFields(db, seeds.fields ?? []);
   await saveEveryone(db);
+  await leadsForOpenItems(db);
   return { seeded };
 }
 

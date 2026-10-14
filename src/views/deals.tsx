@@ -18,6 +18,8 @@ import type { Quote } from "../invoices/quotes";
 import { Docs } from "./money";
 import { TasksSection } from "./tasks";
 import { Layout } from "./layout";
+import type { Lead } from "../crm/leads";
+import { LeadList } from "./leads";
 import { AddToggle, Avatar, buttonClass, controlClass, dueDayText, CustomerPicker, DueMark, Field, MESSAGES, primaryClass, quietClass, ReadThenEdit, RecordLine, stageOptions, timeZone } from "./ui";
 import { ownerSuggestions, personName } from "../crm/people";
 
@@ -210,6 +212,8 @@ function NextMark({ next, today }: { next: { due_on: string; due_time: string | 
 export function DealPage(p: {
   user: string;
   deal: Deal;
+  /** The leads it came from (crm/leads.ts dealLeads). */
+  leads: Lead[];
   stages: Stage[];
   tasks: { open: Task[]; done: Task[] };
   openDeals: { id: string; title: string }[];
@@ -299,6 +303,11 @@ export function DealPage(p: {
             <Section title="Tasks">
               <TasksSection customerId={d.customer_id} open={p.tasks.open} done={p.tasks.done} deals={p.openDeals} dealId={d.id}
                 owners={p.owners} user={p.user} today={p.today} returnTo={self} prompt={!closed} />
+            </Section>
+          ) : null}
+          {p.leads.length ? (
+            <Section title="Where it came from">
+              <LeadList leads={p.leads} />
             </Section>
           ) : null}
           {p.quotes && (p.quotes.length || !closed) ? (

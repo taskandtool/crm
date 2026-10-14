@@ -21,7 +21,7 @@
 //   no btree_gist extension is needed.
 // - Before that, the slot is recomputed with slots.ts from fresh rows, so
 //   hours, minimum notice and horizon hold for a hand-made POST too.
-import { savePerson } from "../customers/customer";
+import { saveLead, savePerson } from "../customers/customer";
 import { q, type Db, type Query } from "../data/db";
 import { normalizeEmail } from "../data/email";
 import { newToken, tokenHash, TOKEN_SHAPE } from "../data/token";
@@ -293,6 +293,8 @@ export type BookInput = {
   submissionId?: string | null;
   /** Held for a payment until then (releaseLapsedHolds). */
   holdUntil?: Date | null;
+  /** Booked by the team for someone (a phone call), not by the booker: no lead, the team has them already. */
+  byTeam?: boolean;
 };
 
 export type BookResult =
@@ -401,10 +403,15 @@ export async function takeSlot(db: Db, type: BookingType, slot: OpenSlot, input:
   const row = results[results.length - 1][0];
   if (!row) return { ok: false, reason: "taken" };
   // The booker is a customer from now on (customers savePerson); a visit at their place gave their address.
-  await savePerson(db, {
+  const who = await savePerson(db, {
     name: input.name, email: input.email, phone: input.phone ?? null, source: `Booking: ${type.name}`, at: new Date(row.created_at),
     answers: type.location_kind === "their_place" && where ? { address: where } : null,
   }, null);
+  // Booked online by the booker themselves, it is their lead too (customers saveLead), as
+  // Jobber's online booking makes a request; a form's booking step has the submission's.
+  if (who && !input.byTeam && !input.submissionId) {
+    await saveLead(db, { customerId: who.id, source: "booking", title: type.name, bookingId: String(row.id), at: new Date(row.created_at) }, null);
+  }
   return { ok: true, booking: toBooking(row), token };
 }
 

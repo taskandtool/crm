@@ -175,6 +175,58 @@ test("the Inbox shows a booker's own reschedule and a quote paid online, with Do
   assert.match(await (await get("/?view=all")).text(), new RegExp(`id="quote-${paid.id}"`), "still in Everything");
 });
 
+test("leads: a form fill and a phone call; convert to a deal, add a second to it, archive with Undo", async (t) => {
+  if (skip) return t.skip(skip);
+  // A form fill, as the Website writes one: an open lead named for the form.
+  const subId = await insertSubmission(db, { form_key: "contact", name: "Lou Park", email: "lou@example.com", phone: null, data: { message: "Need a new water heater" }, source: "website", page: null, status: "new" });
+  const [formLead] = await db.sql<{ id: string }>`select id::text as id from leads where submission_id = ${subId}::bigint`;
+  const list = await (await get("/leads")).text();
+  assert.match(list, /Website form · Contact us/);
+  assert.match(list, /Need a new water heater/);
+  assert.match(list, new RegExp(`href="/deals/new\\?from=lead\\.${formLead.id}"[^>]*>Convert to deal<`));
+  assert.match(await (await get("/leads/count")).text(), /\d+<span class="sr-only"> open/);
+
+  // A phone call: New lead finds or adds the contact and opens the lead.
+  const made = await post("/leads", { name: "Rae Lin", phone: "(555) 303-4040", title: "Leaking boiler", source: "phone", notes: "Called at 9, wants a visit this week" });
+  assert.match(made.headers.get("location")!, /^\/leads\/\d+\?saved=lead-added$/);
+  const phoneLead = made.headers.get("location")!.match(/\/leads\/(\d+)/)![1];
+  const page = await (await get(`/leads/${phoneLead}`)).text();
+  assert.match(page, /Rae Lin/);
+  assert.match(page, /Phone/);
+  assert.match(page, /Called at 9, wants a visit this week/);
+  assert.equal((await db.sql`select 1 from customers where name = 'Rae Lin'`).length, 1, "the contact is made");
+  assert.equal((await post("/leads", { name: "", title: "x" })).headers.get("location"), "/leads/new?saved=lead-needs");
+
+  // Archive asks why and offers Undo; Undo opens it again.
+  const archived = await post(`/leads/${phoneLead}/archive`, { reason: "Duplicate", return: "/leads" });
+  assert.equal(archived.headers.get("location"), `/leads?saved=lead-archived&undo=${phoneLead}`);
+  assert.match(await (await get(archived.headers.get("location")!)).text(), new RegExp(`action="/leads/${phoneLead}/reopen"[\\s\\S]*>Undo<`));
+  assert.match(await (await get("/leads?status=archived")).text(), /Archived: Duplicate/);
+  await post(`/leads/${phoneLead}/reopen`, { return: "/leads" });
+  assert.equal((await db.sql<{ status: string }>`select status from leads where id = ${phoneLead}::bigint`)[0].status, "open");
+
+  // Convert to deal: the New deal form, filled in from the lead; saving converts it and clears its request.
+  const form = await (await get(`/deals/new?from=lead.${formLead.id}`)).text();
+  assert.match(form, /name="title" required="" value="Contact us"/);
+  assert.match(form, /<textarea name="notes"[^>]*>Need a new water heater<\/textarea>/);
+  const [lou] = await db.sql<{ id: string }>`select id::text as id from customers where email = 'lou@example.com'`;
+  const dealAt = (await post("/deals", { from: `lead.${formLead.id}`, customer: lou.id, title: "Water heater" })).headers.get("location")!;
+  const dealId = dealAt.match(/\/deals\/(\d+)/)![1];
+  assert.deepEqual(await db.sql`select status, deal_id::text as deal_id from leads where id = ${formLead.id}::bigint`, [{ status: "converted", deal_id: dealId }]);
+  assert.equal((await db.sql<{ status: string }>`select status from submissions where id = ${subId}::bigint`)[0].status, "done", "its request is dealt with");
+  assert.match(await (await get(`/deals/${dealId}`)).text(), /Where it came from[\s\S]*Website form · Contact us/);
+
+  // Lou asks again while the deal is open: Add to deal, not a second deal.
+  const again = await insertSubmission(db, { form_key: "contact", name: "Lou Park", email: "lou@example.com", phone: null, data: { message: "And the softener" }, source: "website", page: null, status: "new" });
+  const [second] = await db.sql<{ id: string }>`select id::text as id from leads where submission_id = ${again}::bigint`;
+  const lead2 = await (await get(`/leads/${second.id}`)).text();
+  assert.match(lead2, />Add to deal</);
+  assert.doesNotMatch(lead2, />Convert to deal</);
+  assert.equal((await post(`/leads/${second.id}/attach`, { deal: dealId })).headers.get("location"), `/deals/${dealId}?saved=lead-attached`);
+  assert.equal((await db.sql`select 1 from deals where customer_id = ${lou.id}::bigint`).length, 1, "still one deal");
+  assert.match(await (await get(`/customers/${lou.id}`)).text(), /<h2[^>]*>Leads<\/h2>[\s\S]*Converted[\s\S]*Converted/, "their page lists both leads");
+});
+
 test("customers: create, open, edit, note, archive", async (t) => {
   if (skip) return t.skip(skip);
   const made = await post("/customers", { name: "Quinn Ray", email: "Quinn@Example.com", phone: "555 123 4567", stage: "contacted" });

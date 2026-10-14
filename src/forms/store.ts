@@ -1,6 +1,6 @@
 // Reading forms and writing submissions. The Website and the CRM look in the
 // same submissions table.
-import { savePerson, type CustomerRef } from "../customers/customer";
+import { saveLead, savePerson, type CustomerRef } from "../customers/customer";
 import { q, type Db } from "../data/db";
 import { checkFields, sitePath, type Field, type Form, type Submission } from "./fields";
 import type { Charge } from "./price";
@@ -55,15 +55,20 @@ export async function insertSubmission(
  * The person behind a submission, saved as a customer the moment it comes in
  * (customers savePerson: by email, else phone, never name), with the form's
  * title as where they came from and its answers for their address, company
- * and custom fields. Not for spam, nor the booking page's copy of a booking
- * (the booking saves its booker). Also run when spam is marked not spam.
+ * and custom fields, and the submission as their lead (saveLead). Not for
+ * spam, nor the booking page's copy of a booking (the booking saves its
+ * booker). Also run when spam is marked not spam.
  */
 export async function saveSubmitter(db: Db, id: string | number, user: string | null = null): Promise<CustomerRef | null> {
   const [s] = await db.sql<{ name: string | null; email: string | null; phone: string | null; data: Record<string, unknown> | null; created_at: Date; source: string }>`
     select s.name, s.email::text as email, s.phone, s.data, s.created_at, coalesce(f.title, s.form_key) as source
     from submissions s left join forms f on f.key = s.form_key
     where s.id = ${String(id)}::bigint and s.status <> 'spam' and s.form_key <> ${BOOKING_PAGE.key}`;
-  return s ? savePerson(db, { name: s.name, email: s.email, phone: s.phone, source: s.source, at: s.created_at, answers: s.data }, user) : null;
+  if (!s) return null;
+  const who = await savePerson(db, { name: s.name, email: s.email, phone: s.phone, source: s.source, at: s.created_at, answers: s.data }, user);
+  // The enquiry itself is a lead, named for the form (customers saveLead; once per submission).
+  if (who) await saveLead(db, { customerId: who.id, source: "form", title: s.source, submissionId: String(id), at: s.created_at }, user);
+  return who;
 }
 
 // ---- drafts: a form with steps, before its questions are all answered -------------

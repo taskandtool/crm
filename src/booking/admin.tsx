@@ -353,7 +353,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     const notes = values.notes.trim();
     const r = await book(getDb(c), {
       typeId: t.id, hostId: values.host || null, start: new Date(values.start), name: values.name, email: values.email,
-      phone: values.phone || null, address: values.address || null, addressOptional: true, answers: notes ? { notes } : {}, source: opts.source,
+      phone: values.phone || null, address: values.address || null, addressOptional: true, answers: notes ? { notes } : {}, source: opts.source, byTeam: true,
     });
     if (!r.ok && r.reason === "invalid") return confirmTeam(c, t, values, r.errors);
     if (!r.ok) return confirmTeam(c, t, values, {}, "That time was just taken. Go back and pick another.");

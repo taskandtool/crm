@@ -1,7 +1,7 @@
 // The customer for a person who got in touch, found or made at the moment
 // they do: a form submission, an online booking, the first note about them.
 // Every app that writes those calls savePerson, so the person is a customer
-// before anyone looks. Edge-safe.
+// before anyone looks, and saveLead for the enquiry itself. Edge-safe.
 //
 //   const c = await customerByEmail(db, sub.email);                      // null when there is none
 //   const saved = await savePerson(db, { name, email, phone, source: "Get a quote", at, answers }, null);
@@ -155,6 +155,38 @@ export function answerFields(defs: FieldDef[], answers: Record<string, unknown>)
     }
   }
   return out;
+}
+
+export type LeadSource = "form" | "booking" | "phone" | "walk_in" | "referral" | "other";
+
+/**
+ * A lead for a customer: one enquiry, as Pipedrive's leads and Jobber's
+ * requests are, from what came in (a form submission, an online booking)
+ * or added by the team. Once per submission or booking: a second call for
+ * the same one returns the first. Null when the project has no leads table.
+ */
+export async function saveLead(
+  db: Db,
+  l: { customerId: string; source: LeadSource; title: string; notes?: string | null; submissionId?: string | null; bookingId?: string | null; owner?: string | null; at?: Date | string },
+  user: string | null,
+): Promise<string | null> {
+  const [has] = await db.sql<{ leads: boolean }>`select to_regclass('leads') is not null as leads`;
+  if (!has.leads) return null;
+  const at = l.at ? new Date(l.at).toISOString() : new Date().toISOString();
+  const [row] = await db.sql<{ id: string }>`
+    with ins as (
+      insert into leads (customer_id, source, submission_id, booking_id, title, notes, owner, created_by, updated_by, created_at, updated_at)
+      values (${l.customerId}::bigint, ${l.source}, ${l.submissionId ?? null}::bigint, ${l.bookingId ?? null}::bigint, ${l.title.trim().slice(0, 200) || "Enquiry"},
+              ${l.notes?.trim().slice(0, 10000) || null}, ${l.owner ?? null}::citext, ${user}::citext, ${user}::citext, ${at}::timestamptz, ${at}::timestamptz)
+      on conflict do nothing
+      returning id)
+    select id::text as id from ins
+    union all
+    select id::text as id from leads
+    where (${l.submissionId ?? null}::bigint is not null and submission_id = ${l.submissionId ?? null}::bigint)
+       or (${l.bookingId ?? null}::bigint is not null and booking_id = ${l.bookingId ?? null}::bigint)
+    limit 1`;
+  return row?.id ?? null;
 }
 
 /** A trimmed answer, bounded; null when empty or not text. */

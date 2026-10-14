@@ -24,6 +24,8 @@ import type { Event } from "../crm/events";
 import { missingSentence, type Present } from "../crm/tables";
 import { formatMoney } from "../payments/money";
 import { firstText } from "../crm/inbox";
+import type { Lead } from "../crm/leads";
+import { LeadList } from "./leads";
 import { Layout } from "./layout";
 import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, quietClass, ReadThenEdit, RecordLine, SaveOnChange, shownField, stageOptions, telHref, timeZone } from "./ui";
 import { CustomerEvents, type Choices } from "./events";
@@ -38,6 +40,8 @@ const RECENT = 10;
 export function CustomerPage(p: {
   user: string;
   customer: Customer;
+  /** Their enquiries, open first (crm/leads.ts contactLeads). */
+  leads: Lead[];
   stages: Stage[];
   notes: Note[];
   events: Event[];
@@ -103,6 +107,9 @@ export function CustomerPage(p: {
         <div class="flex min-w-0 flex-col gap-4">
           <Section title="Details">
             <Details c={c} owners={p.owners} />
+          </Section>
+          <Section title="Leads">
+            <LeadList leads={p.leads} empty="No leads." />
           </Section>
           <Section title={dealsCfg.many}>
             <CustomerDeals c={c} deals={p.deals} stages={p.dealStages} />

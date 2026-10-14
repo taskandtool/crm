@@ -82,3 +82,32 @@ create table if not exists customer_fields (
   position   int not null default 0
 );
 comment on table customer_fields is 'The custom fields customers.fields holds, as the CRM declares them: savePerson fills them from form answers of the same key.';
+
+-- A lead: one enquiry from a customer, as Pipedrive's leads and Jobber's
+-- requests are. A form submission makes one as it comes in, an online
+-- booking one, and the team adds one for a phone call. Open until it is
+-- converted to a deal (the CRM's, deal_id) or archived with a reason. No
+-- foreign key to a deal or a submission: an app without them still keeps
+-- its leads.
+create table if not exists leads (
+  id               bigserial primary key,
+  customer_id      bigint not null references customers (id) on delete cascade,
+  source           text not null check (source in ('form', 'booking', 'phone', 'walk_in', 'referral', 'other')),
+  submission_id    bigint,
+  booking_id       bigint,
+  title            text not null,
+  notes            text,
+  owner            citext,
+  status           text not null default 'open' check (status in ('open', 'converted', 'archived')),
+  archived_reason  text,
+  deal_id          bigint,
+  created_by       citext,
+  updated_by       citext,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
+);
+create unique index if not exists leads_submission on leads (submission_id) where submission_id is not null;
+create unique index if not exists leads_booking on leads (booking_id) where booking_id is not null;
+create index if not exists leads_status_recent on leads (status, created_at desc, id desc);
+create index if not exists leads_customer on leads (customer_id, created_at desc);
+comment on table leads is 'One enquiry from a customer: from a form, an online booking, or added by the team. Open until converted to a deal or archived with a reason.';

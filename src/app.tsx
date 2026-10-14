@@ -31,7 +31,9 @@ import {
 import { overview } from "./crm/overview";
 import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
 import { addNote, listNotes, pickNoteKind, wallTime } from "./customers/notes";
-import { phoneKey } from "./customers/customer";
+import { phoneKey, saveLead, savePerson } from "./customers/customer";
+import { archiveLead, ARCHIVE_REASONS, contactLeads, convertLead, dealLeads, getLead, LEAD_STATUSES, leadOfItem, listLeads, MANUAL_SOURCES, openLeadCount, reopenLead, SOURCE_LABELS, type LeadStatus } from "./crm/leads";
+import { LeadPage, LeadResults, LeadsPage, NewLeadPage, type LeadFilter } from "./views/leads";
 import { addEvent, customerEvents, eventCsvColumns, eventsPage, getEvent, inviteDomain, saveEvent, startWall, tellBooker, touchFor, type Event, type EventFilter, type EventInput } from "./crm/events";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, pickKind, pickPipeline, restoreStage, stagesWithCounts, type Pipeline, type StageResult } from "./crm/stages";
 import { missingSentence } from "./crm/tables";
@@ -43,7 +45,7 @@ import { CustomersPage, customerSpec, filterParams, NewCustomerPage, Results } f
 import { InboxPage, InboxResults, InboxRows } from "./views/inbox";
 import { Layout, SCHEDULE_TABS, WaitingView, type Section as NavSection } from "./views/layout";
 import type { Frame } from "./admin/layout";
-import { Board, CLOSED_DAYS, DealPage, DealsPage, NewDealPage, PER_COLUMN, type BoardData } from "./views/deals";
+import { Board, CLOSED_DAYS, DealPage, DealsPage, NewDealPage, PER_COLUMN, type BoardData, type DealFrom } from "./views/deals";
 import { NewTaskPage, TasksPage } from "./views/tasks";
 import { MergePage } from "./views/merge";
 import { StagesPage } from "./views/stages";
@@ -353,16 +355,16 @@ app.get("/customers/:id", async (c) => {
   if (!customer) return c.notFound();
   // A record merged into another opens that one.
   if (customer.merged_into) return c.redirect(`/customers/${customer.merged_into}`, 302);
-  const [stages, notes, events, choices, history, f, money, deals, dealStages, tasks] = await Promise.all([
+  const [stages, notes, events, choices, history, f, money, deals, dealStages, tasks, leads] = await Promise.all([
     listStages(db, "customers"), listNotes(db, customer.id), eventsCfg ? customerEvents(db, customer.id, CUSTOMER_EVENTS) : [],
     eventsCfg ? choicesOf(db) : { team: [], services: [] }, everythingFrom(db, customer), facets(db),
     invoicesCfg ? moneyFor(db, customer) : null,
-    customerDeals(db, customer.id), listStages(db, "deals"), customerTasks(db, customer.id),
+    customerDeals(db, customer.id), listStages(db, "deals"), customerTasks(db, customer.id), contactLeads(db, customer.id),
   ]);
   const duplicates = customer.archived_at ? [] : await possibleDuplicates(db, customer);
   const owners = [...new Set([c.var.user, ...f.owners])];
   return c.html(
-    <CustomerPage user={c.var.user} customer={customer} stages={stages} notes={notes} events={events} choices={choices} history={history.items} present={history.present} owners={owners}
+    <CustomerPage user={c.var.user} customer={customer} leads={leads} stages={stages} notes={notes} events={events} choices={choices} history={history.items} present={history.present} owners={owners}
       deals={deals} dealStages={dealStages} tasks={tasks} today={today()}
       money={money} duplicates={duplicates} flash={flashOf(c)} />,
   );
@@ -752,6 +754,107 @@ if (invoicesCfg) {
   );
 }
 
+// ---- leads ------------------------------------------------------------------
+// One enquiry each, open until converted to a deal or archived (crm/leads.ts).
+
+function leadFilter(c: C): LeadFilter {
+  const status = c.req.query("status");
+  const source = c.req.query("source") ?? "";
+  return {
+    status: LEAD_STATUSES.includes(status as LeadStatus) ? (status as LeadStatus) : "open",
+    q: clean(c.req.query("q"), 100),
+    source: source in SOURCE_LABELS ? source : null,
+    owner: clean(c.req.query("owner"), 200),
+  };
+}
+
+app.get("/leads", async (c) => {
+  const db = c.var.db;
+  const filter = leadFilter(c);
+  const rows = await listLeads(db, filter);
+  if (isPartial(c)) return c.html(<LeadResults filter={filter} rows={rows} />);
+  const undo = c.req.query("undo");
+  return c.html(<LeadsPage user={c.var.user} filter={filter} rows={rows} owners={(await facets(db)).owners} flash={flashOf(c)} undo={undo && /^\d{1,18}$/.test(undo) ? undo : null} />);
+});
+
+/** The nav's count of open leads, filled in after the page loads. */
+app.get("/leads/count", async (c) => {
+  const n = await openLeadCount(c.var.db);
+  if (!n) return c.html(<span hidden></span>);
+  return c.html(
+    <span class="ml-auto rounded-full bg-accent px-1.5 text-label font-semibold tabular-nums text-accent-ink">
+      <span class="sr-only">, </span>{n > 99 ? "99+" : n}<span class="sr-only"> open</span>
+    </span>,
+  );
+});
+
+app.get("/leads/new", async (c) => {
+  return c.html(<NewLeadPage user={c.var.user} owners={[...new Set([c.var.user, ...(await facets(c.var.db)).owners])]} flash={flashOf(c)} />);
+});
+
+// A phone call or a walk-in: the contact found by email or phone (or added), and their lead.
+app.post("/leads", async (c) => {
+  const db = c.var.db;
+  const body = await c.req.parseBody();
+  const { name, email, phone } = personOf(body);
+  const title = clean(body.title, 200);
+  const source = MANUAL_SOURCES.find((s) => s === str(body.source)) ?? "phone";
+  if (!title || (!email && !phone && !name)) return back(c, "/leads/new", "lead-needs");
+  const who = email || phone
+    ? await savePerson(db, { name, email, phone, source: SOURCE_LABELS[source], at: new Date() }, c.var.user)
+    : await pickedCustomer(c, { ...body, customer: "new" }).then((r) => ("id" in r ? r : null));
+  if (!who) return back(c, "/leads/new", "lead-needs");
+  const id = await saveLead(db, { customerId: who.id, source, title, notes: clean(body.notes, 10_000), owner: clean(body.owner, 200) ?? c.var.user }, c.var.user);
+  return id ? back(c, `/leads/${id}`, "lead-added") : back(c, "/leads/new", "gone");
+});
+
+app.get("/leads/:id", async (c) => {
+  const db = c.var.db;
+  const lead = await getLead(db, c.req.param("id"));
+  if (!lead) return c.notFound();
+  const [tasks, notes, f] = await Promise.all([customerTasks(db, lead.customer_id), listNotes(db, lead.customer_id), facets(db)]);
+  return c.html(<LeadPage user={c.var.user} lead={lead} tasks={tasks} notes={notes} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} flash={flashOf(c)} />);
+});
+
+// Archive, with why; the message on the list offers Undo.
+app.post("/leads/:id/archive", async (c) => {
+  const id = idParam(c.req.param("id"));
+  const body = await c.req.parseBody();
+  const reason = ARCHIVE_REASONS.find((r) => r === str(body.reason)) ?? "Other";
+  if (!id || !(await archiveLead(c.var.db, id, reason, c.var.user))) return back(c, "/leads", "gone");
+  return c.redirect(`${backTo(localPath(str(body.return), "", "/leads"), "lead-archived")}&undo=${id}`, 303);
+});
+
+app.post("/leads/:id/reopen", async (c) => {
+  const id = idParam(c.req.param("id"));
+  const body = await c.req.parseBody();
+  const ok = id ? await reopenLead(c.var.db, id, c.var.user) : false;
+  return back(c, localPath(str(body.return), "", `/leads/${id}`), ok ? "lead-reopened" : "gone");
+});
+
+// Add to deal: the contact's open deal takes the lead, as no second deal is made for one person's same work.
+app.post("/leads/:id/attach", async (c) => {
+  const db = c.var.db;
+  const lead = await getLead(db, c.req.param("id"));
+  const dealId = idParam(str((await c.req.parseBody()).deal));
+  const deal = dealId ? await getDeal(db, dealId) : null;
+  if (!lead || !deal || deal.customer_id !== lead.customer_id || deal.closed_at || !(await convertLead(db, lead.id, deal.id, c.var.user))) return back(c, "/leads", "gone");
+  if (lead.submission_id) await markItemDone(db, { kind: "submission", id: lead.submission_id }, c.var.user);
+  else if (lead.booking_id) await markItemDone(db, { kind: "booking", id: lead.booking_id }, c.var.user);
+  return back(c, `/deals/${deal.id}`, "lead-attached");
+});
+
+// A note or a call from a lead's page goes on the contact, and the page comes back.
+app.post("/leads/:id/notes", async (c) => {
+  const lead = await getLead(c.var.db, c.req.param("id"));
+  if (!lead) return c.notFound();
+  const body = await c.req.parseBody();
+  const self = `/leads/${lead.id}`;
+  if (!str(body.body).trim()) return back(c, self, "note-empty");
+  await addNote(c.var.db, lead.customer_id, { kind: pickNoteKind(body.kind) ?? "note", body: str(body.body), at: wallTime(body.at), timeZone: cfg.time_zone }, c.var.user);
+  return back(c, self, "note");
+});
+
 // ---- tasks -----------------------------------------------------------
 
 // Every open task, everyone's unless the viewer narrows to theirs: a small team's list is short.
@@ -861,13 +964,26 @@ app.get("/deals", async (c) => {
 // New deal; from an Inbox item (?from=submission.12), filled in from it first, as Pipedrive's
 // Convert to deal: the person, the deal named for what they asked, what they wrote as its
 // notes, and the deals they already have open.
+/** A lead named in a form or link, "lead.12": its id, or null. */
+const leadRef = (v: unknown) => (typeof v === "string" ? /^lead\.(\d{1,18})$/.exec(v)?.[1] ?? null : null);
+
+/** What a New deal form starts from: a lead (Convert to deal) or an Inbox item, filled in from it; null for a blank one. */
+async function dealFrom(db: Db, from: unknown): Promise<DealFrom | null> {
+  const leadId = leadRef(from);
+  const lead = leadId ? await getLead(db, leadId) : null;
+  const ref = lead ? null : inboxRef(from);
+  const asked = lead
+    ? { name: lead.customer_name, email: lead.customer_email, phone: lead.customer_phone, title: lead.title, said: lead.said }
+    : ref ? await requestOf(db, ref.kind, ref.id) : null;
+  if (!asked) return null;
+  const customerId = lead?.customer_id ?? (await findMatch(db, asked.email, asked.phone))?.id ?? null;
+  const theirs = customerId ? await customerDeals(db, customerId) : [];
+  return { ref: lead ? `lead.${lead.id}` : `${ref!.kind}.${ref!.id}`, ...asked, customerId, openDeals: theirs.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title })) };
+}
+
 app.get("/deals/new", async (c) => {
   const db = c.var.db;
-  const ref = inboxRef(c.req.query("from"));
-  const asked = ref ? await requestOf(db, ref.kind, ref.id) : null;
-  const who = asked ? await findMatch(db, asked.email, asked.phone) : null;
-  const [stages, customers, theirs] = await Promise.all([listStages(db, "deals"), customerChoices(db), who ? customerDeals(db, who.id) : []]);
-  const from = ref && asked ? { ref: `${ref.kind}.${ref.id}`, ...asked, customerId: who?.id ?? null, openDeals: theirs.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title })) } : null;
+  const [stages, customers, from] = await Promise.all([listStages(db, "deals"), customerChoices(db), dealFrom(db, c.req.query("from"))]);
   return c.html(<NewDealPage user={c.var.user} stages={stages} customers={customers} from={from} flash={flashOf(c)} />);
 });
 
@@ -883,10 +999,15 @@ app.post("/deals", async (c) => {
   if ("error" in who) return back(c, who.error === "last-open" ? "/stages" : "/deals/new", who.error);
   const deal = await createDeal(db, who.id, { ...input.deal, owner: input.deal.owner ?? c.var.user }, stage, c.var.user);
   if (!deal) return back(c, "/deals", "gone");
-  // Made from an Inbox item: that item is dealt with, and the deal gets its first step.
+  // Made from a lead or an Inbox item: the lead is converted, the item it came from is dealt
+  // with, and the deal gets its first step.
   const ref = inboxRef(body.from);
-  if (ref) {
-    await markItemDone(db, ref, c.var.user);
+  const leadId = leadRef(body.from) ?? (ref ? await leadOfItem(db, ref.kind, ref.id) : null);
+  if (ref || leadId) {
+    const lead = leadId ? await getLead(db, leadId) : null;
+    if (leadId) await convertLead(db, leadId, deal.id, c.var.user);
+    const item = ref ?? (lead?.submission_id ? { kind: "submission" as const, id: lead.submission_id } : lead?.booking_id ? { kind: "booking" as const, id: lead.booking_id } : null);
+    if (item) await markItemDone(db, item, c.var.user);
     const customer = await getCustomer(db, who.id);
     if (customer) await newLeadCall(db, customer, deal.id, c.var.user);
   }
@@ -898,15 +1019,16 @@ app.get("/deals/:id", async (c) => {
   const id = idParam(c.req.param("id"));
   const deal = id ? await getDeal(db, id) : null;
   if (!deal) return c.notFound();
-  const [stages, tasks, deals, f, quotes] = await Promise.all([
+  const [stages, tasks, deals, f, quotes, leads] = await Promise.all([
     listStages(db, "deals"),
     customerTasks(db, deal.customer_id, deal.id),
     customerDeals(db, deal.customer_id),
     facets(db),
     invoicesCfg ? quotesFor(db, { dealId: deal.id }) : null,
+    dealLeads(db, deal.id),
   ]);
   return c.html(
-    <DealPage user={c.var.user} deal={deal} stages={stages} tasks={tasks} openDeals={deals.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title }))}
+    <DealPage user={c.var.user} deal={deal} leads={leads} stages={stages} tasks={tasks} openDeals={deals.filter((d) => !d.closed_at).map((d) => ({ id: d.id, title: d.title }))}
       quotes={quotes} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} flash={flashOf(c)} />,
   );
 });

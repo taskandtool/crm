@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { applySchema } from "../../data/migrate";
 import { scratch, why } from "../../data/test/scratch";
-import { answerFields, phoneKey, savePerson } from "../customer";
+import { answerFields, phoneKey, saveLead, savePerson } from "../customer";
 
 const schema = readFileSync(fileURLToPath(new URL("../schema.sql", import.meta.url)), "utf8");
 const at = new Date("2026-10-14T15:00:00Z");
@@ -69,6 +69,25 @@ test("savePerson: by email, else phone, never by name; one record for a double s
     await s.db.sql`create table pipeline_stages (key text primary key, label text not null, position integer not null default 0, kind text not null default 'open', archived boolean not null default false)`;
     await s.db.sql`insert into pipeline_stages (key, label, position, kind) values ('won', 'Won', 0, 'won'), ('enquiry', 'Enquiry', 1, 'open')`;
     assert.equal((await savePerson(s.db, { name: "Di", email: "di@example.com", phone: null, source: "x", at }, null))!.stage, "enquiry");
+  } finally {
+    await s.drop();
+  }
+});
+
+test("saveLead: one enquiry per submission or booking, however often it is called", async (t) => {
+  const s = await scratch();
+  if (!s) return t.skip(why);
+  try {
+    await applySchema(s.db, schema);
+    const who = (await savePerson(s.db, { name: "Ann", email: "ann@example.com", phone: null, source: "Get a quote", at }, null))!;
+    const first = await saveLead(s.db, { customerId: who.id, source: "form", title: "Get a quote", submissionId: "41", at }, null);
+    assert.equal(await saveLead(s.db, { customerId: who.id, source: "form", title: "Get a quote", submissionId: "41", at }, null), first, "the same submission is the same lead");
+    await saveLead(s.db, { customerId: who.id, source: "phone", title: "New boiler", notes: "Rang about a new boiler" }, "dana@team.example");
+    const leads = await s.db.sql`select source, title, notes, status, created_by::text as by from leads order by id`;
+    assert.deepEqual(leads, [
+      { source: "form", title: "Get a quote", notes: null, status: "open", by: null },
+      { source: "phone", title: "New boiler", notes: "Rang about a new boiler", status: "open", by: "dana@team.example" },
+    ]);
   } finally {
     await s.drop();
   }

@@ -355,7 +355,7 @@ test("a service's address made from its name is numbered when taken; a video cal
   }
 });
 
-test("a booking saves its booker as a customer (the customers skill's savePerson), once", (t) =>
+test("a booking saves its booker as a customer (savePerson), once, and a booking they made themselves is a lead", (t) =>
   withDb(t, async (s) => {
     await applySchema(s.db, readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "customers", "schema.sql"), "utf8"));
     const r = await person(s, "Pat");
@@ -363,6 +363,9 @@ test("a booking saves its booker as a customer (the customers skill's savePerson
     assert.ok((await book(s.db, { ...who, email: "ANN@example.com", typeId: r.id, start: T("2026-03-10T10:00:00Z") })).ok);
     const customers = await s.db.sql`select name, email::text as email, source, stage from customers`;
     assert.deepEqual(customers, [{ name: "Ann Lee", email: "ann@example.com", source: "Booking: pat", stage: "lead" }]);
+    // Each booking she made herself is a lead; one the team makes for her is not.
+    assert.ok((await book(s.db, { ...who, typeId: r.id, start: T("2026-03-11T10:00:00Z"), byTeam: true })).ok);
+    assert.deepEqual(await s.db.sql`select source, title from leads order by id`, [{ source: "booking", title: "pat" }, { source: "booking", title: "pat" }]);
   }));
 
 test("a booker's own move and cancel are each noted once in booking_changes; the team's move is not", (t) =>
