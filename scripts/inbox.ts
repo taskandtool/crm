@@ -5,7 +5,7 @@ import { cfg } from "../src/config";
 import { addFromInbox, inboxPage, markDone, markHandled, sinceDays, sourceOf, submissionStatus, type InboxKind, type InboxRow } from "../src/crm/inbox";
 import { firstOpenStage } from "../src/crm/stages";
 import { missingSentence } from "../src/crm/tables";
-import { wallToInstant } from "../src/crm/text";
+import { dayBounds } from "../src/booking/slots";
 import { wallTime } from "../src/customers/notes";
 import { formatMoney } from "../src/payments/money";
 import { done, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, usage, who, withDb } from "./lib";
@@ -42,8 +42,7 @@ function since(v: string | undefined): Date | null {
   const m = v.match(/^(\d+)d$/);
   if (m) return sinceDays(Number(m[1]));
   // A date is that day's midnight in the business's zone, the zone every time prints in.
-  const wall = /^\d{4}-\d{2}-\d{2}$/.test(v) ? wallTime(`${v} 00:00`) : null;
-  if (wall) return wallToInstant(wall, cfg.time_zone);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v) && wallTime(`${v} 00:00`)) return dayBounds(v, cfg.time_zone).start;
   misused(`${at}: --since ${v}: write 7d or YYYY-MM-DD`, "node scripts/inbox.mjs --since 7d");
 }
 

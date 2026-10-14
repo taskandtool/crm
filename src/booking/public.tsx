@@ -27,7 +27,7 @@ import {
   type Booking, type BookingType, type OpenSlot, type Resource,
 } from "./book";
 import { invite } from "./ics";
-import type { BookingNotice } from "./notify";
+import { runOnBooked, type BookingNotice } from "./notify";
 import { addDays, byLocalDate, durationText, formatDate, formatSlot, formatTime, isValidZone, localDate, weekdayOf, zoneName } from "./slots";
 
 /** What the public pages report to onBooked and afterBook: always with the manage link, absolute. */
@@ -213,12 +213,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     const host = await resourceById(getDb(c), booking.resource_id);
     if (!host) return null;
     const e = { event, booking, type, host, manageUrl: new URL(`${base}/manage/${token}`, c.req.url).href };
-    try {
-      await opts.onBooked?.(c, e);
-    } catch (err) {
-      // A confirmation that fails to send never undoes the booking; the page has the invite.
-      console.error("booking: onBooked failed:", err);
-    }
+    await runOnBooked(opts.onBooked, c, e);
     return e;
   };
   const privatePage = (c: Context) => {

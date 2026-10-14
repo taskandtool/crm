@@ -19,13 +19,13 @@ import { envOf, setting } from "../data/env";
 import { senderOf } from "../data/send";
 import { FieldList, JsonData, Section } from "../admin/detail";
 import { csvResponse, type CsvColumn } from "../admin/csv";
-import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash";
+import { alertClass, withFlash, type FlashMessages } from "../admin/flash";
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, everyPage, readCursor, type Cursor, type Keyed } from "../admin/keyset";
-import { SectionPage, SectionTabs, type Frame, type Head, type NavItem } from "../admin/layout";
+import { sectionPages, SectionTabs, type Frame, type Head, type NavItem } from "../admin/layout";
 import { DataTable, EmptyCard, rowClick, rowLink, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { formIds, idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
-import { buttonClass, controlClass, fieldClass, pickStatus, primaryClass, Select, smallText, StatusBadge, type StatusOption } from "../admin/status";
+import { buttonClass, controlClass, FieldError, fieldClass, pickStatus, primaryClass, Select, smallText, StatusBadge, type StatusOption } from "../admin/status";
 import { customerByEmail, customerFor } from "../customers/customer";
 import { NoteForm } from "../customers/note-form";
 import { addNote, listNotes, NOTE_LABELS, pickNoteKind, wallTime, type Note } from "../customers/notes";
@@ -184,12 +184,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
 
-  const page = (c: Context<{ Variables: TeamVars }>, title: string, body: Child, head: Omit<Head, "title"> = {}) => (
-    <SectionPage Frame={opts.Frame} css={opts.css} user={c.get("user")} label="Submissions" links={nav} current={base || "/"} head={{ title, ...head }}>
-      <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
-      {body}
-    </SectionPage>
-  );
+  const framed = sectionPages({ Frame: opts.Frame, css: opts.css, label: "Submissions", links: nav, messages: MESSAGES });
 
   // ---- the list ----------------------------------------------------------
 
@@ -268,10 +263,9 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       href: base + VIEWS[k].path || "/",
       label: k === "inbox" && fresh ? `Inbox (${fresh} new)` : VIEWS[k].label,
     }));
-    return c.html(
-      page(
+    return framed(
         c,
-        "Submissions",
+        base || "/", "Submissions",
         <>
           <SectionTabs label="Submissions" links={tabs} current={here} />
           <EmailNote c={c} forms={forms} />
@@ -284,9 +278,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
           />
           {results}
           <AskNote />
-        </>,
-      ),
-    );
+        </>);
   };
 
   for (const view of Object.keys(VIEWS) as View[]) app.get(VIEWS[view].path || "/", list(view));
@@ -388,10 +380,9 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       actions,
     };
 
-    return c.html(
-      page(
+    return framed(
         c,
-        who(r),
+        base || "/", { title: who(r), ...head },
         <>
           <div class="grid gap-4 md:grid-cols-3">
             <div class="flex flex-col gap-4 md:col-span-2">
@@ -449,10 +440,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
               </Section>
             </div>
           </div>
-        </>,
-        head,
-      ),
-    );
+        </>);
   });
 
   // A note is about the person: it goes on their customer (the CRM's tables), made from this submission the first time.
@@ -583,14 +571,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
 
-  /** A page: a title, or a whole head (a record's page has `back`, so the tabs give way to the way back). */
-  const layout = (c: Context<{ Variables: TeamVars }>, head: string | Head, current: string, body: Child) => (
-    <SectionPage Frame={opts.Frame} css={opts.css} user={c.get("user")} label="Forms" links={nav} current={current}
-      head={typeof head === "string" ? { title: head } : head}>
-      <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={EDITOR_MESSAGES} />
-      {body}
-    </SectionPage>
-  );
+  const framed = sectionPages({ Frame: opts.Frame, css: opts.css, label: "Forms", links: nav, messages: EDITOR_MESSAGES });
 
   // ---- forms -------------------------------------------------------------
 
@@ -609,12 +590,12 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
 
   // As Google Forms and HubSpot list them: each form, whether it is taking
   // submissions, what is new, how many in all and when the last one came.
-  const formsPage = async (c: Context<{ Variables: TeamVars }>, newForm: Child) => {
+  const formsPage = async (c: Context<{ Variables: TeamVars }>, newForm: Child, status = 200) => {
     const forms = await allForms(getDb(c));
-    return layout(
+    return framed(
         c,
-        { title: "Forms", actions: newForm },
         base,
+        { title: "Forms", actions: newForm },
         forms.length ? (
           <div class="overflow-x-auto rounded-card border border-line bg-surface">
             <table class="w-full border-collapse text-copy">
@@ -650,8 +631,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
           </div>
         ) : (
           <EmptyCard title="No forms yet.">A form is how people ask for something on your website: a quote, a booking, a question. Make one with New form.</EmptyCard>
-        ),
-    );
+        ), status);
   };
 
   const newForm = (f: { title?: string; errors?: Errors; open?: boolean } = {}) => (
@@ -661,7 +641,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
     </>
   );
 
-  app.get("/", async (c) => c.html(await formsPage(c, newForm())));
+  app.get("/", async (c) => formsPage(c, newForm()));
 
   // A title is all a new form needs; its key (its address) is made from it,
   // numbered when taken. A key given (the AI, a script) is used as given.
@@ -686,13 +666,13 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
       }
       errors.key = given ? "A form with this key exists already. Choose another." : "There are many forms with this title already. Choose another.";
     }
-    return c.html(await formsPage(c, newForm({ title, errors, open: true })), 422);
+    return formsPage(c, newForm({ title, errors, open: true }), 422);
   });
 
   app.get("/form/:key", async (c) => {
     const found = await formRow(getDb(c), c.req.param("key"));
     if (!found) return c.notFound();
-    return c.html(layout(c, editorHead(found.form), base, <Editor base={base} form={found.form} raw={found.raw} version={found.version} />));
+    return framed(c, base, editorHead(found.form), <Editor base={base} form={found.form} raw={found.raw} version={found.version} />);
   });
 
   app.post("/form/:key", async (c) => {
@@ -716,15 +696,11 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
       active: draft.active,
     };
     const again = (status: 409 | 422, note?: string, version = draft.version) =>
-      c.html(
-        layout(
+      framed(
           c,
-          editorHead(found.form),
           base,
-          <Editor base={base} form={form} raw={draft.fields} version={version} problems={problems} formProblems={formProblems} note={note} />,
-        ),
-        status,
-      );
+          editorHead(found.form),
+          <Editor base={base} form={form} raw={draft.fields} version={version} problems={problems} formProblems={formProblems} note={note} />, status);
     if (Object.keys(problems).length || Object.keys(formProblems).length) return again(422);
 
     // Saved only over the version the editor opened, so two people editing at
@@ -779,11 +755,10 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
       where submission_id is null and not spam and (${only}::text is null or form_key = ${only})
       order by updated_at desc, id desc limit 200`;
     const forms = new Map((await allForms(db)).map((f) => [f.key, f.title]));
-    return c.html(
-      layout(
+    return framed(
         c,
-        "Not finished",
         base,
+        "Not finished",
         <>
           <p class="mb-4 max-w-prose text-ink-2">
             People who started a form with steps and stopped before the end. What they answered is kept; nobody was emailed about it.
@@ -814,9 +789,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
           ) : (
             <p class="text-ink-3">Nobody has stopped part way.</p>
           )}
-        </>,
-      ),
-    );
+        </>);
   });
 
   return app;
@@ -963,14 +936,6 @@ const TYPE_LABELS: Record<Field["type"], string> = {
 };
 
 
-function Problem({ id, text }: { id: string; text?: string }) {
-  return text ? (
-    <p id={id} class="text-label font-semibold text-ink">
-      {text}
-    </p>
-  ) : null;
-}
-
 function Editor(props: {
   base: string;
   form: Form;
@@ -1000,7 +965,7 @@ function Editor(props: {
           <label class={fieldClass}>
             Title
             <input name="title" value={form.title} required class={controlClass} aria-invalid={formProblems.title ? "true" : undefined} aria-describedby={formProblems.title ? "p-title" : undefined} />
-            <Problem id="p-title" text={formProblems.title} />
+            <FieldError id="p-title" text={formProblems.title} />
           </label>
           <label class={fieldClass}>
             Button text
@@ -1015,13 +980,13 @@ function Editor(props: {
           <label class={fieldClass}>
             Or send people to this page instead
             <input name="redirect_to" value={form.redirect_to ?? ""} placeholder="/thank-you" class={controlClass} aria-invalid={formProblems.redirect_to ? "true" : undefined} aria-describedby={formProblems.redirect_to ? "p-redirect" : undefined} />
-            <Problem id="p-redirect" text={formProblems.redirect_to} />
+            <FieldError id="p-redirect" text={formProblems.redirect_to} />
           </label>
           <label class={fieldClass}>
             Email each submission to
             <input name="notify_emails" value={form.notify_emails.join(", ")} placeholder="you@example.com" class={controlClass} aria-invalid={formProblems.notify_emails ? "true" : undefined} aria-describedby="p-notify-help p-notify" />
             <span id="p-notify-help" class="font-normal text-ink-3">Needs an email sender connected to this app (Resend or Postmark).</span>
-            <Problem id="p-notify" text={formProblems.notify_emails} />
+            <FieldError id="p-notify" text={formProblems.notify_emails} />
           </label>
           <label class="flex items-center gap-2">
             <input type="checkbox" name="active" value="yes" checked={form.active} class="size-4" />
@@ -1038,7 +1003,7 @@ function Editor(props: {
               <li id={`field-${i}`}>
                 <fieldset class="rounded-card border border-line p-4" aria-describedby={problems[String(i)] ? pid : undefined}>
                   <legend class="px-1 text-label font-semibold">Question {i + 1}</legend>
-                  <Problem id={pid} text={problems[String(i)]} />
+                  <FieldError id={pid} text={problems[String(i)]} />
                   {typeof f.maxLength === "number" ? <input type="hidden" name={`f.${i}.maxLength`} value={String(f.maxLength)} /> : null}
                   {typeof f.autocomplete === "string" ? <input type="hidden" name={`f.${i}.autocomplete`} value={f.autocomplete} /> : null}
                   {CARRIED.some((k) => f[k] !== undefined) ? (
@@ -1140,7 +1105,7 @@ function NewForm({ action, title = "", errors = {}, open = false }: { action: st
           <input name="title" value={title} required autofocus placeholder="Quote request" class={controlClass}
             aria-invalid={errors.title || errors.key ? "true" : undefined} aria-describedby={errors.title || errors.key ? "new-form-p" : undefined} />
         </label>
-        <Problem id="new-form-p" text={errors.title ?? errors.key} />
+        <FieldError id="new-form-p" text={errors.title ?? errors.key} />
         <button class={primaryClass}>Create form</button>
       </form>
     </details>

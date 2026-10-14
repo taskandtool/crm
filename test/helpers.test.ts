@@ -14,7 +14,7 @@ import { cleanPhone, phoneKey } from "../src/crm/phone";
 import type { Stage } from "../src/crm/stages";
 import { resolveStage } from "../src/crm/stages";
 import { missingSentence } from "../src/crm/tables";
-import { amountText, cash, nowIn, parseAmount, parseTags, relativeWall, slugify, wallToInstant } from "../src/crm/text";
+import { amountText, formatWholeMoney, nowIn, parseAmount, parseTags, relativeWall, slugify } from "../src/crm/text";
 import { wallTime } from "../src/customers/notes";
 import { readXlsx } from "../src/crm/xlsx-read";
 import { answersOf } from "../src/crm/history";
@@ -127,8 +127,8 @@ test("small text helpers", () => {
   assert.equal(wallTime("2026-10-02 14:30:15"), "2026-10-02 14:30:15");
   assert.equal(wallTime("tomorrow"), null);
   assert.equal(nowIn("America/Chicago", new Date("2026-10-02T05:30:00Z")), "2026-10-02T00:30");
-  assert.equal(cash(1450000, "usd"), "$14,500");
-  assert.equal(cash(500, "jpy"), "¥500");
+  assert.equal(formatWholeMoney(1450000, "usd"), "$14,500");
+  assert.equal(formatWholeMoney(500, "jpy"), "¥500");
   assert.equal(resolveStage(STAGES, "WON")?.key, "won");
   assert.equal(resolveStage(STAGES, "new")?.key, "new");
 });
@@ -202,20 +202,12 @@ test("a return path that resolves to another site goes home instead", () => {
   assert.equal(backTo("/customers/4?x=1", "stage"), "/customers/4?x=1&saved=stage");
 });
 
-test("a wall time in a zone is the instant Postgres would give, across DST", () => {
-  assert.equal(wallToInstant("2026-10-02 00:00:00", "America/Chicago").toISOString(), "2026-10-02T05:00:00.000Z");
-  assert.equal(wallToInstant("2026-01-15 00:00:00", "America/Chicago").toISOString(), "2026-01-15T06:00:00.000Z");
-  assert.equal(wallToInstant("2026-03-08 09:30:00", "America/Chicago").toISOString(), "2026-03-08T14:30:00.000Z");
-  assert.equal(wallToInstant("2026-10-02 00:00:00", "UTC").toISOString(), "2026-10-02T00:00:00.000Z");
-  assert.equal(wallToInstant("2026-10-02 00:00:00", "Asia/Kolkata").toISOString(), "2026-10-01T18:30:00.000Z");
-});
-
 test("amounts: minor units in the currency's own decimals, a comma only ever thousands", () => {
   assert.equal(parseAmount("1,245.50", "USD"), 124550);
   assert.equal(parseAmount("$90", "USD"), 9000);
   assert.equal(parseAmount(" 0.5 ", "USD"), 50);
   assert.equal(parseAmount("", "USD"), null);
-  assert.equal(parseAmount("12,50", "EUR"), 125000, "a comma is a thousands separator, so 12,50 is 1250");
+  assert.equal(parseAmount("12,50", "EUR"), "invalid", "a decimal comma is refused, never read as 1250, as payments' toMinor does");
   assert.equal(parseAmount("1.005", "USD"), "invalid", "no fractions of a cent");
   assert.equal(parseAmount("-5", "USD"), "invalid");
   assert.equal(parseAmount("ten", "USD"), "invalid");

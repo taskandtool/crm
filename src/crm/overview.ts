@@ -6,7 +6,7 @@ import { addDays, compareQuery, run, todayIn } from "../reports/sql";
 import { dealTotals } from "./deals";
 import { taskCounts } from "./tasks";
 import { present } from "./tables";
-import { wallToInstant } from "./text";
+import { dayBounds } from "../booking/slots";
 
 export type Overview = {
   /** Null when the project takes no form submissions yet. */
@@ -18,7 +18,7 @@ export type Overview = {
 
 export async function overview(db: Db, opts: { timeZone: string; currency: string; user: string; now?: Date }): Promise<Overview> {
   const today = todayIn(opts.timeZone, opts.now);
-  const monthStart = wallToInstant(`${today.slice(0, 8)}01 00:00:00`, opts.timeZone);
+  const monthStart = dayBounds(`${today.slice(0, 8)}01`, opts.timeZone).start;
   const p = await present(db);
   const [leads, due, deals] = await Promise.all([
     p.submissions ? run<{ current: number; previous: number }>(db, compareQuery("leads", { from: addDays(today, -6), to: today }, opts.timeZone)) : null,

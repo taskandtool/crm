@@ -13,7 +13,7 @@ import type { Customer } from "../crm/customers";
 import type { Deal } from "../crm/deals";
 import type { Task } from "../crm/tasks";
 import { KIND_LABELS, type Stage } from "../crm/stages";
-import { amountText, cash } from "../crm/text";
+import { amountText, formatWholeMoney } from "../crm/text";
 import type { Quote } from "../invoices/quotes";
 import { Docs } from "./money";
 import { TasksSection } from "./tasks";
@@ -27,7 +27,7 @@ export const CLOSED_DAYS = 30;
 
 const one = dealsCfg.one.toLowerCase();
 const many = dealsCfg.many.toLowerCase();
-const worth = (d: Deal) => (d.shown_cents === null ? null : cash(d.shown_cents, d.currency ?? dealsCfg.currency));
+const worth = (d: Deal) => (d.shown_cents === null ? null : formatWholeMoney(d.shown_cents, d.currency ?? dealsCfg.currency));
 
 export type BoardData = {
   stages: Stage[];
@@ -53,7 +53,7 @@ function OpenTotal({ data }: { data: BoardData }) {
   const open = data.stages.filter((s) => s.kind === "open").map((s) => data.totals[s.key]).filter(Boolean);
   const count = open.reduce((n, t) => n + t.count, 0);
   const cents = open.reduce((n, t) => n + BigInt(t.cents), 0n);
-  return <p>{count} open{cents > 0n ? ` · ${cash(cents.toString(), dealsCfg.currency)}` : ""}</p>;
+  return <p>{count} open{cents > 0n ? ` · ${formatWholeMoney(cents.toString(), dealsCfg.currency)}` : ""}</p>;
 }
 
 /** A new deal from the board: the person (matched by email or phone, or added) and what is being won. */
@@ -99,7 +99,7 @@ export function Board({ data }: { data: BoardData }) {
   const options = stageOptions(stages);
   const column = (key: string, label: string, kind: Stage["kind"] | null, list: Deal[]) => {
     const t = key ? totals[key] : { count: strays.length, cents: "0", other: 0 };
-    const total = t && BigInt(t.cents) > 0n ? cash(t.cents, dealsCfg.currency) : null;
+    const total = t && BigInt(t.cents) > 0n ? formatWholeMoney(t.cents, dealsCfg.currency) : null;
     return (
       <section data-stage={key} aria-label={`${label}, ${t?.count ?? 0}`} class="flex min-w-60 max-w-80 flex-1 basis-0 flex-col rounded-card bg-panel p-2">
         <h2 class="mb-2 px-1 text-label">

@@ -6,7 +6,10 @@
 // app's brand with no change. Pass `css` for the app's built stylesheet.
 //
 //   c.html(<AdminLayout title="Submissions" css="/site.css" nav={NAV} current="/admin/submissions" user={c.get("user")}>…</AdminLayout>)
+import type { Context } from "hono";
 import type { Child } from "hono/jsx";
+import { Flash, type FlashMessages } from "./flash";
+import type { TeamVars } from "./guard";
 
 export type NavItem = { href: string; label: string };
 
@@ -39,7 +42,7 @@ export function SectionTabs({ label, links, current }: { label: string; links: N
  * the section's pages as its nav. A list page shows the section's tabs; a
  * record's page (one with `back`) shows the way back instead.
  */
-export function SectionPage(p: { Frame?: Frame; css: string; user: string; label: string; links: NavItem[]; current: string; head: Head; children: Child }) {
+function SectionPage(p: { Frame?: Frame; css: string; user: string; label: string; links: NavItem[]; current: string; head: Head; children: Child }) {
   const { head } = p;
   if (!p.Frame) {
     return (
@@ -50,6 +53,22 @@ export function SectionPage(p: { Frame?: Frame; css: string; user: string; label
   }
   const tabs = head.back ? null : <SectionTabs label={p.label} links={p.links} current={p.current} />;
   return <>{p.Frame({ ...head, user: p.user, children: <>{tabs}{p.children}</> })}</>;
+}
+
+/**
+ * A section's page maker, made once per mount: `page(c, current, head, body,
+ * status)` answers with a page of it, `current` the tab it is under, `head` a
+ * title or a whole head, and the flash its routes redirect with above `body`.
+ */
+export function sectionPages(o: { Frame?: Frame; css: string; label: string; links: NavItem[]; messages: FlashMessages }) {
+  return (c: Context<{ Variables: TeamVars }>, current: string, head: string | Head, body: Child, status = 200) =>
+    c.html(
+      <SectionPage Frame={o.Frame} css={o.css} user={c.get("user")} label={o.label} links={o.links} current={current} head={typeof head === "string" ? { title: head } : head}>
+        <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={o.messages} />
+        {body}
+      </SectionPage>,
+      status as 200,
+    );
 }
 
 /**

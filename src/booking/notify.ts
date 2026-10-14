@@ -105,6 +105,21 @@ export type BookingNotice = {
 };
 
 /**
+ * Run an app's onBooked with what happened (or its lookup). A confirmation
+ * that fails to send never undoes the booking: it stands, and the booker's
+ * page has the invite.
+ */
+export async function runOnBooked<C, E>(onBooked: ((c: C, e: E) => unknown) | undefined, c: C, e: E | null | Promise<E | null>): Promise<void> {
+  if (!onBooked) return;
+  try {
+    const notice = await e;
+    if (notice) await onBooked(c, notice);
+  } catch (err) {
+    console.error("booking: onBooked failed:", err);
+  }
+}
+
+/**
  * A move or a cancel made away from the booking pages (an app's own form, a
  * script), as their onBooked is told of it. Null without a service and a
  * person: there is nothing to tell a booker about.

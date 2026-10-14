@@ -18,18 +18,17 @@
 // and the Idempotency-Key makes a double submit one refund. The row does not
 // change to refunded here; Stripe's charge.refunded event does that.
 import { Hono, type Context } from "hono";
-import type { Child } from "hono/jsx";
 import type { Db, GetDb } from "../data/db";
 import { envOf } from "../data/env";
 import { teamOnly, type TeamVars } from "../admin/guard";
-import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
+import { sectionPages, type Frame, type NavItem } from "../admin/layout";
 import { cut, everyPage, readCursor, type Cursor } from "../admin/keyset";
 import { csvResponse, type CsvColumn } from "../admin/csv";
 import { DataTable, EmptyState, NoMatches, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { FieldList, Section } from "../admin/detail";
-import { Flash, withFlash, type FlashMessages } from "../admin/flash";
+import { withFlash, type FlashMessages } from "../admin/flash";
 import { idParam, isPartial, likePattern, listUrl, str } from "../admin/query";
-import { buttonClass, fieldClass, inputClass, pickStatus, StatusBadge, type StatusOption } from "../admin/status";
+import { buttonClass, FieldError, fieldClass, inputClass, pickStatus, StatusBadge, type StatusOption } from "../admin/status";
 import { decimals, formatMoney, toMinor } from "./money";
 import { StripeError, stripeFrom, type Stripe } from "./stripe";
 
@@ -178,11 +177,7 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
   const base = opts.base.replace(/\/+$/, "");
   const size = opts.pageSize ?? 50;
   const nav = opts.nav ?? [{ href: base, label: "Payments" }];
-  /** A page: a title, or a whole head (a payment's page has `back`, so the tabs give way to the way back). */
-  const frame = (c: Context<{ Variables: TeamVars }>, head: string | Head, body: Child) => (
-    <SectionPage Frame={opts.Frame} css={opts.css} user={c.get("user")} label={opts.navLabel ?? "Payments"} links={nav} current={base}
-      head={typeof head === "string" ? { title: head } : head}>{body}</SectionPage>
-  );
+  const framed = sectionPages({ Frame: opts.Frame, css: opts.css, label: opts.navLabel ?? "Payments", links: nav, messages: PAYMENT_MESSAGES });
   const tz = opts.timeZone;
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
@@ -241,8 +236,7 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
       </div>
     );
     if (isPartial(c)) return c.html(results);
-    return c.html(
-      frame(c, "Payments", <>
+    return framed(c, base, "Payments", <>
         <SearchBar
           action={base}
           target="#results"
@@ -254,8 +248,7 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
           ]}
         />
         {results}
-      </>),
-    );
+      </>);
   });
 
   app.get("/export.csv", (c) => {
@@ -277,9 +270,7 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
     if (!p) return c.notFound();
     const events = await getDb(c).sql<{ id: string; type: string; received_at: Date }>`
       select id, type, received_at from stripe_events where payment_id = ${p.id}::bigint order by received_at`;
-    return c.html(
-      frame(c, { title: `Payment ${p.id}`, back: { href: base, label: "Payments" } }, <>
-        <Flash code={c.req.query("saved")} messages={PAYMENT_MESSAGES} />
+    return framed(c, base, { title: `Payment ${p.id}`, back: { href: base, label: "Payments" } }, <>
         <div class="grid gap-4 md:grid-cols-3">
           <Section title="Details" class="md:col-span-2">
             <FieldList
@@ -329,18 +320,14 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
             </Section>
           </div>
         </div>
-      </>),
-    );
+      </>);
   });
 
   const homeOf = (p: Payment) => opts.returnTo?.(p) ?? { href: `${base}/${p.id}`, label: `Payment ${p.id}` };
   const refundPage = (c: Context<{ Variables: TeamVars }>, p: Payment, amount: string, error?: string) =>
-    c.html(
-      frame(c, { title: `Refund payment ${p.id}`, back: homeOf(p) }, <>
+    framed(c, base, { title: `Refund payment ${p.id}`, back: homeOf(p) }, <>
         <RefundForm p={p} base={base} keep={homeOf(p).href} amount={amount} error={error} />
-      </>),
-      error ? 422 : 200,
-    );
+      </>, error ? 422 : 200);
 
   // The confirmation step: nothing moves money on a GET.
   app.get("/:id/refund", async (c) => {
@@ -404,11 +391,7 @@ function RefundForm({ p, base, keep, amount, error }: { p: Payment; base: string
           class={inputClass}
         />
       </label>
-      {error ? (
-        <p id="amount-error" class="text-label text-ink">
-          {error}
-        </p>
-      ) : null}
+      <FieldError id="amount-error" text={error} />
       <div class="flex flex-wrap items-center gap-3">
         <button class={buttonClass}>Refund this amount</button>
         <a href={keep} class="text-sm/6 font-semibold text-ink-2 no-underline hover:text-ink">

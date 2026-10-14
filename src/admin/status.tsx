@@ -55,6 +55,10 @@ export const linkClass = "font-semibold text-accent no-underline hover:underline
 /** Small type for a sentence (a hint, a footnote, a line under a name), as a field's own words are: 14px, regular weight. */
 export const smallText = "text-sm/6 font-normal";
 
+/** What is wrong with one field, under it; `id` is what the control's aria-describedby names. */
+export const FieldError = ({ id, text }: { id: string; text?: string | null }) =>
+  text ? <span id={id} class="block basis-full text-label font-semibold text-ink">{text}</span> : null;
+
 /**
  * A select as Tailwind's components draw one: the native arrow off, an icon
  * in its place on the same grid cell, so it is the same in every browser and

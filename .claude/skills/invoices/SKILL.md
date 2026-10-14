@@ -12,7 +12,7 @@ account (Stripe Invoicing), emailed by Stripe, paid on Stripe's hosted page
 what a customer was quoted, owes and paid. Builds on `data`, `admin` and
 `payments`.
 
-Version: 0.2.0 (taskandtool/skills)
+Version: 0.2.1 (taskandtool/skills)
 
 ## The rules
 

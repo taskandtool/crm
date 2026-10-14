@@ -1,6 +1,6 @@
 // Small input helpers shared by the routes and the scripts.
 import { amountInput } from "../invoices/lines";
-import { decimals } from "../payments/money";
+import { decimals, toMinor } from "../payments/money";
 
 /** Trimmed text up to `max` characters, or null when empty. */
 export function clean(v: unknown, max = 200): string | null {
@@ -74,48 +74,24 @@ export function nowIn(tz: string, now = new Date()): string {
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 }
 
-/**
- * The instant a wall time ("2026-10-02 00:00:00", from wallTime) names in
- * `tz`, as Postgres's `timestamp at time zone` would give it: the zone's
- * offset is read at the guess and again at the answer, so a day that starts
- * or ends a DST change lands on the right hour.
- */
-export function wallToInstant(wall: string, tz: string): Date {
-  const guess = Date.parse(wall.replace(" ", "T") + "Z");
-  const offset = (ms: number) => {
-    const p = Object.fromEntries(
-      new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })
-        .formatToParts(new Date(ms))
-        .map((x) => [x.type, Number(x.value)]),
-    );
-    return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - Math.floor(ms / 1000) * 1000;
-  };
-  const first = guess - offset(guess);
-  return new Date(guess - offset(first));
-}
-
 /** A total at a glance, to the whole unit: "$14,500" on a board column or a card. */
-export function cash(cents: number | string, currency: string, locale = "en-US"): string {
-  const code = currency.toUpperCase();
+export function formatWholeMoney(cents: number | string, currency: string, locale = "en-US"): string {
+  const whole = Number(cents) / 10 ** decimals(currency);
   try {
-    return new Intl.NumberFormat(locale, { style: "currency", currency: code, maximumFractionDigits: 0 }).format(Number(cents) / 10 ** decimals(currency));
+    return new Intl.NumberFormat(locale, { style: "currency", currency: currency.toUpperCase(), maximumFractionDigits: 0 }).format(whole);
   } catch {
-    return `${Math.round(Number(cents) / 100)} ${code}`;
+    return `${Math.round(whole)} ${currency.toUpperCase()}`;
   }
 }
 
 /**
- * "1,245.50" or "$90" as minor units of `currency`: null for an empty box,
- * "invalid" for anything that is not a plain amount of zero or more (a
- * comma is read as a thousands separator, never as a decimal point).
+ * "1,245.50" or "$90" as minor units of `currency`, read as the skills read a
+ * price (payments' toMinor): null for an empty box, "invalid" for anything
+ * else that is not an amount ("12,50", a decimal comma, among them).
  */
 export function parseAmount(v: unknown, currency: string): number | null | "invalid" {
-  const s = typeof v === "string" ? v.trim().replace(/^\p{Sc}\s*/u, "").replace(/[, ]/g, "") : typeof v === "number" ? String(v) : "";
-  if (!s) return null;
-  const d = decimals(currency);
-  const m = s.match(d ? new RegExp(`^(\\d{1,12})(?:\\.(\\d{1,${d}}))?$`) : /^(\d{1,12})$/);
-  if (!m) return "invalid";
-  return Number(m[1]) * 10 ** d + Number((m[2] ?? "").padEnd(d, "0") || 0);
+  const s = typeof v === "number" ? String(v) : typeof v === "string" ? v.trim().replace(/^\p{Sc}\s*/u, "") : "";
+  return s ? (toMinor(s, currency) ?? "invalid") : null;
 }
 
 /** Minor units as a plain amount for an input or a CSV cell: 124550 USD is "1245.50". */

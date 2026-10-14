@@ -9,7 +9,7 @@ Money goes through the owner's own Stripe account, by their connection.
 Every payment is a row in `payments` naming what it pays for (`ref_type`,
 `ref_id`), so every app reads the same rows.
 
-Version: 0.4.1 (taskandtool/skills)
+Version: 0.4.2 (taskandtool/skills)
 
 ## The rules
 

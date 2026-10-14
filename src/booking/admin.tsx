@@ -17,12 +17,12 @@ import type { Context } from "hono";
 import type { Child } from "hono/jsx";
 import type { GetDb } from "../data/db";
 import { Section } from "../admin/detail";
-import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash";
+import { alertClass, withFlash, type FlashMessages } from "../admin/flash";
 import { teamOnly, type TeamVars } from "../admin/guard";
-import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
+import { sectionPages, type Frame, type NavItem } from "../admin/layout";
 import { When } from "../admin/list";
 import { idParam, listUrl, str } from "../admin/query";
-import { buttonClass, fieldClass, inputClass, linkClass, pickStatus, primaryClass, Select, smallText, StatusBadge, type StatusOption } from "../admin/status";
+import { buttonClass, FieldError, fieldClass, inputClass, linkClass, pickStatus, primaryClass, Select, smallText, StatusBadge, type StatusOption } from "../admin/status";
 import { book, bookableTypes, hostsOf, LOCATION_KINDS, rescheduleById, resourceById, setStatus, toBooking, typeById, whereText, type Booking, type BookingType, type Resource } from "./book";
 import {
   addCalendar, addTimeOff, addWindow, allPeople, allTypes, calendars, createPerson, createType, LOCATION_LABELS, removeCalendar, removeTimeOff, removeWindow, savePerson, saveType, setHosts,
@@ -31,7 +31,7 @@ import {
 import { decimals } from "../payments/money";
 import { addDays, dayBounds, durationText, formatShortDate, formatSlot, formatTime, localDate, weekdayOf, zoneName } from "./slots";
 import { chip, chipOn, DayAndTimes, upcoming } from "./public";
-import { noticeFor, type BookingNotice } from "./notify";
+import { noticeFor, runOnBooked, type BookingNotice } from "./notify";
 
 export type BookingAdminOptions = {
   base: string;
@@ -71,11 +71,6 @@ export type BookingAdminOptions = {
 
 type Team = Context<{ Variables: TeamVars }>;
 
-/** The page in AdminLayout, with the app's nav. */
-function framed(c: Team, opts: BookingAdminOptions, links: NavItem[], current: string, head: Head, body: Child, status = 200) {
-  return c.html(<SectionPage Frame={opts.Frame} css={opts.css} user={c.get("user")} label="Schedule" links={links} current={current} head={head}>{body}</SectionPage>, status as 200);
-}
-
 export const BOOKING_STATUSES: StatusOption[] = [
   { value: "confirmed", label: "Scheduled", tone: "accent" },
   { value: "completed", label: "Completed", tone: "neutral" },
@@ -109,6 +104,7 @@ const amountText = (cents: number, currency: string) => (cents / 10 ** decimals(
 export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
   const base = opts.base.replace(/\/+$/, "");
   const links = opts.nav ?? [{ href: base, label: "Schedule" }];
+  const framed = sectionPages({ Frame: opts.Frame, css: opts.css, label: "Schedule", links, messages: MESSAGES });
   /** Where a booking opens and its actions come back to: the app's page for it, or the Schedule. */
   const homeOf = (raw: Record<string, unknown>) => {
     const b = { id: String(raw.id), name: String(raw.name ?? ""), submission_id: raw.submission_id == null ? null : String(raw.submission_id) };
@@ -154,9 +150,8 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     // A booking opens on the app's page for it; one without (the Website's, made elsewhere) opens on its Reschedule, which can also cancel it.
     const opened = (r: (typeof rows)[number]) =>
       opts.returnTo?.(r)?.href ?? (r.booked && r.status === "confirmed" && new Date(r.starts_at) > new Date() ? `${base}/${r.id}/reschedule` : null);
-    return framed(c, opts, links, base, { title: "Schedule", actions: opts.scheduleActions ?? <a href={`${base}/new`} class={primaryClass}>Book for someone</a> }, (
+    return framed(c, base, { title: "Schedule", actions: opts.scheduleActions ?? <a href={`${base}/new`} class={primaryClass}>Book for someone</a> }, (
       <>
-        <Flash code={c.req.query("saved")} messages={MESSAGES} />
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div class="flex flex-wrap items-center gap-2">
             <a href={self(addDays(monday, -7))} class={arrow} aria-label="Week before">&lsaquo;</a>
@@ -230,7 +225,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
   app.get("/new", async (c) => {
     const w = forWhom(c);
     const types = await bookableTypes(getDb(c));
-    return framed(c, opts, links, base, { title: w.name ? `Book a time for ${w.name}` : "Book for someone", back: { href: base, label: "Schedule" } }, (
+    return framed(c, base, { title: w.name ? `Book a time for ${w.name}` : "Book for someone", back: { href: base, label: "Schedule" } }, (
       <>
         {types.length ? (
           <>
@@ -263,7 +258,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     const keys = [...days.keys()];
     const chosen = keys.includes(c.req.query("date") ?? "") ? c.req.query("date")! : keys[0];
     const here = (extra: Record<string, string | null | undefined>) => listUrl(`${base}/new/${t.id}`, carry(w, { host: host?.id, ...extra }));
-    return framed(c, opts, links, base, {
+    return framed(c, base, {
       title: `${t.name}${w.name ? ` for ${w.name}` : ""}`,
       back: { href: listUrl(`${base}/new`, w), label: "Choose another service" },
       sub: <p>{durationText(t.duration_min)} · {LOCATION_LABELS[t.location_kind]}</p>,
@@ -305,7 +300,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     if (Number.isNaN(start.getTime())) return c.redirect(listUrl(`${base}/new/${t.id}`, forWhom(c)), 303);
     const end = new Date(start.getTime() + t.duration_min * 60_000);
     const local = localDate(start, zone);
-    return framed(c, opts, links, base, {
+    return framed(c, base, {
       title: "Confirm the booking",
       back: { href: listUrl(`${base}/new/${t.id}`, carry(forWhom(c), { host: host?.id, date: local })), label: "Pick another time" },
     }, (
@@ -363,14 +358,8 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     if (!r.ok && r.reason === "invalid") return confirmTeam(c, t, values, r.errors);
     if (!r.ok) return confirmTeam(c, t, values, {}, "That time was just taken. Go back and pick another.");
     const host = await resourceById(getDb(c), r.booking.resource_id);
-    if (host && opts.onBooked) {
-      const manageUrl = opts.manageBase ? `${opts.manageBase.replace(/\/+$/, "")}/manage/${r.token}` : null;
-      try {
-        await opts.onBooked(c, { event: "booked", booking: r.booking, type: t, host, manageUrl });
-      } catch (err) {
-        console.error("booking: onBooked failed:", err);
-      }
-    }
+    const manageUrl = opts.manageBase ? `${opts.manageBase.replace(/\/+$/, "")}/manage/${r.token}` : null;
+    await runOnBooked(opts.onBooked, c, host && { event: "booked" as const, booking: r.booking, type: t, host, manageUrl });
     // onBooked may have filed it somewhere (the Website: its submission); go there.
     const [raw] = await getDb(c).sql`select id::text as id, name, submission_id::text as submission_id from bookings where id = ${r.booking.id}::bigint`;
     return c.redirect(withFlash(homeOf(raw).href, "booked"), 303);
@@ -398,7 +387,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     const chosen = keys.includes(c.req.query("date") ?? "") ? c.req.query("date")! : keys[0];
     const others = hosts.some((h) => h.id !== current.id);
     const hostParam = host.id === current.id ? null : host.id;
-    return framed(c, opts, links, base, {
+    return framed(c, base, {
       title: `Reschedule ${b.name}`,
       back: home,
       sub: <p>{type.name} with {current.name} · now {formatSlot({ start: b.starts_at, end: b.ends_at }, zone)}</p>,
@@ -453,14 +442,8 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     if (!r.ok && r.reason === "not_found") return c.notFound();
     if (!r.ok && r.reason === "taken") return reschedulePage(c, m, "That time was just taken. Pick another.");
     if (!r.ok) return c.redirect(withFlash(m.home.href, "unchanged"), 303);
-    if (opts.onBooked) {
-      // The booker hears of the move as they would of their own; their manage link still works, but only its hash is kept here.
-      try {
-        await opts.onBooked(c, { event: "rescheduled", booking: r.booking, type: m.type, host: m.host, manageUrl: null });
-      } catch (err) {
-        console.error("booking: onBooked failed:", err);
-      }
-    }
+    // The booker hears of the move as they would of their own; their manage link still works, but only its hash is kept here.
+    await runOnBooked(opts.onBooked, c, { event: "rescheduled" as const, booking: r.booking, type: m.type, host: m.host, manageUrl: null });
     return c.redirect(withFlash(m.home.href, "rescheduled"), 303);
   });
 
@@ -476,14 +459,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     if (!status) return c.text("Choose one of the listed statuses.", 400);
     const changed = status === "confirmed" ? null : await setStatus(getDb(c), id, status as Exclude<Booking["status"], "confirmed">, c.get("user"));
     // A cancel the team makes is told to the booker, as one they make themselves is.
-    if (changed && status === "cancelled" && opts.onBooked) {
-      try {
-        const notice = await noticeFor(getDb(c), id, "cancelled");
-        if (notice) await opts.onBooked(c, notice);
-      } catch (err) {
-        console.error("booking: onBooked failed:", err);
-      }
-    }
+    if (changed && status === "cancelled" && opts.onBooked) await runOnBooked(opts.onBooked, c, noticeFor(getDb(c), id, "cancelled"));
     if (changed && opts.afterStatus) await opts.afterStatus(c, changed);
     return c.redirect(withFlash(ret, changed ? (status === "cancelled" ? "cancelled" : "status") : "unchanged"), 303);
   });
@@ -503,7 +479,6 @@ const Problems = ({ errors }: { errors: Errors }) => {
     </div>
   ) : null;
 };
-const Err = ({ id, text }: { id: string; text?: string }) => (text ? <span id={id} class="text-label font-semibold text-ink">{text}</span> : null);
 const Hint = ({ text }: { text?: string }) => (text ? <span class={`${smallText} text-ink-3`}>{text}</span> : null);
 
 /**
@@ -532,7 +507,7 @@ function Input(p: {
         </span>
       ) : <input {...attrs} class={inputClass} />}
       <Hint text={p.hint} />
-      <Err id={`${p.name}-error`} text={err} />
+      <FieldError id={`${p.name}-error`} text={err} />
     </label>
   );
 }
@@ -548,7 +523,7 @@ function Choice(p: { label: string; name: string; value: string; options: [strin
         {options.map(([v, text]) => <option value={v} selected={v === p.value}>{text}</option>)}
       </Select>
       <Hint text={p.hint} />
-      <Err id={`${p.name}-error`} text={err} />
+      <FieldError id={`${p.name}-error`} text={err} />
     </label>
   );
 }
@@ -607,7 +582,7 @@ function TypeForm({ action, t, errors = {}, submit, publicBase, currency }: { ac
         <Select name="location_kind" class="w-full" aria-invalid={errors.location_kind ? "true" : undefined}>
           {LOCATION_KINDS.map((k) => <option value={k} selected={k === kind}>{LOCATION_LABELS[k]}</option>)}
         </Select>
-        <Err id="location_kind-error" text={errors.location_kind} />
+        <FieldError id="location_kind-error" text={errors.location_kind} />
       </label>
       {/* Only a place of ours or a video call needs one: the customer gives their own address or number. */}
       <div class="[form:has(option[value=phone]:checked)_&]:hidden [form:has(option[value^=their]:checked)_&]:hidden">
@@ -656,7 +631,7 @@ function ZoneSelect({ current, errors }: { current: string; errors: Errors }) {
         <optgroup label="Everywhere else">{rest.map(option)}</optgroup>
       </Select>
       <Hint text="Their weekly hours are in this zone." />
-      <Err id="time_zone-error" text={err} />
+      <FieldError id="time_zone-error" text={err} />
     </label>
   );
 }
@@ -698,7 +673,7 @@ export function typeRoutes(getDb: GetDb, opts: BookingAdminOptions) {
   const peopleBase = opts.sections.team;
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
-  const layout = (c: Team, head: Head, body: Child, status = 200) => framed(c, opts, links, base, head, body, status);
+  const framed = sectionPages({ Frame: opts.Frame, css: opts.css, label: "Schedule", links, messages: MESSAGES });
   // The booking pages' address, for the page address field and the link to a service's page.
   const publicBase = opts.manageBase?.replace(/\/+$/, "");
 
@@ -706,9 +681,8 @@ export function typeRoutes(getDb: GetDb, opts: BookingAdminOptions) {
     const d = getDb(c);
     const types = await allTypes(d);
     const hosts = await Promise.all(types.map((t) => hostsOf(d, t.id, { all: true })));
-    return layout(c, { title: "Services", actions: <a href={`${base}/new`} class={primaryClass}>New service</a> }, (
+    return framed(c, base, { title: "Services", actions: <a href={`${base}/new`} class={primaryClass}>New service</a> }, (
       <>
-        <Flash code={c.req.query("saved")} messages={MESSAGES} />
         {types.length ? (
           <ul class="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface shadow-card">
             {types.map((t, i) => (
@@ -735,7 +709,7 @@ export function typeRoutes(getDb: GetDb, opts: BookingAdminOptions) {
   });
 
   const newPage = (c: Team, values: Record<string, unknown> = {}, errors: Errors = {}) =>
-    layout(c, { title: "New service", back: { href: base, label: "Services" } }, (
+    framed(c, base, { title: "New service", back: { href: base, label: "Services" } }, (
       <div class="max-w-3xl rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
         <TypeForm action={base} t={values} errors={errors} submit="Add service" publicBase={publicBase} currency={opts.currency} />
       </div>
@@ -745,7 +719,7 @@ export function typeRoutes(getDb: GetDb, opts: BookingAdminOptions) {
     const d = getDb(c);
     const [hosts, people] = await Promise.all([hostsOf(d, t.id, { all: true }), allPeople(d)]);
     const self = `${base}/${t.id}`;
-    return layout(c, {
+    return framed(c, base, {
       title: t.name,
       back: { href: base, label: "Services" },
       sub: <p>{durationText(t.duration_min)} · {LOCATION_LABELS[t.location_kind]}{t.active ? "" : " · Not bookable"}</p>,
@@ -757,7 +731,6 @@ export function typeRoutes(getDb: GetDb, opts: BookingAdminOptions) {
       ),
     }, (
       <>
-        <Flash code={c.req.query("saved")} messages={MESSAGES} />
         <div class="grid gap-4 md:grid-cols-3">
           <Section title="Details" class="md:col-span-2">
             <TypeForm action={self} t={problems.values ?? t} errors={problems.errors} submit="Save" publicBase={publicBase} currency={opts.currency} />
@@ -849,16 +822,15 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
   const links = opts.nav ?? [{ href: base, label: "Team" }];
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
-  const layout = (c: Team, head: Head, body: Child, status = 200) => framed(c, opts, links, base, head, body, status);
+  const framed = sectionPages({ Frame: opts.Frame, css: opts.css, label: "Schedule", links, messages: MESSAGES });
   const calendarsOn = opts.calendars !== false;
 
   app.get("/", async (c) => {
     const d = getDb(c);
     const all = await allPeople(d);
     const hours = await Promise.all(all.map((r) => weeklyHours(d, r.id)));
-    return layout(c, { title: "Team", actions: <a href={`${base}/new`} class={primaryClass}>Add person</a> }, (
+    return framed(c, base, { title: "Team", actions: <a href={`${base}/new`} class={primaryClass}>Add person</a> }, (
       <>
-        <Flash code={c.req.query("saved")} messages={MESSAGES} />
         {all.length ? (
           <ul class="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface shadow-card">
             {all.map((r, i) => (
@@ -880,7 +852,7 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
 
   const newPage = async (c: Team, values: Record<string, unknown> = {}, errors: Errors = {}) => {
     const all = await allPeople(getDb(c));
-    return layout(c, { title: "Add person", back: { href: base, label: "Team" } }, (
+    return framed(c, base, { title: "Add person", back: { href: base, label: "Team" } }, (
       <div class="max-w-3xl rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
         <PersonForm action={base} r={values} errors={errors} submit="Add person" zone={opts.timeZone ?? all[0]?.time_zone ?? "UTC"} />
       </div>
@@ -894,13 +866,12 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
     const failed = Object.values(problems).some(Boolean);
     const today = localDate(new Date(), r.time_zone);
     const remove = "rounded-control px-1 text-ink-3 no-underline hover:bg-panel hover:text-ink";
-    return layout(c, {
+    return framed(c, base, {
       title: r.name,
       back: { href: base, label: "Team" },
       sub: <p>{zoneName(r.time_zone)}{r.email ? ` · ${r.email}` : ""}{r.active ? "" : " · Not taking bookings"}</p>,
     }, (
       <>
-        <Flash code={c.req.query("saved")} messages={MESSAGES} />
         <div class="grid gap-4 md:grid-cols-3">
           <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
             <Section title="Weekly hours">

@@ -23,7 +23,7 @@ import { cut, everyPage, readCursor, type Cursor, type Keyed } from "./keyset";
 import { AdminLayout, type NavItem } from "./layout";
 import { DataTable, SearchBar, TableRow, TableRows, When, type TableSpec } from "./list";
 import { formIds, idParam, isPartial, likePattern, listUrl, localPath, str } from "./query";
-import { controlClass, pickStatus, StatusBadge, StatusForm, type StatusOption } from "./status";
+import { pickStatus, Select, StatusBadge, StatusForm, type StatusOption } from "./status";
 
 export type AdminOptions = { base: string; css: string; timeZone: string; nav?: NavItem[]; pageSize?: number };
 
@@ -121,11 +121,11 @@ export function adminRoutes(getDb: GetDb, opts: AdminOptions) {
         <BulkForm id="bulk" action={`${base}/bulk`} returnTo={self}>
           <label class="flex flex-col gap-1 text-label text-ink-2">
             Set selected to
-            <select name="status" class={controlClass}>
+            <Select name="status">
               {STATUSES.map((o) => (
                 <option value={o.value}>{o.label}</option>
               ))}
-            </select>
+            </Select>
           </label>
         </BulkForm>
         {after ? (

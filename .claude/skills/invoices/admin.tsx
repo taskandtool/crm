@@ -16,13 +16,13 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type { Child } from "hono/jsx";
 import { FieldList, Section } from "../admin/detail";
-import { alertClass, Flash, withFlash, type FlashMessages } from "../admin/flash";
+import { alertClass, withFlash, type FlashMessages } from "../admin/flash";
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, readCursor } from "../admin/keyset";
-import { SectionPage, type Frame, type Head, type NavItem } from "../admin/layout";
+import { sectionPages, type Frame, type NavItem } from "../admin/layout";
 import { DataTable, EmptyState, NoMatches, SearchBar, SetupNeeded, TableRows, When, type TableSpec } from "../admin/list";
 import { idParam, isPartial, listUrl, str } from "../admin/query";
-import { buttonClass, controlClass, fieldClass, primaryClass, StatusBadge, type StatusOption } from "../admin/status";
+import { buttonClass, controlClass, FieldError, fieldClass, primaryClass, Select, StatusBadge, type StatusOption } from "../admin/status";
 import type { GetDb } from "../data/db";
 import { envOf } from "../data/env";
 import { senderOf, sendEmail, type Email, type Sent } from "../data/send";
@@ -226,10 +226,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
 
-  /** A page: a title, or a whole head (a record's page has `back`, so the tabs give way to the way back). */
-  const framed = (c: Ctx, current: string, head: string | Head, body: Child, status = 200) =>
-    c.html(<SectionPage Frame={opts.Frame} css={opts.css} user={c.get("user")} label="Quotes and invoices" links={links} current={current}
-      head={typeof head === "string" ? { title: head } : head}>{body}</SectionPage>, status as 200);
+  const framed = sectionPages({ Frame: opts.Frame, css: opts.css, label: "Quotes and invoices", links, messages: MESSAGES });
   const back = (c: Ctx, path: string, code: string) => c.redirect(withFlash(path, code), 303);
   // What sending needs: the owner's Stripe for invoices (and a quote's Pay button), their email for quotes.
   // A caller passed in (a test, another app) counts as there; null (Stripe not reachable just now) is not a no.
@@ -287,7 +284,6 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     if (isPartial(c)) return c.html(results);
     return framed(c, qbase, { title: "Quotes", actions: <a href={`${qbase}/new`} class={primaryClass}>New quote</a> }, (
       <>
-        <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
         {emailReady(c) ? null : needEmail}
         <SearchBar action={qbase} target="#results" q={q} placeholder="Search quotes"
           filters={[{ name: "status", label: "Status", options: QUOTE_OPTIONS, value: status, any: "Any status" }]} />
@@ -354,7 +350,6 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       ),
     }, (
       <>
-        <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
         {c.req.query("problem") ? <p role="alert" class={"mb-4 " + alertClass}>{c.req.query("problem")}</p> : null}
         <div class="grid gap-4 md:grid-cols-3">
           <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
@@ -608,7 +603,6 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const totals = after ? null : await invoiceTotals(getDb(c), { today: todayIn(opts.timeZone), timeZone: opts.timeZone, currency });
     return framed(c, base, { title: "Invoices", actions: <a href={`${base}/new`} class={primaryClass}>New invoice</a> }, (
       <>
-        <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
         {(await stripeReady(c)) ? null : needStripe}
         {totals ? <Totals totals={totals} currency={currency} base={base} /> : null}
         <SearchBar action={base} target="#results" q={q} placeholder="Search invoices"
@@ -685,7 +679,6 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       ),
     }, (
       <>
-        <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
         {inv.payment_failed_at && inv.status === "open" ? (
           <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">
             A payment attempt failed <When at={inv.payment_failed_at} timeZone={opts.timeZone} />. The invoice is still open on their payment page.
@@ -824,7 +817,6 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     // A setting, as Jobber and Stripe keep tax rates: reached from a quote's or invoice's Tax choice, not a tab.
     return framed(c, self, { title: "Tax rates", back: { href: base, label: "Invoices" } }, (
       <>
-        <Flash code={c.req.query("saved")} n={c.req.query("n")} messages={MESSAGES} />
         <p class="mb-4 max-w-prose text-ink-2">
           Quotes and invoices have no tax unless you choose one under their line items. Add the rates you charge here.
           A rate stays as it is once used; to change a percent, add a new rate and archive the old one.
@@ -962,14 +954,14 @@ function DocForm({ kind, action, v, errors, rates, cancel, submit, taxPage, curr
         {/* One tax for the whole document, none unless chosen; rates are kept on their own page. */}
         <div class="mt-4 flex flex-wrap items-end gap-3 border-t border-line pt-4">
           <label class={fieldClass}>Tax
-            <select name="tax" class={controlClass}>
+            <Select name="tax" aria-describedby={taxError ? "tax-error" : undefined}>
               <option value="">No tax</option>
               {offered.map((r) => <option value={r.id} selected={r.id === tax}>{r.name} ({percentText(r.percent_bp)})</option>)}
               {mixed ? <option value="mixed" selected>Different on each line</option> : null}
-            </select>
+            </Select>
           </label>
           <a href={taxPage} class="pb-2 text-label text-ink-2">Manage tax rates</a>
-          {taxError ? <span class="w-full text-label font-semibold text-ink">{taxError}</span> : null}
+          <FieldError id="tax-error" text={taxError} />
         </div>
       </Section>
       <Section title={kind === "quote" ? "Terms" : "Payment"}>

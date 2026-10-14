@@ -12,7 +12,7 @@ import { BOOKING_STATUSES } from "../booking/admin";
 import { dealsCfg, eventsCfg, invoicesCfg, vocab } from "../config";
 import type { Overview } from "../crm/overview";
 import { sourceOf, type InboxRow } from "../crm/inbox";
-import { cash } from "../crm/text";
+import { formatWholeMoney } from "../crm/text";
 import { STATUSES as SUBMISSION_STATUSES } from "../forms/admin";
 import { STATUSES as PAYMENT_STATUSES } from "../payments/admin";
 import { formatMoney } from "../payments/money";
@@ -50,7 +50,7 @@ function Numbers({ n }: { n: Overview }) {
       {sub ? <span class="text-label text-ink-3">{sub}</span> : null}
     </a>
   );
-  const whole = (cents: string) => cash(cents, dealsCfg.currency);
+  const whole = (cents: string) => formatWholeMoney(cents, dealsCfg.currency);
   return (
     <div class="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
       {figure("#results", n.leads ? String(n.leads.current) : "None yet", "New leads, 7 days", n.leads ? `${n.leads.previous} the week before` : "No forms on the project yet")}

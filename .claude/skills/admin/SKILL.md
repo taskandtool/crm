@@ -8,7 +8,7 @@ description: "The private side of an app: lists of what came in (submissions, bo
 Private views over the project's tables: the CRM's starting surface and the
 Website's `/admin`. The other skills build their own lists on these pieces.
 
-Version: 0.2.1 (taskandtool/skills)
+Version: 0.2.2 (taskandtool/skills)
 
 ## Where private views live
 
@@ -97,12 +97,12 @@ fragment. The table, history restores, bulk forms and flash messages:
 | File | What it is |
 |---|---|
 | `guard.ts` | `teamOnly()`, `whoIs`, `sameOrigin`: the 404 gate and the cross-site check |
-| `layout.tsx` | `AdminLayout`: the private page frame with nav, `aria-current`, htmx from cdnjs |
+| `layout.tsx` | `AdminLayout`: the private page frame with nav, `aria-current`, htmx from cdnjs; `sectionPages`: a skill section's page maker (its tabs, or the app's own `Frame`, and its flash) |
 | `keyset.ts` | cursors (`makeCursor`, `readCursor`, `cut`), `everyPage` for exports, and the microsecond rule |
 | `csv.ts` | `csvCell`, `csvResponse`: defused, streamed, BOM-first CSV |
 | `query.ts` | `likePattern`, `listUrl`, `localPath`, `isPartial`, `formIds`, `idParam` |
 | `list.tsx` | `DataTable`, `TableRows`, `TableRow`, `LoadMoreRow`, `SearchBar`, `When` |
-| `status.tsx` | `StatusBadge` (token tones), `StatusForm` (plain or row-swapping), `pickStatus`; `controlClass`, `buttonClass`, `primaryClass`, `fieldClass`, the one look of every control |
+| `status.tsx` | `StatusBadge` (token tones), `StatusForm` (plain or row-swapping), `pickStatus`; `controlClass`, `inputClass`, `buttonClass`, `primaryClass`, `fieldClass`, `Select`, `FieldError`, the one look of every control |
 | `bulk.tsx` | `BulkForm`: the form the row checkboxes post to |
 | `detail.tsx` | `Section`, `FieldList`, `JsonData` (nested, escaped) |
 | `flash.tsx` | `withFlash`, `Flash`: "Saved" after a 303 from a code in the URL |
