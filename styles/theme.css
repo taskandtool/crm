@@ -1,7 +1,8 @@
-/* The CRM's design tokens, Tailwind v4 style. Every --color-* becomes
-   bg-/text-/border- classes; the default palette, shadows, radii, blurs and
-   animations are switched off, so only these exist. DESIGN.md explains the
-   roles. Markup never carries a hex value; npm run check refuses one. */
+/* The CRM's design tokens, Tailwind v4 style: this file is the Tailwind
+   config. Every --color-* becomes bg-/text-/border-/ring- classes; the
+   default palette, shadows, radii, blurs and animations are switched off,
+   so only these exist. DESIGN.md explains the roles. Markup never carries a
+   hex value; npm run check refuses one. */
 @theme {
   --color-*: initial;
   --shadow-*: initial;
@@ -11,40 +12,55 @@
   --blur-*: initial;
   --animate-*: initial;
 
-  /* Grounds */
-  --color-canvas: #f5f6f8;                    /* the page */
-  --color-surface: #ffffff;                   /* a card, a panel that floats */
-  --color-panel: #e9ebef;                     /* a column, a tinted band */
+  /* Grounds: the sidebar sits on the canvas, the page on one white panel */
+  --color-canvas: #f4f5f7;                    /* behind the panel: the sidebar, a phone's page */
+  --color-surface: #ffffff;                   /* the panel, a card, a control */
+  --color-panel: #f0f1f4;                     /* a pipeline column, a hover, the current nav item, a neutral badge */
 
   /* Text */
-  --color-ink: #15171c;                       /* 16.6:1 on canvas */
-  --color-ink-2: #454a54;                     /* secondary, 8.2:1 on canvas */
-  --color-ink-3: #5e6470;                     /* metadata, 5.5:1 on canvas, 5.0:1 on panel */
+  --color-ink: #121418;                       /* names, figures, headings: 18:1 on surface */
+  --color-ink-2: #4a4f59;                     /* secondary text: 8.2:1 on surface */
+  --color-ink-3: #5e6470;                     /* metadata: 5.9:1 on surface, 5.3:1 on panel */
 
   /* The one action colour */
-  --color-accent: #2f5bea;                    /* 5.1:1 on canvas, 4.6:1 on panel */
+  --color-accent: #2f5bea;                    /* 5.5:1 on surface, 4.9:1 on panel */
   --color-accent-ink: #ffffff;
-  --color-accent-hover: color-mix(in oklab, var(--color-accent) 85%, black);  /* a primary button under the pointer */
+  --color-accent-hover: color-mix(in oklab, var(--color-accent) 85%, black);
 
-  /* Late: a task, event or invoice past its day, and nothing else */
-  --color-late: #b42318;                      /* 6.1:1 on canvas, 5.5:1 on panel */
+  /* Meaning: good news and late. Text in them stays 4.5:1 on their 10% tint */
+  --color-good: #067647;                      /* a figure up, paid, won: 5.7:1 on surface */
+  --color-late: #b42318;                      /* past its day, and nothing else: 6.6:1 on surface */
 
-  /* Lines */
-  --color-line: rgb(21 23 28 / 0.12);
-  --color-line-strong: rgb(21 23 28 / 0.5);   /* input and button edges: 3.2:1 on panel, the 3:1 a control boundary needs */
+  /* Avatars: a person's initials on a 12% tint of one of six hues, picked
+     from their name, so the same person is the same colour everywhere */
+  --color-hue-1: #3a4fc4;
+  --color-hue-2: #0f766e;
+  --color-hue-3: #a1460c;
+  --color-hue-4: #b4235a;
+  --color-hue-5: #6b3fc9;
+  --color-hue-6: #4a6512;
 
-  /* Type: an app's density, one family */
-  --font-body: ui-sans-serif, system-ui, sans-serif;
-  --text-title: 1.25rem;
-  --text-title--line-height: 1.25;
-  --text-copy: 0.9375rem;
-  --text-copy--line-height: 1.45;
-  --text-label: 0.8125rem;
-  --text-label--line-height: 1.4;
+  /* Lines. A button is found by its words, so its ring is the quiet line; an
+     empty field has only its edge, so that edge keeps the 3:1 WCAG 1.4.11 asks */
+  --color-line: rgb(18 20 24 / 0.1);          /* dividers, card and panel edges, a button's ring */
+  --color-line-strong: rgb(18 20 24 / 0.48);  /* an input's or select's edge, a link's underline: 3.3:1 on surface, 3.2:1 on panel */
+
+  /* Type: one family, five sizes, figures in tabular numerals where they line up */
+  --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --text-display: 1.875rem;                   /* a figure: the Inbox's numbers, a total */
+  --text-display--line-height: 2.25rem;
+  --text-title: 1.5rem;                       /* a page's heading */
+  --text-title--line-height: 2rem;
+  --text-heading: 1rem;                       /* a section's heading, a card's name on a record page */
+  --text-heading--line-height: 1.5rem;
+  --text-copy: 0.875rem;                      /* everything else: rows, cells, cards, forms */
+  --text-copy--line-height: 1.25rem;
+  --text-label: 0.75rem;                      /* metadata: dates, counts, a badge, a column's head */
+  --text-label--line-height: 1rem;
 
   /* Edges and depth */
-  --radius-control: 0.375rem;
-  --radius-card: 0.625rem;
-  --shadow-card: 0 1px 2px rgb(21 23 28 / 0.06);
-  --shadow-lift: 0 1px 2px rgb(21 23 28 / 0.08), 0 10px 24px -10px rgb(21 23 28 / 0.25);
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+  --shadow-card: 0 1px 2px rgb(18 20 24 / 0.04);
+  --shadow-lift: 0 1px 2px rgb(18 20 24 / 0.06), 0 12px 32px -12px rgb(18 20 24 / 0.22);
 }

@@ -3,6 +3,7 @@
 // This reads them from a form, a script flag or a spreadsheet cell, checked
 // against their type.
 import type { CustomField } from "../config-schema";
+import { q, type Db } from "../data/db";
 import { normalizeEmail } from "../data/email";
 import { parseDate } from "./csv-read";
 import { cleanPhone } from "./phone";
@@ -68,6 +69,18 @@ export function postedFields(defs: CustomField[], body: Record<string, unknown>)
   const input: Record<string, unknown> = {};
   for (const fd of defs) if (`f_${fd.key}` in body) input[fd.key] = body[`f_${fd.key}`];
   return input;
+}
+
+/**
+ * crm.config.json's custom fields, published in the customers skill's
+ * customer_fields, so any app that saves a person (savePerson) fills them from
+ * form answers of the same key. Replaced whole, at every start and deploy.
+ */
+export async function publishFields(db: Db, defs: CustomField[]): Promise<void> {
+  await db.transaction([
+    q`delete from customer_fields`,
+    ...defs.map((f, i) => q`insert into customer_fields (key, label, type, options, position) values (${f.key}, ${f.label}, ${f.type}, ${f.options ?? []}::text[], ${i})`),
+  ]);
 }
 
 /** A stored custom field value as text, for a page, an input or a CSV cell. */

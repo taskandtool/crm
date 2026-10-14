@@ -13,7 +13,7 @@ export function spliced(texts: Record<string, string>) {
   };
 }
 
-/** A phone's match key, as phone.ts's phoneKey: its last ten digits, an extension left off. The customers_phone_match index is this over `phone`. POSIX classes: a backslash would be lost before SQL saw it. */
+/** A phone's match key, as the customers skill's phoneKey (customer.ts): its last ten digits, an extension left off. The customers_phone_match index is this over `phone`. POSIX classes: a backslash would be lost before SQL saw it. */
 export const phoneKeyOf = (col: string) =>
   `right(regexp_replace(regexp_replace(${col}, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10)`;
 

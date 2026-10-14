@@ -7,7 +7,7 @@ import { applySchema } from "../../data/migrate";
 import { scratch, why, type Scratch } from "../../data/test/scratch";
 import { embedForm, formRoutes, summary } from "../routes";
 import { formEditor, formsAdmin } from "../admin";
-import { CONTACT_FORM, seedForm } from "../store";
+import { CONTACT_FORM, insertSubmission, seedForm } from "../store";
 import { makeStamp } from "../../data/spam";
 
 // The inbox shows the customer's notes, so the customers skill's tables come with it.
@@ -167,7 +167,7 @@ test("the private views need the team header; opening reads, Archive and spam mo
   }
 });
 
-test("notes are the CRM's: the first makes their customer, every submission from them shares them, the CRM's own show here", async (t) => {
+test("notes are the CRM's: a submission makes their customer as it comes in, every submission from them shares them, the CRM's own show here", async (t) => {
   const s = await setUp(t);
   if (!s) return;
   try {
@@ -179,14 +179,14 @@ test("notes are the CRM's: the first makes their customer, every submission from
     assert.equal((await post(app, `/admin/submissions/${first}/notes`, { body: "sneaky" })).status, 404, "a stranger cannot");
     let res = await post(app, `/admin/submissions/${first}/notes`, { body: "Wants Tuesday.", kind: "note" }, team);
     assert.equal(res.headers.get("location"), `/admin/submissions/${first}?saved=note`);
-    // The first note made their customer, as the CRM's Add as customer does: no CRM statuses yet, so its default first one.
-    const [ann] = await s.db.sql`select id::text as id, name, email::text as email, phone, stage, source, created_by::text as by from customers`;
-    assert.deepEqual({ ...ann, id: undefined }, { id: undefined, name: "Ann", email: "ann@example.com", phone: "555 010 0001", stage: "lead", source: CONTACT_FORM.title, by: "owner@example.com" });
+    // Her first submission made her customer as it came in (no CRM statuses yet, so its default first one), by no one; Bo's made his.
+    const [ann] = await s.db.sql`select id::text as id, name, email::text as email, phone, stage, source, created_by::text as by from customers where email = 'ann@example.com'`;
+    assert.deepEqual({ ...ann, id: undefined }, { id: undefined, name: "Ann", email: "ann@example.com", phone: "555 010 0001", stage: "lead", source: CONTACT_FORM.title, by: null });
 
     // A call logged at another time, from her other submission: the same customer. Her last contact stays the later one.
     res = await post(app, `/admin/submissions/${second}/notes`, { body: "<b>Called</b> back", kind: "call", at: "2026-10-01T09:30" }, team);
     assert.equal(res.status, 303);
-    assert.equal((await s.db.sql`select count(*)::int as n from customers`)[0].n, 1);
+    assert.equal((await s.db.sql`select count(*)::int as n from customers`)[0].n, 2, "Ann once, and Bo");
     const notes = await s.db.sql`select kind, author::text as author, customer_id::text as cid, happened_at from customer_notes order by id`;
     assert.deepEqual(notes.map((n) => [n.kind, n.author, n.cid]), [["note", "owner@example.com", ann.id], ["call", "owner@example.com", ann.id]]);
     assert.equal(notes.length, 2);
@@ -212,8 +212,8 @@ test("notes are the CRM's: the first makes their customer, every submission from
     // With the CRM's statuses set up, a new customer starts in its first open one; a merged record's address finds the one it went into.
     await s.db.sql`create table pipeline_stages (key text primary key, label text not null, position integer not null default 0, kind text not null default 'open', archived boolean not null default false)`;
     await s.db.sql`insert into pipeline_stages (key, label, position, kind) values ('won', 'Won', 0, 'won'), ('enquiry', 'Enquiry', 1, 'open')`;
-    await post(app, `/admin/submissions/${bo}/notes`, { body: "hi" }, team);
-    assert.equal((await s.db.sql`select stage from customers where email = 'bo@example.com'`)[0].stage, "enquiry");
+    await post(app, "/forms/contact", { name: "Di", email: "di@example.com", message: "hello", _started: await oldStamp() });
+    assert.equal((await s.db.sql`select stage from customers where email = 'di@example.com'`)[0].stage, "enquiry");
     await s.db.sql`insert into customers (name, email, stage, other_emails) values ('Cy', 'cy@new.example', 'enquiry', '{cy@old.example}')`;
     await post(app, "/forms/contact", { name: "Cy", email: "cy@old.example", message: "again", _started: await oldStamp() });
     const [{ id: cy }] = await s.db.sql`select id::text as id from submissions where email = 'cy@old.example'`;
@@ -518,3 +518,19 @@ test("a form made in the editor is stamped with this app's slug", async (t) => {
   }
 });
 
+
+test("a submission that came in as spam saves no one; moved out of spam, one at a time or in bulk, it saves its person", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  try {
+    const app = site(s);
+    const [a, b] = await Promise.all(["one@example.com", "two@example.com"].map((email) =>
+      insertSubmission(s.db, { form_key: "contact", name: email.split("@")[0], email, phone: null, data: {}, source: "website", page: null, status: "spam" })));
+    assert.equal((await s.db.sql`select count(*)::int as n from customers`)[0].n, 0, "spam saves no one");
+    await post(app, `/admin/submissions/${a}/status`, { status: "read" }, team);
+    await post(app, "/admin/submissions/bulk", { id: String(b), status: "read", return: "/admin/submissions" }, team);
+    assert.deepEqual((await s.db.sql`select email::text as email from customers order by email`).map((r) => r.email), ["one@example.com", "two@example.com"]);
+  } finally {
+    await s.drop();
+  }
+});

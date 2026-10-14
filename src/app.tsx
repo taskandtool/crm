@@ -31,7 +31,7 @@ import {
 import { overview } from "./crm/overview";
 import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
 import { addNote, listNotes, pickNoteKind, wallTime } from "./customers/notes";
-import { phoneKey } from "./crm/phone";
+import { phoneKey } from "./customers/customer";
 import { addEvent, customerEvents, eventCsvColumns, eventsPage, getEvent, inviteDomain, saveEvent, startWall, tellBooker, touchFor, type Event, type EventFilter, type EventInput } from "./crm/events";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, pickKind, pickPipeline, restoreStage, stagesWithCounts, type Pipeline, type StageResult } from "./crm/stages";
 import { missingSentence } from "./crm/tables";
@@ -206,21 +206,7 @@ async function newLeadCall(db: Db, customer: Customer, dealId: string | null, us
   await addTask(db, customer.id, { kind: "call", title: `Call back ${customer.name}`, due_on: today(), due_time: null, owner: user, deal_id: dealId }, user);
 }
 
-app.post("/inbox/add", async (c) => {
-  const body = await c.req.parseBody();
-  const kind = str(body.kind);
-  if (kind !== "submission" && kind !== "booking" && kind !== "payment") return back(c, "/", "gone");
-  const stage = await firstOpenStage(c.var.db, "customers");
-  if (!stage) return back(c, "/stages", "last-open");
-  const r = await addFromInbox(c.var.db, kind as InboxKind, str(body.id), stage.key, c.var.user, cfg.fields);
-  if (!r) return back(c, "/", "gone");
-  // Handled: a form request leaves To do once it has made a customer.
-  if (kind === "submission") await markDone(c.var.db, str(body.id), c.var.user);
-  if (r.created) await newLeadCall(c.var.db, r.customer, null, c.var.user);
-  return back(c, `/customers/${r.customer.id}`, r.created ? "added" : "exists");
-});
-
-// Add as deal: the person (matched, or added as a customer) and a deal in the
+// New deal from the Inbox: the person (matched, or saved as a customer) and a deal in the
 // first open stage, named for what came in. A customer already here gets
 // another deal: a repeat customer's new enquiry.
 app.post("/inbox/deal", async (c) => {
@@ -232,9 +218,13 @@ app.post("/inbox/deal", async (c) => {
   if (!status || !stage) return back(c, "/stages", "last-open");
   const r = await addFromInbox(db, kind as InboxKind, str(body.id), status.key, c.var.user, cfg.fields);
   if (!r) return back(c, "/", "gone");
-  const deal = await createDeal(db, r.customer.id, { title: `${r.customer.name}, ${r.source}`.slice(0, 200), value_cents: null, currency: dealsCfg.currency, owner: c.var.user, expected_close: null, notes: null }, stage.key, c.var.user);
+  // Named for what they asked for (the form, the booked service), as HubSpot's and Pipedrive's
+  // deals are; the customer is already on the card under it.
+  const deal = await createDeal(db, r.customer.id, { title: r.source.replace(/^Booking: /, "").slice(0, 200), value_cents: null, currency: dealsCfg.currency, owner: c.var.user, expected_close: null, notes: null }, stage.key, c.var.user);
   if (!deal) return back(c, "/", "gone");
+  // Made into a deal is dealt with: it leaves To do.
   if (kind === "submission") await markDone(db, str(body.id), c.var.user);
+  else await markHandled(db, kind as "booking" | "payment", str(body.id), c.var.user);
   await newLeadCall(db, r.customer, deal.id, c.var.user);
   return back(c, `/deals/${deal.id}`, "deal-added");
 });
@@ -242,9 +232,9 @@ app.post("/inbox/deal", async (c) => {
 /** The nav's count: what is in To do, filled in after the page loads so no page waits on it. */
 app.get("/inbox/count", async (c) => {
   const { rows, next } = await inboxPage(c.var.db, { inbox: cfg.inbox, todo: true }, null, 99);
-  if (!rows.length) return c.html(<span></span>);
+  if (!rows.length) return c.html(<span hidden></span>);
   return c.html(
-    <span class="ml-1 rounded-control bg-accent px-1 text-label font-semibold text-accent-ink">
+    <span class="ml-auto rounded-full bg-accent px-1.5 text-label font-semibold tabular-nums text-accent-ink">
       <span class="sr-only">, </span>{next ? "99+" : rows.length}<span class="sr-only"> to do</span>
     </span>,
   );
@@ -807,9 +797,9 @@ app.post("/tasks", async (c) => {
 app.get("/tasks/count", async (c) => {
   const n = await taskCounts(c.var.db, today(), c.var.user);
   const due = n.overdue + n.today;
-  if (!due) return c.html(<span></span>);
+  if (!due) return c.html(<span hidden></span>);
   return c.html(
-    <span class={"ml-1 rounded-control px-1 text-label font-semibold " + (n.overdue ? "bg-late text-accent-ink" : "bg-accent text-accent-ink")}>
+    <span class={"ml-auto rounded-full px-1.5 text-label font-semibold tabular-nums " + (n.overdue ? "bg-late text-accent-ink" : "bg-accent text-accent-ink")}>
       <span class="sr-only">, </span>{due}<span class="sr-only"> due{n.overdue ? `, ${n.overdue} overdue` : ""}</span>
     </span>,
   );

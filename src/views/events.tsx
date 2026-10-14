@@ -21,7 +21,7 @@ import type { Quote } from "../invoices/quotes";
 import { formatMoney } from "../payments/money";
 import { Layout, ScheduleTabs } from "./layout";
 import { EventMoney } from "./money";
-import { AddToggle, buttonClass, controlClass, CustomInput, CustomerPicker, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, shownField, telHref, timeZone, ViewLink } from "./ui";
+import { AddToggle, buttonClass, controlClass, CustomInput, CustomerPicker, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, shownField, telHref, timeZone, ViewLink, viewsClass } from "./ui";
 
 /** How many a customer's page shows. */
 export const CUSTOMER_EVENTS = 100;
@@ -213,7 +213,7 @@ export function EventResults(p: { filter: EventFilter; rows: Event[]; next: stri
           p.filter.host || p.filter.q ? (
             <NoMatches clear={listUrl("/events", { view: params.view })} />
           ) : (
-            <EmptyState title={p.filter.view === "upcoming" ? `Nothing scheduled.` : `No ${many} yet.`} action={<a href="/events/new" class={primaryClass}>New {one}</a>}>
+            <EmptyState title={p.filter.view === "upcoming" ? `Nothing scheduled.` : `No ${many} yet.`} action={<a href="/events/new" class={buttonClass}>New {one}</a>}>
               {p.filter.view === "upcoming" ? `Add one here or from a ${vocab.one.toLowerCase()}'s page. Online bookings show here too.` : null}
             </EmptyState>
           )
@@ -239,7 +239,7 @@ export function EventsPage(p: {
     <Layout title={ev.many} user={p.user} section="schedule" actions={<a href="/events/new" class={primaryClass}>New {one}</a>}>
       <ScheduleTabs current="/events" />
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
-      <nav aria-label="Which" class="mb-3 flex flex-wrap gap-1 text-label">
+      <nav aria-label="Which" class={"mb-4 " + viewsClass}>
         {VIEWS.map((v) => (
           <ViewLink href={listUrl("/events", { view: v.value === "upcoming" ? null : v.value, host: p.filter.host, q: p.filter.q })} on={p.filter.view === v.value}>
             {v.label}

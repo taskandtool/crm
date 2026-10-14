@@ -19,7 +19,7 @@ Everything a business wants changed is one of these.
      running CRM the config's lists change nothing: use lever 2, then make
      the config match so a fresh install gets the same.
    - `tasks`: `{ "new_lead": false }` stops the same-day "Call back"
-     task that a lead added from the Inbox gets.
+     task that a deal made from the Inbox gets.
    - `sources`: suggestions for the Source field.
    - `fields`: custom fields (lever 3).
    - `owner_label`: what the owner column is called (`Technician`,
@@ -67,9 +67,10 @@ Everything a business wants changed is one of these.
    `snake_case` and never a built-in column name). Values live in
    `customers.fields` (jsonb) and show on the customer page, in the CSV,
    in the import (header matched by key or label) and in the scripts
-   (`--field truck="Truck 2"`). Add as customer fills a custom field from
-   a form answer named with the field's key, as it fills Address and
-   Company from answers named `address` and `company`. Removing a field from
+   (`--field truck="Truck 2"`). A form answer named with a field's key
+   fills it when the submission saves its person, on any app (the CRM
+   publishes its fields at every start and deploy), as answers named
+   `address` and `company` fill those. Removing a field from
    the config hides it; the data stays. A custom field holds one value per
    customer, and the list cannot filter by one (for "everyone at the North
    location", use a tag or lever 4).

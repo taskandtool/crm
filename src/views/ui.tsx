@@ -4,7 +4,7 @@
 import type { Child } from "hono/jsx";
 import type { FlashMessages } from "../admin/flash";
 import { BOOKING_MESSAGES } from "../booking/admin";
-import { buttonClass, controlClass, fieldClass, primaryClass, type StatusOption } from "../admin/status";
+import { buttonClass, controlClass, fieldClass, primaryClass, quietClass, type StatusOption } from "../admin/status";
 import { cfg, dealsCfg, eventsCfg, vocab } from "../config";
 import type { CustomField } from "../config-schema";
 import { When } from "../admin/list";
@@ -12,13 +12,47 @@ import { FieldList, type Field as Shown } from "../admin/detail";
 import { fieldText } from "../crm/fields";
 import type { Stage } from "../crm/stages";
 import { addDays, dueOf, type Due } from "../crm/tasks";
+import { Icon } from "./icons";
 
 // One look for every control: the admin skill's, which a link that does an action shares.
-export { buttonClass, controlClass, primaryClass };
+export { buttonClass, controlClass, primaryClass, quietClass };
 
 /** Stage options for a select or badge: open stages strong, won in the accent, lost muted. */
 export function stageOptions(stages: Stage[]): StatusOption[] {
   return stages.map((s) => ({ value: s.key, label: s.label, tone: s.kind === "won" ? "accent" : s.kind === "lost" ? "muted" : "strong" }));
+}
+
+// Literal class names, so Tailwind finds them: one hue per person.
+const HUES = [
+  "bg-hue-1/12 text-hue-1",
+  "bg-hue-2/12 text-hue-2",
+  "bg-hue-3/12 text-hue-3",
+  "bg-hue-4/12 text-hue-4",
+  "bg-hue-5/12 text-hue-5",
+  "bg-hue-6/12 text-hue-6",
+];
+
+/** "Dana Ortiz" as "DO", "ann@example.com" as "A". */
+function initials(name: string): string {
+  const words = name.replace(/@.*/, "").split(/[\s._-]+/).filter((w) => /\p{L}|\d/u.test(w));
+  return ((words[0]?.[0] ?? "?") + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase();
+}
+
+/**
+ * A person as their initials on a tint picked from their name, so the same
+ * person is the same colour on every page. Decorative where their name is
+ * written beside it; `label` says who it is where it stands alone ("Owner:
+ * Dana Ortiz" on a card), on hover and to a screen reader.
+ */
+export function Avatar({ name, size = "md", label }: { name: string; size?: "sm" | "md"; label?: string }) {
+  let h = 0;
+  for (const ch of name.toLowerCase()) h = (h * 31 + ch.codePointAt(0)!) >>> 0;
+  return (
+    <span class={`inline-flex ${size === "sm" ? "size-6" : "size-8"} shrink-0 text-label select-none items-center justify-center rounded-full font-semibold ${HUES[h % HUES.length]}`}
+      {...(label ? { title: label, role: "img", "aria-label": label } : { "aria-hidden": "true" })}>
+      {initials(name)}
+    </span>
+  );
 }
 
 /** A label around its control. `quiet` keeps the label for screen readers only on a wide screen, where a row above names the column. */
@@ -52,9 +86,10 @@ export function timeText(time: string): string {
   return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
 }
 
+// Late in its colour, at the copy's weight: the words say it, the colour finds it.
 const DUE_CLASS: Record<Due, string> = {
-  overdue: "font-semibold text-late",
-  today: "font-semibold text-accent",
+  overdue: "font-medium text-late",
+  today: "font-medium text-accent",
   later: "text-ink-3",
   none: "text-ink-3",
 };
@@ -84,11 +119,16 @@ export function DueMark({ next, today, task = false }: { next: { due_on: string;
  * stage): htmx posts it and swaps in the page the POST redirects to, flash
  * included. Without JavaScript it is a form with a Save button.
  */
-/** One of a list's views (Today, Upcoming; To do, Everything), the current one filled in. */
+/**
+ * A list's views (Today, Upcoming; To do, Everything; Mine, Everyone) as a
+ * segmented control, as Catalyst's and Apple's: a tinted track, the current
+ * view raised on it. `viewsClass` is the track, on the <nav> around them.
+ */
+export const viewsClass = "inline-flex flex-wrap gap-0.5 rounded-control bg-panel p-0.5";
 export function ViewLink({ href, on, children }: { href: string; on: boolean; children: Child }) {
   return (
     <a href={href} aria-current={on ? "page" : undefined}
-      class={"rounded-control px-2 py-1 no-underline " + (on ? "bg-panel font-semibold" : "text-ink-2 hover:bg-panel")}>
+      class={"rounded-control px-3 py-1 font-medium no-underline " + (on ? "bg-surface text-ink shadow-card ring-1 ring-line" : "text-ink-2 hover:text-ink")}>
       {children}
     </a>
   );
@@ -145,12 +185,12 @@ export function ReadThenEdit({ fields, children }: { fields: Shown[]; children: 
   );
 }
 
-/** "+ Add task": a form that opens in place, the link turning to Cancel while it is open. */
+/** "+ Add task": a form that opens in place, a quiet button turning to Cancel while it is open. */
 export function AddToggle({ label, open, children }: { label: string; open?: boolean; children: Child }) {
   return (
     <details open={open} class="group">
-      <summary class="inline-flex cursor-pointer list-none items-center rounded-control text-label font-semibold text-accent hover:underline">
-        <span class="group-open:hidden">+ {label}</span>
+      <summary class={quietClass + " -ml-2.5 cursor-pointer list-none"}>
+        <span class="inline-flex items-center gap-1.5 group-open:hidden"><Icon name="plus" class="size-4 text-ink-3" />{label}</span>
         <span class="hidden text-ink-2 group-open:inline">Cancel</span>
       </summary>
       <div class="mt-3">{children}</div>
@@ -173,7 +213,7 @@ export function CustomerPicker({ customers }: { customers: { id: string; name: s
           <option value="new" selected={!customers.length}>Someone new</option>
         </select>
       </Field>
-      <div class="col-span-full hidden gap-3 sm:grid-cols-2 [form:has(option[value=new]:checked)_&]:grid">
+      <div class="col-span-full hidden gap-3 sm:grid-cols-2 [form:has(select[name=customer]>option[value=new]:checked)_&]:grid">
         <PersonFields pairs />
       </div>
     </>
@@ -232,7 +272,7 @@ export function CustomInput({ f, value }: { f: CustomField; value: unknown }) {
 export function RecordLine({ added, addedBy, changed, changedBy, children }: { added: Date | null; addedBy: string | null; changed?: Date | null; changedBy?: string | null; children?: Child }) {
   const sameEdit = !changed || (added && Math.abs(new Date(changed).getTime() - new Date(added).getTime()) < 60_000);
   return (
-    <div class="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-3 text-label text-ink-3">
+    <div class="mt-6 flex flex-wrap items-center gap-x-2 gap-y-2 border-t border-line pt-3 text-label text-ink-3">
       <p class="min-w-0 break-words">
         Added <When at={added} timeZone={timeZone} day />
         {addedBy ? ` by ${addedBy}` : ""}

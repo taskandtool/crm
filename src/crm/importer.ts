@@ -22,7 +22,8 @@ import { phoneKeyOf, spliced } from "./sql";
 
 const { sql } = spliced({ phone_key: phoneKeyOf("c.phone"), phone_key_or_none: phoneKeyOf("coalesce(c.phone, '')") });
 import { parseDate } from "./csv-read";
-import { cleanPhone, phoneKey } from "./phone";
+import { phoneKey } from "../customers/customer";
+import { cleanPhone } from "./phone";
 import { resolveStage, type Stage } from "./stages";
 import { clean, parseTags } from "./text";
 

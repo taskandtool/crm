@@ -11,7 +11,8 @@ import { createCustomer, findCustomer, findMatch, getCustomer, listPage, NO_FILT
 import { everythingFrom } from "../src/crm/history";
 import { parseCsv } from "../src/crm/csv-read";
 import { guessMap, planRows, runImport } from "../src/crm/importer";
-import { addFromInbox, inboxPage, markDone, markHandled, readInboxCursor, type InboxRow } from "../src/crm/inbox";
+import { addFromInbox, inboxPage, markDone, markHandled, readInboxCursor, saveEveryone, type InboxRow } from "../src/crm/inbox";
+import { publishFields } from "../src/crm/fields";
 import { loadTeam, setTeam } from "../src/crm/people";
 import { addNote, listNotes } from "../src/customers/notes";
 import { addTask, nothingPlanned } from "../src/crm/tasks";
@@ -256,7 +257,7 @@ test("the inbox, across submissions, bookings and payments", async (t) => {
   assert.ok(onlyQuote.rows.every((r) => r.kind === "submission"));
 });
 
-test("Add as customer from a submission, and Mark done", async (t) => {
+test("saving a customer from a submission, and Mark done", async (t) => {
   if (skip) return t.skip(skip);
   const [jo] = await rows("select id::text as id, created_at from submissions where name = 'Jo Park' and status = 'new'");
   const added = await addFromInbox(db, "submission", jo.id, "new", ME);
@@ -293,7 +294,7 @@ test("Add as customer from a submission, and Mark done", async (t) => {
   assert.deepEqual((await customerEvents(db, ann.id)).map((e) => e.what), ["Estimate visit"], "it is one of her events");
 });
 
-test("Add as customer keeps what the person gave: address, custom fields, a phone from their other rows", async (t) => {
+test("saving a customer keeps what the person gave: address, custom fields, a phone from their other rows", async (t) => {
   if (skip) return t.skip(skip);
   const DEFS: CustomField[] = [
     { key: "insurance", label: "Insurance", type: "select", options: ["Delta Dental", "Aetna"] },
@@ -475,7 +476,7 @@ test("racing creates of one person make one customer: by email, by phone only, b
     createCustomer(db, { name: "Mixed", phone: "(555) 404-0002", stage: "new" }, ME),
   ]);
   assert.equal(mixed.filter((r) => r.created).length, 1);
-  // A double click on Add as customer for a phone-only and a name-only submission.
+  // Two saves at once (two pages, a page and a command) for a phone-only and a name-only submission.
   await db.sql`insert into submissions (form_key, name, phone, source) values ('quote', 'Call Me', '555 404 0003', 'website'), ('quote', 'Only A Name', null, 'website')`;
   for (const name of ["Call Me", "Only A Name"]) {
     const [sub] = await rows(`select id::text as id from submissions where name = '${name}'`);
@@ -745,4 +746,31 @@ test("the morning email reaches a team member a task names by name, at the team 
   const sent: { to: string; text: string }[] = [];
   await sendDigests(db, async (m) => (sent.push(m), { status: "sent" as const, via: "fake" }), { timeZone: "UTC", now: new Date("2031-03-03T09:00:00Z") });
   assert.ok(sent.some((m) => m.to === "mo@team.example" && /Ring by name/.test(m.text)));
+});
+
+test("setup saves everyone already in the tables: by email, else by phone, never by name; spam and a row with neither are not", async (t) => {
+  if (skip) return t.skip(skip);
+  // Rows written before the skills saved people as they arrived (straight into the tables here).
+  await db.sql`
+    insert into submissions (form_key, name, email, phone, data, source, status) values
+      ('quote', 'Rae Fox', 'rae@example.com', null, '{"address": "4 Elm St", "insurance": "delta dental"}', 'website', 'new'),
+      ('quote', 'Rae F.', 'RAE@example.com', null, '{}', 'website', 'new'),
+      ('quote', 'Sid Ng', null, '(555) 404-7171', '{}', 'website', 'new'),
+      ('quote', 'Sidney', null, '+1 555 404 7171 ext 9', '{}', 'website', 'new'),
+      ('quote', 'Nobody Known', null, null, '{}', 'website', 'new'),
+      ('quote', 'Spam Guy', 'spamguy@example.com', null, '{}', 'website', 'spam')`;
+  await publishFields(db, [{ key: "insurance", label: "Insurance", type: "select", options: ["Delta Dental", "Aetna"] }]);
+  const first = (await firstOpenStage(db, "customers"))!;
+  assert.ok((await saveEveryone(db)) >= 2);
+  const rae = await rows("select name, address, fields, stage, created_by::text as by from customers where email = 'rae@example.com'");
+  assert.deepEqual(rae, [{ name: "Rae Fox", address: "4 Elm St", fields: { insurance: "Delta Dental" }, stage: first.key, by: null }], "one Rae, from what she gave first, her custom field from her answer, by no one");
+  const sid = await rows("select name from customers where right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = '5554047171'");
+  assert.deepEqual(sid, [{ name: "Sid Ng" }], "the same phone written two ways is one person; the name never decides");
+  assert.equal((await rows("select 1 from customers where name in ('Nobody Known', 'Spam Guy') or email = 'spamguy@example.com'")).length, 0);
+  assert.equal(await saveEveryone(db), 0, "a second run saves no one");
+  await publishFields(db, []);
+  // To do: a form request until it is done; an online booking until it is done, whoever booked; a payment never.
+  const todo = await inboxPage(db, { inbox: INBOX, todo: true }, null, 200);
+  assert.ok(todo.rows.some((r) => r.kind === "submission" && r.name === "Rae Fox"));
+  assert.ok(todo.rows.every((r) => r.kind !== "payment"));
 });

@@ -7,7 +7,8 @@ import { normalizeEmail } from "../data/email";
 import { readCursor, type Cursor, type Keyed } from "../admin/keyset";
 import { likePattern } from "../admin/query";
 import { sameAs } from "./people";
-import { cleanPhone, phoneKey } from "./phone";
+import { phoneKey } from "../customers/customer";
+import { cleanPhone } from "./phone";
 import { NOTHING_PLANNED, phoneKeyOf, spliced } from "./sql";
 
 const texts = spliced({ nothing_planned: NOTHING_PLANNED, phone_key: phoneKeyOf("c.phone"), phone_key_or_none: phoneKeyOf("coalesce(c.phone, '')") });
@@ -159,7 +160,7 @@ export async function findCustomer(db: Db, whoIn: string): Promise<Customer | nu
  * `bareName`, for a person with neither: a customer of the same name who has
  * neither). Returns the customer and whether it is new.
  *
- * Two requests racing on one person (a double click on Add as customer, the
+ * Two requests racing on one person (two pages saving the same new person, the
  * page and a script) both get the one row. A unique index covers only the
  * email, so the transaction first takes an advisory lock on each key it
  * could match on (email, then phone, then name: one order everywhere, so no
@@ -221,7 +222,7 @@ export async function createCustomer(
 
 /**
  * Fill what a customer is missing (phone, company, address, custom fields),
- * never replacing a value they already have: Add as customer on someone who
+ * never replacing a value they already have: saving someone from the Inbox who
  * is already here. The emptiness is judged in the statement itself, so a
  * save that lands first wins. Touches nothing, `updated_at` included, when
  * there is nothing to fill.

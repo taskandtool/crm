@@ -11,9 +11,11 @@ A customer record on Hono (server-rendered JSX, htmx, SortableJS, Postgres).
 ## Rules
 
 - **Email is the key**; phone is the fallback (its last ten digits, only
-  where one side has no email: `src/crm/phone.ts`; in SQL, `isCustomer` in
-  `src/crm/sql.ts`). Inbox matching, Add as
-  customer, the scripts and the import all use this one rule.
+  where one side has no email: `phoneKey` in `src/customers/customer.ts`; in SQL, `isCustomer` in
+  `src/crm/sql.ts`). Inbox matching, saving everyone who gets in touch (the
+  customers skill's `savePerson`, called as each submission and booking is
+  written; `saveEveryone` at setup for older rows), the scripts and the
+  import all use this one rule. A name never matches.
 - **Every change is a POST** behind `teamOnly()` and records who made it.
 
 ## The tables

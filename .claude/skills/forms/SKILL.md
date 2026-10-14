@@ -11,7 +11,7 @@ paid appointment with questions are each a form, named for what it takes
 (`order`, `intake`), and "my orders" is that form's submissions. A new
 form or a new question is a change to a row, never a migration.
 
-Version: 0.3.4 (taskandtool/skills)
+Version: 0.3.5 (taskandtool/skills)
 
 ## The rules
 
@@ -20,7 +20,11 @@ Version: 0.3.4 (taskandtool/skills)
   `node scripts/forms.mjs save <key> --file form.json` (it checks the
   definition as the editor does), never with SQL, never a table per form.
 - **The person goes in the columns**: name the fields `name`, `email` and
-  `phone`, or the CRM cannot match them. Every other answer is in `data`.
+  `phone`, or the CRM cannot match them. Every other answer is in `data`;
+  one named `address`, `company` or a CRM custom field's key fills it on
+  their customer. A submission saves its person as a customer as it comes in
+  (`saveSubmitter`, through the customers skill), and again if it is marked
+  not spam.
 - **One definition** (`fields.ts`) drives the page, the server's
   validation and the editor; the browser's `required` is a convenience.
 - **A page with a form is rendered per request**, never pre-rendered: it

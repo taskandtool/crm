@@ -1,5 +1,6 @@
 // Reading forms and writing submissions. The Website and the CRM look in the
 // same submissions table.
+import { savePerson, type CustomerRef } from "../customers/customer";
 import { q, type Db } from "../data/db";
 import { checkFields, sitePath, type Field, type Form, type Submission } from "./fields";
 import type { Charge } from "./price";
@@ -46,7 +47,23 @@ export async function insertSubmission(
     insert into submissions (form_key, name, email, phone, data, source, page, status)
     values (${s.form_key}, ${s.name}, ${s.email}, ${s.phone}, ${JSON.stringify(s.data)}::jsonb, ${s.source}, ${s.page}, ${s.status})
     returning id`;
+  if (s.status === "new") await saveSubmitter(db, row.id);
   return Number(row.id);
+}
+
+/**
+ * The person behind a submission, saved as a customer the moment it comes in
+ * (customers savePerson: by email, else phone, never name), with the form's
+ * title as where they came from and its answers for their address, company
+ * and custom fields. Not for spam, nor the booking page's copy of a booking
+ * (the booking saves its booker). Also run when spam is marked not spam.
+ */
+export async function saveSubmitter(db: Db, id: string | number, user: string | null = null): Promise<CustomerRef | null> {
+  const [s] = await db.sql<{ name: string | null; email: string | null; phone: string | null; data: Record<string, unknown> | null; created_at: Date; source: string }>`
+    select s.name, s.email::text as email, s.phone, s.data, s.created_at, coalesce(f.title, s.form_key) as source
+    from submissions s left join forms f on f.key = s.form_key
+    where s.id = ${String(id)}::bigint and s.status <> 'spam' and s.form_key <> ${BOOKING_PAGE.key}`;
+  return s ? savePerson(db, { name: s.name, email: s.email, phone: s.phone, source: s.source, at: s.created_at, answers: s.data }, user) : null;
 }
 
 // ---- drafts: a form with steps, before its questions are all answered -------------
@@ -128,7 +145,10 @@ export async function finishDraft(db: Db, id: string, complete: boolean): Promis
       returning submission_id::text`,
     q`select submission_id::text from submission_drafts where id = ${id}::bigint`,
   ]);
-  if (made[0]) return { submissionId: made[0].submission_id, made: true };
+  if (made[0]) {
+    await saveSubmitter(db, made[0].submission_id);
+    return { submissionId: made[0].submission_id, made: true };
+  }
   return now[0]?.submission_id ? { submissionId: now[0].submission_id, made: false } : null;
 }
 

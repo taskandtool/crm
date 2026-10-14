@@ -258,28 +258,39 @@ export function SearchBar(props: {
           class={inputClass + " pl-9"}
         />
       </label>
-      {filters.map((f) => (
-        <label class="min-w-32 flex-1 sm:flex-none">
-          <span class="sr-only">{f.label}</span>
-          <Select name={f.name} hx-get={action} hx-trigger="change" hx-include="closest form" class="w-full">
-            <option value="">{f.any ?? "All"}</option>
-            {f.options.map((o) => (
-              <option value={o.value} selected={o.value === f.value}>
-                {o.label}
-              </option>
+      {/* On a phone the filters fold behind one Filters button, as Pipedrive's and HubSpot's
+          lists do; from sm up they sit inline (the disclosure's content always shows, where the
+          browser can style ::details-content; where it cannot, the Filters button stays). */}
+      {filters.length ? (
+        <details class="w-full sm:contents sm:[&::details-content]:contents sm:[&::details-content]:[content-visibility:visible]">
+          <summary class={buttonClass + " w-full cursor-pointer list-none sm:w-auto supports-[selector(::details-content)]:sm:hidden"}>
+            Filters{filters.some((f) => f.value) ? ` (${filters.filter((f) => f.value).length})` : ""}
+          </summary>
+          <div class="mt-2 grid grid-cols-2 gap-2 sm:contents">
+            {filters.map((f) => (
+              <label class="min-w-32 flex-1 sm:flex-none">
+                <span class="sr-only">{f.label}</span>
+                <Select name={f.name} hx-get={action} hx-trigger="change" hx-include="closest form" class="w-full">
+                  <option value="">{f.any ?? "All"}</option>
+                  {f.options.map((o) => (
+                    <option value={o.value} selected={o.value === f.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              </label>
             ))}
-          </Select>
-        </label>
-      ))}
+          </div>
+        </details>
+      ) : null}
       {/* htmx applies every change; the button is for a browser without it. */}
       <noscript>
         <button class={buttonClass}>Apply</button>
       </noscript>
-      {active ? (
-        <a href={listUrl(action, keep)} class="px-1 text-sm/6 font-semibold text-ink-2 no-underline hover:text-ink">
-          Clear
-        </a>
-      ) : null}
+      {/* Always there, hidden while nothing is filtered, so an app's script can show it as filters change. */}
+      <a href={listUrl(action, keep)} data-clear hidden={!active} class="px-1 text-sm/6 font-semibold text-ink-2 no-underline hover:text-ink">
+        Clear
+      </a>
     </form>
   );
 }

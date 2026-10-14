@@ -21,6 +21,7 @@
 //   no btree_gist extension is needed.
 // - Before that, the slot is recomputed with slots.ts from fresh rows, so
 //   hours, minimum notice and horizon hold for a hand-made POST too.
+import { savePerson } from "../customers/customer";
 import { q, type Db, type Query } from "../data/db";
 import { normalizeEmail } from "../data/email";
 import { newToken, tokenHash, TOKEN_SHAPE } from "../data/token";
@@ -399,6 +400,11 @@ export async function takeSlot(db: Db, type: BookingType, slot: OpenSlot, input:
   const results = await db.transaction([...forSubmission, ...locks(slot.members), insert]);
   const row = results[results.length - 1][0];
   if (!row) return { ok: false, reason: "taken" };
+  // The booker is a customer from now on (customers savePerson); a visit at their place gave their address.
+  await savePerson(db, {
+    name: input.name, email: input.email, phone: input.phone ?? null, source: `Booking: ${type.name}`, at: new Date(row.created_at),
+    answers: type.location_kind === "their_place" && where ? { address: where } : null,
+  }, null);
   return { ok: true, booking: toBooking(row), token };
 }
 

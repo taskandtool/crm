@@ -20,12 +20,13 @@ runs anywhere with Node 20 and a Postgres.
 ## What is in the box
 
 - **Inbox**: form submissions (not spam), bookings and paid
-  payments from the project's other apps, with Add as customer, Add as
-  deal (a returning customer's new enquiry too) and Mark done. It opens
-  on To do, which empties as you work: a request leaves once it is done
-  or made a customer, a booking or payment once its person is a customer;
-  Everything keeps the lot, and the nav counts what is to do. A source
-  the project does not have yet is simply left out.
+  payments from the project's other apps. Everyone who gets in touch is
+  saved as a customer on their own, matched by email, else by phone, never
+  by name. Each row has New deal (a returning customer's new enquiry too)
+  and Done. It opens on To do, which empties as you work: a form request
+  or an online booking leaves once it is done or made a deal; a payment
+  needs nothing, so it is in Everything only. The nav counts what is to
+  do. A source the project does not have yet is simply left out.
 - **Tasks**: a call, email, meeting, text or to-do due on a day, by
   one person. Today (overdue first) and Upcoming, mine or everyone's, and
   New task; the next one at the top of a customer's page and on every

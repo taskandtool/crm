@@ -70,3 +70,15 @@ comment on column customers.last_contact_at is 'The latest call, email, meeting 
 comment on table customer_notes is 'A customer''s timeline: notes, calls, emails, meetings and texts, with who wrote them and when they happened.';
 comment on column customers.other_emails is 'Other addresses this customer goes by, from a merge: matched everywhere their email is.';
 comment on column customers.merged_into is 'The customer this record was merged into; set on the archived duplicate.';
+
+-- The custom fields the CRM declares (crm.config.json's fields), kept here by
+-- the CRM at every start and deploy, so any app that saves a person
+-- (customer.ts savePerson) fills them from form answers of the same key.
+create table if not exists customer_fields (
+  key        text primary key,
+  label      text not null,
+  type       text not null,
+  options    text[] not null default '{}',
+  position   int not null default 0
+);
+comment on table customer_fields is 'The custom fields customers.fields holds, as the CRM declares them: savePerson fills them from form answers of the same key.';

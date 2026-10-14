@@ -25,7 +25,7 @@ import { missingSentence, type Present } from "../crm/tables";
 import { formatMoney } from "../payments/money";
 import { firstText } from "./inbox";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, shownField, stageOptions, telHref, timeZone } from "./ui";
+import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, quietClass, ReadThenEdit, RecordLine, SaveOnChange, shownField, stageOptions, telHref, timeZone } from "./ui";
 import { CustomerEvents, type Choices } from "./events";
 import { CustomerMoney, type Owed } from "./money";
 import type { Quote } from "../invoices/quotes";
@@ -80,7 +80,7 @@ export function CustomerPage(p: {
     >
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       {c.archived_at ? (
-        <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">
+        <p role="status" class="mb-4 rounded-card border border-line bg-panel px-4 py-2">
           Archived <When at={c.archived_at} timeZone={timeZone} />. Still here, left out of the lists.
         </p>
       ) : null}
@@ -126,10 +126,10 @@ export function CustomerPage(p: {
         </div>
       </div>
       <RecordLine added={c.created_at} addedBy={c.created_by} changed={c.updated_at} changedBy={c.updated_by}>
-        <a href={`${self}/merge`} class="text-ink-2">Merge with another record</a>
+        <a href={`${self}/merge`} class={quietClass}>Merge with another record</a>
         <form method="post" action={`${self}/archive`}>
           <input type="hidden" name="archived" value={c.archived_at ? "0" : "1"} />
-          <button class="text-ink-2 underline" title={c.archived_at ? "Brings them back into the lists." : "Takes them out of the lists. Nothing is deleted."}>
+          <button class={quietClass} title={c.archived_at ? "Brings them back into the lists." : "Takes them out of the lists. Nothing is deleted."}>
             {c.archived_at ? "Unarchive" : "Archive"}
           </button>
         </form>

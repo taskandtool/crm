@@ -5,7 +5,7 @@
 // skipped. Read only: the CRM never changes another app's rows here.
 import type { Db } from "../data/db";
 import type { Customer } from "./customers";
-import { phoneKey } from "./phone";
+import { phoneKey } from "../customers/customer";
 import { phoneKeyOf, spliced } from "./sql";
 
 const { sql } = spliced({ phone_key: phoneKeyOf("s.phone") });

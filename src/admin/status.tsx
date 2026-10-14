@@ -32,7 +32,7 @@ export function StatusBadge({ value, options }: { value: string; options: Status
 }
 
 // The controls follow Tailwind's own form components (Tailwind Plus): a 1px
-// outline that turns into a 2px accent one on focus, 16px text on a phone
+// outline (line-strong, the 3:1 a field's edge needs) that turns into a 2px accent one on focus, 16px text on a phone
 // (so iOS does not zoom) and 14px from sm up, and buttons at 14px semibold.
 // An input (py-1.5, 24px line) and a button (py-2, 20px line) come out the
 // same 36px, so a row of them lines up without fixing a height.
@@ -42,10 +42,17 @@ export const controlClass =
   "rounded-control bg-surface px-3 py-1.5 text-base text-ink outline-1 -outline-offset-1 outline-line-strong placeholder:text-ink-3 focus:outline-2 focus:-outline-offset-2 focus:outline-accent aria-invalid:outline-2 aria-invalid:-outline-offset-2 aria-invalid:outline-ink sm:text-sm/6";
 /** A text input or a textarea that fills where it sits. A select is <Select>. */
 export const inputClass = `block w-full ${controlClass}`;
-/** Any button, or a link that does an action. */
-export const buttonClass = `inline-flex shrink-0 items-center justify-center gap-x-1.5 rounded-control bg-surface px-3 py-2 text-sm font-semibold text-ink no-underline inset-ring inset-ring-line-strong hover:bg-panel/60 ${focusRing}`;
+/**
+ * A secondary button, or a link that does an action: a faint ring and a
+ * hairline shadow, as Catalyst's and Polaris's secondary buttons. Its words
+ * identify it, so its edge stays quiet; an input's (controlClass) is the
+ * 3:1 line-strong, because an empty field has nothing else to show it is there.
+ */
+export const buttonClass = `inline-flex shrink-0 items-center justify-center gap-x-1.5 rounded-control bg-surface px-3 py-2 text-sm font-semibold text-ink no-underline shadow-card inset-ring inset-ring-line hover:bg-panel ${focusRing}`;
 /** The page's one main action. */
 export const primaryClass = `inline-flex shrink-0 items-center justify-center gap-x-1.5 rounded-control bg-accent px-3 py-2 text-sm font-semibold text-accent-ink no-underline hover:bg-accent-hover ${focusRing}`;
+/** A quiet action that repeats on every row or sits at a page's foot (Edit, Archive, Load more): no edge until pointed at. */
+export const quietClass = `inline-flex shrink-0 items-center justify-center gap-x-1.5 rounded-control px-2.5 py-2 text-sm font-semibold text-ink-2 no-underline hover:bg-panel hover:text-ink ${focusRing}`;
 /** A label around its control: the words above, the control below. */
 export const fieldClass = "flex flex-col gap-2 text-sm/6 font-medium text-ink";
 

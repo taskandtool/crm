@@ -1,7 +1,9 @@
 // The Inbox: form submissions (not spam), bookings and payments, newest
-// first across all three, or only what still needs someone (`todo`), each matched to a customer (by email, then by
-// phone where one side has no email: customers.ts findMatch says why) or
-// offered as a new one. Tables the project does not have are skipped
+// first across all three, or only what still needs someone (`todo`: a form
+// request or an online booking nobody has marked done or made a deal of),
+// each matched to its customer (by email, then by phone where one side has
+// no email: customers.ts findMatch says why; the forms and booking skills save
+// each person as they arrive). Tables the project does not have are skipped
 // (tables.ts), and crm.config.json's `inbox` says which forms count.
 //
 // Paging is keyset over the union: every source is read in the same total
@@ -16,7 +18,8 @@ import type { CustomField, InboxConfig } from "../config-schema";
 import { createCustomer, fillBlanks, validK, type Customer } from "./customers";
 import { readFields } from "./fields";
 import { cleanPhone } from "./phone";
-import { BOOKING_PAGE } from "../forms/store";
+import { savePerson } from "../customers/customer";
+import { BOOKING_PAGE, saveSubmitter } from "../forms/store";
 import { clean } from "./text";
 import { present as presentTables, type Present } from "./tables";
 import { byEmail, isCustomer, spliced } from "./sql";
@@ -148,15 +151,16 @@ export async function inboxPage(
           and b.hold_until is null -- nor one held for a form still being paid
           and (${since}::timestamptz is null or b.created_at >= ${since}::timestamptz)
           and (not ${unmatched}::boolean or m.id is null)
-          and (not ${todo}::boolean or (m.id is null and b.status <> 'cancelled'
+          and (not ${todo}::boolean or (b.status <> 'cancelled'
                and not exists (select 1 from inbox_done d where d.kind = 'booking' and d.ref_id = b.id)))
           and (${ak}::timestamptz is null or (b.created_at, 1, b.id) < (${ak}::timestamptz, ${ar}::int, ${aid}::bigint))
         order by b.created_at desc, b.id desc
         limit ${n}`,
     );
   }
-  if (p.payments && ib.payments !== false && !form) {
-    // Money that actually moved: a checkout nobody finished is not news.
+  if (p.payments && ib.payments !== false && !form && !todo) {
+    // Money that actually moved: a checkout nobody finished is not news. Nor is it
+    // something to do (the receipt went from Stripe), so it is in Everything only.
     jobs.push(
       sql(db)<PaymentRow>`
         select 'payment' as kind, p.id::text as id, p.created_at, p.name, p.email::text as email, null::text as phone, p.status,
@@ -173,7 +177,6 @@ export async function inboxPage(
         where p.status in ('paid', 'refunded', 'partially_refunded')
           and (${since}::timestamptz is null or p.created_at >= ${since}::timestamptz)
           and (not ${unmatched}::boolean or m.id is null)
-          and (not ${todo}::boolean or (m.id is null and not exists (select 1 from inbox_done d where d.kind = 'payment' and d.ref_id = p.id)))
           and (${ak}::timestamptz is null or (p.created_at, 2, p.id) < (${ak}::timestamptz, ${ar}::int, ${aid}::bigint))
         order by p.created_at desc, p.id desc
         limit ${n}`,
@@ -293,6 +296,46 @@ export function gave(defs: CustomField[], data: Record<string, unknown> | null):
   const input: Record<string, unknown> = {};
   for (const f of defs) if (own(f.key) !== undefined) input[f.key] = own(f.key);
   return { address: clean(own("address"), 500), company: clean(own("company"), 200), fields: readFields(defs, input).set };
+}
+
+/**
+ * Everyone already in the project's tables who is not a customer yet, saved
+ * through the customers skill's savePerson, the way the forms and booking
+ * skills save each person as they arrive: what came in before they did, or
+ * through an app on an older copy of them. Every submission (not spam),
+ * booking and payment is looked at, none left for later. Run by setup at
+ * start and deploy, never per request. Returns how many it saved.
+ */
+export async function saveEveryone(db: Db): Promise<number> {
+  const p = await presentTables(db);
+  const count = async () => (await db.sql<{ n: number }>`select count(*)::int as n from customers`)[0].n;
+  const before = await count();
+  if (p.submissions) {
+    const subs = await sql(db)<{ id: string }>`
+      select s.id::text as id from submissions s
+      where s.status <> 'spam' and s.form_key <> ${BOOKING_PAGE.key} and (s.email is not null or s.phone is not null)
+        and not exists (select 1 from customers c where {sub_is})
+      order by s.created_at, s.id`;
+    for (const s of subs) await saveSubmitter(db, s.id);
+  }
+  const bookings = await sql(db)<{ name: string | null; email: string | null; phone: string | null; created_at: Date; type_name: string | null; address: string | null }>`
+    select b.name, b.email::text as email, b.phone, b.created_at, t.name as type_name,
+           case when b.location_kind = 'their_place' then b.location end as address
+    from bookings b left join booking_types t on t.id = b.type_id
+    where (b.email is not null or b.phone is not null) and not exists (select 1 from customers c where {booking_is})
+    order by b.created_at, b.id`;
+  for (const b of bookings) {
+    await savePerson(db, { name: b.name, email: b.email, phone: b.phone, source: b.type_name ? `Booking: ${b.type_name}` : "Booking", at: b.created_at, answers: b.address ? { address: b.address } : null }, null);
+  }
+  if (p.payments) {
+    const paid = await sql(db)<{ name: string | null; email: string; created_at: Date }>`
+      select p.name, p.email::text as email, p.created_at from payments p
+      where p.status in ('paid', 'refunded', 'partially_refunded') and p.email is not null
+        and not exists (select 1 from customers c where {pay_email})
+      order by p.created_at, p.id`;
+    for (const r of paid) await savePerson(db, { name: r.name, email: r.email, phone: null, source: "Payment", at: r.created_at }, null);
+  }
+  return (await count()) - before;
 }
 
 /** Mark a submission done. The CRM writes no other column of another app's table. */

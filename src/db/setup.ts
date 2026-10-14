@@ -12,11 +12,13 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { q, type Db } from "../data/db";
 import { applySchema } from "../data/migrate";
-import type { StageConfig } from "../config-schema";
+import type { CustomField, StageConfig } from "../config-schema";
+import { publishFields } from "../crm/fields";
+import { saveEveryone } from "../crm/inbox";
 import { seedStages } from "../crm/stages";
 
-/** What the first run seeds: crm.config.json's statuses and deals.stages. */
-export type Seeds = { statuses: StageConfig[]; dealStages: StageConfig[] };
+/** What the first run seeds (crm.config.json's statuses and deals.stages), and its custom fields, published on every run. */
+export type Seeds = { statuses: StageConfig[]; dealStages: StageConfig[]; fields?: CustomField[] };
 
 export const SCHEMA_FILE = fileURLToPath(new URL("../../schema.sql", import.meta.url));
 export const CUSTOMERS_SCHEMA_FILE = fileURLToPath(new URL("../customers/schema.sql", import.meta.url));
@@ -47,7 +49,11 @@ export async function setup(db: Db, seeds: Seeds, opts: SetupOpts = { invoices: 
     await applySchema(db, readFileSync(PAYMENTS_SCHEMA_FILE, "utf8"));
     await applySchema(db, readFileSync(INVOICES_SCHEMA_FILE, "utf8"));
   }
-  return { seeded: (await seedStages(db, "customers", seeds.statuses)) + (await seedStages(db, "deals", seeds.dealStages)) };
+  const seeded = (await seedStages(db, "customers", seeds.statuses)) + (await seedStages(db, "deals", seeds.dealStages));
+  // Then the people: the custom fields every app's savePerson fills, and anyone not yet saved (inbox.ts saveEveryone).
+  await publishFields(db, seeds.fields ?? []);
+  await saveEveryone(db);
+  return { seeded };
 }
 
 type SetupOpts = { invoices?: boolean; forms?: boolean };

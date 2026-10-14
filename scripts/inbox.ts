@@ -1,9 +1,9 @@
 // The Inbox, from chat: submissions, bookings and payments across the
-// project, who they matched, and the two actions the page has.
+// project, whose they are, and Done. Everyone in it is a customer already
+// (the forms and booking skills save each person as they arrive); a deal is deals.mjs add.
 // `node scripts/inbox.mjs --help`.
 import { cfg } from "../src/config";
-import { addFromInbox, inboxPage, markDone, markHandled, sinceDays, sourceOf, submissionStatus, type InboxKind, type InboxRow } from "../src/crm/inbox";
-import { firstOpenStage } from "../src/crm/stages";
+import { inboxPage, markDone, markHandled, sinceDays, sourceOf, submissionStatus, type InboxRow } from "../src/crm/inbox";
 import { missingSentence } from "../src/crm/tables";
 import { dayBounds } from "../src/booking/slots";
 import { wallTime } from "../src/customers/notes";
@@ -11,27 +11,26 @@ import { formatMoney } from "../src/payments/money";
 import { done, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, usage, who, withDb } from "./lib";
 
 const HELP = `inbox.mjs [list] [--since 7d|YYYY-MM-DD (in the business's zone)] [--unmatched] [--limit 50] [--json]
-inbox.mjs add <submission|booking|payment> <id>     make a customer from it (or find the one it matches)
 inbox.mjs done [booking|payment] <id>              mark a form submission (or a booking or payment) done: off To do
 
 Newest first across form submissions (not spam), bookings and payments
-(paid or refunded), as crm.config.json's "inbox" says. Each row shows the
-customer it matched by email (then phone), or "not a customer yet".
---unmatched lists only people who are not customers yet. Times print in
+(paid or refunded), as crm.config.json's "inbox" says. Everyone who gets in
+touch is saved as a customer as they do, matched by email, else by phone,
+never by name; each row shows theirs. --unmatched lists the rows
+with neither an email nor a phone to know them by. Times print in
 ${cfg.time_zone}. --as records who acted (default CRM_USER, else AI).
 
 Prints what happened first, then Next:. A re-run says "already" and changes
 nothing. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`;
 
-const FLAGS: Record<string, string[]> = { list: ["since", "unmatched", "limit"], add: ["as"], done: ["as"] };
+const FLAGS: Record<string, string[]> = { list: ["since", "unmatched", "limit"], done: ["as"] };
 const KINDS = ["submission", "booking", "payment"];
 
 const a = parseArgs(process.argv.slice(2), { bare: ["unmatched"] });
 const [cmd = "list", ...rest] = a._;
 usage(a, cmd, Object.keys(FLAGS), HELP, "inbox", FLAGS);
 const at = `inbox ${cmd}`;
-noMore(rest, { list: 0, add: 2, done: 2 }[cmd] ?? 0, at);
-if (cmd === "add" && (!KINDS.includes(rest[0]) || !rest[1])) misused(`${at}: name what came in: ${KINDS.join(", ")}, then its id`, "node scripts/inbox.mjs add submission 12");
+noMore(rest, { list: 0, done: 2 }[cmd] ?? 0, at);
 const doneKind = cmd === "done" && rest.length === 2 ? rest[0] : "submission";
 const doneId = cmd === "done" ? rest[rest.length - 1] ?? "" : "";
 if (cmd === "done" && (!KINDS.includes(doneKind) || !/^\d{1,18}$/.test(doneId))) misused(`${at}: name a submission by its id (submission 12 is 12), or a booking or payment as "booking 12"`, "node scripts/inbox.mjs");
@@ -50,7 +49,7 @@ function line(r: InboxRow): string {
   const person = [r.name, r.email, r.phone].filter(Boolean).join(" ");
   const what =
     r.kind === "booking" ? `booked for ${local(r.starts_at)}${r.resource_name ? " with " + r.resource_name : ""}` : r.kind === "payment" ? formatMoney(r.amount_cents, r.currency) : "";
-  const match = r.customer_id ? `-> #${r.customer_id} ${r.customer_name}${r.customer_archived_at ? " (archived)" : ""}` : "-> not a customer yet";
+  const match = r.customer_id ? `-> #${r.customer_id} ${r.customer_name}${r.customer_archived_at ? " (archived)" : ""}` : "-> no email or phone to know them by";
   return [`${r.kind} ${r.id}`, local(r.created_at), sourceOf(r), `(${r.status})`, person, what, match].filter(Boolean).join("  ");
 }
 
@@ -63,20 +62,8 @@ await withDb(async (db) => {
       const missing = missingSentence(present, { payments: cfg.inbox.payments !== false });
       if (json) return out(true, { rows, more: !!next, missing }, String);
       const extra = [missing ?? "", next ? `the first ${limit}; --limit ${Math.min(limit * 4, 500)} or a narrower --since for more` : ""].filter(Boolean);
-      if (!rows.length) return done(at, `nothing came in${has(a, "unmatched") ? " from anyone who is not a customer yet" : ""}`, { lines: extra });
-      return done(at, `${rows.length} came in, newest first`, {
-        lines: [...rows.map(line), ...extra],
-        next: rows.some((r) => !r.customer_id) ? "node scripts/inbox.mjs add <kind> <id>" : undefined,
-      });
-    }
-    case "add": {
-      const [kind, id] = rest;
-      const stage = (await firstOpenStage(db, "customers")) ?? fail(`${at}: there is no open status for a new customer to land in`, 'node scripts/stages.mjs add "Lead" --statuses');
-      const r = (await addFromInbox(db, kind as InboxKind, id, stage.key, user, cfg.fields)) ?? fail(`${at}: no ${kind} ${id} (or it is spam)`, "node scripts/inbox.mjs --unmatched");
-      if (json) return out(true, r, String);
-      return done(at, r.created ? `added #${r.customer.id} ${r.customer.name}` : `#${r.customer.id} ${r.customer.name} is already a customer; left alone`, {
-        next: `node scripts/customers.mjs show ${r.customer.id}`,
-      });
+      if (!rows.length) return done(at, `nothing came in${has(a, "unmatched") ? " without an email or a phone" : ""}`, { lines: extra });
+      return done(at, `${rows.length} came in, newest first`, { lines: [...rows.map(line), ...extra] });
     }
     case "done": {
       const id = doneId;

@@ -1,9 +1,9 @@
 // The Inbox: four figures (new leads this week, tasks due, open deals,
 // won this month), then To do (or Everything): one row per submission,
 // booking or payment, newest first; a click on it opens it, the person's
-// name opens them once they are a customer, "Add as customer" while they are not, and
-// "Add as deal" (a repeat customer's new enquiry too). Rows are a list
-// rather than a table so they wrap on a phone.
+// name opens their customer record, New deal makes a deal of it (a repeat
+// customer's new enquiry too) and Done clears it. Rows are a list rather
+// than a table so they wrap on a phone.
 import { Flash } from "../admin/flash";
 import { EmptyCard, rowClick, When } from "../admin/list";
 import { listUrl } from "../admin/query";
@@ -17,7 +17,7 @@ import { STATUSES as SUBMISSION_STATUSES } from "../forms/admin";
 import { STATUSES as PAYMENT_STATUSES } from "../payments/admin";
 import { formatMoney } from "../payments/money";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, MESSAGES, timeZone, ViewLink } from "./ui";
+import { Avatar, buttonClass, controlClass, MESSAGES, quietClass, timeZone, ViewLink, viewsClass } from "./ui";
 
 // Each kind's own labels, as its page shows them; in the Inbox only New stands out.
 const quiet = (list: StatusOption[]): StatusOption[] => list.map((o) => (o.value !== "new" && o.tone === "accent" ? { ...o, tone: "strong" } : o));
@@ -40,34 +40,49 @@ export type InboxProps = {
   flash: { code?: string | null; n?: string | null };
 };
 
-/** The four figures, each a link to the list behind it. */
+/**
+ * The four figures, each a link to the list behind it, as Catalyst's and
+ * Stripe's dashboards have them: no boxes, a rule above, the label, the
+ * figure large, then one line of context with a chip where it moved.
+ */
 function Numbers({ n }: { n: Overview }) {
   const due = n.due.overdue + n.due.today;
-  const figure = (href: string, value: string, label: string, sub: string | null) => (
-    <a href={href} class="flex min-w-0 flex-col rounded-card border border-line bg-surface shadow-card px-4 py-3 no-underline hover:border-line-strong">
-      <span class="text-title font-semibold text-ink">{value}</span>
-      <span class="text-label text-ink-2">{label}</span>
-      {sub ? <span class="text-label text-ink-3">{sub}</span> : null}
+  const figure = (href: string, label: string, value: string, sub: string | null, chip?: { text: string; tone: "good" | "late" | "neutral" }) => (
+    <a href={href} class="group flex min-w-0 flex-col border-t border-line pt-4 no-underline">
+      <span class="font-medium text-ink-2 group-hover:text-ink">{label}</span>
+      <span class="mt-2 text-display font-semibold tabular-nums text-ink">{value}</span>
+      <span class="mt-2 flex flex-wrap items-center gap-2 text-label text-ink-3">
+        {chip ? <span class={"rounded-control px-1.5 py-0.5 font-medium tabular-nums " + CHIP[chip.tone]}>{chip.text}</span> : null}
+        {sub}
+      </span>
     </a>
   );
   const whole = (cents: string) => formatWholeMoney(cents, dealsCfg.currency);
+  const count = (k: number) => (k === 1 ? `1 ${dealsCfg.one.toLowerCase()}` : `${k} ${dealsCfg.many.toLowerCase()}`);
+  const moved = n.leads ? n.leads.current - n.leads.previous : 0;
   return (
-    <div class="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-      {figure("#results", n.leads ? String(n.leads.current) : "None yet", "New leads, 7 days", n.leads ? `${n.leads.previous} the week before` : "No forms on the project yet")}
-      {figure("/tasks", String(due), "Your tasks due", n.due.overdue ? `${n.due.overdue} overdue` : due ? "All today" : "Nothing overdue")}
-      {figure("/deals", whole(n.open.cents), `Open ${dealsCfg.many.toLowerCase()}`, n.open.count === 1 ? `1 ${dealsCfg.one.toLowerCase()}` : `${n.open.count} ${dealsCfg.many.toLowerCase()}`)}
-      {figure("/deals", whole(n.won.cents), "Won this month", n.won.count === 1 ? `1 ${dealsCfg.one.toLowerCase()}` : `${n.won.count} ${dealsCfg.many.toLowerCase()}`)}
+    <div class="mb-12 grid grid-cols-2 gap-x-8 gap-y-6 lg:grid-cols-4">
+      {n.leads
+        ? figure("#results", "New leads, 7 days", String(n.leads.current), `${n.leads.previous} the week before`,
+            moved ? { text: (moved > 0 ? "+" : "") + moved, tone: moved > 0 ? "good" : "neutral" } : undefined)
+        : figure("#results", "New leads, 7 days", "None yet", "No forms on the project yet")}
+      {figure("/tasks", "Your tasks due", String(due), n.due.overdue ? null : due ? "All today" : "Nothing overdue",
+        n.due.overdue ? { text: `${n.due.overdue} overdue`, tone: "late" } : undefined)}
+      {figure("/deals", `Open ${dealsCfg.many.toLowerCase()}`, whole(n.open.cents), count(n.open.count))}
+      {figure("/deals", "Won this month", whole(n.won.cents), count(n.won.count))}
     </div>
   );
 }
+
+const CHIP = { good: "bg-good/10 text-good", late: "bg-late/10 text-late", neutral: "bg-panel text-ink-2" };
 
 export function InboxPage(p: InboxProps) {
   return (
     <Layout title="Inbox" user={p.user} section="inbox">
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <Numbers n={p.numbers} />
-      <div class="mb-4 flex flex-wrap items-center justify-between gap-3 text-label">
-        <nav aria-label="Which" class="flex gap-1">
+      <div class="mb-2 flex flex-wrap items-center justify-between gap-3">
+        <nav aria-label="Which" class={viewsClass}>
           {[["To do", false], ["Everything", true]].map(([label, all]) => (
             <ViewLink href={listUrl("/", { view: all ? "all" : null, form: p.form })} on={p.all === all}>{label}</ViewLink>
           ))}
@@ -103,13 +118,13 @@ export function InboxResults(p: Pick<InboxProps, "rows" | "next" | "more" | "sel
         </p>
       ) : null}
       {p.rows.length ? (
-        <ol id="inbox" class="flex flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
+        <ol id="inbox" class="flex flex-col border-t border-line">
           <InboxRows rows={p.rows} next={p.next} more={p.more} self={p.self} />
         </ol>
       ) : (
         !p.all ? (
           <EmptyCard title="All caught up." action={<a href={listUrl("/", { view: "all", form: p.form })} class={buttonClass}>See everything that came in</a>}>
-            New form requests, and bookings and payments from people who are not {vocab.many.toLowerCase()} yet, land here.
+            New form requests and online bookings land here until someone marks them done or makes a {dealsCfg.one.toLowerCase()} of them.
           </EmptyCard>
         ) : (
           <EmptyCard title="No leads yet." action={<a href="/customers/new" class={buttonClass}>Add {vocab.one.toLowerCase()}</a>}>
@@ -129,7 +144,7 @@ export function InboxRows({ rows, next, more, self }: { rows: InboxRow[]; next: 
         <Row row={r} self={self} />
       ))}
       {next ? (
-        <li class="px-4 py-3 text-center">
+        <li class="py-4 text-center">
           <a href={more(next)} hx-get={more(next)} hx-target="closest li" hx-swap="outerHTML" hx-push-url="false" class={buttonClass}>
             Load more
           </a>
@@ -146,60 +161,59 @@ function itemHref(row: InboxRow): string | null {
   return invoicesCfg ? `/invoices/payments/${row.id}` : null;
 }
 
-// As HubSpot's and Pipedrive's inboxes (and Gmail): a click on a row opens
-// what came in; the person's name opens the customer, the buttons act.
+// As Pipedrive's Leads Inbox and Jobber's requests: a click on a row opens
+// what came in and the person's name opens their customer record (everyone
+// who gets in touch is one, saved as they do). Two actions, both in
+// view: New deal, and Done for what still needs someone, so the To do list
+// can be cleared without opening anything.
 function Row({ row, self }: { row: InboxRow; self: string }) {
   const person = row.name || row.email || row.phone || "Someone";
   const href = itemHref(row);
+  const hidden = (
+    <>
+      <input type="hidden" name="kind" value={row.kind} />
+      <input type="hidden" name="id" value={row.id} />
+    </>
+  );
+  // What still needs someone: a form request by its status, an online booking nobody has marked done.
+  const open = row.kind === "submission" ? row.status === "new" || row.status === "read" : row.kind === "booking" && !row.handled && row.status !== "cancelled";
+  const deal = dealsCfg.one.toLowerCase();
   return (
     <li id={`${row.kind}-${row.id}`} {...(href ? rowClick(href) : {})}
-      class={"flex flex-col gap-2 border-b border-line px-4 py-3 last:border-b-0 sm:flex-row sm:items-start sm:gap-4" + (href ? " cursor-pointer hover:bg-canvas" : "")}>
-      <div class="min-w-0 flex-1">
-        <p class="flex flex-wrap items-center gap-x-2 text-label text-ink-3">
-          {href ? <a href={href} class="font-semibold text-ink-2 no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">{sourceOf(row)}</a> : <span class="font-semibold text-ink-2">{sourceOf(row)}</span>}
-          <When at={row.created_at} timeZone={timeZone} />
-          <Status row={row} />
-        </p>
-        <p class="mt-1 break-words">
-          {/* A customer already: their name (as the record has it) opens them. */}
-          {row.customer_id ? (
-            <a href={`/customers/${row.customer_id}`} class="font-semibold no-underline hover:underline">
-              {row.customer_name ?? person}{row.customer_archived_at ? " (archived)" : ""}
-            </a>
-          ) : (
-            <span class="font-semibold">{person}</span>
-          )}
-          {row.email && row.email !== person ? <span class="text-ink-2"> · {row.email}</span> : null}
-          {row.phone && row.phone !== person ? <span class="text-ink-2"> · <span class="whitespace-nowrap">{row.phone}</span></span> : null}
-        </p>
-        <What row={row} />
+      class={"flex flex-col gap-3 border-b border-line py-4 sm:flex-row sm:items-start sm:gap-4" + (href ? " cursor-pointer hover:bg-canvas/60" : "")}>
+      <div class="flex min-w-0 flex-1 gap-3">
+        <Avatar name={row.customer_name ?? person} />
+        <div class="min-w-0 flex-1">
+          <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {row.customer_id ? (
+              <a href={`/customers/${row.customer_id}`} class="font-medium text-ink no-underline hover:underline">
+                {row.customer_name ?? person}{row.customer_archived_at ? " (archived)" : ""}
+              </a>
+            ) : (
+              <span class="font-medium text-ink">{person}</span>
+            )}
+            <Status row={row} />
+          </p>
+          <p class="mt-0.5 flex flex-wrap gap-x-1.5 text-label text-ink-3">
+            {href ? <a href={href} class="font-medium text-ink-2 no-underline hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">{sourceOf(row)}</a> : <span class="font-medium text-ink-2">{sourceOf(row)}</span>}
+            <span aria-hidden="true">·</span>
+            <When at={row.created_at} timeZone={timeZone} />
+            {row.email && row.email !== person ? <><span aria-hidden="true">·</span><span class="break-all">{row.email}</span></> : null}
+            {row.phone && row.phone !== person ? <><span aria-hidden="true">·</span><span class="whitespace-nowrap">{row.phone}</span></> : null}
+          </p>
+          <What row={row} />
+        </div>
       </div>
-      <div class="flex flex-wrap items-center gap-2">
-        {row.customer_id ? null : (
-          <form method="post" action="/inbox/add">
-            <input type="hidden" name="kind" value={row.kind} />
-            <input type="hidden" name="id" value={row.id} />
-            <button class={buttonClass} aria-label={`Add ${person} as a ${vocab.one.toLowerCase()}`}>
-              Add as {vocab.one.toLowerCase()}
-            </button>
-          </form>
-        )}
+      <div class="flex items-center gap-2 pl-11 sm:pl-0">
         <form method="post" action="/inbox/deal">
-          <input type="hidden" name="kind" value={row.kind} />
-          <input type="hidden" name="id" value={row.id} />
-          <button class={buttonClass} aria-label={`Add a ${dealsCfg.one.toLowerCase()} for ${person}`}>
-            Add as {dealsCfg.one.toLowerCase()}
-          </button>
+          {hidden}
+          <button class={buttonClass} aria-label={`New ${deal} for ${person}`}>New {deal}</button>
         </form>
-        {/* What still needs someone can be marked done: a form by its status, a booking or payment nobody made a customer of. */}
-        {(row.kind === "submission" ? row.status === "new" || row.status === "read" : !row.customer_id && !row.handled && row.status !== "cancelled") ? (
+        {open ? (
           <form method="post" action="/inbox/done">
-            <input type="hidden" name="kind" value={row.kind} />
-            <input type="hidden" name="id" value={row.id} />
+            {hidden}
             <input type="hidden" name="return" value={self} />
-            <button class={buttonClass} aria-label={`Mark ${person}'s ${sourceOf(row)} done`}>
-              Mark done
-            </button>
+            <button class={quietClass} aria-label={`Mark ${person}'s ${sourceOf(row)} done`}>Done</button>
           </form>
         ) : null}
       </div>
@@ -216,18 +230,18 @@ function Status({ row }: { row: InboxRow }) {
 function What({ row }: { row: InboxRow }) {
   if (row.kind === "submission") {
     const text = firstText(row.data);
-    return text ? <p class="mt-1 line-clamp-2 break-words text-ink-2">{text}</p> : null;
+    return text ? <p class="mt-1.5 line-clamp-2 break-words text-ink-2">{text}</p> : null;
   }
   if (row.kind === "booking") {
     return (
-      <p class="mt-1 text-ink-2">
+      <p class="mt-1.5 text-ink-2">
         {row.type_name ?? "Booked"}, <When at={row.starts_at} timeZone={timeZone} />
         {row.resource_name ? ` with ${row.resource_name}` : ""}
       </p>
     );
   }
   return (
-    <p class="mt-1 text-ink-2">
+    <p class="mt-1.5 text-ink-2">
       {formatMoney(row.amount_cents, row.currency)}
       {row.pay_kind !== "full" ? ` ${row.pay_kind}` : ""}
       {row.description ? `, ${row.description}` : ""}

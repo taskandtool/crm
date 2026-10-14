@@ -26,7 +26,7 @@ import { sectionPages, SectionTabs, type Frame, type Head, type NavItem } from "
 import { DataTable, EmptyCard, rowClick, rowLink, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { formIds, idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
 import { buttonClass, controlClass, FieldError, fieldClass, pickStatus, primaryClass, Select, smallText, StatusBadge, type StatusOption } from "../admin/status";
-import { customerByEmail, customerFor } from "../customers/customer";
+import { customerByEmail, savePerson } from "../customers/customer";
 import { NoteForm } from "../customers/note-form";
 import { addNote, listNotes, NOTE_LABELS, pickNoteKind, wallTime, type Note } from "../customers/notes";
 import { checkFields, FIELD_TYPES, FORM_KEY, formKeyFrom, PHOTO_PATH, sitePath, type Errors, type Field, type Form } from "./fields";
@@ -36,7 +36,7 @@ import { priceOf } from "./price";
 import { formatMoney } from "../payments/money";
 import { PAYMENT_MESSAGES, refundable, type Payment } from "../payments/admin";
 import { BOOKING_MESSAGES, BOOKING_STATUSES } from "../booking/admin";
-import { BOOKING_PAGE, CONTACT_FORM, formTitle, toForm } from "./store";
+import { BOOKING_PAGE, CONTACT_FORM, formTitle, saveSubmitter, toForm } from "./store";
 
 export type FormsAdminOptions = {
   base: string;
@@ -289,11 +289,15 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     const status = pickStatus(body.status, STATUSES);
     const ids = formIds(body.id);
     if (!ids.length || !status) return c.redirect(withFlash(ret, "none-selected"), 303);
-    const changed = await getDb(c).sql`
-      update submissions
+    const db = getDb(c);
+    const changed = await db.sql<{ id: string; was: string }>`
+      with was as (select id, status from submissions where id = any(${ids}::bigint[]) for update)
+      update submissions s
       set status = ${status}, updated_at = now(), updated_by = ${c.get("user")}
-      where id = any(${ids}::bigint[]) and status <> ${status}
-      returning id`;
+      from was where s.id = was.id and s.status <> ${status}
+      returning s.id::text as id, was.status as was`;
+    // Moved out of spam: their people are saved now, as on the one-at-a-time Not spam.
+    if (status !== "spam") for (const r of changed) if (r.was === "spam") await saveSubmitter(db, r.id, c.get("user"));
     return c.redirect(withFlash(ret, "bulk", changed.length), 303);
   });
 
@@ -451,12 +455,13 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     const text = str(body.body);
     if (!text.trim()) return c.redirect(withFlash(subUrl(id), "note-empty"), 303);
     const db = getDb(c);
-    const [sub] = await db.sql<{ email: string; name: string | null; phone: string | null; created_at: Date; source: string }>`
-      select s.email::text as email, s.name, s.phone, s.created_at, coalesce(f.title, case when s.form_key = ${BOOKING_PAGE.key} then ${BOOKING_PAGE.title} end, s.form_key) as source
+    const [sub] = await db.sql<{ email: string; name: string | null; phone: string | null; created_at: Date; source: string; data: Record<string, unknown> | null }>`
+      select s.email::text as email, s.name, s.phone, s.created_at, s.data, coalesce(f.title, case when s.form_key = ${BOOKING_PAGE.key} then ${BOOKING_PAGE.title} end, s.form_key) as source
       from submissions s left join forms f on f.key = s.form_key
       where s.id = ${id}::bigint and s.email is not null`;
     if (!sub) return c.notFound();
-    const customer = await customerFor(db, sub, c.get("user"));
+    const customer = await savePerson(db, { ...sub, at: sub.created_at, answers: sub.data }, c.get("user"));
+    if (!customer) return c.notFound();
     await addNote(db, customer.id, { kind: pickNoteKind(body.kind) ?? "note", body: text, at: wallTime(body.at), timeZone: tz }, c.get("user"));
     return c.redirect(withFlash(subUrl(id), "note"), 303);
   });
@@ -471,6 +476,8 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       update submissions s set status = ${status}, updated_at = now(), updated_by = ${c.get("user")}
       from was where s.id = ${id}::bigint returning was.status as was`;
     if (!row) return c.notFound();
+    // Not spam after all: their person is saved now, as on any submission that comes in.
+    if (row.was === "spam" && status !== "spam") await saveSubmitter(getDb(c), id, c.get("user"));
     // Archiving or marking spam is done with it: back to the list it left. Back to the Inbox stays on it.
     return c.redirect(withFlash(status === "read" ? subUrl(id) : base + VIEWS[viewOf(row.was)].path || "/", status), 303);
   });

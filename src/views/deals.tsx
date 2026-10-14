@@ -18,7 +18,7 @@ import type { Quote } from "../invoices/quotes";
 import { Docs } from "./money";
 import { TasksSection } from "./tasks";
 import { Layout } from "./layout";
-import { AddToggle, buttonClass, controlClass, dueDayText, CustomerPicker, DueMark, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, stageOptions, timeZone } from "./ui";
+import { AddToggle, Avatar, buttonClass, controlClass, dueDayText, CustomerPicker, DueMark, Field, MESSAGES, primaryClass, quietClass, ReadThenEdit, RecordLine, stageOptions, timeZone } from "./ui";
 import { ownerSuggestions, personName } from "../crm/people";
 
 /** How many cards a column shows; how many days won and lost ones stay on the board. */
@@ -101,14 +101,14 @@ export function Board({ data }: { data: BoardData }) {
     const t = key ? totals[key] : { count: strays.length, cents: "0", other: 0 };
     const total = t && BigInt(t.cents) > 0n ? formatWholeMoney(t.cents, dealsCfg.currency) : null;
     return (
-      <section data-stage={key} aria-label={`${label}, ${t?.count ?? 0}`} class="flex min-w-60 max-w-80 flex-1 basis-0 flex-col rounded-card bg-panel p-2">
-        <h2 class="mb-2 px-1 text-label">
-          <span class="flex items-baseline justify-between gap-2">
+      <section data-stage={key} aria-label={`${label}, ${t?.count ?? 0}`} class="flex w-[85%] shrink-0 snap-start flex-col rounded-card bg-panel p-2 sm:w-auto sm:min-w-52 sm:max-w-80 sm:flex-1 sm:shrink sm:basis-0">
+        <h2 class="mb-2 px-1.5 pt-1">
+          <span class="flex items-center justify-between gap-2">
             <span class="font-semibold text-ink">{label}</span>
-            <span class="text-ink-3">{t?.count ?? 0}</span>
+            <span class="rounded-full bg-surface px-2 text-label font-medium tabular-nums text-ink-2 ring-1 ring-line">{t?.count ?? 0}</span>
           </span>
           {total || (kind && kind !== "open") ? (
-            <span class="block text-ink-3">
+            <span class="mt-0.5 block text-label tabular-nums text-ink-3">
               {total ?? ""}
               {total && t?.other ? ` and ${t.other} in other currencies` : ""}
               {kind && kind !== "open" ? `${total ? " · " : ""}${label.toLowerCase() === kind ? "Last" : `${KIND_LABELS[kind]}, last`} ${CLOSED_DAYS} days` : ""}
@@ -116,6 +116,8 @@ export function Board({ data }: { data: BoardData }) {
           ) : null}
         </h2>
         <ul data-cards data-stage={key} class="flex flex-1 flex-col gap-2">
+          {/* An empty stage says so, where a card would be; a drop redraws the board. */}
+          {list.length ? null : <li class="px-1.5 py-2 text-label text-ink-3">No {many} here</li>}
           {list.map((d) => <Card d={d} options={options} stray={!known.has(d.stage)} next={data.next.get(d.customer_id)} today={data.today} open={kind === "open"} />)}
         </ul>
         {t && t.count > list.length ? <p class="mt-2 px-1 text-label text-ink-3">and {t.count - list.length} more</p> : null}
@@ -129,7 +131,8 @@ export function Board({ data }: { data: BoardData }) {
           No {many} yet. Add one here, from a {vocab.one.toLowerCase()}'s page, or from the Inbox.
         </p>
       ) : null}
-      <div class="flex gap-3 overflow-x-auto pb-3">
+      {/* One column at a time on a phone, the next peeking in, snapping as it scrolls. */}
+      <div class="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-3 sm:snap-none">
         {strays.length ? column("", "Not in a stage", null, strays) : null}
         {stages.map((s) => column(s.key, s.label, s.kind, cards.filter((d) => d.stage === s.key)))}
       </div>
@@ -140,20 +143,22 @@ export function Board({ data }: { data: BoardData }) {
 function Card({ d, options, stray, next, today, open }: { d: Deal; options: ReturnType<typeof stageOptions>; stray: boolean; next: { due_on: string; due_time: string | null } | undefined; today: string; open: boolean }) {
   const value = worth(d);
   return (
-    <li data-deal-id={d.id} {...rowClick(`/deals/${d.id}`)} class="cursor-pointer rounded-card border border-line bg-surface px-3 py-2 shadow-card hover:border-line-strong">
-      <a href={`/deals/${d.id}`} class="font-semibold no-underline">
+    <li data-deal-id={d.id} {...rowClick(`/deals/${d.id}`)} class="cursor-pointer rounded-control bg-surface p-3 shadow-card ring-1 ring-line hover:shadow-lift">
+      <a href={`/deals/${d.id}`} class="font-medium text-ink no-underline">
         {d.title}
       </a>
-      <p class="truncate text-label text-ink-2">
-        {d.customer_name}
-        {value ? ` · ${value}` : ""}
-      </p>
-      <p class="flex flex-wrap gap-x-2 text-label text-ink-3">
-        {open || stray ? <NextMark next={next} today={today} /> : d.closed_at ? <span>Closed <When at={d.closed_at} timeZone={timeZone} day /></span> : null}
-        {d.owner ? <span class="truncate">{ownerLabel}: {personName(d.owner)}</span> : null}
-      </p>
-      {/* Dragging moves a card on a wide screen; the select is for a phone, and for a browser without JavaScript. */}
-      <div class="mt-2 md:[.js_&]:hidden">
+      <p class="mt-0.5 truncate text-label text-ink-3">{d.customer_name}</p>
+      {open || stray ? <p class="mt-2"><NextMark next={next} today={today} /></p> : d.closed_at ? <p class="mt-2 text-label text-ink-3">Closed <When at={d.closed_at} timeZone={timeZone} day /></p> : null}
+      {/* As Pipedrive's cards: the value, and whose it is as their initials (their name on hover and to a screen reader). */}
+      {value || d.owner ? (
+        <div class="mt-3 flex items-center justify-between gap-2">
+          <span class="font-semibold tabular-nums text-ink">{value}</span>
+          {d.owner ? <Avatar name={personName(d.owner)} size="sm" label={`${ownerLabel}: ${personName(d.owner)}`} /> : null}
+        </div>
+      ) : null}
+      {/* Dragging moves a card (press and hold on a phone), and the deal's page has the stage bar;
+          the select is for a browser without JavaScript. */}
+      <div class="mt-2 [.js_&]:hidden">
         <StatusForm
           action={`/deals/${d.id}/stage`}
           current={stray ? "" : d.stage}
@@ -243,7 +248,7 @@ export function DealPage(p: {
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       {!closed ? <StageBar stages={p.stages.filter((s) => s.kind === "open")} current={d.stage} self={self} /> : null}
       {d.archived_at ? (
-        <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">
+        <p role="status" class="mb-4 rounded-card border border-line bg-panel px-4 py-2">
           Archived <When at={d.archived_at} timeZone={timeZone} />. Off the board; nothing is deleted.
         </p>
       ) : null}
@@ -297,7 +302,7 @@ export function DealPage(p: {
       <RecordLine added={d.created_at} addedBy={d.created_by} changed={d.updated_at} changedBy={d.updated_by}>
         <form method="post" action={`${self}/archive`}>
           <input type="hidden" name="archived" value={d.archived_at ? "0" : "1"} />
-          <button class="text-ink-2 underline" title={d.archived_at ? "Puts it back on the board." : "Takes it off the board. Nothing is deleted."}>
+          <button class={quietClass} title={d.archived_at ? "Puts it back on the board." : "Takes it off the board. Nothing is deleted."}>
             {d.archived_at ? "Unarchive" : "Archive"}
           </button>
         </form>

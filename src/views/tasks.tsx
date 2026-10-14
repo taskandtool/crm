@@ -9,7 +9,7 @@ import { listUrl } from "../admin/query";
 import { dealsCfg, vocab } from "../config";
 import { addDays, TASK_KINDS, TASK_LABELS, UPCOMING_DAYS, type Task, type TaskView } from "../crm/tasks";
 import { Layout } from "./layout";
-import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, CustomerPicker, primaryClass, telHref, timeText, timeZone, ViewLink } from "./ui";
+import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, CustomerPicker, primaryClass, telHref, timeText, timeZone, quietClass, ViewLink, viewsClass } from "./ui";
 import { ownerSuggestions, personName } from "../crm/people";
 
 export type TasksProps = {
@@ -31,12 +31,12 @@ export function TasksPage(p: TasksProps) {
   return (
     <Layout title="Tasks" user={p.user} section="tasks" actions={<a href="/tasks/new" class={primaryClass}>New task</a>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
-      <div class="mb-4 flex flex-wrap items-center justify-between gap-3 text-label">
-        <nav aria-label="Which tasks" class="flex flex-wrap gap-1">
+      <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <nav aria-label="Which tasks" class={viewsClass}>
           <ViewLink href={href("today")} on={p.view === "today"}>{due ? `Today (${due})` : "Today"}</ViewLink>
           <ViewLink href={href("upcoming")} on={p.view === "upcoming"}>Upcoming</ViewLink>
         </nav>
-        <nav aria-label="Whose" class="flex gap-1">
+        <nav aria-label="Whose" class={viewsClass}>
           <ViewLink href={href(p.view, false)} on={p.mine}>Mine</ViewLink>
           <ViewLink href={href(p.view, true)} on={!p.mine}>Everyone</ViewLink>
         </nav>
@@ -60,7 +60,7 @@ export function TasksPage(p: TasksProps) {
       ) : (
         <EmptyCard
           title={p.view === "today" ? "Nothing to do today." : `Nothing in the next ${UPCOMING_DAYS} days.`}
-          action={<a href="/tasks/new" class={primaryClass}>New task</a>}
+          action={<a href="/tasks/new" class={buttonClass}>New task</a>}
         >
           A task is a call, email, meeting or to-do for one of your {vocab.many.toLowerCase()}, on a day. Add one here or from their page.
         </EmptyCard>
@@ -137,8 +137,8 @@ export function TaskItem(p: {
           </p>
         ) : null}
       </div>
-      <details class="relative shrink-0">
-        <summary class={buttonClass + " cursor-pointer list-none"} aria-label={`Reschedule ${label}`}>Reschedule</summary>
+      <details data-menu class="relative shrink-0">
+        <summary class={quietClass + " cursor-pointer list-none"} aria-label={`Reschedule ${label}`}>Reschedule</summary>
         <div class="absolute right-0 z-10 mt-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-card border border-line bg-surface p-3 shadow-lift">
           <div class="flex flex-wrap gap-2">
             {[["Tomorrow", addDays(today, 1)], ["Next week", addDays(today, 7)]].map(([text, day]) => (

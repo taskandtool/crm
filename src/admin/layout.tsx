@@ -24,10 +24,10 @@ export type Frame = (p: Head & { user: string; children: Child }) => Child;
  */
 export function SectionTabs({ label, links, current }: { label: string; links: NavItem[]; current: string }) {
   return (
-    <nav aria-label={label} class="mb-4 flex gap-1 overflow-x-auto text-label shadow-[inset_0_-1px_0_var(--color-line)] [scrollbar-width:none]">
+    <nav aria-label={label} class="mb-6 flex gap-1 overflow-x-auto text-copy font-medium shadow-[inset_0_-1px_0_var(--color-line)] [scrollbar-width:none]">
       {links.map((n) => (
         <a href={n.href} aria-current={current === n.href ? "page" : undefined}
-          class={"shrink-0 whitespace-nowrap border-b-2 px-3 py-2 no-underline " + (current === n.href ? "border-accent font-semibold text-ink" : "border-transparent text-ink-2 hover:border-line-strong hover:text-ink")}>
+          class={"shrink-0 whitespace-nowrap border-b-2 px-3 py-2 no-underline " + (current === n.href ? "border-accent text-ink" : "border-transparent text-ink-3 hover:border-line hover:text-ink")}>
           {n.label}
         </a>
       ))}
@@ -88,11 +88,11 @@ const ADMIN_THEME = [
   "--color-ink-2: #4b5563", // gray-600
   "--color-ink-3: #6b7280", // gray-500
   "--color-line: rgb(17 24 39 / 0.1)", // gray-900/10: card edges, dividers
-  "--color-line-strong: #d1d5db", // gray-300: input outlines
+  "--color-line-strong: #868c96", // input outlines: 3.4:1 on white, the 3:1 a field's edge needs
   "--shadow-card: 0 1px 2px rgb(0 0 0 / 0.05)", // shadow-xs
   "--text-copy: 0.875rem", // text-sm/6: body, table cells, cards
   "--text-copy--line-height: 1.5rem",
-  "--text-label: 0.8125rem", // headers, tabs, field names: no letter spacing, medium
+  "--text-label: 0.8125rem", // column heads, field names: no letter spacing, medium
   "--text-label--line-height: 1.25rem",
   "--text-label--letter-spacing: 0",
   "--text-label--font-weight: 500",

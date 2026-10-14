@@ -354,3 +354,13 @@ test("a service's address made from its name is numbered when taken; a video cal
     await s.drop();
   }
 });
+
+test("a booking saves its booker as a customer (the customers skill's savePerson), once", (t) =>
+  withDb(t, async (s) => {
+    await applySchema(s.db, readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "customers", "schema.sql"), "utf8"));
+    const r = await person(s, "Pat");
+    assert.ok((await book(s.db, { ...who, typeId: r.id, start: T("2026-03-09T10:00:00Z") })).ok);
+    assert.ok((await book(s.db, { ...who, email: "ANN@example.com", typeId: r.id, start: T("2026-03-10T10:00:00Z") })).ok);
+    const customers = await s.db.sql`select name, email::text as email, source, stage from customers`;
+    assert.deepEqual(customers, [{ name: "Ann Lee", email: "ann@example.com", source: "Booking: pat", stage: "lead" }]);
+  }));

@@ -8,7 +8,7 @@ import { dealsCfg, vocab } from "../config";
 import { KIND_LABELS, type Pipeline, type StageWithCount } from "../crm/stages";
 import { STAGE_KINDS } from "../config-schema";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, Field, MESSAGES, primaryClass } from "./ui";
+import { buttonClass, controlClass, Field, MESSAGES, primaryClass, quietClass } from "./ui";
 
 /** A kind as a badge, toned as a closed request's stage is on its page (ui.tsx stageOptions). */
 const KIND_OPTIONS: StatusOption[] = [
@@ -61,8 +61,8 @@ function StageList(p: { pipeline: Pipeline; heading: string; intro: string; stag
               <StatusBadge value={s.kind} options={KIND_OPTIONS} />
             </span>
             <span class="text-right text-label text-ink-3 sm:w-28">{count(s.count)}</span>
-            <details class="relative max-sm:open:basis-full">
-              <summary class={buttonClass + " cursor-pointer list-none"} aria-label={`Edit ${s.label}`}>Edit</summary>
+            <details data-menu class="relative max-sm:open:basis-full">
+              <summary class={quietClass + " cursor-pointer list-none"} aria-label={`Edit ${s.label}`}>Edit</summary>
               {/* Floats over the rows below on a wide screen; opens in place on a phone. */}
               <div class="mt-2 flex flex-col gap-4 rounded-card border border-line bg-surface p-3 shadow-lift sm:absolute sm:right-0 sm:z-10 sm:w-72">
                 <form method="post" action={`${base}/${s.key}`} class="flex flex-col gap-3">

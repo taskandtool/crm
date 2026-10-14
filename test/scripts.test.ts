@@ -52,7 +52,7 @@ test("stray arguments and malformed ones are misuse", () => {
   refused(run("export.mjs", ["customers.csv"]), 2, "export with a stray argument");
   refused(run("migrate.mjs", ["now"]), 2, "migrate with a stray argument");
   refused(run("customers.mjs", ["list", "extra"]), 2, "customers list extra");
-  refused(run("inbox.mjs", ["add", "foo", "1"]), 2, "inbox add foo 1");
+  refused(run("inbox.mjs", ["add", "foo", "1"]), 2, "inbox add: not a command (everyone is saved already)");
   refused(run("inbox.mjs", ["done"]), 2, "inbox done with no id");
   refused(run("import.mjs", []), 2, "import with no file");
   refused(run("deals.mjs", ["list", "--won", "--lost"]), 2, "deals list with two kinds");

@@ -10,7 +10,7 @@ import {
 } from "../src/crm/customers";
 import { everythingFrom } from "../src/crm/history";
 import { addNote, listNotes, pickNoteKind, wallTime, NOTE_KINDS } from "../src/customers/notes";
-import { phoneKey } from "../src/crm/phone";
+import { phoneKey } from "../src/customers/customer";
 import { customerEvents } from "../src/crm/events";
 import { firstOpenStage, listStages, resolveStage } from "../src/crm/stages";
 import { clean, parseTags, relativeWall } from "../src/crm/text";

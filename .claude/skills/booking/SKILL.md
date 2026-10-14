@@ -14,7 +14,7 @@ the project database reads the same rows: the Website's `/book` pages
 take bookings, the CRM sets types, hosts and hours and lists the bookings
 by email.
 
-Version: 0.5.4 (taskandtool/skills)
+Version: 0.5.5 (taskandtool/skills)
 
 ## The rules
 
@@ -37,6 +37,9 @@ Version: 0.5.4 (taskandtool/skills)
   last sync is not in `busy` yet, so that time can be booked. The event
   and the booking then both show in the owner's calendar. Say so if the owner asks; syncing every
   15 minutes keeps it small. Bookings never double-book each other.
+- **A booker is a customer** from the moment they book: `takeSlot` saves
+  them through the customers skill (`savePerson`), a visit at their place
+  giving their address.
 - **One appointment table.** `bookings` also holds what the team schedules
   itself (the CRM's events): such a row may have no service (`title` names
   it), nobody assigned yet, or no email. Read it with `left join` to

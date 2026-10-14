@@ -20,7 +20,7 @@ export const dealsCfg = { ...cfg.deals, currency: cfg.deals.currency ?? "USD", l
 /** A lead added from the Inbox gets a "Call back" task due that day. */
 export const newLeadTask = cfg.tasks?.new_lead !== false;
 /** What the first run seeds. */
-export const seeds = { statuses: cfg.statuses, dealStages: cfg.deals.stages };
+export const seeds = { statuses: cfg.statuses, dealStages: cfg.deals.stages, fields: cfg.fields };
 /** The schedule's events (their words, fields and currency), or null when the config turns the schedule off. */
 export const eventsCfg = cfg.events ? { ...cfg.events, currency: cfg.events.currency ?? "USD" } : null;
 /** Online booking: the Services customers book. Only with the schedule on. */
