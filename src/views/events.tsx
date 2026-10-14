@@ -140,10 +140,12 @@ export function CustomerEvents({ c, events, choices, deals, dealId = null }: { c
                 <a href={`/events/${r.id}`} class="font-semibold no-underline underline-offset-2 hover:underline">
                   {r.what}
                 </a>
-                <p class="text-label text-ink-2">
-                  <WhenOf r={r} />
+                {/* One line under its name, as Home's Today: when (and Overdue), then its deal, who takes it, the amount. */}
+                <p class="text-label text-ink-3">
+                  <span class="text-ink-2"><When at={r.starts_at} timeZone={timeZone} /></span>
+                  {overdue(r) ? <> · <span class="font-semibold text-late">Overdue</span></> : null}
+                  {[dealId ? null : r.deal_title, r.host_name, amountOf(r), fieldsLine(r)].filter(Boolean).map((x) => ` · ${x}`).join("")}
                 </p>
-                <p class="text-label text-ink-3">{[dealId ? null : r.deal_title, r.host_name, amountOf(r), fieldsLine(r)].filter(Boolean).join(" · ")}</p>
               </div>
               <StatusBadge value={r.status} options={BOOKING_STATUSES} />
             </li>

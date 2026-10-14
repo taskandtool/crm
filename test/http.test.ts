@@ -103,9 +103,11 @@ test("Home: the figures and the four short lists; the form's person is a contact
   assert.equal(page.headers.get("cache-control"), "no-store");
   const html = await page.text();
   assert.match(html, /<a href="\/" aria-current="page"[^>]*>(?:<svg.*?<\/svg>)?Home<\/a>/);
-  for (const label of ["New leads, 7 days", "Your tasks due", "Won this month", "Owed"]) assert.match(html, new RegExp(label));
+  for (const label of ["Leads, 7 days", "Your tasks due", "Won this month", "Owed"]) assert.match(html, new RegExp(label));
+  assert.match(html, /<h1[^>]*>Good (morning|afternoon|evening)</, "a greeting; no name when all we have is an email");
+  assert.match(html, /data-count="\d+"/, "the figures carry the number they count up to");
   for (const [title, link] of [["New leads", "All leads"], ["Today", "Calendar"], ["Your tasks due", "All tasks"], ["Closing this month", "Deals"]]) {
-    assert.match(html, new RegExp(`<h2[^>]*>${title}</h2>[\\s\\S]*?>${link} →</a>`), title);
+    assert.match(html, new RegExp(`<h2[^>]*>${title}(<span[^>]*>\\d+</span>)?</h2>[\\s\\S]*?>${link}</a>`), title);
   }
 
   // The submission saved Pat as a contact as it came in, in the first open status, by no one, and made their lead.
@@ -121,10 +123,10 @@ test("Home: the figures and the four short lists; the form's person is a contact
 
 test("Home's Owed is the open invoices, in the invoices' own currency", async (t) => {
   if (skip) return t.skip(skip);
-  const before = (await (await get("/")).text()).match(/Owed<\/span><span[^>]*>([^<]+)</)![1];
+  const owed = async () => Number((await (await get("/")).text()).match(/>Owed<[\s\S]*?data-count="(\d+)"/)![1]);
+  const before = await owed();
   await db.sql`insert into invoices (email, currency, status, livemode, total_cents) values ('owed@example.com', 'usd', 'open', true, 1234500)`;
-  const after = (await (await get("/")).text()).match(/Owed<\/span><span[^>]*>([^<]+)</)![1];
-  assert.equal(Number(after.replace(/[^0-9]/g, "")) - Number(before.replace(/[^0-9]/g, "")), 12345, `${before} -> ${after}`);
+  assert.equal(await owed() - before, 12345, "whole dollars, in the invoices' usd");
   await db.sql`delete from invoices where email = 'owed@example.com'`;
 });
 
@@ -216,7 +218,7 @@ test("leads: a form fill and a phone call; convert to a deal, archive with Undo"
   const again = await insertSubmission(db, { form_key: "contact", name: "Lou Park", email: "lou@example.com", phone: null, data: { message: "And the softener" }, source: "website", page: null, status: "new" });
   const [second] = await db.sql<{ id: string }>`select id::text as id from leads where submission_id = ${again}::bigint`;
   assert.match(await (await get(`/leads/${second.id}`)).text(), new RegExp(`href="/deals/${dealId}">Water heater`));
-  assert.match(await (await get(`/customers/${lou.id}`)).text(), /<h2[^>]*>Leads<\/h2>[\s\S]*Open[\s\S]*Converted/, "their page lists both leads");
+  assert.match(await (await get(`/customers/${lou.id}`)).text(), /<h2[^>]*>Leads<span[^>]*>2<\/span><\/h2>[\s\S]*Open[\s\S]*Converted/, "their page lists both leads, and counts them");
   // A call from their page: Add lead there makes it theirs.
   const added = await post(`/customers/${lou.id}/leads`, { title: "Softener quote", source: "phone", notes: "Called about hard water" });
   const [phoned] = await db.sql<{ id: string; customer_id: string; source: string }>`select id::text as id, customer_id::text as customer_id, source from leads where title = 'Softener quote'`;

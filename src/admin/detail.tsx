@@ -8,10 +8,14 @@ import type { Child } from "hono/jsx";
 
 export type Field = { label: string; value: Child };
 
-export function Section({ title, children, class: extra = "" }: { title: string; children?: Child; class?: string }) {
+/** A card on a record page; `count`, when given and not 0, is how many it lists, in a pill beside the heading. */
+export function Section({ title, count, children, class: extra = "" }: { title: string; count?: number; children?: Child; class?: string }) {
   return (
     <section class={"rounded-card border border-line bg-surface p-4 shadow-card " + extra}>
-      <h2 class="mb-3 text-base/7 font-semibold text-ink">{title}</h2>
+      <h2 class="mb-3 flex items-center gap-2 text-base/7 font-semibold text-ink">
+        {title}
+        {count ? <span class="rounded-full bg-panel px-2 text-label font-medium tabular-nums text-ink-2">{count}</span> : null}
+      </h2>
       {children}
     </section>
   );

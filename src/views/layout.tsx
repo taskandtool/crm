@@ -44,6 +44,8 @@ export function ScheduleTabs({ current }: { current: string }) {
 
 export function Layout(props: {
   title: string;
+  /** The page's heading when it is not its title (Home's greeting). */
+  heading?: string;
   user: string;
   section: Section;
   drag?: boolean;
@@ -56,7 +58,7 @@ export function Layout(props: {
   actions?: Child;
   children?: Child;
 }) {
-  const { title, user, section, drag, wide, back, sub, actions, children } = props;
+  const { title, heading, user, section, drag, wide, back, sub, actions, children } = props;
   // The daily work, in the order it happens (as Jobber's menu runs: clients,
   // requests, the schedule, invoices); Setup sits at the sidebar's foot, as
   // settings do in Catalyst and Linear. The stages are edited from the board
@@ -176,7 +178,7 @@ export function Layout(props: {
               ) : null}
               <div class="mb-8 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
                 <div class="min-w-0">
-                  <h1 class="text-title font-semibold">{title}</h1>
+                  <h1 class="text-title font-semibold">{heading ?? title}</h1>
                   {sub ? <div class="mt-1 text-ink-2">{sub}</div> : null}
                 </div>
                 {actions ? <div class="flex flex-wrap items-center gap-2">{actions}</div> : null}

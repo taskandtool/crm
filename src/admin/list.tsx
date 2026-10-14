@@ -113,7 +113,7 @@ export function EmptyCard(props: { title: string; children?: Child; action?: Chi
  */
 export function SetupNeeded({ title, children, ask }: { title: string; children: Child; ask: string }) {
   return (
-    <div role="status" class="mb-4 rounded-card border border-line-strong bg-surface p-4 shadow-card">
+    <div role="status" class="mb-4 rounded-card bg-surface p-4 shadow-card ring-1 ring-line">
       <p class="font-semibold text-ink">{title}</p>
       <p class="mt-1 max-w-prose text-ink-2">{children}</p>
       <div class="mt-3 flex flex-wrap items-center gap-2">

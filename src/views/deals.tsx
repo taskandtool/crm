@@ -305,23 +305,23 @@ export function DealPage(p: {
             </Section>
           ) : null}
           {!closed || p.tasks.open.length ? (
-            <Section title="Tasks">
+            <Section title="Tasks" count={p.tasks.open.length}>
               <TasksSection customerId={d.customer_id} open={p.tasks.open} done={p.tasks.done} deals={p.openDeals} dealId={d.id}
                 owners={p.owners} user={p.user} today={p.today} returnTo={self} prompt={!closed} />
             </Section>
           ) : null}
           {p.schedule && (p.schedule.events.length || !closed) ? (
-            <Section title="Schedule">
+            <Section title="Schedule" count={p.schedule.events.length}>
               <CustomerEvents c={p.customer} events={p.schedule.events} choices={p.schedule.choices} deals={p.openDeals} dealId={d.id} />
             </Section>
           ) : null}
           {p.leads.length ? (
-            <Section title="Where it came from">
+            <Section title="Where it came from" count={p.leads.length}>
               <LeadList leads={p.leads} />
             </Section>
           ) : null}
           {p.quotes && (p.quotes.length || !closed) ? (
-            <Section title="Quotes">
+            <Section title="Quotes" count={p.quotes.length}>
               {p.quotes.length ? (
                 <Docs quotes={p.quotes} invoices={[]} />
               ) : (

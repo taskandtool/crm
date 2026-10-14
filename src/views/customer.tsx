@@ -90,7 +90,7 @@ export function CustomerPage(p: {
       ) : null}
       <div class="grid gap-4 md:grid-cols-3">
         <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
-          <Section title="Tasks">
+          <Section title="Tasks" count={p.tasks.open.length}>
             <TasksSection customerId={c.id} open={p.tasks.open} done={p.tasks.done}
               deals={dealChoices(p.deals)}
               owners={p.owners} user={p.user} today={p.today} returnTo={self} />
@@ -99,7 +99,7 @@ export function CustomerPage(p: {
             <Activity c={c} notes={p.notes} history={p.history} missing={missing} />
           </Section>
           {eventsCfg ? (
-            <Section title={eventsCfg.many}>
+            <Section title={eventsCfg.many} count={p.events.length}>
               <CustomerEvents c={c} events={p.events} choices={p.choices} deals={dealChoices(p.deals)} />
             </Section>
           ) : null}
@@ -108,10 +108,10 @@ export function CustomerPage(p: {
           <Section title="Details">
             <Details c={c} owners={p.owners} />
           </Section>
-          <Section title="Leads">
+          <Section title="Leads" count={p.leads.length}>
             <ContactLeads customerId={c.id} leads={p.leads} />
           </Section>
-          <Section title={dealsCfg.many}>
+          <Section title={dealsCfg.many} count={p.deals.filter((d) => !d.closed_at).length}>
             <CustomerDeals c={c} deals={p.deals} stages={p.dealStages} />
           </Section>
           {money ? <CustomerMoney c={c} {...money} /> : null}

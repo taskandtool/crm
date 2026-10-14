@@ -81,9 +81,9 @@ parts joined by a middle dot), then what it was (`text-copy`, `ink-2`).
 - Depth: `shadow-card` with `ring-1 ring-line` on a card or the panel;
   `shadow-lift` on something that floats (a menu, a dragged card). A card
   never has both a border and a ring.
-- Not everything is a card. Figures, Home's lists, the leads and section
-  headings sit straight on the panel. A card is for a group that is one
-  thing: a section of a record page, a deal, a table.
+- Not everything is a card. The leads and section headings sit straight
+  on the panel. A card is for a group that is one thing: a section of a
+  record page, a deal, a table, one of Home's figures or short lists.
 
 ## The frame
 
@@ -116,11 +116,18 @@ The sidebar layout of Catalyst and Tailwind Plus, with what a CRM adds
   event), a page of its own. A record's page reads as values with **Edit**
   for the form; who added it is one quiet line at its foot, beside Merge
   and Archive.
-- **Figures** (Home's) are a row with no boxes: a hairline
-  above, the label (`text-copy` medium, `ink-2`), the figure
+- **Home** opens with a greeting by the business's hour ("Good morning,
+  Dana"; no name when all we have is an email) and the date. **Its figures**
+  are one card whose cells share 1px rules (Tailwind's stats block; no icon
+  tiles): the label (`text-copy` medium, `ink-2`), the figure
   (`text-display` semibold), then one `text-label` line of context. Where
   it moved, a chip leads that line: `+2` in good, `3 overdue` in late, a
-  fall in neutral. Each figure links to the list behind it.
+  fall in neutral. Each cell links to the list behind it; all in one row
+  from `lg`, two a row below, the odd one out across both. **Its lists**
+  are cards: the heading with its count in a pill and a quiet link to the
+  whole list, then the rows, or one centred line when there are none. They
+  sit in two columns that stack on their own, so a short list never leaves
+  an empty box beside a long one.
 - **The leads** are a list, not a table, so a row wraps on a phone: the
   avatar, then the name, the metadata line (source, when), then what they
   said, two lines at most.
@@ -216,7 +223,9 @@ it in `ink-3`. Search fields carry the search icon inside on the left.
 
 ## Motion
 
-SortableJS's drag animation and nothing else. Reduced motion turns it off.
+SortableJS's drag animation, and Home's figures counting up once from 0
+as the page opens (700ms, easing out, `crm.js`; the server's text is what
+stays). Nothing else moves. Reduced motion turns both off.
 
 ## Words
 

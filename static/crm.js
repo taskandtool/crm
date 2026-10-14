@@ -1,5 +1,5 @@
-// The CRM's only client script: drag on the deal board, the current tab
-// kept in view on a narrow screen, a menu closing as a menu does, the
+// The CRM's only client script: drag on the deal board, Home's figures
+// counting up, the current tab kept in view on a narrow screen, a menu closing as a menu does, the
 // sidebar's drawer on a phone, "/" to search, clean filter addresses, and a
 // proposal's picture shrunk before upload. Everything else is plain forms and htmx attributes.
 // A drop posts the same stage change the card's own select makes, and the
@@ -157,6 +157,29 @@
   });
   document.addEventListener("change", searchState);
   document.addEventListener("input", searchState);
+  // Home's figures count up once as the page opens, as stat cards do in
+  // TailAdmin and Preline: from 0 to the figure in 700ms, easing out. The
+  // text the server wrote is what is left at the end; reduced motion, or no
+  // JavaScript, shows it straight away.
+  function countUp() {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    document.querySelectorAll("[data-count]").forEach(function (el) {
+      var to = Number(el.dataset.count), done = el.textContent;
+      if (!(to > 0)) return;
+      var fmt = el.dataset.currency
+        ? new Intl.NumberFormat("en-US", { style: "currency", currency: el.dataset.currency, maximumFractionDigits: 0 })
+        : new Intl.NumberFormat("en-US");
+      var start = performance.now();
+      function step(now) {
+        var t = Math.min(1, (now - start) / 700);
+        el.textContent = t < 1 ? fmt.format(Math.round(to * (1 - Math.pow(1 - t, 3)))) : done;
+        if (t < 1) requestAnimationFrame(step);
+      }
+      el.textContent = fmt.format(0);
+      requestAnimationFrame(step);
+    });
+  }
+  document.addEventListener("DOMContentLoaded", countUp);
   document.addEventListener("DOMContentLoaded", showCurrent);
   document.addEventListener("DOMContentLoaded", wire);
   document.addEventListener("htmx:afterSettle", wire);

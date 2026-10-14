@@ -204,7 +204,7 @@ export function LeadPage(p: {
             {l.booking_id ? <p class="mt-3 text-label"><a href={`/events/${l.booking_id}`}>The booking →</a></p> : null}
             {l.submission_id ? <p class="mt-3 text-label"><a href={`/forms/submissions/${l.submission_id}`}>The form submission →</a></p> : null}
           </Section>
-          <Section title="Tasks">
+          <Section title="Tasks" count={p.tasks.open.length}>
             <TasksSection customerId={l.customer_id} open={p.tasks.open} done={p.tasks.done}
               deals={l.open_deal_id ? [{ id: l.open_deal_id, title: l.open_deal_title ?? "" }] : []}
               owners={p.owners} user={p.user} today={p.today} returnTo={self} />
