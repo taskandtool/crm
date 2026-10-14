@@ -217,6 +217,11 @@ test("leads: a form fill and a phone call; convert to a deal, archive with Undo"
   const [second] = await db.sql<{ id: string }>`select id::text as id from leads where submission_id = ${again}::bigint`;
   assert.match(await (await get(`/leads/${second.id}`)).text(), new RegExp(`href="/deals/${dealId}">Water heater`));
   assert.match(await (await get(`/customers/${lou.id}`)).text(), /<h2[^>]*>Leads<\/h2>[\s\S]*Open[\s\S]*Converted/, "their page lists both leads");
+  // A call from their page: Add lead there makes it theirs.
+  const added = await post(`/customers/${lou.id}/leads`, { title: "Softener quote", source: "phone", notes: "Called about hard water" });
+  const [phoned] = await db.sql<{ id: string; customer_id: string; source: string }>`select id::text as id, customer_id::text as customer_id, source from leads where title = 'Softener quote'`;
+  assert.equal(added.headers.get("location"), `/leads/${phoned.id}?saved=lead-added`);
+  assert.deepEqual([phoned.customer_id, phoned.source], [lou.id, "phone"]);
 });
 
 test("customers: create, open, edit, note, archive", async (t) => {
@@ -601,7 +606,7 @@ test("events: add from the customer's page, the list, its page, status, CSV", as
   assert.ok((await getCustomer(db, cid))!.last_contact_at, "completed counts as contact");
   assert.doesNotMatch(await (await get("/events")).text(), /Boiler service/, "completed is not upcoming");
   assert.match(await (await get("/events?view=past")).text(), /Boiler service/);
-  assert.match(await (await get(`/events/${eid}`)).text(), /href="\/invoices\/new\?[^"]*event=\d+[^"]*" class="[^"]*bg-accent[^"]*">Invoice</, "the invoice is its next step");
+  assert.match(await (await get(`/events/${eid}`)).text(), /href="\/invoices\/new\?[^"]*event=\d+[^"]*" class="[^"]*bg-accent[^"]*">New invoice</, "the invoice is its next step");
 
   const csv = await get("/events/export.csv?view=past&q=boiler");
   assert.equal(csv.status, 200);
@@ -681,7 +686,7 @@ test("quotes in the CRM: from an event, sent, accepted, invoiced", async (t) => 
   const event = await post(`/customers/${cid}/events`, { title: "Water heater swap", at: "2099-04-01T09:00", amount: "1,200.00" });
   const vid = event.headers.get("location")!.match(/\/events\/(\d+)/)![1];
   html = await (await get(`/events/${vid}`)).text();
-  const quoteLink = /href="(\/invoices\/quotes\/new\?[^"]+)"[^>]*>Quote</.exec(html)![1].replace(/&amp;/g, "&");
+  const quoteLink = /href="(\/invoices\/quotes\/new\?[^"]+)"[^>]*>New quote</.exec(html)![1].replace(/&amp;/g, "&");
   html = await (await get(quoteLink)).text();
   assert.match(html, /<nav aria-label="CRM"/, "the CRM's own frame");
   assert.match(html, /<nav aria-label="Quotes and invoices"/);
@@ -716,7 +721,7 @@ test("quotes in the CRM: from an event, sent, accepted, invoiced", async (t) => 
   // A completed event's Invoice carries its line; the quote's invoice comes from Make the invoice.
   await db.sql`update bookings set status = 'completed' where id = ${vid}::bigint`;
   html = await (await get(`/events/${vid}`)).text();
-  assert.match(html, /href="\/invoices\/new\?[^"]*line=Water\+heater\+swap[^"]*"[^>]*>Invoice</);
+  assert.match(html, /href="\/invoices\/new\?[^"]*line=Water\+heater\+swap[^"]*"[^>]*>New invoice</);
   const inv = await post(`/invoices/quotes/${qid}/invoice`, {});
   const iid = inv.headers.get("location")!.match(/^\/invoices\/(\d+)\?saved=invoice-created$/)![1];
   html = await (await get(`/invoices/${iid}`)).text();

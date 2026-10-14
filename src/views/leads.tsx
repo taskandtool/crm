@@ -16,7 +16,7 @@ import { ownerOptions, ownerSuggestions, personName } from "../crm/people";
 import type { Task } from "../crm/tasks";
 import { Layout } from "./layout";
 import { TasksSection } from "./tasks";
-import { Avatar, buttonClass, controlClass, Field, MESSAGES, PersonFields, primaryClass, quietClass, telHref, timeZone, ViewLink, viewsClass } from "./ui";
+import { AddToggle, Avatar, buttonClass, controlClass, Field, MESSAGES, PersonFields, primaryClass, quietClass, telHref, timeZone, ViewLink, viewsClass } from "./ui";
 
 const LEAD_TONES: StatusOption[] = [
   { value: "open", label: "Open", tone: "accent" },
@@ -68,7 +68,8 @@ function Actions({ l, returnTo, quiet }: { l: Lead; returnTo: string; quiet?: bo
   if (l.status !== "open") return null;
   return (
     <>
-      <a href={`/deals/new?from=lead.${l.id}`} class={buttonClass}>Convert to {deal}</a>
+      {/* The lead's page has one primary action, as Pipedrive's: Convert; a row's buttons stay secondary. */}
+      <a href={`/deals/new?from=lead.${l.id}`} class={quiet ? buttonClass : primaryClass}>Convert to {deal}</a>
       <ArchiveMenu l={l} returnTo={returnTo} quiet={quiet} />
     </>
   );
@@ -268,6 +269,34 @@ export function NewLeadPage(p: { user: string; owners: string[]; flash: { code?:
         </div>
       </form>
     </Layout>
+  );
+}
+
+/** A contact's page's Leads: theirs, and Add lead for a call or a walk-in, as its Deals and Events have. */
+export function ContactLeads({ customerId, leads }: { customerId: string; leads: Lead[] }) {
+  return (
+    <div class="flex flex-col gap-3">
+      <LeadList leads={leads} empty="No leads." />
+      <AddToggle label="Add lead">
+        {/* One column: this sits in the narrow side of a contact's page. */}
+        <form method="post" action={`/customers/${customerId}/leads`} class="grid gap-3">
+          <Field label="What they need">
+            <input name="title" required maxlength={200} placeholder="New furnace" class={controlClass} />
+          </Field>
+          <Field label="Source">
+            <select name="source" class={controlClass}>
+              {MANUAL_SOURCES.map((s) => <option value={s}>{SOURCE_LABELS[s]}</option>)}
+            </select>
+          </Field>
+          <Field label="Notes">
+            <textarea name="notes" rows={2} maxlength={10000} class={controlClass}></textarea>
+          </Field>
+          <div>
+            <button class={buttonClass}>Add lead</button>
+          </div>
+        </form>
+      </AddToggle>
+    </div>
   );
 }
 

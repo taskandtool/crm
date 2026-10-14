@@ -814,6 +814,20 @@ app.get("/leads/new", async (c) => {
   return c.html(<NewLeadPage user={c.var.user} owners={[...new Set([c.var.user, ...(await facets(c.var.db)).owners])]} flash={flashOf(c)} />);
 });
 
+// A call or a walk-in from a contact's page: their lead.
+app.post("/customers/:id/leads", async (c) => {
+  const db = c.var.db;
+  const id = idParam(c.req.param("id"));
+  const customer = id ? await getCustomer(db, id) : null;
+  if (!customer) return c.notFound();
+  const body = await c.req.parseBody();
+  const title = clean(body.title, 200);
+  if (!title) return back(c, `/customers/${customer.id}`, "lead-needs");
+  const source = MANUAL_SOURCES.find((s) => s === str(body.source)) ?? "phone";
+  const leadId = await saveLead(db, { customerId: customer.id, source, title, notes: clean(body.notes, 10_000), owner: c.var.user }, c.var.user);
+  return leadId ? back(c, `/leads/${leadId}`, "lead-added") : back(c, `/customers/${customer.id}`, "gone");
+});
+
 // A phone call or a walk-in: the contact found by email or phone (or added), and their lead.
 app.post("/leads", async (c) => {
   const db = c.var.db;

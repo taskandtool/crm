@@ -25,7 +25,7 @@ import { missingSentence, type Present } from "../crm/tables";
 import { formatMoney } from "../payments/money";
 import { firstText } from "../crm/leads";
 import type { Lead } from "../crm/leads";
-import { LeadList } from "./leads";
+import { ContactLeads } from "./leads";
 import { Layout } from "./layout";
 import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, quietClass, ReadThenEdit, RecordLine, SaveOnChange, shownField, stageOptions, telHref, timeZone } from "./ui";
 import { CustomerEvents, type Choices } from "./events";
@@ -109,7 +109,7 @@ export function CustomerPage(p: {
             <Details c={c} owners={p.owners} />
           </Section>
           <Section title="Leads">
-            <LeadList leads={p.leads} empty="No leads." />
+            <ContactLeads customerId={c.id} leads={p.leads} />
           </Section>
           <Section title={dealsCfg.many}>
             <CustomerDeals c={c} deals={p.deals} stages={p.dealStages} />

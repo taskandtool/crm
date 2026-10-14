@@ -93,9 +93,8 @@ export function firstText(data: Record<string, unknown> | null): string | null {
   return msg ? String(msg[1]).slice(0, 300) : null;
 }
 
-/** Where it came from, in words: "Website form · Request service", "Online booking · Free estimate", "Phone". */
-export const sourceText = (l: Pick<Lead, "source" | "title">) =>
-  l.source === "form" || l.source === "booking" ? `${SOURCE_LABELS[l.source]} · ${l.title}` : SOURCE_LABELS[l.source];
+/** Where it came from and what it is: "Website form · Request service", "Online booking · Free estimate", "Phone · New furnace". */
+export const sourceText = (l: Pick<Lead, "source" | "title">) => `${SOURCE_LABELS[l.source]} · ${l.title}`;
 
 const toLead = (r: Omit<Lead, "said">): Lead => ({ ...r, said: r.notes ?? firstText(r.answers) });
 

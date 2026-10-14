@@ -44,10 +44,8 @@ const reason = flag(a, "reason");
 if (reason && has(a, "undo")) misused(`${at}: --reason is for archiving; --undo opens it again`, `node scripts/leads.mjs archive ${rest[0] ?? "<id>"} --undo`);
 if (reason && !ARCHIVE_REASONS.includes(reason)) misused(`${at}: --reason ${reason}: one of ${ARCHIVE_REASONS.join(", ")}`, "node scripts/leads.mjs --help");
 
-/** Where it came from, as the pages say it, and a lead added by hand's own words. */
-const from = (l: Lead) => (l.source === "form" || l.source === "booking" ? sourceText(l) : `${sourceText(l)}: ${l.title}`);
 const fmt = (l: Lead) =>
-  [`#${l.id}`, local(l.created_at), `[${l.status}${l.archived_reason ? `: ${l.archived_reason}` : ""}]`, `${l.customer_name} (#${l.customer_id})`, from(l),
+  [`#${l.id}`, local(l.created_at), `[${l.status}${l.archived_reason ? `: ${l.archived_reason}` : ""}]`, `${l.customer_name} (#${l.customer_id})`, sourceText(l),
     l.deal_title ? `-> ${l.deal_title} (#${l.deal_id})` : "", l.owner ? `@${l.owner}` : ""].filter(Boolean).join("  ");
 const convert = (l: Lead) => `node scripts/deals.mjs add ${l.customer_id} --lead ${l.id}`;
 

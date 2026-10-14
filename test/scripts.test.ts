@@ -120,7 +120,7 @@ test("deals.mjs, tasks.mjs and customers merge, end to end", { skip: !process.en
     // A phone call is a lead; archived and back; then converted into a deal, which gets its call back.
     r = sh("leads.mjs", "add", "ann@example.com", "Boiler service", "--source", "phone");
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^leads add: added #\d+  [^\n]*\[open\]  Ann Lee \(#\d+\)  Phone: Boiler service[^\n]*\n\nNext: node scripts\/deals\.mjs add \d+ --lead \d+\n$/);
+    assert.match(r.stdout, /^leads add: added #\d+  [^\n]*\[open\]  Ann Lee \(#\d+\)  Phone · Boiler service[^\n]*\n\nNext: node scripts\/deals\.mjs add \d+ --lead \d+\n$/);
     const lead = r.stdout.match(/#(\d+)/)![1];
     r = sh("leads.mjs", "archive", lead, "--reason", "Duplicate");
     assert.match(r.stdout, /^leads archive: lead \d+ \(Ann Lee\) archived: Duplicate\n/);

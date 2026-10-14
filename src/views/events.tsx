@@ -333,8 +333,8 @@ export function EventPage(p: {
       // Only the changes that can happen: completed and no-show once it has started; a cancelled one stays cancelled.
       actions={
         <>
-          {invoicesCfg && r.email && r.status === "confirmed" ? <a href={listUrl("/invoices/quotes/new", doc)} class={buttonClass}>Quote</a> : null}
-          {invoicesCfg && r.email && r.status === "completed" && !billed ? <a href={listUrl("/invoices/new", doc)} class={primaryClass}>Invoice</a> : null}
+          {invoicesCfg && r.email && r.status === "confirmed" ? <a href={listUrl("/invoices/quotes/new", doc)} class={buttonClass}>New quote</a> : null}
+          {invoicesCfg && r.email && r.status === "completed" && !billed ? <a href={listUrl("/invoices/new", doc)} class={primaryClass}>New invoice</a> : null}
           {r.status === "confirmed" && started ? <StatusButton id={r.id} status="completed" label="Mark completed" primary /> : null}
           {started && r.status === "confirmed" ? <StatusButton id={r.id} status="no_show" label="No-show" /> : null}
           {/* One of a service, with someone taking it: another of their open times, the booker told. */}
