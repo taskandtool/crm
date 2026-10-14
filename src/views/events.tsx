@@ -18,10 +18,11 @@ import { LENGTHS, minutesOf, type Event, type EventFilter } from "../crm/events"
 import { amountText, nowIn } from "../crm/text";
 import type { Invoice } from "../invoices/invoices";
 import type { Quote } from "../invoices/quotes";
+import type { Note } from "../customers/notes";
 import { formatMoney } from "../payments/money";
 import { Layout, ScheduleTabs } from "./layout";
 import { EventMoney } from "./money";
-import { AddToggle, buttonClass, controlClass, CustomInput, CustomerPicker, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, shownField, telHref, timeZone, ViewLink, viewsClass } from "./ui";
+import { ActivitySection, AddToggle, buttonClass, ContactCard, controlClass, CustomInput, CustomerPicker, Field, menuItemClass, MESSAGES, MoreMenu, primaryClass, ReadThenEdit, RecordLine, shownField, timeZone, ViewLink, viewsClass } from "./ui";
 
 /** How many a customer's page shows. */
 export const CUSTOMER_EVENTS = 100;
@@ -297,7 +298,7 @@ function StatusButton({ id, status, label, primary, ask }: { id: string; status:
   return (
     <form method="post" action={`/schedule/${id}/status`} onsubmit={ask ? `return confirm(${JSON.stringify(ask)})` : undefined}>
       <input type="hidden" name="status" value={status} />
-      <button class={primary ? primaryClass : buttonClass}>{label}</button>
+      <button class={primary ? primaryClass : menuItemClass}>{label}</button>
     </form>
   );
 }
@@ -305,7 +306,9 @@ function StatusButton({ id, status, label, primary, ask }: { id: string; status:
 /** One event: what, when and for whom at the top, its details with Edit, its quote and invoice. */
 export function EventPage(p: {
   user: string; event: Event; choices: Choices; money: { quotes: Quote[]; invoices: Invoice[] } | null;
-  /** Its customer's deals to choose from. */ deals: DealChoice[]; flash: { code?: string | null; n?: string | null };
+  /** Its customer's deals to choose from. */ deals: DealChoice[];
+  /** Its customer's notes and logged calls, for its Activity; none when it is no one's yet. */ notes: Note[];
+  flash: { code?: string | null; n?: string | null };
 }) {
   const r = p.event;
   const self = `/events/${r.id}`;
@@ -329,19 +332,21 @@ export function EventPage(p: {
         <p class="flex flex-wrap items-center gap-x-2">
           <StatusBadge value={r.status} options={BOOKING_STATUSES} />
           <Who r={r} />
-          {r.phone ? <><span aria-hidden="true">·</span><a href={telHref(r.phone)} class="whitespace-nowrap text-ink-2">{r.phone}</a></> : null}
         </p>
       }
-      // Only the changes that can happen: completed and no-show once it has started; a cancelled one stays cancelled.
+      // As Jobber's visit: one next step (marking it completed once it has started, then its invoice), the rest
+      // under More. Only the changes that can happen: completed and no-show once it has started; a cancelled one stays cancelled.
       actions={
         <>
-          {invoicesCfg && r.email && r.status === "confirmed" ? <a href={listUrl("/invoices/quotes/new", doc)} class={buttonClass}>New quote</a> : null}
-          {invoicesCfg && r.email && r.status === "completed" && !billed ? <a href={listUrl("/invoices/new", doc)} class={primaryClass}>New invoice</a> : null}
-          {r.status === "confirmed" && started ? <StatusButton id={r.id} status="completed" label="Mark completed" primary /> : null}
-          {started && r.status === "confirmed" ? <StatusButton id={r.id} status="no_show" label="No-show" /> : null}
-          {/* One of a service, with someone taking it: another of their open times, the booker told. */}
-          {r.status === "confirmed" && !started && r.type_id && r.resource_id ? <a href={`/schedule/${r.id}/reschedule`} class={buttonClass}>Reschedule</a> : null}
-          {r.status === "confirmed" ? <StatusButton id={r.id} status="cancelled" label="Cancel" ask={`Cancel this ${one}?${r.type_id && r.resource_id && r.email ? " They are told." : ""}`} /> : null}
+          <MoreMenu items={[
+            invoicesCfg && r.email && r.status === "confirmed" ? <a href={listUrl("/invoices/quotes/new", doc)} class={menuItemClass}>New quote</a> : null,
+            // One of a service, with someone taking it: another of their open times, the booker told.
+            r.status === "confirmed" && !started && r.type_id && r.resource_id ? <a href={`/schedule/${r.id}/reschedule`} class={menuItemClass}>Reschedule</a> : null,
+            started && r.status === "confirmed" ? <StatusButton id={r.id} status="no_show" label="No-show" /> : null,
+            r.status === "confirmed" ? <StatusButton id={r.id} status="cancelled" label="Cancel" ask={`Cancel this ${one}?${r.type_id && r.resource_id && r.email ? " They are told." : ""}`} /> : null,
+          ]} />
+          {r.status === "confirmed" && started ? <StatusButton id={r.id} status="completed" label="Mark completed" primary />
+            : invoicesCfg && r.email && r.status === "completed" && !billed ? <a href={listUrl("/invoices/new", doc)} class={primaryClass}>New invoice</a> : null}
         </>
       }
     >
@@ -356,7 +361,8 @@ export function EventPage(p: {
                 { label: dealsCfg.one, value: r.deal_id ? <a href={`/deals/${r.deal_id}`}>{r.deal_title}</a> : null },
                 { label: ownerLabel, value: r.host_name },
                 { label: "Where", value: r.location ? whereText(r, { link: true, team: true }) : null },
-                { label: "Email", value: r.email ? <a href={`mailto:${r.email}`} class="break-all">{r.email}</a> : null },
+                // With a contact, their card has the email; without one, it is here.
+                { label: "Email", value: r.email && !r.customer_id ? <a href={`mailto:${r.email}`} class="break-all">{r.email}</a> : null },
                 { label: "Amount", value: amountOf(r) },
                 ...custom,
                 { label: "Their note", value: typeof theirNote === "string" && theirNote ? <span class="whitespace-pre-wrap">{theirNote}</span> : null },
@@ -376,8 +382,12 @@ export function EventPage(p: {
               <JsonData data={answers} />
             </Section>
           ) : null}
+          {r.customer_id ? <ActivitySection action={`${self}/notes`} notes={p.notes} /> : null}
         </div>
-        <div class="flex flex-col gap-4">{p.money ? <EventMoney {...p.money} /> : null}</div>
+        <div class="flex flex-col gap-4">
+          {r.customer_id ? <ContactCard id={r.customer_id} name={r.customer_name ?? r.name} phone={r.phone} email={r.email} /> : null}
+          {p.money ? <EventMoney {...p.money} /> : null}
+        </div>
       </div>
       <RecordLine added={r.created_at} addedBy={null} changed={r.updated_at} changedBy={r.updated_by} />
     </Layout>

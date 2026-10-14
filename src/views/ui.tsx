@@ -389,3 +389,18 @@ export function ContactCard({ id, name, phone, email, more = [] }: { id: string;
   );
 }
 
+/** One choice in a page's More menu: a link, or a form's button. */
+export const menuItemClass = "block w-full rounded-control px-2.5 py-1.5 text-left font-medium text-ink no-underline hover:bg-panel";
+
+/** A page's other actions, behind More beside its one primary, as Jobber's More actions and its three dots. Nothing when there are none. */
+export function MoreMenu({ items }: { items: Child[] }) {
+  const shown = items.filter(Boolean);
+  if (!shown.length) return null;
+  return (
+    <details data-menu class="relative">
+      <summary class={buttonClass + " cursor-pointer list-none"}>More</summary>
+      <div class="absolute right-0 z-10 mt-1 flex w-48 flex-col rounded-control bg-surface p-1 shadow-lift ring-1 ring-line">{shown}</div>
+    </details>
+  );
+}
+

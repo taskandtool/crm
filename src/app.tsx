@@ -586,12 +586,13 @@ app.get("/events/:id", async (c) => {
   const id = idParam(c.req.param("id"));
   const event = id ? await getEvent(db, id) : null;
   if (!event) return c.notFound();
-  const [choices, money, deals] = await Promise.all([
+  const [choices, money, deals, notes] = await Promise.all([
     choicesOf(db), invoicesCfg ? Promise.all([quotesFor(db, { visitId: event.id }), invoicesFor(db, { visitId: event.id })]) : null,
     event.customer_id ? customerDeals(db, event.customer_id) : [],
+    event.customer_id ? listNotes(db, event.customer_id) : [],
   ]);
   return c.html(<EventPage user={c.var.user} event={event} choices={choices} money={money ? { quotes: money[0], invoices: money[1] } : null}
-    deals={dealChoices(deals, event.deal_id)} flash={flashOf(c)} />);
+    deals={dealChoices(deals, event.deal_id)} notes={notes} flash={flashOf(c)} />);
 });
 
 app.post("/events/:id", async (c) => {
@@ -886,6 +887,11 @@ async function noteFrom(c: C, customerId: string, self: string) {
 app.post("/leads/:id/notes", async (c) => {
   const lead = await getLead(c.var.db, c.req.param("id"));
   return lead ? noteFrom(c, lead.customer_id, `/leads/${lead.id}`) : c.notFound();
+});
+
+app.post("/events/:id/notes", async (c) => {
+  const event = await getEvent(c.var.db, c.req.param("id"));
+  return event?.customer_id ? noteFrom(c, event.customer_id, `/events/${event.id}`) : c.notFound();
 });
 
 app.post("/deals/:id/notes", async (c) => {

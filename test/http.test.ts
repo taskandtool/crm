@@ -479,6 +479,16 @@ test("record pages: a deal has Activity and its contact; a contact's status is i
   assert.match(html, /<h2[^>]*>Details<\/h2>[\s\S]*?name="status"/);
   assert.doesNotMatch(html.slice(0, html.indexOf("<h2")), /name="status"/, "no status select up with the actions");
 
+  // An event that has started: Mark completed is the one blue button, the rest under More; its contact and Activity.
+  const ev = await post(`/customers/${cid}/events`, { title: "Attic survey", at: "2020-03-02T10:00" });
+  const eid = ev.headers.get("location")!.match(/\/events\/(\d+)/)![1];
+  html = await (await get(`/events/${eid}`)).text();
+  assert.match(html, /class="[^"]*bg-accent[^"]*">Mark completed</);
+  assert.match(html, /<summary[^>]*>More<\/summary>[\s\S]*>No-show<[\s\S]*>Cancel</);
+  assert.match(html, /<h2[^>]*>Contact<\/h2>[\s\S]*href="tel:/);
+  assert.equal((await post(`/events/${eid}/notes`, { body: "Gate code 4411" })).headers.get("location"), `/events/${eid}?saved=note`);
+  assert.match(await (await get(`/customers/${cid}`)).text(), /Gate code 4411/);
+
   // An invoice sent and owed: Mark paid is the one blue button; the rest are under More; the balance is shown.
   const [inv] = await db.sql<{ id: string }>`
     insert into invoices (email, name, currency, status, livemode, total_cents, sent_at, number, hosted_url)
