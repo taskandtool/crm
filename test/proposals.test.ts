@@ -131,7 +131,7 @@ test("a proposal end to end: built, linked, opened, changed under them, signed; 
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("x-proposals"), "1");
   assert.match(res.headers.get("content-security-policy")!, /default-src 'none'/);
-  assert.equal(res.headers.get("referrer-policy"), "no-referrer");
+  assert.equal(res.headers.get("referrer-policy"), "same-origin");
   assert.equal(res.headers.get("cache-control"), "no-store, no-transform");
   html = await res.text();
   assert.match(html, /Type your full name/);

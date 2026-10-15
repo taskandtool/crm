@@ -586,10 +586,15 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     // The link, for them to pass on: shown once, and the quote counts as sent.
     if (how === "link") {
       if (!proposal || !withLink) return back(c, `${self}/send`, "not-now");
-      // Sent first: a link is kept only for a quote that is out.
+      // Made (it can fail, and then nothing changed), marked sent, then kept: a link works only for a quote that is out.
+      let made: { url: string; keep: () => Promise<void> };
+      try {
+        made = await proposal.mintLink(c, qt);
+      } catch (e) {
+        return c.redirect(listUrl(`${self}/send`, { problem: `No link was made: ${e instanceof Error ? e.message : e}` }), 303);
+      }
       const r = await markSent(getDb(c), qt.id, c.get("user"));
       if (!r.ok) return back(c, self, "not-now");
-      const made = await proposal.mintLink(c, qt);
       await made.keep();
       const link = made.url;
       await sent(c, { kind: "quote", id: qt.id, email: qt.email });

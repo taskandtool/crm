@@ -285,10 +285,10 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
           });
         }
         if (has(a, "link")) {
-          // Sent first: a link is kept only for a quote that is out.
+          // Made (it can fail, and then nothing changed), marked sent, then kept: a link works only for a quote that is out.
+          const made = await cli.proposal!.mint(db, qt, by);
           const r = await markSent(db, qt.id, by);
           if (!r.ok) fail(`${at}: ${word} ${qt.number} cannot be sent now${r.status ? ` (it is ${r.status})` : ""}`, `node scripts/quotes.mjs show ${qt.id}`);
-          const made = await cli.proposal!.mint(db, qt, by);
           await made.keep();
           const link = made.url;
           await cli.afterSend?.(db, { kind: "quote", id: qt.id, email: qt.email }, by);

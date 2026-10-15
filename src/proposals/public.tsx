@@ -31,7 +31,8 @@ const CSP = "default-src 'none'; img-src data:; font-src data:; style-src 'unsaf
 function headers(c: Context) {
   c.header(PROPOSALS_HEADER, "1");
   c.header("Content-Security-Policy", CSP);
-  c.header("Referrer-Policy", "no-referrer");
+  // The link never leaves this site in a Referer; its own forms still name their origin (no-referrer would make it "null").
+  c.header("Referrer-Policy", "same-origin");
   c.header("X-Robots-Tag", "noindex, nofollow");
   c.header("X-Content-Type-Options", "nosniff");
   // no-transform: the edge adds nothing to the page (Cloudflare's analytics beacon, for one).

@@ -38,11 +38,13 @@ test("a change from another site is refused", async () => {
   assert.equal((await app().request("https://site.example/", { method: "POST", headers })).status, 403);
   const same = { ...headers, origin: "https://site.example" };
   assert.equal((await app().request("https://site.example/", { method: "POST", headers: same })).status, 200);
-  // A page sent with no referrer posts its own forms with Origin "null": the browser's Sec-Fetch-Site decides.
+  // Origin "null": the browser's own Sec-Fetch-Site decides, and without it, no.
   const own = { ...headers, origin: "null", "sec-fetch-site": "same-origin" };
   assert.equal((await app().request("https://site.example/", { method: "POST", headers: own })).status, 200);
-  const theirs = { ...headers, origin: "null", "sec-fetch-site": "cross-site" };
-  assert.equal((await app().request("https://site.example/", { method: "POST", headers: theirs })).status, 403);
+  for (const site of ["cross-site", "same-site", undefined]) {
+    const theirs = { ...headers, origin: "null", ...(site ? { "sec-fetch-site": site } : {}) };
+    assert.equal((await app().request("https://site.example/", { method: "POST", headers: theirs })).status, 403, String(site));
+  }
 });
 
 test("the dev stand-in works only on localhost", async () => {

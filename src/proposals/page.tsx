@@ -45,7 +45,7 @@ export function renderPage(d: PageData, keys: string[]): string {
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="robots" content="noindex, nofollow" />
-        <meta name="referrer" content="no-referrer" />
+        <meta name="referrer" content="same-origin" />
         <title>{`${d.title}${d.business ? `, ${d.business}` : ""}`}</title>
         <style>{raw(PROPOSAL_CSS)}</style>
       </head>

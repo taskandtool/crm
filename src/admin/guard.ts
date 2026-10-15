@@ -45,21 +45,21 @@ export function whoIs(c: Context): string | null {
 }
 
 // The origin check that stands in for a CSRF token: a browser names its origin
-// on a cross-site POST, and the app only accepts its own. A page sent with
-// `Referrer-Policy: no-referrer` (a proposal's) makes its own forms' Origin
-// "null"; then Sec-Fetch-Site, which the browser sets and no page can, says
-// whether the form was the site's own.
+// on a cross-site POST, and the app only accepts its own. An Origin of "null"
+// (a page sent with no referrer, a sandboxed frame) passes only when the
+// browser's own Sec-Fetch-Site, which no page can set, says same-origin.
 export function sameOrigin(c: Context): boolean {
   const origin = c.req.header("origin");
   const host = c.req.header("x-forwarded-host") || c.req.header("host");
-  if (origin && origin !== "null") {
+  const site = c.req.header("sec-fetch-site");
+  if (origin === "null") return site === "same-origin";
+  if (origin) {
     try {
       return new URL(origin).host === host;
     } catch {
       return false;
     }
   }
-  const site = c.req.header("sec-fetch-site");
   return !site || site === "same-origin" || site === "none";
 }
 
