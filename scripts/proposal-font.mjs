@@ -62,6 +62,9 @@ const face = (family, f) =>
 /** The token's first family, or null. */
 const tokenFamily = (css, role) => new RegExp(`--font-${role}:\\s*"([^"]+)"`).exec(css)?.[1] ?? null;
 
+/** The roles `family` serves once set for `roles`: those, and any other token already naming it (its weights are kept). */
+export const rolesFor = (css, family, roles) => [...roles, ...["display", "body"].filter((r) => !roles.includes(r) && tokenFamily(css, r) === family)];
+
 /**
  * styles/proposal.css with `family` set for `roles`: the token's first family
  * replaced (its fallbacks kept), the fonts block holding this family's faces
@@ -110,7 +113,7 @@ async function main() {
   }
   const faces = latinFaces(sheet);
   if (!faces.length) fail(`proposal-font: Google Fonts serves "${family}" with no latin upright face`, `choose another family, or put its WOFF2 in ${DIR}/`);
-  const chosen = chooseFaces(faces, roles);
+  const chosen = chooseFaces(faces, rolesFor(css, family, roles));
 
   mkdirSync(DIR, { recursive: true });
   const written = [];
@@ -139,4 +142,4 @@ async function main() {
   });
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

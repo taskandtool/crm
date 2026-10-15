@@ -1,20 +1,47 @@
-// The cover: the business's best photograph edge to edge, darkened so the
-// title reads; the dark ground until there is one. The quote gives the
-// title, who it is for and its dates.
+// The cover, when it is ticked: the business's best photograph edge to
+// edge, darkened so the title reads; the dark ground until there is one.
+// Without it the page opens on the Masthead, a plain document's head, as an
+// invoice does. The quote gives the title, who it is for and its dates.
 import { dayText, todayIn } from "../../invoices/document";
 import { Picture, photo } from "./kit";
-import type { ProposalComponent } from "./types";
+import type { ProposalComponent, View } from "./types";
 
 // From brand/images.md: the photograph that says the most about the work, wide.
 const COVER = photo("");
-// From brand/logo/: the logo, on dark (a light version where there are two).
+// From brand/logo/: the logo on dark, for the cover (a light version where there are two)…
 const LOGO = photo("");
+// …and on a light ground, for the plain head.
+const LOGO_ON_LIGHT = photo("");
+
+const dayOf = (d: View) => dayText(todayIn(d.timeZone, d.quote.sent_at ?? d.quote.created_at), d.locale);
+
+/** The page's head when the cover is not ticked: the logo, the number, the title and its dates, on the page's own ground. */
+export function Masthead({ d }: { d: View }) {
+  const q = d.quote;
+  return (
+    <header class="border-b border-line bg-canvas text-ink">
+      <div class="mx-auto max-w-page px-6 py-10 sm:px-10 sm:py-14">
+        <div class="flex items-center justify-between gap-6">
+          {LOGO_ON_LIGHT ? <img src={LOGO_ON_LIGHT} alt={d.business} class="h-10 w-auto max-w-56 object-contain" /> : <span class="text-title">{d.business}</span>}
+          <span class="text-small text-muted">{d.word} {q.number}</span>
+        </div>
+        <h1 class="mt-14 max-w-4xl font-display text-section">{d.title}</h1>
+        <dl class="mt-10 grid max-w-4xl grid-cols-2 gap-6 text-small sm:grid-cols-4">
+          <div><dt class="text-muted">For</dt><dd class="mt-1">{q.name ?? q.email}</dd></div>
+          <div><dt class="text-muted">From</dt><dd class="mt-1">{d.business || "Us"}</dd></div>
+          <div><dt class="text-muted">Date</dt><dd class="mt-1">{dayOf(d)}</dd></div>
+          {q.valid_until ? <div><dt class="text-muted">Open until</dt><dd class="mt-1">{dayText(q.valid_until, d.locale)}</dd></div> : null}
+        </dl>
+      </div>
+    </header>
+  );
+}
 
 export const cover: ProposalComponent = {
-  key: "cover", label: "Cover", shows: "A full-page photograph, the title, who it is for and its dates", on: true, always: true, sample: false,
+  key: "cover", label: "Cover photo", shows: "Your best photograph edge to edge, under the title and its dates", on: false, sample: false,
   render: (d) => {
     const q = d.quote;
-    const day = dayText(todayIn(d.timeZone, q.sent_at ?? q.created_at), d.locale);
+    const day = dayOf(d);
     return (
       <header class="relative flex min-h-screen flex-col bg-night text-night-ink print:min-h-[100vh]">
         {COVER ? <Picture src={COVER} alt="" label="" class="absolute inset-0 size-full" /> : null}

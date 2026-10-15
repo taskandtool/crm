@@ -19,11 +19,11 @@ Under Invoices: the tabs Quotes, Invoices and Payments, and a Tax rates
 page. `invoices.quote_word` names a quote everywhere: Quote,
 Proposal or Estimate.
 
-**A quote is a proposal page**: designed components in their order, the
-quote's own (cover, its message as A note for them, pricing, terms) and the
-business's (About us, How we'll do it, a full photograph, Our work, Our team,
-Reviews, Clients, Questions). The team ticks them by name on the quote's
-page; you tick them with `node scripts/quotes.mjs proposal <id> --components
+**A quote is a proposal page**: by default a plain quote (a plain head, its
+message as a Letter, the price, its terms) and the components the team adds
+(Cover photo, About us, How we'll do it, a full photograph, Our work, Our
+team, Reviews, Clients, Questions). The team ticks them by name on the
+quote's page; you tick them with `node scripts/quotes.mjs proposal <id> --components
 about,reviews` (no flag: what it has). A quote's own words for this customer
 go in its message (`--notes`).
 
@@ -35,7 +35,7 @@ site>` reads their site (homepage, menu, gallery, reviews, about, team) and, whe
 connection, their Google listing (rating, its count, named reviews); the
 `brand` skill turns those into `brand/` (look, logo, photographs in
 `brand/images/`) and `public/` (business, services, team, proof). Write
-every component from those notes, verbatim for reviews, never invented, then
+every component from those notes (`references/proposal-writing.md`), verbatim for reviews, never invented, then
 set `sample: false`: a job with no stated result still has its photograph,
 its place and what was done. A figure, a bio or a rating only where a source
 states it; what none gives is simply left out. Where two sources disagree,

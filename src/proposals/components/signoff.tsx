@@ -21,6 +21,8 @@ export function Accept({ s, word }: { s: AcceptState; word: string }) {
   const w = word.toLowerCase();
   if (s.kind === "signed") {
     return (
+      <>
+      <h2 class="mb-10 font-display text-section">Thank you</h2>
       <div class="rounded-box border border-line bg-canvas p-8 sm:p-10">
         <p class="text-eyebrow uppercase text-muted">Signed</p>
         <p class="mt-3 font-display text-section">{s.name}</p>
@@ -44,6 +46,7 @@ export function Accept({ s, word }: { s: AcceptState; word: string }) {
         ) : null}
         <p class="mt-6 text-small text-muted print:hidden">This page is your copy: print it or save it as a PDF from your browser.</p>
       </div>
+      </>
     );
   }
   if (s.kind === "declined") return <p class="rounded-box border border-line bg-canvas p-8 text-lede">You declined this {w}. Thank you for letting us know.</p>;
@@ -53,6 +56,7 @@ export function Accept({ s, word }: { s: AcceptState; word: string }) {
   const open = s.kind === "open";
   return (
     <div>
+      <h2 class="mb-10 font-display text-section">Ready to go ahead?</h2>
       {open && s.problem ? <p role="alert" class="mb-6 rounded-box border border-line-strong bg-panel p-4 text-body">{s.problem}</p> : null}
       {!open ? <p class="mb-6 rounded-box bg-panel p-4 text-small text-muted">A preview: on the customer's page this form signs it.</p> : null}
       <form method="post" action={open ? s.action : undefined} class="flex flex-col gap-6 rounded-box border border-line bg-canvas p-8 sm:p-10">

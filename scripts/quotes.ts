@@ -11,9 +11,8 @@ import { quoteById } from "../src/invoices/quotes";
 import { linkReady } from "../src/proposals/link";
 import { production } from "../src/proposals/serving";
 import { COMPONENTS, PICKABLE } from "../src/proposals/components";
-import { afterAccepted, onAcceptSentence, type AnswerDeps } from "../src/proposals/sign";
-import { chosenKeys, ensureProposal, markEmailed, newLink, pageFor, proposalOf, sampleWarning, saveProposal, storePage, type ProposalOpts } from "../src/proposals/store";
-import { fillPage } from "../src/proposals/page";
+import { afterAccepted, onAcceptSentence, proposalDocument, type AnswerDeps } from "../src/proposals/sign";
+import { chosenKeys, ensureProposal, markEmailed, newLink, proposalOf, sampleWarning, saveProposal, storePage, type ProposalOpts } from "../src/proposals/store";
 import { printPdf } from "../src/pdf";
 import { cliSettings, done, fail, flag, has, misused, out } from "./lib";
 
@@ -70,7 +69,7 @@ await quotesCli(process.argv.slice(2), {
       return newLink(db, qt.id, by, b.base);
     },
     emailed: (db, qt) => markEmailed(db, qt.id),
-    document: async (db, qt) => fillPage((await pageFor(db, qt.id, opts))!.html, { kind: "preview" }, opts.word),
+    document: (db, qt) => proposalDocument(db, qt, opts),
     onAccept: (db, qt) => onAcceptSentence(db, qt),
     warning: (db, qt) => sampleWarning(db, qt.id),
   },
@@ -79,7 +78,7 @@ await quotesCli(process.argv.slice(2), {
   proposal <id> [--components ${pickable.split(",").slice(0, 3).join(",")},...] [--title "..."]
             [--first-invoice none|draft|send] [--deposit 50|full]
                                        ticks exactly the components named; the page is made again
-  The components: ${pickable}. Cover, pricing and the sign-off are on every one;
+  The components: ${pickable}. Pricing and the sign-off are on every one, a plain quote;
   a component's design and words are its file in src/proposals/components/.`,
     flags: { proposal: ["components", "title", "first-invoice", "deposit", "as"] },
     commands: {

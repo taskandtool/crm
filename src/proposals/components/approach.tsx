@@ -11,7 +11,7 @@ const STEPS = [
 ];
 
 export const approach: ProposalComponent = {
-  key: "approach", label: "How we'll do it", shows: "The work in four steps, with when each happens", on: true, sample: true,
+  key: "approach", label: "How we'll do it", shows: "The work in four steps, with when each happens", on: false, sample: true,
   render: (d) => (
     <Band id="approach" tone={d.ground("approach")}>
       <Inner>

@@ -1,5 +1,5 @@
 // Proposals over HTTP, as the team and the customer use them: a quote's
-// sections and words, its page, the link given by hand and by email, the
+// components, its page, the link given by hand and by email, the
 // customer opening it signed out, a page changed under them, the signature
 // and what it does (deal won, deposit invoice), a decline, mail scanners, a
 // dead link. Skipped without TEST_DATABASE_URL.
@@ -16,7 +16,8 @@ import { setup } from "../src/db/setup";
 import { invoiceById, invoicesFor } from "../src/invoices/invoices";
 import { quoteById } from "../src/invoices/quotes";
 import { markEmailed } from "../src/proposals/store";
-import { chooseFaces, END, latinFaces, rewrite, START } from "../scripts/proposal-font.mjs";
+import { chooseFaces, END, latinFaces, rewrite, rolesFor, START } from "../scripts/proposal-font.mjs";
+import { wordsOf } from "../scripts/proposal-copy";
 import type { Runtime } from "../src/runtime";
 import { scratch, type Scratch } from "./scratch";
 
@@ -159,6 +160,16 @@ test("a proposal end to end: built, linked, opened, changed under them, signed; 
   assert.equal(res.status, 422);
   assert.match(await res.text(), /Tick the box/);
 
+  // An edit the stored page missed (its re-make failed, or raced the signature): signing it is stale, and the page is made again.
+  await db.sql`update quotes set total_cents = 240100, updated_at = now() where id = ${id}::bigint`;
+  res = await post(`/q/${token}`, { name: "Ann Lee", agree: "1", page: shaOf(html) }, NOBODY);
+  assert.equal(res.status, 409);
+  html = await res.text();
+  assert.match(html, /\$2,401\.00/, "they see the quote as it stands");
+  await db.sql`update quotes set total_cents = 240000, updated_at = now() where id = ${id}::bigint`;
+  html = await (await get(`/q/${token}`, NOBODY)).text();
+  assert.match(html, /\$2,400\.00/, "opening it shows the quote as it stands too");
+
   res = await post(`/q/${token}`, { name: "Ann Lee", agree: "1", page: shaOf(html) }, NOBODY);
   assert.equal(res.status, 303);
   const qt = (await quoteById(db, id))!;
@@ -224,11 +235,15 @@ test("declined at the link: the quote declined, its deal lost with their reason;
   assert.deepEqual([d.stage, d.lost_reason], ["lost", "Price: Too much for now."]);
   assert.match(await (await get(`/q/${token}`, NOBODY)).text(), /You declined this quote/);
 
-  // Past its date, a link is dead; so is one that never was; /q/ says it serves proposals.
+  // Past its date, a link says so and cannot be signed or declined; one that never was is dead; /q/ says it serves proposals.
   const other = await newQuote("cy@example.com", "Cy Lo", deal);
   const t2 = tokenOf(await (await post(`/invoices/quotes/${other}/send`, { how: "link" })).text());
   await db.sql`update quotes set valid_until = '2020-01-01' where id = ${other}::bigint`;
-  assert.equal((await get(`/q/${t2}`, NOBODY)).status, 404);
+  const expired = await get(`/q/${t2}`, NOBODY);
+  assert.equal(expired.status, 200);
+  assert.match(await expired.text(), /has expired/);
+  await post(`/q/${t2}/decline`, { reason: "Price", note: "" }, NOBODY);
+  assert.equal((await quoteById(db, other))!.status, "sent", "nor can it decline");
   assert.equal((await get(`/q/${"A".repeat(43)}`, NOBODY)).status, 404);
   const q = await get("/q/", NOBODY);
   assert.equal(q.headers.get("x-proposals"), "1");
@@ -295,6 +310,10 @@ test("proposal-font: the latin faces, the weights each role uses, the token and 
   assert.doesNotMatch(both, /"Old"/, "a family no token names loses its @font-face");
   assert.equal((both.match(/font-family: "New"/g) ?? []).length, 1, "the family's faces replaced, not added twice");
   assert.equal(rewrite("@theme {}", "New", ["body"], []), null, "no fonts block");
+  // Display set again to the family body uses already: body's regular weight is kept.
+  const sameForBoth = `--font-display: "Caladea", serif;\n  --font-body: "Caladea", serif;`;
+  assert.deepEqual(rolesFor(sameForBoth, "Caladea", ["display"]), ["display", "body"]);
+  assert.deepEqual(chooseFaces(statics, rolesFor(sameForBoth, "Caladea", ["display"])).map((f: { min: number }) => f.min).sort(), [400, 700]);
   assert.match(rewrite(`${START}\n${END}\n--font-display: Georgia, serif;`, "New", ["display"], [])!, /--font-display: "New", serif;/, "an unquoted family too");
 });
 
@@ -319,4 +338,10 @@ test("proposal-photo: a photo cut and sized into brand/images/, the line to name
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("proposal-copy: a component's words are read, titles and questions too; reviews, empty slots, stars and the quote's own words are not", () => {
+  const html = `<h3>How we&#39;ll do it</h3><dl><dt>Do I need to be home?</dt><dd>No.</dd></dl><figure><blockquote>“Great!”</blockquote><figcaption>Ann, Google</figcaption></figure>`
+    + `<div class="x" role="img" aria-label="A portrait"><span class="t">A portrait</span></div><p>★★★★★</p><p>The note.</p>`;
+  assert.equal(wordsOf(html, ["The note."]), "How we'll do it\nDo I need to be home?\nNo.");
 });

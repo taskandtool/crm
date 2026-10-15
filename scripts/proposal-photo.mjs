@@ -45,9 +45,11 @@ while True:
         im.save(buf, "WEBP", quality=q, method=6)
         if buf.tell() <= max_bytes:
             break
-    if buf.tell() <= max_bytes or im.width < 400:
+    if buf.tell() <= max_bytes or min(im.size) < 200:
         break
     im = im.resize((im.width * 3 // 4, im.height * 3 // 4), Image.LANCZOS)
+if buf.tell() > max_bytes:
+    sys.exit("still over the size at %dx%d; crop it smaller" % im.size)
 open(dest, "wb").write(buf.getvalue())
 print(json.dumps({"width": im.width, "height": im.height, "bytes": buf.tell(), "quality": q, "was": [w, h]}))
 `;
@@ -75,19 +77,26 @@ const crop = cropText === undefined ? [0, 0, 0, 0] : cropOf(cropText);
 if (!crop) misused(`proposal-photo: --crop ${cropText}; write four percents, left,top,right,bottom, each edge pair under 90 (0,0,25,0)`, tryCmd);
 if (as !== undefined && !nameOf("x", as)) misused(`proposal-photo: --as ${as} is not a file name`, tryCmd);
 
+for (const file of a._) if (!existsSync(file) || !statSync(file).isFile()) fail(`proposal-photo: no file ${file}`, "ls raw/site/*/images/");
+const names = a._.map((f) => nameOf(f, as));
+const blank = a._.find((_f, i) => !names[i]);
+if (blank) misused(`proposal-photo: ${blank} gives no file name; name it with --as`, tryCmd);
+const twice = names.find((n, i) => names.indexOf(n) !== i);
+if (twice) misused(`proposal-photo: two of these become ${DIR}/${twice}.webp; run them one at a time with --as`, tryCmd);
+
 mkdirSync(DIR, { recursive: true });
 const lines = [];
-for (const file of a._) {
-  if (!existsSync(file) || !statSync(file).isFile()) fail(`proposal-photo: no file ${file}`, "ls raw/site/*/images/");
-  const dest = join(DIR, `${nameOf(file, as)}.webp`);
+for (const [i, file] of a._.entries()) {
+  const dest = join(DIR, `${names[i]}.webp`);
   const had = existsSync(dest);
   let r;
   try {
     r = JSON.parse(execFileSync("python3", ["-c", PY, file, dest, ...crop.map(String), String(MAX_WIDTH), String(MAX_BYTES)], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
   } catch (e) {
     const why = String(e.stderr || e.message);
-    if (/No module named .PIL/.test(why)) fail("proposal-photo: Pillow is not installed", "bash .taskandtool/setup.sh");
-    fail(`proposal-photo: ${file} could not be read as a picture (${why.trim().split("\n").pop()})`, "pass a .jpg, .png or .webp");
+    const before = lines.length ? `\n  written before it:\n  ${lines.filter((l) => !l.startsWith("  ")).join("\n  ")}` : "";
+    if (/No module named .PIL/.test(why)) fail(`proposal-photo: Pillow is not installed${before}`, "bash .taskandtool/setup.sh");
+    fail(`proposal-photo: ${file}: ${why.trim().split("\n").pop()}${before}`, "pass a .jpg, .png or .webp, cropped with --crop when it is very tall");
   }
   const cut = crop.some(Boolean) ? `, cut ${["left", "top", "right", "bottom"].map((e, i) => (crop[i] ? `${crop[i]}% ${e}` : "")).filter(Boolean).join(", ")} from ${r.was[0]} x ${r.was[1]}` : "";
   lines.push(`${had ? "replaced" : "wrote"} ${dest} from ${file}: ${r.width} x ${r.height}, ${Math.ceil(r.bytes / 1024)} KB${cut}`, `  in a component: photo("${dest}")`);

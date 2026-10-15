@@ -10,7 +10,7 @@ const PEOPLE: { name: string; role: string; line?: string; photo: string | null 
 ];
 
 export const team: ProposalComponent = {
-  key: "team", label: "Our team", shows: "Portraits of the people who will do the work", on: true, sample: true,
+  key: "team", label: "Our team", shows: "Portraits of the people who will do the work", on: false, sample: true,
   render: (d) => (
     <Band id="team" tone={d.ground("team")}>
       <Inner>

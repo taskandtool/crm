@@ -1,6 +1,6 @@
 ---
 name: crm
-description: "Runs and reshapes this CRM: contacts keyed by email, leads (each enquiry from a form, an online booking or a call), deals, tasks, notes, the schedule, its config and schema. Use for 'any new leads', 'add a customer', 'who should I follow up with', 'add a deal', 'book Ann in', 'import my list', 'merge these two', 'shape the CRM'. Not for quotes and invoices (invoices)."
+description: "Runs and reshapes this CRM: contacts keyed by email, leads (each enquiry from a form, an online booking or a call), deals, tasks, notes, the schedule, its config and schema. Use for 'any new leads', 'add a customer', 'who should I follow up with', 'add a deal', 'book Ann in', 'import my list', 'shape the CRM'. Not for quotes and invoices (invoices)."
 ---
 
 # CRM
@@ -41,6 +41,7 @@ A customer record on Hono (server-rendered JSX, htmx, SortableJS, Postgres).
 | Changing words, statuses, deal stages, custom fields, a real column; deals, tasks, the morning email, merging | `references/levers.md` |
 | The schedule: events, what can be booked online, the Team's hours and calendars, booking messages | `references/schedule.md` |
 | Forms here; quotes as proposals (their components, the link, signing, how they look); setting up invoices, Stripe or the email sender | `references/money.md`, then the `invoices` skill |
+| Writing or changing a proposal component's words | `references/proposal-writing.md` |
 | Shaping the CRM for a business; importing or exporting a list | `references/shaping.md` |
 
 ## Dev, on this machine

@@ -60,10 +60,10 @@ import { emailSend, emailSender, notifyBooking } from "./booking/notify";
 import { envOf } from "./data/env";
 import { sendEmail } from "./data/send";
 import { stripeFrom } from "./payments/stripe";
-import { proposalAdmin, proposalDocument, proposalPanel } from "./proposals/admin";
+import { proposalAdmin, proposalPanel } from "./proposals/admin";
 import { linkBase, readyHere } from "./proposals/link";
 import { proposalPages } from "./proposals/public";
-import { afterAccepted, onAcceptSentence, type AnswerDeps } from "./proposals/sign";
+import { afterAccepted, onAcceptSentence, proposalDocument, type AnswerDeps } from "./proposals/sign";
 import { ensureProposal, markEmailed, newLink, sampleWarning, storePage, type ProposalOpts } from "./proposals/store";
 import { afterResponse } from "./data/send";
 import type { Db } from "./data/db";
@@ -714,7 +714,7 @@ if (invoicesCfg) {
       navLabel: "Invoices",
     }),
   );
-  // A quote's proposal and the library of sections, before the invoice pages take /invoices/*.
+  // A quote's proposal and its components, before the invoice pages take /invoices/*.
   app.route("/", proposalAdmin(dbOf, {
     opts: PROPOSAL_OPTS, Frame: frameIn(moneySection), css: "/crm.css", nav: [], quotes: "/invoices/quotes", base: linkBaseOf,
   }));
@@ -780,7 +780,7 @@ if (invoicesCfg) {
         ]);
         const more: { label: string; value: Child }[] = [];
         if (deal) {
-          const hint = quote && quote.status !== "accepted" ? <span class="block text-label text-ink-3">A yes wins the {dealsCfg.one.toLowerCase()}.</span> : null;
+          const hint = quote && (quote.status === "draft" || quote.status === "sent") ? <span class="block text-label text-ink-3">A yes wins the {dealsCfg.one.toLowerCase()}.</span> : null;
           more.push({ label: dealsCfg.one, value: <><a href={`/deals/${deal.id}`}>{deal.title}</a>{hint}</> });
         }
         if (eventsCfg && event) more.push({ label: eventsCfg.one, value: <a href={`/events/${event.id}`}>{event.what}</a> });

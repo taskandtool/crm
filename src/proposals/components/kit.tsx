@@ -5,7 +5,7 @@
 import type { Child } from "hono/jsx";
 import { PHOTOS } from "../photos";
 
-export type Tone = "light" | "panel" | "night";
+type Tone = "light" | "panel" | "night";
 
 const GROUND: Record<Tone, string> = {
   light: "bg-canvas text-ink",
@@ -23,16 +23,14 @@ export function Band({ id, tone = "light", children, tight }: { id: string; tone
 }
 
 /** The page's column. */
-export const Inner = ({ children, read }: { children: Child; read?: boolean }) => (
-  <div class={`mx-auto px-6 sm:px-10 ${read ? "max-w-read" : "max-w-page"}`}>{children}</div>
-);
+export const Inner = ({ children }: { children: Child }) => <div class="mx-auto max-w-page px-6 sm:px-10">{children}</div>;
 
 /** A component's title, and the line under it when it has one. */
-export function Heading({ title, night, children }: { title: string; night?: boolean; children?: Child }) {
+export function Heading({ title, children }: { title: string; children?: Child }) {
   return (
     <div class="max-w-read">
       <h2 class="font-display text-section">{title}</h2>
-      {children ? <div class={`mt-6 text-lede ${night ? "text-night-muted" : "text-muted"}`}>{children}</div> : null}
+      {children ? <div class="mt-6 text-lede text-muted">{children}</div> : null}
     </div>
   );
 }
@@ -44,11 +42,11 @@ export function Heading({ title, night, children }: { title: string; night?: boo
  */
 export const photo = (path: string): string | null => PHOTOS[path] ?? null;
 
-/** A photograph, or the slot it fills until there is one: says what belongs there. */
-export function Picture({ src, alt, label, class: cls, night }: { src: string | null; alt: string; label: string; class: string; night?: boolean }) {
+/** A photograph, or the slot it fills until there is one: says what belongs there, on either light ground. */
+export function Picture({ src, alt, label, class: cls }: { src: string | null; alt: string; label: string; class: string }) {
   if (src) return <img src={src} alt={alt} class={`${cls} object-cover`} />;
   return (
-    <div class={`${cls} flex items-end border ${night ? "border-line-night bg-night-ink/5 text-night-muted" : "border-line bg-panel text-muted"} p-5`} role="img" aria-label={label}>
+    <div class={`${cls} flex items-end border border-dashed border-line-strong text-muted p-5`} role="img" aria-label={label}>
       <span class="text-small">{label}</span>
     </div>
   );

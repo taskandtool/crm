@@ -6,6 +6,7 @@
 // and the bar that leads to it. Nothing else is drawn when it is asked for.
 import { raw } from "hono/html";
 import { COMPONENTS, type Ground, type PageData, type View } from "./components";
+import { Masthead } from "./components/cover";
 import { Accept, AcceptBar, type AcceptState } from "./components/signoff";
 import { PROPOSAL_CSS } from "./style";
 
@@ -15,15 +16,17 @@ const BAR_MARK = "<!--tt-bar-->";
 // Bands with a ground of their own: the dark ones, and the photograph edge to edge.
 const OWN_GROUND: Record<string, "night" | "photo"> = { cover: "night", reviews: "night", gallery: "photo" };
 
-/** The page as stored: the sign-off's place and the bar are markers. `keys` are the ticked components; the always-on ones are added. */
+/** The page as stored: the sign-off's place and the bar are markers. `keys` are the ticked components; pricing, always on, is added. */
 export function renderPage(d: PageData, keys: string[]): string {
   const ticked = COMPONENTS.filter((c) => c.always || keys.includes(c.key));
   // Only the ones that show something (a note for them needs the quote's message) count for the grounds.
   const probe: View = { ...d, ground: () => "light" };
   const shown = ticked.filter((c) => c.render(probe) !== null);
+  // No cover: the page opens on the plain head, on the page's own light ground.
+  const plain = !shown.some((c) => c.key === "cover");
   // Light and tinted in turn, so no two neighbours share a ground; a dark band or a photograph starts again.
   const grounds = new Map<string, Ground>();
-  let prev: string = "night";
+  let prev: string = plain ? "light" : "night";
   for (const c of shown) {
     const own = OWN_GROUND[c.key];
     if (own) {
@@ -48,10 +51,10 @@ export function renderPage(d: PageData, keys: string[]): string {
       </head>
       <body class="bg-canvas font-body text-body text-ink">
         <main>
+          {plain ? <Masthead d={view} /> : null}
           {shown.map((c) => c.render(view))}
           <section id="accept" class={`${signoff} py-20 sm:py-28 print:break-before-page`}>
             <div class="mx-auto max-w-read px-6 sm:px-10">
-              <h2 class="mb-10 font-display text-section">Ready to go ahead?</h2>
               {raw(ACCEPT_MARK)}
             </div>
           </section>

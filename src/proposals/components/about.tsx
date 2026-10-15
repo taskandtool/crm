@@ -18,7 +18,7 @@ const FIGURES = [
 ];
 
 export const about: ProposalComponent = {
-  key: "about", label: "About us", shows: "The business in a photograph, a few lines and three figures", on: true, sample: true,
+  key: "about", label: "About us", shows: "The business in a photograph, a few lines and three figures", on: false, sample: true,
   render: (d) => (
     <Band id="about" tone={d.ground("about")}>
       <Inner>
@@ -29,7 +29,7 @@ export const about: ProposalComponent = {
             <div class="mt-6 flex flex-col gap-4 text-body text-muted">{WORDS.map((w) => <p>{w}</p>)}</div>
             <dl class="mt-12 grid grid-cols-3 gap-6 border-t border-line pt-8">
               {FIGURES.map((f) => (
-                <div><dd class="font-display text-stat">{f.figure}</dd><dt class="mt-2 text-small text-muted">{f.label}</dt></div>
+                <div class="flex flex-col-reverse"><dt class="mt-2 text-small text-muted">{f.label}</dt><dd class="font-display text-stat">{f.figure}</dd></div>
               ))}
             </dl>
           </div>

@@ -9,7 +9,7 @@
 //
 //   node scripts/proposal-read.mjs https://theirsite.com
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { done, fail, flag, machineEnv, misused, parseArgs, plain } from "../src/data/cli.mjs";
@@ -61,7 +61,8 @@ const read = (f, fallback) => { try { return JSON.parse(readFileSync(join(folder
 
 // The pages a proposal draws on, by their address, from the URLs the crawl
 // found: the same picks as the Website's from-site, and the about and team pages.
-const found = (read("inventory.json", {}).records || []).map((r) => r.url);
+const ours = (u) => { try { return new URL(u).hostname.replace(/^www\./, "") === host; } catch { return false; } };
+const found = (read("inventory.json", {}).records || []).map((r) => r.url).filter(ours);
 const pathOf = (u) => new URL(u).pathname;
 const readNow = new Set((read("manifest.json", {}).pages || []).map((p) => p.url));
 const unread = (u) => !readNow.has(u);
@@ -72,9 +73,10 @@ const picks = [
   found.find((u) => /\/(team|our-team|staff|meet-the-team|our-people)\/?$/i.test(pathOf(u))),
 ].filter((u) => u && unread(u));
 let added = 0;
-if (picks.length) {
+const toAdd = [...new Set(picks)];
+if (toAdd.length) {
   try {
-    added = last(run(["add", "--out", folder, "--json", ...new Set(picks)], process.env)).new ?? picks.length;
+    added = last(run(["add", "--out", folder, "--json", ...toAdd], process.env)).new ?? toAdd.length;
   } catch {
     // The crawl stands without them.
   }
@@ -95,6 +97,7 @@ function placesEnv() {
   }
 }
 
+let kept = null;
 function listing() {
   const where = [card.address?.locality, card.address?.region].filter(Boolean).join(", ");
   if (!card.name) return "Google listing: not looked up (the site gives no business name)";
@@ -104,7 +107,12 @@ function listing() {
     const answer = last(run(["places", where ? `${card.name}, ${where}` : card.name, "--first", "--out", "raw/places", "--json"], env));
     const d = JSON.parse(readFileSync(join("raw/places", `${answer.place_id}.summary.json`), "utf8"));
     const listed = (() => { try { return new URL(d.website).hostname.replace(/^www\./, ""); } catch { return ""; } })();
-    if (listed !== host) return `Google listing: the one found for "${card.name}" is ${d.name || "another place"} (${listed || "no website"}), not ${host}; left out`;
+    if (listed !== host) {
+      // Not theirs: its files go, so nothing reads them as the business's.
+      for (const ext of [".json", ".summary.json", ".md"]) rmSync(join("raw/places", answer.place_id + ext), { force: true });
+      return `Google listing: the one found for "${card.name}" is ${d.name || "another place"} (${listed || "no website"}), not ${host}; left out (tt-crawl places --place-id <theirs> --out raw/places reads the right one)`;
+    }
+    kept = answer.place_id;
     const rating = d.rating ? `rated ${d.rating} from ${d.review_count ?? "?"} Google reviews, ` : "";
     return `Google listing: ${d.name}, ${rating}${(d.reviews || []).length} reviews quoted, in raw/places/${answer.place_id}.summary.json`;
   } catch (e) {
@@ -118,5 +126,5 @@ done("proposal-read", `${host}: ${crawl.pages + added} pages read${added ? ` (${
     `${folder}/: pages/, images/ (${read("run.json", {}).images?.on_disk ?? crawl.images} pictures), _index/ (${crawl.reviews} reviews on the site, the business card, styles)`,
     places,
   ],
-  next: `the brand skill's notes from ${folder}${existsSync("raw/places") ? " and raw/places" : ""}, then the components (references/money.md)`,
+  next: `the brand skill's notes from ${folder}${kept ? ` and raw/places/${kept}.summary.json` : ""}, then the components (references/money.md)`,
 });

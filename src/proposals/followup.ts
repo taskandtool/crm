@@ -25,15 +25,16 @@ export async function proposalFollowUps(db: Db, today: string, word: string): Pr
       and q.valid_until is not null and q.valid_until >= ${today}::date and q.valid_until <= ${today}::date + ${FOLLOW_UP_DAYS}::int
     returning q.id::text as id, q.number, q.email::text as email, q.phone, q.name, q.created_by::text as owner, q.deal_id::text as deal_id,
               to_char(q.valid_until, 'YYYY-MM-DD') as until`;
+  // Claimed first, so two runs never make two; one that made no task is let go, for the next morning.
   let made = 0;
   for (const q of due) {
     const customer = await findMatch(db, q.email, q.phone);
-    if (!customer) continue;
-    const t = await addTask(db, customer.id, {
+    const t = customer && await addTask(db, customer.id, {
       kind: "task", title: `Follow up with ${q.name ?? q.email} on ${word.toLowerCase()} ${q.number}: open until ${q.until}, not signed yet`,
       due_on: today, due_time: null, owner: q.owner, deal_id: q.deal_id,
     }, "CRM");
     if (t) made++;
+    else await db.sql`update quote_proposals set followed_up_at = null where quote_id = ${q.id}::bigint`;
   }
   return made;
 }

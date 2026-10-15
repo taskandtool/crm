@@ -16,7 +16,7 @@ const MORE = [
 const RATING: { stars: number; count: string; source: string } | null = { stars: 4.9, count: "120 reviews", source: "Google" };
 
 export const reviews: ProposalComponent = {
-  key: "reviews", label: "Reviews", shows: "What customers say, with their stars", on: true, sample: true,
+  key: "reviews", label: "Reviews", shows: "What customers say, with their stars", on: false, sample: true,
   render: () => (
     <Band id="reviews" tone="night">
       <Inner>

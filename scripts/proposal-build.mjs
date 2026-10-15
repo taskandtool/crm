@@ -26,7 +26,7 @@ if (args.includes("--help") || args.includes("-h")) {
   process.exit(0);
 }
 if (args.some((a) => a !== "--check" && a !== "--watch")) {
-  console.error(`proposal build: unknown ${args.join(" ")}\n  Try: ${USAGE}`);
+  console.error(`proposal build: unknown ${args.join(" ")}; valid: --check, --watch\n  Try: node scripts/proposal-build.mjs --check`);
   process.exit(2);
 }
 
@@ -36,6 +36,10 @@ function style() {
   try {
     const file = join(dir, "proposal.css");
     const r = spawnSync("node_modules/.bin/tailwindcss", ["-i", "styles/proposal.css", "-o", file, "--minify"], { encoding: "utf8" });
+    if (r.error) {
+      console.error(`proposal build: tailwindcss could not start (${r.error.message})\n  Try: npm install`);
+      return null;
+    }
     if (r.status !== 0) {
       console.error(`proposal build: the CSS did not compile\n${(r.stderr || "").trim().split("\n").slice(-6).join("\n")}\n  Try: fix styles/proposal.css, then npm run css`);
       return null;
@@ -60,7 +64,7 @@ function style() {
 function photos() {
   const named = new Set();
   for (const f of readdirSync(COMPONENTS).filter((f) => f.endsWith(".tsx"))) {
-    for (const m of readFileSync(join(COMPONENTS, f), "utf8").matchAll(/\bphoto\("([^"]+)"\)/g)) named.add(m[1]);
+    for (const m of readFileSync(join(COMPONENTS, f), "utf8").matchAll(/\bphoto\((["'`])([^"'`]+)\1\)/g)) named.add(m[2]);
   }
   const problems = [];
   const out = {};
@@ -68,9 +72,10 @@ function photos() {
   for (const path of [...named].sort()) {
     const type = TYPES[extname(path).toLowerCase()];
     if (!type) { problems.push(`${path}: a photograph is .jpg, .png, .webp or .svg`); continue; }
+    if (!/^brand\/images\/[^/]+$/.test(path)) { problems.push(`${path}: a photograph is a file in brand/images/ (node scripts/proposal-photo.mjs <file> puts one there)`); continue; }
     if (!existsSync(path)) { problems.push(`${path}: not found (paths are from the app's folder; node scripts/proposal-photo.mjs <file> puts one in brand/images/)`); continue; }
     const size = statSync(path).size;
-    if (size > MAX_PHOTO) { problems.push(`${path}: ${Math.ceil(size / 1024)} KB, over ${MAX_PHOTO / 1024} KB; node scripts/proposal-photo.mjs ${path} makes a smaller copy`); continue; }
+    if (size > MAX_PHOTO) { problems.push(`${path}: ${Math.ceil(size / 1024)} KB, over ${MAX_PHOTO / 1024} KB; node scripts/proposal-photo.mjs ${path} writes a smaller ${path.replace(/\.\w+$/, ".webp")}, which the component then names`); continue; }
     total += size;
     out[path] = `data:${type};base64,${readFileSync(path).toString("base64")}`;
   }

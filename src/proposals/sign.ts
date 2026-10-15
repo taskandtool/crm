@@ -19,11 +19,12 @@ import { addTask } from "../crm/tasks";
 import { findMatch } from "../crm/customers";
 import { setDealStage, winFromQuotes } from "../crm/deals";
 import { todayIn } from "../invoices/document";
-import { invoiceById, invoiceFromQuote, invoicesFor, type Invoice } from "../invoices/invoices";
-import { ONLINE, quoteById, type Quote } from "../invoices/quotes";
+import { invoiceFromQuote, invoicesFor } from "../invoices/invoices";
+import { isEditable, ONLINE, quoteById, type Quote } from "../invoices/quotes";
 import { sendInvoice } from "../invoices/stripe";
+import { tokenHash } from "../data/token";
 import { fillPage } from "./page";
-import { afterSign, proposalOf, sha256, type ProposalOpts } from "./store";
+import { afterSign, pageFor, proposalOf, storePage, type ProposalOpts } from "./store";
 
 export type AnswerDeps = {
   opts: ProposalOpts;
@@ -36,8 +37,8 @@ export type AnswerDeps = {
   daysUntilDue: number;
 };
 
-/** What a yes did, in lines for the team, the invoice they are taken to pay, and a problem worth a task. */
-export type Accepted = { lines: string[]; pay: Invoice | null; problem: string | null };
+/** What a yes did, in lines for the team; a failure is a task as well (taskFor). */
+export type Accepted = { lines: string[] };
 
 /** A task for whoever made the quote, on its customer, due today: how a failure after a yes is never lost. */
 async function taskFor(db: Db, qt: Quote, title: string, deps: AnswerDeps): Promise<void> {
@@ -54,34 +55,33 @@ async function taskFor(db: Db, qt: Quote, title: string, deps: AnswerDeps): Prom
  */
 export async function afterAccepted(db: Db, qt: Quote, by: string, deps: AnswerDeps): Promise<Accepted> {
   const p = await proposalOf(db, qt.id);
-  if (!p || p.first_invoice === "none" || qt.status !== "accepted") return { lines: [], pay: null, problem: null };
+  if (!p || p.first_invoice === "none" || qt.status !== "accepted") return { lines: [] };
   const share = p.deposit_percent ? { kind: "percent" as const, percent: p.deposit_percent } : { kind: "all" as const };
   const made = await invoiceFromQuote(db, qt.id, by, "crm", deps.daysUntilDue, { share, seen: 0 });
   if (!made.ok) {
-    if (made.reason === "invoiced" && made.invoiceId) {
-      const inv = await invoiceById(db, made.invoiceId);
-      return { lines: [], pay: inv?.status === "open" && inv.hosted_url ? inv : null, problem: null };
-    }
-    return { lines: [], pay: null, problem: `the first invoice was not made: ${made.reason}` };
+    if (made.reason === "invoiced") return { lines: [] };
+    const problem = `Make the first invoice for ${qt.name ?? qt.email} (${qt.number}) by hand: it was not made (${made.reason}).`;
+    await taskFor(db, qt, problem, deps);
+    return { lines: [problem] };
   }
   const inv = made.value;
   const what = `${p.deposit_percent ? `deposit invoice (${p.deposit_percent}%)` : "invoice"} for ${formatMoney(inv.total_cents, inv.currency)}`;
-  if (p.first_invoice === "draft") return { lines: [`drafted the ${what}, to review and send`], pay: null, problem: null };
+  if (p.first_invoice === "draft") return { lines: [`drafted the ${what}, to review and send`] };
   let stripe: Stripe;
   try {
     stripe = deps.stripe();
   } catch {
     const problem = `The ${what} for ${qt.name ?? qt.email} (${qt.number}) is a draft: Stripe is not connected, so it was not sent. Connect Stripe, then send it.`;
     await taskFor(db, qt, problem, deps);
-    return { lines: [problem], pay: null, problem };
+    return { lines: [problem] };
   }
   const sent = await sendInvoice(db, stripe, inv.id, by);
   if (!sent.ok) {
     const problem = `Send the ${what} for ${qt.name ?? qt.email} (${qt.number}): Stripe said ${sent.message}`;
     await taskFor(db, qt, problem, deps);
-    return { lines: [problem], pay: null, problem };
+    return { lines: [problem] };
   }
-  return { lines: [`sent the ${what} through Stripe`], pay: sent.invoice.hosted_url ? sent.invoice : null, problem: null };
+  return { lines: [`sent the ${what} through Stripe`] };
 }
 
 /** A signed quote's page as the customer keeps it: the signature drawn in, the invoices with where they stand. */
@@ -124,7 +124,18 @@ export async function signProposal(db: Db, quoteId: string, input: Signing, meta
   if (!qt || !p?.page_html || !p.page_sha256) return { ok: false, reason: "closed", message: "This link no longer works." };
   const today = todayIn(deps.opts.timeZone);
   if (qt.status !== "sent" || (qt.valid_until && qt.valid_until < today)) return { ok: false, reason: "closed", message: "This is no longer open to sign." };
-  if (input.page !== p.page_sha256) return { ok: false, reason: "stale", message: `This ${deps.opts.word.toLowerCase()} was updated since you opened it. Review the latest version below, then sign.` };
+  const stale = { ok: false as const, reason: "stale" as const, message: `This ${deps.opts.word.toLowerCase()} was updated since you opened it. Review the latest version below, then sign.` };
+  if (input.page !== p.page_sha256) return stale;
+  // The page as the quote stands now: an edit since the page was stored (a
+  // sent quote stays editable), or a page that failed to store, is not what
+  // they read. The quote and its proposal must not change again before the lock.
+  const [seen] = await db.sql<{ q: string; p: string }>`
+    select q.updated_at::text as q, p.updated_at::text as p from quotes q join quote_proposals p on p.quote_id = q.id where q.id = ${quoteId}::bigint`;
+  const current = await pageFor(db, quoteId, deps.opts);
+  if (!seen || !current || current.sha !== p.page_sha256) {
+    await storePage(db, quoteId, deps.opts).catch(() => {});
+    return stale;
+  }
 
   // The page as signed: the stored file with the signature drawn in, where Accept was.
   const signedAt = new Date();
@@ -134,10 +145,10 @@ export async function signProposal(db: Db, quoteId: string, input: Signing, meta
     // Only the page they read, only while it is open: both checked behind the lock.
     q`insert into quote_signatures (quote_id, name, email, signed_at, ip, browser, page_html, page_sha256)
       select ${quoteId}::bigint, ${name}, qt.email, ${signedAt.toISOString()}::timestamptz, ${meta.ip?.slice(0, 64) ?? null}, ${meta.browser?.slice(0, 300) ?? null},
-             ${asSigned}, ${await sha256(asSigned)}
+             ${asSigned}, ${await tokenHash(asSigned)}
       from quotes qt join quote_proposals p on p.quote_id = qt.id
       where qt.id = ${quoteId}::bigint and qt.status = 'sent' and (qt.valid_until is null or qt.valid_until >= ${today}::date)
-        and p.page_sha256 = ${p.page_sha256}
+        and p.page_sha256 = ${p.page_sha256} and qt.updated_at::text = ${seen.q} and p.updated_at::text = ${seen.p}
       on conflict do nothing
       returning quote_id`,
     q`update quotes set status = 'accepted', decided_at = now(), decided_by = ${ONLINE.accepted}, updated_by = ${name}, updated_at = now()
@@ -145,14 +156,18 @@ export async function signProposal(db: Db, quoteId: string, input: Signing, meta
         and exists (select 1 from quote_signatures s where s.quote_id = ${quoteId}::bigint and s.signed_at = ${signedAt.toISOString()}::timestamptz)
       returning id`,
   ]);
-  if (!out[2].length) return { ok: false, reason: "closed", message: "This is no longer open to sign." };
+  if (!out[2].length) {
+    // Still open to sign: what changed under the lock was the quote or its page.
+    const now = await quoteById(db, quoteId);
+    return now?.status === "sent" ? stale : { ok: false, reason: "closed", message: "This is no longer open to sign." };
+  }
 
   // After the signature commits: its deal won, then what signing does. Neither can undo it.
   await winFromQuotes(db, ONLINE.accepted).catch((e) => console.error(`quote ${quoteId}: winning its deal: ${e instanceof Error ? e.message : e}`));
   const accepted = await afterAccepted(db, (await quoteById(db, quoteId))!, ONLINE.accepted, deps).catch(async (e) => {
     const problem = `After ${qt.name ?? qt.email} signed ${qt.number}: ${e instanceof Error ? e.message : e}`;
     await taskFor(db, qt, problem, deps).catch(() => {});
-    return { lines: [], pay: null, problem } as Accepted;
+    return { lines: [problem] } as Accepted;
   });
   return { ok: true, accepted };
 }
@@ -188,10 +203,11 @@ export async function declineProposal(db: Db, quoteId: string, input: { reason: 
   const reason = typeof input.reason === "string" && [...reasons, "Other"].includes(input.reason) ? input.reason : "Other";
   const note = typeof input.note === "string" ? input.note.trim().slice(0, 1000) : "";
   const qt = await quoteById(db, quoteId);
-  if (!qt || qt.status !== "sent") return false;
+  const today = todayIn(deps.opts.timeZone);
+  if (!qt || qt.status !== "sent" || (qt.valid_until && qt.valid_until < today)) return false;
   const out = await db.transaction([
-    q`update quotes set status = 'declined', decided_at = now(), decided_by = ${ONLINE.declined}, updated_at = now()
-      where id = ${quoteId}::bigint and status = 'sent' returning id`,
+    q`update quotes set status = 'declined', decided_at = now(), decided_by = ${ONLINE.declined}, updated_by = ${ONLINE.declined}, updated_at = now()
+      where id = ${quoteId}::bigint and status = 'sent' and (valid_until is null or valid_until >= ${today}::date) returning id`,
     q`update quote_proposals set decline_reason = ${reason}, decline_note = ${note || null}
       where quote_id = ${quoteId}::bigint and exists (select 1 from quotes where id = ${quoteId}::bigint and decided_by = ${ONLINE.declined})`,
   ]);
@@ -206,6 +222,16 @@ export async function declineProposal(db: Db, quoteId: string, input: { reason: 
     if (lost) await setDealStage(db, qt.deal_id, lost.key, ONLINE.declined, why.slice(0, 200)).catch((e) => console.error(`quote ${quoteId}: losing its deal: ${e instanceof Error ? e.message : e}`));
   }
   return true;
+}
+
+/** The quote as its customer reads it, for Preview and the PDF: the signed copy once signed. */
+export async function proposalDocument(db: Db, qt: Quote, opts: ProposalOpts): Promise<string> {
+  const [sig] = await db.sql`select 1 from quote_signatures where quote_id = ${qt.id}::bigint`;
+  const p = await proposalOf(db, qt.id);
+  if (sig && p?.page_html) return fillPage(p.page_html, await signedState(db, qt.id, opts), opts.word);
+  // A decided quote keeps the page it had; one still open is drawn as it stands.
+  const html = isEditable(qt) || !p?.page_html ? (await pageFor(db, qt.id, opts))?.html ?? "" : p.page_html;
+  return fillPage(html, { kind: "preview" }, opts.word);
 }
 
 /** What accepting it does, for the team, in a sentence (Mark accepted's page). */

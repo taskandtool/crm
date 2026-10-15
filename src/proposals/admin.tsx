@@ -19,7 +19,8 @@ import type { SavedLine } from "../invoices/lines";
 import { COMPONENTS, PICKABLE } from "./components";
 import { fillPage } from "./page";
 import { signedState } from "./sign";
-import { afterSign, chosenKeys, ensureProposal, mintLink, opensOf, pageFor, proposalOf, saveProposal, storePage, type ProposalOpts } from "./store";
+import type { Base } from "./link";
+import { afterSign, chosenKeys, ensureProposal, mintLink, opensOf, proposalOf, saveProposal, storePage, type ProposalOpts } from "./store";
 
 type Ctx = Context<{ Variables: TeamVars }>;
 
@@ -31,7 +32,7 @@ export type ProposalAdminOpts = {
   /** Where the quotes are (the invoices skill's pages): `${quotes}/:id`. */
   quotes: string;
   /** Production's address for a new link, or why there is none. */
-  base: (c: Ctx) => Promise<{ ok: true; base: string } | { ok: false; why: string }>;
+  base: (c: Ctx) => Promise<Base>;
 };
 
 const MESSAGES: FlashMessages = {};
@@ -95,16 +96,6 @@ export function proposalAdmin(getDb: GetDb, o: ProposalAdminOpts) {
   return app;
 }
 
-/** The quote as its customer reads it, for Preview and the PDF: the signed copy once signed. */
-export async function proposalDocument(db: Db, qt: Quote, opts: ProposalOpts): Promise<string> {
-  const [sig] = await db.sql`select 1 from quote_signatures where quote_id = ${qt.id}::bigint`;
-  const p = await proposalOf(db, qt.id);
-  if (sig && p?.page_html) return fillPage(p.page_html, await signedState(db, qt.id, opts), opts.word);
-  // A decided quote keeps the page it had; one still open is drawn as it stands.
-  const html = isEditable(qt) || !p?.page_html ? (await pageFor(db, qt.id, opts))?.html ?? "" : p.page_html;
-  return fillPage(html, { kind: "preview" }, opts.word);
-}
-
 /** The proposal's part of a quote's page: its components, what signing does, its link, who opened it, the answer. */
 export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, o: { opts: ProposalOpts; quotes: string; timeZone: string }): Promise<Child> {
   await ensureProposal(db, qt);
@@ -126,7 +117,7 @@ export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, 
           label: "Components",
           value: isEditable(qt) ? null : shown.length
             ? <>{shown.map((cpt, i) => <>{i ? ", " : ""}{cpt.label}{cpt.sample ? <span class="text-ink-3"> (sample words)</span> : null}</>)}</>
-            : "Only the cover, pricing and sign-off",
+            : "None: a plain quote, its price and sign-off",
         },
         { label: "When they sign", value: after ? after.replace(/^When they sign: /, "").replace(/^./, (x) => x.toUpperCase()) : null },
         { label: "Link", value: p?.link_made_at ? <>Made <When at={p.link_made_at} timeZone={o.timeZone} />{p.emailed_at ? <>, emailed <When at={p.emailed_at} timeZone={o.timeZone} /></> : ", given by hand"}</> : null },
@@ -138,7 +129,7 @@ export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, 
         <form method="post" action={`${self}/proposal`} class="mt-5 flex flex-col gap-5 border-t border-line pt-5">
           <fieldset>
             <legend class="mb-1 font-semibold">Components</legend>
-            <p class={smallText + " mb-2 text-ink-3"}>The cover, the pricing and the sign-off are on every {w}. Ask the AI to change how one looks or what it says, or to add one.</p>
+            <p class={smallText + " mb-2 text-ink-3"}>A {w} is its price and sign-off; tick what else it shows. Ask the AI to change how one looks or what it says, or to add one.</p>
             <ul class="flex flex-col divide-y divide-line">
               {PICKABLE.map((cpt) => (
                 <li class="py-2.5">
@@ -153,7 +144,7 @@ export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, 
               ))}
             </ul>
           </fieldset>
-          <label class={fieldClass}>Title on the cover<input name="title" value={p?.title ?? ""} maxlength={160} placeholder={`${o.opts.word} ${qt.number}`} class={inputClass} /></label>
+          <label class={fieldClass}>Title<input name="title" value={p?.title ?? ""} maxlength={160} placeholder={`${o.opts.word} ${qt.number}`} class={inputClass} /></label>
           <fieldset class="flex flex-col gap-2">
             <legend class="mb-1 font-semibold">After they sign</legend>
             {([["none", "Nothing: I send the invoice myself"], ["draft", "Make a draft invoice for me to review"], ["send", "Send the invoice through Stripe, and take them to pay it"]] as const).map(([val, label]) => (

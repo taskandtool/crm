@@ -10,7 +10,7 @@
 import { q, type Db } from "../data/db";
 import { formatMoney } from "../payments/money";
 import { taxRates, type TaxRate } from "../payments/tax";
-import { dayText } from "../invoices/document";
+import { newToken, tokenHash, TOKEN_SHAPE } from "../data/token";
 import { EDITABLE, isEditable, quoteById, type Quote } from "../invoices/quotes";
 import type { Errors, Saved, SavedLine } from "../invoices/lines";
 import { COMPONENTS, PICKABLE, type PageData } from "./components";
@@ -40,8 +40,6 @@ export type Proposal = {
 };
 
 const MAX_PAGE_BYTES = 9 * 1024 * 1024;
-/** The statuses a quote is still edited in (invoices skill's EDITABLE). */
-const EDITING: string[] = EDITABLE;
 
 // ---- a quote's proposal ------------------------------------------------------
 
@@ -120,13 +118,13 @@ export async function saveProposal(db: Db, quoteId: string, input: ProposalInput
   const out = await db.transaction([
     q`select status from quotes where id = ${quoteId}::bigint for update`,
     // Each write checks the status itself, behind the lock.
-    q`delete from quote_components where quote_id = ${quoteId}::bigint and exists (select 1 from quotes where id = ${quoteId}::bigint and status = any(${EDITING}::text[]))`,
+    q`delete from quote_components where quote_id = ${quoteId}::bigint and exists (select 1 from quotes where id = ${quoteId}::bigint and status = any(${EDITABLE}::text[]))`,
     q`insert into quote_components (quote_id, key) select ${quoteId}::bigint, k from unnest(${keys}::text[]) as k
-      where exists (select 1 from quotes where id = ${quoteId}::bigint and status = any(${EDITING}::text[])) on conflict do nothing`,
+      where exists (select 1 from quotes where id = ${quoteId}::bigint and status = any(${EDITABLE}::text[])) on conflict do nothing`,
     q`update quote_proposals set title = ${title || null}, first_invoice = ${first}, deposit_percent = ${pct}::int, updated_by = ${by}, updated_at = now()
-      where quote_id = ${quoteId}::bigint and exists (select 1 from quotes where id = ${quoteId}::bigint and status = any(${EDITING}::text[]))`,
+      where quote_id = ${quoteId}::bigint and exists (select 1 from quotes where id = ${quoteId}::bigint and status = any(${EDITABLE}::text[]))`,
   ]);
-  if (!EDITING.includes(out[0][0]?.status)) return { ok: false, errors: { status: `It was ${out[0][0]?.status ?? "removed"}, so it no longer changes.` } };
+  if (!(EDITABLE as readonly string[]).includes(out[0][0]?.status)) return { ok: false, errors: { status: `It was ${out[0][0]?.status ?? "removed"}, so it no longer changes.` } };
   return { ok: true, value: null };
 }
 
@@ -139,6 +137,7 @@ function depositCents(lines: SavedLine[], rates: TaxRate[], pct: number): number
   let total = 0;
   for (const [rate, amount] of groups) {
     const share = Math.round((amount * pct) / 100);
+    if (share <= 0) continue; // a discount group of its own is not billed in a deposit
     const r = rates.find((x) => x.id === rate);
     const tax = !r ? 0 : r.inclusive ? share - Math.round((share * 10000) / (10000 + r.percent_bp)) : Math.round((share * r.percent_bp) / 10000);
     total += share + (r && !r.inclusive ? tax : 0);
@@ -161,7 +160,7 @@ export function afterSign(p: Pick<Proposal, "first_invoice" | "deposit_percent">
   if (p.first_invoice === "draft") {
     return { customer: "When you sign, we send your invoice.", team: `When they sign: a draft invoice for ${what} is made for you to review; nothing is sent.` };
   }
-  return { customer: "When you sign, we send your invoice.", team: "When they sign: nothing else happens; make the invoice from this page." };
+  return { customer: "When you sign, we get in touch about what comes next.", team: "When they sign: nothing else happens; make the invoice from this page." };
 }
 
 /** The page for this quote as it stands, rendered: what Preview shows and the link serves. */
@@ -176,21 +175,25 @@ export async function pageFor(db: Db, quoteId: string, opts: ProposalOpts): Prom
     afterSign: afterSign(p!, qt, rates, opts.locale).customer,
   };
   const html = renderPage(data, keys);
-  return { html, sha: await sha256(html), bytes: new TextEncoder().encode(html).length };
+  return { html, sha: await tokenHash(html), bytes: new TextEncoder().encode(html).length };
 }
 
 /**
  * Re-make the quote's stored page. Only while it is editable: a decided
- * quote's page never changes. Refused, and nothing stored, over 5 MB.
+ * quote's page never changes. Behind the quote's lock, so it waits for a
+ * signature in flight and then finds it decided. Refused, and nothing
+ * stored, over 9 MB.
  */
 export async function storePage(db: Db, quoteId: string, opts: ProposalOpts): Promise<{ ok: true; sha: string } | { ok: false; why: string }> {
   const page = await pageFor(db, quoteId, opts);
   if (!page) return { ok: false, why: "No such quote." };
   if (page.bytes > MAX_PAGE_BYTES) return { ok: false, why: `The page would be ${(page.bytes / 1048576).toFixed(1)} MB, over 9 MB: its components carry too many photographs.` };
-  const rows = await db.sql`
-    update quote_proposals p set page_html = ${page.html}, page_sha256 = ${page.sha}, rendered_at = now()
-    from quotes q where p.quote_id = ${quoteId}::bigint and q.id = p.quote_id and q.status = any(${EDITING}::text[])
-    returning p.quote_id`;
+  const [, rows] = await db.transaction([
+    q`select status from quotes where id = ${quoteId}::bigint for update`,
+    q`update quote_proposals p set page_html = ${page.html}, page_sha256 = ${page.sha}, rendered_at = now()
+      from quotes qt where p.quote_id = ${quoteId}::bigint and qt.id = p.quote_id and qt.status = any(${EDITABLE}::text[])
+      returning p.quote_id`,
+  ]);
   return rows.length ? { ok: true, sha: page.sha } : { ok: false, why: "It was decided, so its page no longer changes." };
 }
 
@@ -203,8 +206,8 @@ export async function storePage(db: Db, quoteId: string, opts: ProposalOpts): Pr
  * leaves the customer's link working.
  */
 export async function newLink(db: Db, quoteId: string, by: string, base: string): Promise<{ url: string; keep: () => Promise<void> }> {
-  const token = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
-  const hash = await sha256(token);
+  const token = newToken();
+  const hash = await tokenHash(token);
   return {
     url: `${base.replace(/\/+$/, "")}/q/${token}`,
     keep: async () => {
@@ -229,8 +232,8 @@ export async function markEmailed(db: Db, quoteId: string): Promise<void> {
 
 /** The quote a token opens, or null for one that is not a link's. */
 export async function quoteIdByToken(db: Db, token: string): Promise<string | null> {
-  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
-  const [r] = await db.sql`select quote_id::text as id from quote_proposals where token_sha256 = ${await sha256(token)}`;
+  if (!TOKEN_SHAPE.test(token)) return null;
+  const [r] = await db.sql`select quote_id::text as id from quote_proposals where token_sha256 = ${await tokenHash(token)}`;
   return r?.id ?? null;
 }
 
@@ -265,16 +268,4 @@ export async function opensOf(db: Db, quoteId: string): Promise<Opens> {
     team: rows.filter((r) => r.who === "team").length, scanner: rows.filter((r) => r.who === "scanner").length,
     recent: rows.slice(0, 8).map((r) => ({ at: new Date(r.at), who: r.who })),
   };
-}
-
-// ---- bytes ---------------------------------------------------------------------
-
-export async function sha256(text: string): Promise<string> {
-  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-function toBase64Url(b: Uint8Array): string {
-  let s = "";
-  for (const x of b) s += String.fromCharCode(x);
-  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
