@@ -31,7 +31,7 @@ import { addDays, days, previousPeriod, ratioOfSums, weightedMean, type Period }
 /** One call through the gateway: POST a JSON body to a vendor path, get JSON back. */
 export type Call = (slug: string, path: string, body: unknown) => Promise<any>;
 
-/** Google's report APIs through the gateway on this machine (`google-gsc`, `google-ga4`). Pass a fetch to test. */
+/** Google's report APIs through the gateway on this machine (`google-search-console`, `google-analytics-data`). Pass a fetch to test. */
 export function googleCall(env: Env, fetchImpl: typeof fetch = fetch): Call {
   return async (slug, path, body) => {
     const res = await gatewayFetch(env, slug, path, {
@@ -164,7 +164,7 @@ export async function fetchSeo(call: Call, opts: { siteUrl: string; ga4Property?
   const previous = opts.previous ?? previousPeriod(period);
   const limit = opts.top ?? 25;
   const sc = (p: Period, dimension: string | null, rowLimit: number) =>
-    call("google-gsc", `/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`, {
+    call("google-search-console", `/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`, {
       startDate: p.from,
       endDate: p.to,
       type: "web",
@@ -174,7 +174,7 @@ export async function fetchSeo(call: Call, opts: { siteUrl: string; ga4Property?
     }) as Promise<GscReply>;
   const property = opts.ga4Property ? String(opts.ga4Property).replace(/^properties\//, "") : null;
   if (property !== null && !/^\d+$/.test(property)) throw new Error(`a GA4 property id is digits: ${property}`);
-  const ga = (body: object) => call("google-ga4", `/v1beta/properties/${property}:runReport`, body) as Promise<Ga4Report>;
+  const ga = (body: object) => call("google-analytics-data", `/v1beta/properties/${property}:runReport`, body) as Promise<Ga4Report>;
   const ga4ByDate = (p: Period) =>
     ga({
       dateRanges: [{ startDate: p.from, endDate: p.to }],

@@ -21,7 +21,7 @@ function fakeFetch() {
     calls.push({ url: String(url), auth: new Headers(init?.headers).get("authorization"), body });
     const u = String(url);
     let json: unknown = {};
-    if (u.includes("/google-gsc/")) {
+    if (u.includes("/google-search-console/")) {
       const dim = body.dimensions?.[0];
       if (dim === "date" && body.startDate === "2026-09-01")
         json = {
@@ -58,9 +58,9 @@ test("the SEO figures come through the gateway and their ratios from the totals"
 
   assert.equal(f.calls.length, 7);
   for (const c of f.calls) assert.equal(c.auth, "Bearer mt_1");
-  assert.ok(f.calls.some((c) => c.url === "https://tt.example/api/machine/gateway/google-gsc/webmasters/v3/sites/sc-domain%3Aacme.com/searchAnalytics/query"));
-  assert.ok(f.calls.some((c) => c.url === "https://tt.example/api/machine/gateway/google-ga4/v1beta/properties/123:runReport"));
-  const prevCall = f.calls.find((c) => c.url.includes("google-gsc") && c.body.dimensions?.[0] === "date" && c.body.startDate !== period.from)!;
+  assert.ok(f.calls.some((c) => c.url === "https://tt.example/api/machine/gateway/google-search-console/webmasters/v3/sites/sc-domain%3Aacme.com/searchAnalytics/query"));
+  assert.ok(f.calls.some((c) => c.url === "https://tt.example/api/machine/gateway/google-analytics-data/v1beta/properties/123:runReport"));
+  const prevCall = f.calls.find((c) => c.url.includes("google-search-console") && c.body.dimensions?.[0] === "date" && c.body.startDate !== period.from)!;
   assert.deepEqual([prevCall.body.startDate, prevCall.body.endDate], ["2026-08-29", "2026-08-31"]);
 
   const g = data.gsc;
@@ -93,12 +93,12 @@ test("a day Search Console has not finished is flagged, not charted as a quiet d
   const impl = (async (url: string | URL, init?: RequestInit) => {
     const res = await f.impl(url, init);
     const body = JSON.parse(String(init?.body));
-    if (!String(url).includes("google-gsc") || body.dimensions?.[0] !== "date" || body.startDate !== period.from) return res;
+    if (!String(url).includes("google-search-console") || body.dimensions?.[0] !== "date" || body.startDate !== period.from) return res;
     // Search Console sends 1 Sep and 3 Sep, but 3 Sep is still being counted
     return new Response(JSON.stringify({ ...(await res.json()), metadata: { firstIncompleteDate: "2026-09-03" } }), { status: 200 });
   }) as typeof fetch;
   const data = await fetchSeo(googleCall({ PHOENIX_URL: "https://tt.example", MACHINE_TOKEN: "x" }, impl), { siteUrl: "sc-domain:acme.com", period });
-  for (const c of f.calls.filter((c) => c.url.includes("google-gsc"))) assert.equal(c.body.dataState, "all");
+  for (const c of f.calls.filter((c) => c.url.includes("google-search-console"))) assert.equal(c.body.dataState, "all");
   assert.equal(data.gsc.incompleteFrom, "2026-09-03");
   const out = String(await SeoReport({ data }).toString());
   assert.match(out, /had not finished counting from Sep 3, 2026/);
@@ -146,14 +146,14 @@ test("a failing call names the vendor and the status; GA4 is optional", async ()
   const bad = (async () => new Response('{"error":{"status":"PERMISSION_DENIED"}}', { status: 403 })) as typeof fetch;
   await assert.rejects(
     fetchSeo(googleCall({ PHOENIX_URL: "https://tt.example", MACHINE_TOKEN: "x" }, bad), { siteUrl: "https://acme.com/", period }),
-    /google-gsc\/webmasters.*403 .*PERMISSION_DENIED/,
+    /google-search-console\/webmasters.*403 .*PERMISSION_DENIED/,
   );
   const f = fakeFetch();
   const data = await fetchSeo(googleCall({ PHOENIX_URL: "https://tt.example", MACHINE_TOKEN: "x" }, f.impl), { siteUrl: "https://acme.com/", period });
   assert.equal(data.ga4, null);
   assert.equal(f.calls.length, 4);
   assert.ok(f.calls[0].url.includes("/sites/https%3A%2F%2Facme.com%2F/"));
-  await assert.rejects(googleCall({})("google-gsc", "/x", {}), /machine/);
+  await assert.rejects(googleCall({})("google-search-console", "/x", {}), /machine/);
 });
 
 test("printing finds the crawler's browser and passes a file URL", () => {

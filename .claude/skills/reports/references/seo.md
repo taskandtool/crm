@@ -2,11 +2,13 @@
 
 ## The Google data
 
-Through the `google` connection: endpoints `google-gsc` and `google-ga4` on
-the gateway (`googleCall` in `seo.ts`). If the app does not hold it, ask with
-`python3 ~/tools/taskandtool.py request-connection google --why "…"`; the owner also needs
-the Search Console and Analytics Data APIs enabled on their Google Cloud
-project.
+Through two connections, each on the gateway (`googleCall` in `seo.ts`):
+`google-search-console` (endpoint `google-search-console`) and
+`google-analytics` (endpoint `google-analytics-data`). Ask for whichever the
+app does not hold with `python3 ~/tools/taskandtool.py request-connection
+google-search-console --why "…"` (or `google-analytics`); on their own Google
+Cloud app the owner also needs the Search Console and Analytics Data APIs
+enabled.
 
 `siteUrl` is the property exactly as Search Console names it
 (`sc-domain:acme.com`, or `https://acme.com/` with the slash). GA4 takes the
@@ -17,7 +19,7 @@ header; `fetchSeo` and `SeoReport` keep them.
 
 ## The weekly SEO report for a client
 
-1. Hold the `google` connection; note the client's Search Console property
+1. Hold both connections; note the client's Search Console property
    and GA4 property id in the app's settings.
 2. `scripts/seo-report.tsx`: `fetchSeo(googleCall(process.env), { siteUrl,
    ga4Property, period: lastFull("week", 1, zone, { lag: 3 }) })`, render
