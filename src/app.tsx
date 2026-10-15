@@ -33,7 +33,7 @@ import { isUnread, markSeen, NOTICE_LIMIT, notices, seenAt } from "./crm/notific
 import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
 import { addNote, listNotes, pickNoteKind, wallTime } from "./customers/notes";
 import { phoneKey, saveLead, savePerson } from "./customers/customer";
-import { archiveLead, ARCHIVE_REASONS, contactLeads, convertLead, dealLeads, getLead, LEAD_STATUSES, listLeads, MANUAL_SOURCES, openLeadCount, reopenLead, saveLeadDetails, SOURCE_LABELS, type LeadStatus } from "./crm/leads";
+import { archiveLead, ARCHIVE_REASONS, contactLeads, convertLead, dealLeads, dealTitleFor, getLead, LEAD_STATUSES, listLeads, MANUAL_SOURCES, openLeadCount, reopenLead, saveLeadDetails, SOURCE_LABELS, type LeadStatus } from "./crm/leads";
 import { LeadPage, LeadResults, LeadsPage, NewLeadPage, type LeadFilter } from "./views/leads";
 import { addEvent, customerEvents, eventCsvColumns, eventsPage, getEvent, inviteDomain, saveEvent, startWall, tellBooker, touchFor, type Event, type EventFilter, type EventInput } from "./crm/events";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, pickKind, pickPipeline, restoreStage, stagesWithCounts, type Pipeline, type StageResult } from "./crm/stages";
@@ -1058,7 +1058,7 @@ async function dealFrom(db: Db, from: unknown): Promise<DealFrom | null> {
   if (!lead) return null;
   const theirs = await customerDeals(db, lead.customer_id);
   return {
-    leadId: lead.id, name: lead.customer_name, email: lead.customer_email, phone: lead.customer_phone, title: lead.title, said: lead.said,
+    leadId: lead.id, name: lead.customer_name, email: lead.customer_email, phone: lead.customer_phone, title: dealTitleFor(lead), said: lead.said,
     customerId: lead.customer_id, openDeals: dealChoices(theirs),
   };
 }
@@ -1104,10 +1104,12 @@ app.get("/deals/:id", async (c) => {
     eventsCfg ? choicesOf(db) : null,
     listNotes(db, deal.customer_id),
   ]);
+  // The invoices its quotes made, as HubSpot's deal shows its invoices: whether the money came in.
+  const invoices = quotes ? (await Promise.all(quotes.map((q) => invoicesFor(db, { quoteId: q.id })))).flat().filter((i) => i.status !== "void") : [];
   return c.html(
     <DealPage user={c.var.user} deal={deal} leads={leads} stages={stages} tasks={tasks} openDeals={dealChoices(deals, deal.id)}
       customer={customer!} notes={notes} schedule={events && choices ? { events, choices } : null}
-      quotes={quotes} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} flash={flashOf(c)} />,
+      quotes={quotes} invoices={invoices} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} flash={flashOf(c)} />,
   );
 });
 

@@ -167,6 +167,10 @@ test("the bell: a booker's own move, a quote signed or declined at its link, pay
       ('rae.fox@example.com', 'Rae Fox', 238000, 238000, 'usd', 'paid', 'invoice', 'invoice', ${inv.id}, 'Invoice for Q-9001', true),
       ('max@example.com', 'Max Bell', 18900, 18900, 'usd', 'paid', 'full', null, null, null, true),
       ('nope@example.com', 'Never Paid', 500, 500, 'usd', 'pending', 'full', null, null, null, true)`;
+  // A check the team recorded by hand is theirs, not the customer's doing: not in the bell.
+  await db.sql`
+    insert into payments (email, name, amount_cents, total_cents, currency, status, kind, ref_type, ref_id, description, livemode, stripe_payment_record_id)
+    values ('rae.fox@example.com', 'Rae Fox', 4000, 4000, 'usd', 'paid', 'invoice', 'invoice', ${inv.id}, 'By hand check', true, 'pr_bell_test')`;
 
   const count = async () => (await (await get("/notifications/count")).text()).match(/>(\d+\+?)<span class="sr-only"> unread/)?.[1] ?? "0";
   assert.equal(await count(), "5");
@@ -174,6 +178,7 @@ test("the bell: a booker's own move, a quote signed or declined at its link, pay
   assert.match(html, /Rae Fox<\/span> moved <span[^>]*>/, "what they did");
   assert.match(html, new RegExp(`data-href="/events/${b.id}"`), "it opens the booking");
   assert.match(html, /signed Quote Q-9001, \$2,380\.00/);
+  assert.doesNotMatch(html, /By hand check/, "a payment the team recorded is not news to them");
   assert.match(html, /declined Quote Q-9003/);
   assert.match(html, new RegExp(`data-href="/invoices/quotes/${paid.id}"`));
   assert.match(html, /Payment of \$189\.00 from <span[^>]*>Max Bell/);
@@ -230,7 +235,7 @@ test("leads: a form fill and a phone call; convert to a deal, archive with Undo"
 
   // Convert to deal: the New deal form, filled in from the lead; saving converts it and clears its request.
   const form = await (await get(`/deals/new?from=lead.${formLead.id}`)).text();
-  assert.match(form, /name="title" required="" value="Contact us"/);
+  assert.match(form, /name="title" required="" value="Lou Park deal"/, "a form's lead names the deal for the person, as Pipedrive does");
   assert.match(form, /<textarea name="notes"[^>]*>Need a new water heater<\/textarea>/);
   const [lou] = await db.sql<{ id: string }>`select id::text as id from customers where email = 'lou@example.com'`;
   const dealAt = (await post("/deals", { from: `lead.${formLead.id}`, customer: lou.id, title: "Water heater" })).headers.get("location")!;
@@ -412,6 +417,13 @@ test("tasks: added, listed for today, the nav's count, done onto the timeline, m
   assert.match(await (await get(`/customers/${id}`)).text(), /No task scheduled\./);
   assert.match(await (await get("/tasks?show=done")).text(), /Call about the estimate[\s\S]*Done /, "Done lists it, newest first");
 
+  // A deal's page shows the invoices its quotes made, as HubSpot's deal does: was it paid?
+  const dealNow = await post(`/customers/${id}/deals`, { title: "Invoiced deal", value: "100" });
+  const dId = dealNow.headers.get("location")!.match(/\/deals\/(\d+)/)?.[1] ?? (await db.sql<{ id: string }>`select id::text as id from deals where title = 'Invoiced deal'`)[0].id;
+  const [dq] = await db.sql<{ id: string }>`insert into quotes (number, email, currency, status, total_cents, subtotal_cents, deal_id) values ('Q-DEAL1', 'deal-inv@example.com', 'usd', 'accepted', 10000, 10000, ${dId}::bigint) returning id::text as id`;
+  await db.sql`insert into invoices (email, currency, status, number, total_cents, quote_id) values ('deal-inv@example.com', 'usd', 'paid', 'INV-DEAL1', 10000, ${dq.id}::bigint)`;
+  assert.match(await (await get(`/deals/${dId}`)).text(), /Quotes and invoices[\s\S]*Quote Q-DEAL1[\s\S]*Invoice INV-DEAL1/);
+
   // Ticked from the page (htmx): the task's done state comes back in its place, the sidebar told; Undo puts it back and takes its note away.
   await post(`/customers/${id}/tasks`, { kind: "call", title: "Tick me in place", on: today });
   const [tk] = await db.sql<{ id: string }>`select id::text as id from follow_ups where title = 'Tick me in place'`;
@@ -468,7 +480,7 @@ test("Convert to deal opens the form filled in; saving it converts the lead, cle
   const [lead] = await db.sql<{ id: string }>`select id::text as id from leads where submission_id = ${sub}::bigint`;
   const form = await (await get(`/deals/new?from=lead.${lead.id}`)).text();
   assert.match(form, new RegExp(`<option value="${gil.id}" selected="">Gil Ross`), "their contact, chosen");
-  assert.match(form, /name="title" required="" value="Contact us"/, "named for what they asked");
+  assert.match(form, /name="title" required="" value="Gil Ross deal"/, "named for the person: the form's title says nothing about the work");
   assert.match(form, /<textarea name="notes"[^>]*>Need a quote for a new furnace<\/textarea>/, "what they wrote, as its notes");
   assert.match(form, new RegExp(`name="from" value="lead\\.${lead.id}"`));
   assert.match(form, new RegExp(`href="/leads/${lead.id}"[^>]*>← Lead`), "back goes to the lead");

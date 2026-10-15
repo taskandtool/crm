@@ -166,7 +166,7 @@ test("an empty or non-draft invoice is not sent; a payment by hand, all or part,
     assert.equal((await sendInvoice(s.db, f.stripe, zero.id, BY)).ok, false);
     assert.equal(f.calls.length, 0);
     const inv = await draft(s);
-    const pay = (amountCents: number, key: string) => recordPayment(s.db, f.stripe, inv.id, { amountCents, method: "Check", paidOn: "2026-10-01", reference: "101", key }, BY);
+    const pay = (amountCents: number, key: string) => recordPayment(s.db, f.stripe, inv.id, { amountCents, method: "Check", paidOn: "2026-10-01", reference: "101", key, today: "2026-10-15" }, BY);
     assert.equal((await pay(4000, "key-one-aaaa")).ok, false, "never sent");
     await sendInvoice(s.db, f.stripe, inv.id, BY);
     // Part of the $110.00: Stripe has a record attached to the invoice, the row is paid, the rest still owed.
@@ -177,13 +177,20 @@ test("an empty or non-draft invoice is not sent; a payment by hand, all or part,
     assert.deepEqual(report.params!.amount_requested, { value: 4000, currency: "usd" });
     assert.equal(report.params!.customer_details.customer, "cus_1");
     const [row] = await s.db.sql`select amount_cents::int as cents, status, stripe_payment_record_id as pr, description from payments where ref_id = ${inv.id}::text`;
-    assert.deepEqual({ ...row }, { cents: 4000, status: "paid", pr: "pr_record-" + inv.match_key + "-key-one-aaaa", description: "Invoice ACME-0001: Check 101" });
+    assert.deepEqual({ ...row }, { cents: 4000, status: "paid", pr: "pr_record-" + inv.match_key + "-key-one-aaaa", description: "Invoice ACME-0001: Check · 101" });
     assert.ok((await pay(4000, "key-one-aaaa")).ok, "the same click again");
     assert.equal((await s.db.sql`select 1 from payments where ref_id = ${inv.id}::text`).length, 1, "is one payment");
     const over = await pay(7001, "key-two-bbbb");
     assert.equal(over.ok, false);
     assert.match(!over.ok ? over.message : "", /more than the \$70\.00 still owed/);
-    const rest = await pay(7000, "key-three-cc");
+    // Paid on an earlier day: stamped midday that day. Paid today: stamped now, not a made-up time.
+    const [early] = await s.db.sql`select paid_at from payments where match_key = 'key-one-aaaa'`;
+    assert.equal(early.paid_at.toISOString(), "2026-10-01T12:00:00.000Z");
+    const today = new Date().toISOString().slice(0, 10);
+    assert.ok((await recordPayment(s.db, f.stripe, inv.id, { amountCents: 1000, method: "Cash", paidOn: today, reference: null, key: "key-today-dd", today }, BY)).ok);
+    const [now] = await s.db.sql`select paid_at from payments where match_key = 'key-today-dd'`;
+    assert.ok(Math.abs(now.paid_at.getTime() - Date.now()) < 60_000, "stamped when it was recorded");
+    const rest = await pay(6000, "key-three-cc");
     assert.ok(rest.ok && rest.remaining === 0);
     assert.equal((await invoiceById(s.db, inv.id))!.status, "open", "paid only when Stripe's event says so");
     assert.ok((await voidInvoice(s.db, f.stripe, inv.id)).ok);
@@ -339,6 +346,7 @@ test("the pages: a GET asks, the POST sends; Record payment, part of it; from a 
     assert.match(res.headers.get("location")!, /saved=payment-recorded$/);
     html = await (await get(`/invoices/${id}`)).text();
     assert.match(html, /Balance due<\/span><span[^>]*>\$60\.00/);
+    assert.match(html, / · Cash<\/span>/, "each payment says how it came");
     assert.equal((await invoiceById(s.db, id))!.status, "open");
     // Part paid: Stripe will not void it, so Void is not offered, and asking for it is refused; Write off still is.
     assert.doesNotMatch(html, />Void</);

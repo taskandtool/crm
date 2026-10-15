@@ -5,7 +5,7 @@ import { firstOfKind, firstOpenStage, listStages, resolveStage } from "../src/cr
 import { amountText, clean, parseAmount } from "../src/crm/text";
 import { formatMoney } from "../src/payments/money";
 import { readDay } from "../src/crm/tasks";
-import { convertLead, getLead } from "../src/crm/leads";
+import { convertLead, dealTitleFor, getLead } from "../src/crm/leads";
 import { done, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, ownerOf, resolveCustomer, usage, who, withDb } from "./lib";
 
 const one = dealsCfg.one.toLowerCase();
@@ -121,7 +121,7 @@ await withDb(async (db) => {
         fail(`${at}: ${c.name} has no open lead ${flag(a, "lead")}${lead?.status === "archived" ? " (it is archived; leads.mjs archive --undo opens it)" : ""}`, `node scripts/leads.mjs list --find "${c.name}"`);
       const into = lead?.deal_id ? await getDeal(db, lead.deal_id) : null;
       if (into) return result(into, `lead ${lead!.id} is already converted into ${fmt(into)}; left alone`, { next: show(into.id) });
-      const title = clean(rest.slice(1).join(" "), 200) ?? lead?.title ?? misused(`${at}: say what the ${one} is`, `node scripts/deals.mjs add ${c.id} "New furnace" --value 6500`);
+      const title = clean(rest.slice(1).join(" "), 200) ?? (lead ? dealTitleFor(lead) : null) ?? misused(`${at}: say what the ${one} is`, `node scripts/deals.mjs add ${c.id} "New furnace" --value 6500`);
       const stageArg = flag(a, "stage");
       const st = (stageArg ? resolveStage(active, stageArg) : await firstOpenStage(db, "deals")) ?? misused(`${at}: no stage ${stageArg ?? ""}; stages: ${stageList}`, "node scripts/stages.mjs list");
       // A re-run with the same title for the same customer, still open, is the same deal.

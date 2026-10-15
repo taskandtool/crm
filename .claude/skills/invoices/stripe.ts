@@ -5,7 +5,7 @@
 // makes a second invoice or a second line.
 //
 //   const r = await sendInvoice(db, stripeFrom(envOf(c)), id, user);
-//   await recordPayment(db, stripe, id, { amountCents: 4000, method: "Check", paidOn: "2026-10-15", reference: "101", key }, user);
+//   await recordPayment(db, stripe, id, { amountCents: 4000, method: "Check", paidOn: "2026-10-15", reference: "101", key, today }, user);
 //
 // The owner asking for it in chat (or saying yes to its preview), or a
 // team member's click, sends, voids or marks paid. Past draft, the status here changes only from the webhook
@@ -151,6 +151,8 @@ export type RecordInput = {
   reference: string | null;
   /** Random, from the form: the same click twice records one payment. */
   key: string;
+  /** Today in the business's zone: a payment paid today is stamped now; one on an earlier day at midday that day. */
+  today: string;
 };
 
 /**
@@ -175,10 +177,11 @@ export async function recordPayment(db: Db, stripe: Stripe, id: string, p: Recor
   const balance = Number(inv.total_cents) - (await paidSoFar(db, inv.id));
   if (!Number.isSafeInteger(p.amountCents) || p.amountCents <= 0) return fail("amount", "Enter the amount paid.");
   if (p.amountCents > balance) return fail("amount", `That is more than the ${formatMoney(balance, inv.currency)} still owed.`);
-  const at = new Date(`${p.paidOn}T12:00:00Z`);
   const now = Math.floor(Date.now() / 1000);
-  const when = Math.min(Math.floor(at.getTime() / 1000), now);
-  const what = [p.method, p.reference].filter(Boolean).join(" ");
+  const when = p.paidOn >= p.today ? now : Math.min(Math.floor(Date.parse(`${p.paidOn}T12:00:00Z`) / 1000), now);
+  const at = new Date(when * 1000);
+  // "Check · 1042": how, then their reference.
+  const what = [p.method, p.reference].filter(Boolean).join(" · ");
   const row = mine
     ? (await db.sql<{ id: string }>`update payments set status = 'pending', updated_at = now() where id = ${mine.id}::bigint returning id::text as id`)[0]
     : (await db.sql<{ id: string }>`

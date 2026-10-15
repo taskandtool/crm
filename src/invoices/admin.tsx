@@ -136,8 +136,8 @@ function Party({ doc, href }: { doc: { name: string | null; email: string; phone
   return (
     <>
       {href ? <a href={href}>{first}</a> : first}
-      {doc.name ? <><br /><span class="break-all">{doc.email}</span></> : null}
-      {doc.phone ? <><br />{doc.phone}</> : null}
+      {doc.name ? <span class="block truncate" title={doc.email}>{doc.email}</span> : null}
+      {doc.phone ? <span class="block">{doc.phone}</span> : null}
     </>
   );
 }
@@ -586,11 +586,13 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     // The link, for them to pass on: shown once, and the quote counts as sent.
     if (how === "link") {
       if (!proposal || !withLink) return back(c, `${self}/send`, "not-now");
+      // Sent first: a link is kept only for a quote that is out.
+      const r = await markSent(getDb(c), qt.id, c.get("user"));
+      if (!r.ok) return back(c, self, "not-now");
       const made = await proposal.mintLink(c, qt);
       await made.keep();
       const link = made.url;
-      const r = await markSent(getDb(c), qt.id, c.get("user"));
-      if (r.ok) await sent(c, { kind: "quote", id: qt.id, email: qt.email });
+      await sent(c, { kind: "quote", id: qt.id, email: qt.email });
       return framed(c, qbase, { title: `The link to ${w} ${qt.number}`, back: { href: self, label: `${W} ${qt.number}` } }, (
         <Section title="Copy it now">
           <p class="mb-3 max-w-prose">Anyone with this link can open the {w} and accept it, so send it only to {qt.name ?? qt.email}. It is shown once: New link on the {w}'s page makes another and this one stops working.</p>
@@ -789,8 +791,10 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const linked = opts.links ? await opts.links(c, { kind: "invoice", invoice: inv }) : {};
     const quote = inv.quote_id ? await quoteById(getDb(c), inv.quote_id) : null;
     // What was paid against it, as Jobber lists an invoice's payments above its balance.
-    const paid = await getDb(c).sql<{ id: string; amount_cents: string; currency: string; paid_at: Date | null; created_at: Date; status: string }>`
-      select id::text as id, coalesce(total_cents, amount_cents)::text as amount_cents, currency, paid_at, created_at, status
+    const paid = await getDb(c).sql<{ id: string; amount_cents: string; currency: string; paid_at: Date | null; created_at: Date; status: string; how: string }>`
+      select id::text as id, coalesce(total_cents, amount_cents)::text as amount_cents, currency, paid_at, created_at, status,
+             -- How it came, as Jobber's and HubSpot's payments say: the method recorded by hand ("Check · 1042"), else online.
+             case when stripe_payment_record_id is not null then coalesce(substring(description from ': (.*)$'), 'By hand') else 'Online' end as how
       from payments where ref_type = 'invoice' and ref_id = ${inv.id}::text and status in ('paid', 'refunded', 'partially_refunded')
       order by coalesce(paid_at, created_at)`;
     const owes = inv.status === "open" || inv.status === "uncollectible";
@@ -843,7 +847,10 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
                   <ul class="flex flex-col divide-y divide-line">
                     {paid.map((p) => (
                       <li class="flex items-center justify-between gap-3 py-2">
-                        <span><When at={p.paid_at ?? p.created_at} timeZone={opts.timeZone} />{p.status !== "paid" ? <span class="text-label text-ink-3"> · {p.status.replace("_", " ")}</span> : null}</span>
+                        <span>
+                          <When at={p.paid_at ?? p.created_at} timeZone={opts.timeZone} />
+                          <span class="text-label text-ink-3"> · {p.how}{p.status !== "paid" ? ` · ${p.status.replace("_", " ")}` : ""}</span>
+                        </span>
                         <span class="tabular-nums">{money(p.amount_cents, p.currency)}</span>
                       </li>
                     ))}
@@ -1071,7 +1078,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       : !method ? "Choose how it was paid."
       : !isDay(v.on) || v.on > today ? "Enter the day it was paid, today or before." : null;
     if (problem) return paymentPage(c, inv, v, problem, 422);
-    const r = await recordPayment(getDb(c), stripeOf(c), inv.id, { amountCents: cents!, method: method!, paidOn: v.on, reference: v.reference || null, key: v.key }, c.get("user"));
+    const r = await recordPayment(getDb(c), stripeOf(c), inv.id, { amountCents: cents!, method: method!, paidOn: v.on, reference: v.reference || null, key: v.key, today }, c.get("user"));
     // Stripe refused it: the form comes back with a new key, so a corrected amount is a new request to Stripe.
     if (!r.ok) return paymentPage(c, inv, r.reason === "stripe" ? { ...v, key: crypto.randomUUID() } : v, r.message, r.reason === "stripe" ? 502 : 422);
     return back(c, self, r.remaining === 0 ? "payment-recorded-all" : "payment-recorded");

@@ -285,11 +285,13 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
           });
         }
         if (has(a, "link")) {
+          // Sent first: a link is kept only for a quote that is out.
+          const r = await markSent(db, qt.id, by);
+          if (!r.ok) fail(`${at}: ${word} ${qt.number} cannot be sent now${r.status ? ` (it is ${r.status})` : ""}`, `node scripts/quotes.mjs show ${qt.id}`);
           const made = await cli.proposal!.mint(db, qt, by);
           await made.keep();
           const link = made.url;
-          const r = await markSent(db, qt.id, by);
-          if (r.ok) await cli.afterSend?.(db, { kind: "quote", id: qt.id, email: qt.email }, by);
+          await cli.afterSend?.(db, { kind: "quote", id: qt.id, email: qt.email }, by);
           if (json) return out(true, { link }, String);
           return done(at, `${word} ${qt.number}'s link, for the owner to send ${qt.name ?? qt.email} themselves`, {
             lines: [link, "Anyone with it can open and accept it. Sending again makes a new one, and this one stops working."],
@@ -304,7 +306,8 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         if (r.sent.status === "failed") fail(`${at}: the email did not go: ${r.sent.error}`, "python3 ~/tools/taskandtool.py list-connections, to check the email sender");
         if (made) {
           await made.keep();
-          await cli.proposal!.emailed(db, qt);
+          // The email went: a failed record of it must not read as a failed send.
+          await cli.proposal!.emailed(db, qt).catch((e) => console.error(`quote ${qt.id}: emailed: ${e instanceof Error ? e.message : e}`));
         }
         await cli.afterSend?.(db, { kind: "quote", id: qt.id, email: qt.email }, by);
         if (json) return out(true, { sent: true, pdf: r.pdf, link: !!link }, String);
@@ -554,7 +557,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         }
         // The same payment asked twice is recorded once: the key is what it is. A second like it on the same day needs its own --reference.
         const key = createHash("sha256").update([inv.id, cents, method, on, reference ?? ""].join("|")).digest("hex").slice(0, 40);
-        const r = await recordPayment(db, stripeOr(cli.env, at), inv.id, { amountCents: cents!, method, paidOn: on, reference, key }, by);
+        const r = await recordPayment(db, stripeOr(cli.env, at), inv.id, { amountCents: cents!, method, paidOn: on, reference, key, today }, by);
         if (!r.ok) fail(`${at}: ${r.message}`, `node scripts/invoices.mjs show ${inv.id}`);
         if (json) return out(true, { recorded: cents, remaining: r.remaining ?? null }, String);
         return done(at, `recorded ${money(cents!, inv.currency)} on invoice #${inv.id}`, {

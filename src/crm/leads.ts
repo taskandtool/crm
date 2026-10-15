@@ -96,6 +96,15 @@ export function firstText(data: Record<string, unknown> | null): string | null {
 /** Where it came from and what it is: "Website form · Request service", "Online booking · Free estimate", "Phone · New furnace". */
 export const sourceText = (l: Pick<Lead, "source" | "title">) => `${SOURCE_LABELS[l.source]} · ${l.title}`;
 
+/**
+ * What a deal made from a lead is called. A lead the team typed says what the
+ * work is ("Thermostat swap"); one a form or an online booking made says only
+ * the form or the service, so its deal is named for the person, as
+ * Pipedrive's default ("Rosa Delgado deal"). Either can be renamed.
+ */
+export const dealTitleFor = (l: Pick<Lead, "source" | "title" | "customer_name">) =>
+  l.source === "form" || l.source === "booking" ? `${l.customer_name} deal` : l.title;
+
 const toLead = (r: Omit<Lead, "said">): Lead => ({ ...r, said: r.notes ?? firstText(r.answers) });
 
 /** The leads in one status, newest first; `q` matches the contact's name, email or phone, or the lead's title. */

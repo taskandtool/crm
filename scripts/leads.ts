@@ -17,7 +17,8 @@ const HELP = `leads.mjs <command> [...] [--json] [--as <email>]      enquiries: 
 
 <who> is a customer's id, email or phone (customers.mjs add makes someone new).
 To convert a lead into a ${deal}: node scripts/deals.mjs add <who> --lead <id>
-(it is named for the lead unless you name it, and gets a "Call back" task today).
+(it is named for the lead, or "<name> deal" for a form's or a booking's, unless
+you name it, and gets a "Call back" task today).
 --as records who acted (default CRM_USER, else AI).
 
 Prints what happened first, then Next:. A re-run says "already" and changes

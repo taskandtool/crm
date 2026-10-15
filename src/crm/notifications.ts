@@ -55,7 +55,8 @@ export async function notices(db: Db, limit = NOTICE_LIMIT): Promise<Notice[]> {
       select 'payment' as kind, pm.id::text as id, coalesce(pm.paid_at, pm.created_at) as at, pm.name, pm.email::text as email,
              pm.amount_cents::text as amount_cents, pm.currency, pm.description, pm.livemode
       from payments pm
-      where pm.status in ('paid', 'refunded', 'partially_refunded')
+      -- What a customer paid, not a payment the team recorded by hand (it has a payment record).
+      where pm.status in ('paid', 'refunded', 'partially_refunded') and pm.stripe_payment_record_id is null
       order by coalesce(pm.paid_at, pm.created_at) desc, pm.id desc
       limit ${limit}`);
   }

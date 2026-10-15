@@ -17,6 +17,7 @@ import type { Task } from "../crm/tasks";
 import { KIND_LABELS, type Stage } from "../crm/stages";
 import { amountText, formatWholeMoney } from "../crm/text";
 import type { Quote } from "../invoices/quotes";
+import type { Invoice } from "../invoices/invoices";
 import { CustomerEvents, type Choices } from "./events";
 import { Docs } from "./money";
 import { TasksSection } from "./tasks";
@@ -226,6 +227,8 @@ export function DealPage(p: {
   /** Its events and what the form chooses from; null with the schedule off. */
   schedule: { events: Event[]; choices: Choices } | null;
   quotes: Quote[] | null;
+  /** The invoices its quotes made. */
+  invoices: Invoice[];
   owners: string[];
   today: string;
   flash: { code?: string | null; n?: string | null };
@@ -237,7 +240,8 @@ export function DealPage(p: {
   const value = worth(d);
   // A won or lost deal shows what happened; nothing on it asks for a next step.
   const closed = !!stage && stage.kind !== "open";
-  const who = { email: d.customer_email, name: d.customer_name, phone: d.customer_phone, deal: d.id, line: d.title };
+  // A new quote's first line is the deal's title when that names the work; not "Rosa Delgado deal".
+  const who = { email: d.customer_email, name: d.customer_name, phone: d.customer_phone, deal: d.id, line: d.title === `${d.customer_name} deal` ? undefined : d.title };
   const wonStage = p.stages.find((s) => s.kind === "won");
   const lostStage = p.stages.find((s) => s.kind === "lost");
   const firstOpen = p.stages.find((s) => s.kind === "open");
@@ -331,9 +335,9 @@ export function DealPage(p: {
             </Section>
           ) : null}
           {p.quotes && (p.quotes.length || !closed) ? (
-            <Section title="Quotes" count={p.quotes.length}>
+            <Section title={p.invoices.length ? "Quotes and invoices" : "Quotes"} count={p.quotes.length + p.invoices.length}>
               {p.quotes.length ? (
-                <Docs quotes={p.quotes} invoices={[]} />
+                <Docs quotes={p.quotes} invoices={p.invoices} />
               ) : (
                 <p class="text-ink-3">No quotes yet. {d.customer_email ? `Accepting a quote marks the ${one} won.` : `Add an email to ${d.customer_name} to send a quote.`}</p>
               )}
