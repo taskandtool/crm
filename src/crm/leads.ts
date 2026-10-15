@@ -185,8 +185,10 @@ export async function convertLead(db: Db, id: string, dealId: string, user: stri
  * as Convert to deal does (its submission done, its booking on the deal, a
  * "Call back" task). The lead stays, converted, as the deal's "Where it came
  * from". Each is claimed before its deal is made, so two requests at once
- * make one deal; a lead with no open stage to land in is let go. Cheap when
- * none is waiting; run before the team's pages and the AI's lists.
+ * make one deal; a lead with no open stage to land in is let go, and a claim
+ * left unfinished (the process stopped between) is taken up again after a
+ * few minutes. Cheap when none is waiting; run before the team's pages and
+ * the AI's lists.
  */
 export async function autoDeals(db: Db): Promise<number> {
   const sql = spliced((await presentTables(db)).forms ? AUTO_FORMS : NO_FORMS).sql(db);
@@ -196,7 +198,7 @@ export async function autoDeals(db: Db): Promise<number> {
     left join bookings b on b.id = l.booking_id
     left join booking_types t on t.id = b.type_id
     {forms_join}
-    where l.status = 'open' and (coalesce(t.deals, false) {forms_deal})
+    where (l.status = 'open' or ({claim_left})) and (coalesce(t.deals, false) {forms_deal})
     order by l.created_at, l.id
     limit 20`;
   if (!waiting.length) return 0;
@@ -205,18 +207,20 @@ export async function autoDeals(db: Db): Promise<number> {
   let made = 0;
   for (const w of waiting) {
     // Claimed: off Open first, so a second request finds nothing to do.
-    const [claimed] = await db.sql<{ id: string }>`
-      update leads set status = 'converted', updated_at = now() where id = ${w.id}::bigint and status = 'open' returning id::text as id`;
+    const [claimed] = await CLAIM.sql(db)<{ id: string }>`
+      update leads l set status = 'converted', updated_at = now() where l.id = ${w.id}::bigint and (l.status = 'open' or ({claim_left})) returning l.id::text as id`;
     if (!claimed) continue;
     const lead = (await getLead(db, w.id))!;
     const by = SOURCE_LABELS[lead.source];
-    const currency = (w.amount_cents && w.currency) || dealsCfg.currency;
+    // Deals keep their currency as the config writes it ("USD"); a service's price is kept lowercase.
+    const currency = ((w.amount_cents && w.currency) || dealsCfg.currency).toUpperCase();
+    const release = () => db.sql`update leads set status = 'open' where id = ${w.id}::bigint and status = 'converted' and deal_id is null`;
     const deal = await createDeal(db, lead.customer_id, {
       title: dealTitleFor(lead), value_cents: w.amount_cents ? Number(w.amount_cents) : null, currency,
       owner: lead.owner, expected_close: null, notes: lead.said,
-    }, stage.key, by);
+    }, stage.key, by).catch(async (e) => { await release(); throw e; });
     if (!deal) {
-      await db.sql`update leads set status = 'open' where id = ${w.id}::bigint and deal_id is null`;
+      await release();
       continue;
     }
     await convertLead(db, w.id, deal.id, by, lead.owner);
@@ -224,11 +228,15 @@ export async function autoDeals(db: Db): Promise<number> {
   }
   return made;
 }
+/** A claim nobody finished: converted, no deal, a few minutes old. */
+const CLAIM_LEFT = "l.status = 'converted' and l.deal_id is null and l.updated_at < now() - interval '5 minutes'";
 const AUTO_FORMS = {
   forms_join: "left join submissions s on s.id = l.submission_id left join forms f on f.key = s.form_key",
   forms_deal: "or coalesce(f.deals, false)",
+  claim_left: CLAIM_LEFT,
 };
-const NO_FORMS = { forms_join: "", forms_deal: "" };
+const NO_FORMS = { forms_join: "", forms_deal: "", claim_left: CLAIM_LEFT };
+const CLAIM = spliced({ claim_left: CLAIM_LEFT });
 
 /** Archived with a reason (Not a fit, Spam, ...); its form submission follows: archived, or spam. */
 export async function archiveLead(db: Db, id: string, reason: string, user: string): Promise<boolean> {

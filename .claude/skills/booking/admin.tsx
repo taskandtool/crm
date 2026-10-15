@@ -103,7 +103,7 @@ const MESSAGES: FlashMessages = {
 /** Minor units as the editor shows them: 12000 usd is "120.00". */
 const amountText = (cents: number, currency: string) => (cents / 10 ** decimals(currency)).toFixed(decimals(currency));
 
-export type CalendarView = "day" | "week" | "month";
+type CalendarView = "day" | "week" | "month";
 
 /** First of the month a day is in, and the first of the months around it. */
 const monthOf = (day: string, step = 0) => {
@@ -116,7 +116,7 @@ const monthOf = (day: string, step = 0) => {
  * What a calendar view shows around a day: its days, the whole weeks a month's
  * grid needs (Monday first), the day the arrows go to, and its heading.
  */
-export function calendarSpan(view: CalendarView, anchor: string): { days: string[]; grid: string[]; before: string; after: string; heading: string } {
+function calendarSpan(view: CalendarView, anchor: string): { days: string[]; grid: string[]; before: string; after: string; heading: string } {
   const mondayOf = (day: string) => addDays(day, -((weekdayOf(day) + 6) % 7));
   if (view === "day") {
     return { days: [anchor], grid: [anchor], before: addDays(anchor, -1), after: addDays(anchor, 1), heading: formatShortDate(anchor) };

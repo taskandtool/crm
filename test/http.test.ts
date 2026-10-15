@@ -1000,15 +1000,22 @@ test("a form or a service can make each lead a deal straight away, as Pipedrive'
 
   // A submission, as the Website takes one: its lead is a deal by the next page.
   const sub = await insertSubmission(db, { form_key: "install-request", name: "Ivy Auto", email: "ivy.auto@example.com", phone: null, data: { message: "New AC for the shop" }, source: "website", page: null, status: "new" });
+  await db.sql`update customers set company = 'Ivy Garage' where email = 'ivy.auto@example.com'`;
   await get("/");
   const [lead] = await db.sql<{ status: string; deal_id: string | null }>`select status, deal_id::text as deal_id from leads where submission_id = ${sub}::bigint`;
   assert.equal(lead.status, "converted");
   assert.ok(lead.deal_id, "with its deal");
   const [deal] = await db.sql<{ title: string; notes: string; stage: string; created_by: string }>`select title, notes, stage, created_by::text as created_by from deals where id = ${lead.deal_id}::bigint`;
-  assert.deepEqual({ ...deal }, { title: "Ivy Auto deal", notes: "New AC for the shop", stage: (await db.sql<{ key: string }>`select key from deal_stages where kind = 'open' and not archived order by position limit 1`)[0].key, created_by: "Website form" });
+  assert.deepEqual({ ...deal }, { title: "Ivy Garage deal", notes: "New AC for the shop", stage: (await db.sql<{ key: string }>`select key from deal_stages where kind = 'open' and not archived order by position limit 1`)[0].key, created_by: "Website form" });
   assert.equal((await db.sql<{ status: string }>`select status from submissions where id = ${sub}::bigint`)[0].status, "done", "its submission done, as a convert does");
   assert.match(await (await get(`/deals/${lead.deal_id}`)).text(), /Where it came from[\s\S]*Converted/);
   assert.equal((await db.sql`select 1 from follow_ups where deal_id = ${lead.deal_id}::bigint and title = 'Call back Ivy Auto'`).length, 1, "and its call back");
+
+  // A claim nobody finished (the process stopped between): taken up again once it is a few minutes old.
+  const sub2 = await insertSubmission(db, { form_key: "install-request", name: "Una Stuck", email: "una.stuck@example.com", phone: null, data: { message: "Stuck" }, source: "website", page: null, status: "new" });
+  await db.sql`update leads set status = 'converted', updated_at = now() - interval '10 minutes' where submission_id = ${sub2}::bigint`;
+  await get("/");
+  assert.ok((await db.sql<{ deal_id: string | null }>`select deal_id::text as deal_id from leads where submission_id = ${sub2}::bigint`)[0].deal_id, "its deal made after all");
 
   // A service that books deals: the booking's lead is a deal, its value the service's price.
   const [svc] = await db.sql<{ id: string }>`insert into booking_types (slug, name, duration_min, location_kind, location, price_cents, currency, deals) values ('auto-install', 'Install', 60, 'our_place', '1 Main St', 45000, 'usd', true) returning id::text as id`;
@@ -1018,8 +1025,8 @@ test("a form or a service can make each lead a deal straight away, as Pipedrive'
   await db.sql`insert into leads (customer_id, source, booking_id, title) values (${c.id}::bigint, 'booking', ${b.id}::bigint, 'Install')`;
   // Two pages at once: one deal.
   await Promise.all([get("/deals"), get("/leads")]);
-  const made = await db.sql<{ value_cents: string; title: string }>`select d.value_cents::text as value_cents, d.title from deals d join leads l on l.deal_id = d.id where l.booking_id = ${b.id}::bigint`;
-  assert.deepEqual(made.map((r) => ({ ...r })), [{ value_cents: "45000", title: "Bo Booker deal" }]);
+  const made = await db.sql<{ value_cents: string; title: string; currency: string }>`select d.value_cents::text as value_cents, d.title, d.currency from deals d join leads l on l.deal_id = d.id where l.booking_id = ${b.id}::bigint`;
+  assert.deepEqual(made.map((r) => ({ ...r })), [{ value_cents: "45000", title: "Bo Booker deal", currency: "USD" }], "in the deals' own currency, as the board totals it");
   assert.equal((await db.sql`select 1 from deals where customer_id = ${c.id}::bigint`).length, 1, "made once");
   assert.equal((await db.sql<{ deal_id: string }>`select deal_id::text as deal_id from bookings where id = ${b.id}::bigint`)[0].deal_id !== null, true, "the booking is on the deal");
 });

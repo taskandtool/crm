@@ -199,7 +199,7 @@ export async function undoTask(db: Db, id: string, user: string): Promise<boolea
  * contact: a call, email, meeting or text noted, a completed event, a quote
  * or an invoice sent to them. Used when the one that was it is taken back.
  */
-export async function lastContactFrom(db: Db, customerId: string, user: string): Promise<void> {
+async function lastContactFrom(db: Db, customerId: string, user: string): Promise<void> {
   const has = await presentTables(db);
   const sent = (table: string, on: boolean) => (on ? `(select max(x.sent_at) from ${table} x where ${byEmail("x")})` : "null::timestamptz");
   await spliced({ event_of: EVENT_OF, quotes: sent("quotes", has.quotes), invoices: sent("invoices", has.invoices) }).sql(db)`
