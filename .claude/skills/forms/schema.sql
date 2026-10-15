@@ -21,6 +21,11 @@ create table if not exists forms (
 -- deals (the CRM), as Pipedrive's web forms save a deal and Jobber's job booking
 -- converts its request. Only with leads on.
 alter table forms add column if not exists deals boolean not null default false;
+-- Whose each submission's lead (and its deal) is, as Pipedrive's web forms set an
+-- owner; and the stage its deal lands in (a key of the app's stages; the first
+-- open one when empty or gone).
+alter table forms add column if not exists owner citext;
+alter table forms add column if not exists deal_stage text;
 
 
 create table if not exists submissions (

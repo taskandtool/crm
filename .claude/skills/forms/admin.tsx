@@ -344,7 +344,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       from submissions where id = ${id}::bigint`;
     if (!r) return c.notFound();
     const [formRow] = await db.sql`
-      select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads, deals
+      select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads, deals, owner::text as owner, deal_stage
       from forms where key = ${r.form_key}`;
     const form = formRow ? toForm(formRow) : null;
     const title = formTitle(r.form_key, form?.title);
@@ -604,10 +604,20 @@ function PaymentCard({ p, label, at }: { p: Payment; label: string; at?: (id: st
  * and who stopped part way. `submissions` is where formsAdmin is mounted.
  */
 /**
- * `deals`: this app makes deals (the CRM), so a form can make each submission a deal straight away;
- * without it a submission is a lead or just a contact.
+ * What an app with deals (the CRM) offers a form: each submission a deal made automatically,
+ * in a stage it chooses, and whose its leads and deals are. Without it a submission is a lead
+ * or just a contact.
  */
-export function formEditor(getDb: GetDb, opts: { base: string; css: string; timeZone: string; source: string; submissions: string; nav?: NavItem[]; Frame?: Frame; deals?: boolean }) {
+export type FormDeals = {
+  /** The stages a deal can land in, first the one it lands in by default. */
+  stages: (c: Context) => Promise<{ value: string; label: string }[]>;
+  /** Who can own one: the team, then anyone already written down. */
+  owners: (c: Context) => Promise<string[]>;
+};
+
+export function formEditor(getDb: GetDb, opts: { base: string; css: string; timeZone: string; source: string; submissions: string; nav?: NavItem[]; Frame?: Frame; deals?: FormDeals }) {
+  /** The stages and owners a form's deals choose from, where this app has deals. */
+  const dealChoices = async (c: Context) => (opts.deals ? { stages: await opts.deals.stages(c), owners: await opts.deals.owners(c) } : undefined);
   const base = opts.base.replace(/\/+$/, "");
   const subs = opts.submissions;
   const nav = opts.nav ?? [{ href: base, label: "Forms" }, { href: subs, label: "Submissions" }];
@@ -717,7 +727,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
     const found = await formRow(getDb(c), c.req.param("key"));
     if (!found) return c.notFound();
     const team = await teamOf(envOf(c));
-    return framed(c, base, editorHead(found.form), <Editor base={base} form={found.form} raw={found.raw} version={found.version} team={team} deals={!!opts.deals} />);
+    return framed(c, base, editorHead(found.form), <Editor base={base} form={found.form} raw={found.raw} version={found.version} team={team} deals={await dealChoices(c)} />);
   });
 
   app.post("/form/:key", async (c) => {
@@ -746,13 +756,17 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
       active: draft.active,
       leads: draft.leads,
       deals: draft.leads && draft.deals && !!opts.deals,
+      // Whose its leads are, and where its deals land: only where the app has deals, and only with leads.
+      owner: opts.deals && draft.leads ? draft.owner || null : null,
+      deal_stage: opts.deals && draft.leads && draft.deals ? draft.deal_stage || null : null,
     };
+    const dealsNow = await dealChoices(c);
     const again = (status: 409 | 422, note?: string, version = draft.version) =>
       framed(
           c,
           base,
           editorHead(found.form),
-          <Editor base={base} form={form} raw={draft.fields} version={version} problems={problems} formProblems={formProblems} note={note} team={team} deals={!!opts.deals} />, status);
+          <Editor base={base} form={form} raw={draft.fields} version={version} problems={problems} formProblems={formProblems} note={note} team={team} deals={dealsNow} />, status);
     if (Object.keys(problems).length || Object.keys(formProblems).length) return again(422);
 
     // Saved only over the version the editor opened, so two people editing at
@@ -761,7 +775,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
       update forms
       set title = ${form.title}, fields = ${JSON.stringify(fields)}::jsonb, notify_emails = ${form.notify_emails}::citext[],
           redirect_to = ${form.redirect_to}, success_message = ${form.success_message}, submit_label = ${form.submit_label},
-          active = ${form.active}, leads = ${form.leads}, deals = ${form.deals}, updated_by = ${c.get("user")}, updated_at = now()
+          active = ${form.active}, leads = ${form.leads}, deals = ${form.deals}, owner = ${form.owner}, deal_stage = ${form.deal_stage}, updated_by = ${c.get("user")}, updated_at = now()
       where key = ${form.key} and updated_at::text = ${draft.version}
       returning key`;
     if (!saved.length) {
@@ -867,7 +881,7 @@ async function allForms(db: Db) {
 
 async function formRow(db: Db, key: string) {
   const [row] = await db.sql`
-    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads, deals,
+    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads, deals, owner::text as owner, deal_stage,
            updated_at::text as version
     from forms where key = ${key}`;
   return row ? { form: toForm(row), raw: (Array.isArray(row.fields) ? row.fields : []) as Record<string, unknown>[], version: row.version as string } : null;
@@ -898,6 +912,8 @@ type Draft = {
   active: boolean;
   leads: boolean;
   deals: boolean;
+  owner: string;
+  deal_stage: string;
   fields: Record<string, unknown>[];
 };
 
@@ -970,6 +986,8 @@ function readEditor(body: Record<string, unknown>): Draft {
     // What each submission becomes: a lead (the default), a deal straight away, or just a contact.
     leads: s("becomes") !== "contact",
     deals: s("becomes") === "deal",
+    owner: s("owner").slice(0, 200),
+    deal_stage: s("deal_stage").slice(0, 40),
     fields,
   };
 }
@@ -1003,8 +1021,8 @@ function Editor(props: {
   note?: string;
   /** Who Task & Tool email reaches, when it is the sender (data/send.ts teamOf). */
   team?: Person[] | null;
-  /** This app makes deals: offer "a deal, straight away". */
-  deals?: boolean;
+  /** This app makes deals: offer "a deal, created automatically", its stage, and whose its leads and deals are. */
+  deals?: { stages: { value: string; label: string }[]; owners: string[] };
 }) {
   const { base, form, raw, version, problems = {}, formProblems = {}, note, team } = props;
   const becomes = !form.leads ? "contact" : form.deals ? "deal" : "lead";
@@ -1059,11 +1077,11 @@ function Editor(props: {
             Taking submissions
           </label>
           {/* What each submission becomes, as Pipedrive's web forms save a lead or a deal; the person is a contact either way. */}
-          <fieldset class="flex flex-col gap-2 sm:col-span-2">
+          <fieldset class="group/becomes flex flex-col gap-2 sm:col-span-2">
             <legend class="mb-1 font-medium">Each submission becomes</legend>
             {[
               ["lead", "A lead", "To look at first, then convert to a deal or archive."],
-              ...(props.deals ? [["deal", "A deal, straight away", "In the pipeline's first stage, its lead marked converted. For a form that is always a job to win."]] : []),
+              ...(props.deals ? [["deal", "A deal, created automatically", "From everything that comes through this form, in the stage below, its lead marked converted."]] : []),
               ["contact", "Just a contact", "For a newsletter sign-up or a job application."],
             ].map(([value, label, help]) => (
               <label class="flex items-start gap-2">
@@ -1071,6 +1089,24 @@ function Editor(props: {
                 <span>{label}<span class="block font-normal text-ink-3">{help}</span></span>
               </label>
             ))}
+            {/* What a lead or a deal from it needs, as Pipedrive's web forms set them: its stage (a deal), whose it is (either).
+                Each shows only for the choice it belongs to. */}
+            {props.deals ? (
+              <div class="mt-2 grid gap-4 sm:grid-cols-2">
+                <label class={fieldClass + " hidden group-has-[input[value=deal]:checked]/becomes:flex"}>
+                  Deals land in
+                  <select name="deal_stage" class={controlClass}>
+                    {props.deals.stages.map((st) => <option value={st.value} selected={st.value === form.deal_stage}>{st.label}</option>)}
+                  </select>
+                </label>
+                <label class={fieldClass + " hidden group-has-[input[value=lead]:checked]/becomes:flex group-has-[input[value=deal]:checked]/becomes:flex"}>
+                  Owner
+                  <input name="owner" list="form-owners" value={form.owner ?? ""} maxlength={200} placeholder="No one" class={controlClass} aria-describedby="p-owner-help" />
+                  <datalist id="form-owners">{props.deals.owners.map((o) => <option value={o} />)}</datalist>
+                  <span id="p-owner-help" class="font-normal text-ink-3">Whose each lead and deal is; their call back task is theirs too.</span>
+                </label>
+              </div>
+            ) : null}
           </fieldset>
         </div>
       </Section>

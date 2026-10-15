@@ -66,6 +66,10 @@ export interface Form {
   leads: boolean;
   /** Its lead becomes a deal straight away, where an app has deals (the CRM makes it). */
   deals?: boolean;
+  /** Whose each submission's lead (and its deal) is: a team member's name or email; null for no one. */
+  owner?: string | null;
+  /** The stage its deal lands in (the app's stage key); null for the first open one. */
+  deal_stage?: string | null;
 }
 
 /** What a browser posts: one string per name, or several for a checkbox group. */

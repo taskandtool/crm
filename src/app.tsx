@@ -77,7 +77,7 @@ import { todayIn as todayInZone } from "./reports/sql";
 import { stripeWebhook } from "./payments/webhook";
 import { quotesFor } from "./invoices/quotes";
 import { invoicesFor, owed } from "./invoices/invoices";
-import { loadTeam } from "./crm/people";
+import { loadTeam, ownerSuggestions } from "./crm/people";
 import { CUSTOMER_EVENTS, EventPage, eventParams, EventResults, EventsPage, eventSpec, NewEventPage, statusLabel, type Choices } from "./views/events";
 
 type C = Context<AppEnv>;
@@ -690,7 +690,13 @@ app.route(
 );
 app.route(
   "/forms",
-  formEditor(dbOf, { base: "/forms", css: "/crm.css", timeZone: cfg.time_zone, source: "crm", submissions: "/forms/submissions", nav: FORM_TABS, Frame: frameIn("settings"), deals: true }),
+  formEditor(dbOf, { base: "/forms", css: "/crm.css", timeZone: cfg.time_zone, source: "crm", submissions: "/forms/submissions", nav: FORM_TABS, Frame: frameIn("settings"),
+    // A form can make each submission a deal automatically: in the stage it picks, owned by the person it names.
+    deals: {
+      stages: async (c) => (await listStages(dbOf(c), "deals")).filter((s) => s.kind === "open" && !s.archived).map((s) => ({ value: s.key, label: s.label })),
+      owners: async (c) => ownerSuggestions([(c as unknown as C).var.user, ...(await facets(dbOf(c))).owners]),
+    },
+  }),
 );
 
 // ---- quotes and invoices ------------------------------------------------------

@@ -995,8 +995,13 @@ test("a form or a service can make each lead a deal straight away, as Pipedrive'
   await db.sql`insert into forms (key, title, fields, source) values ('install-request', 'Install request', ${JSON.stringify([{ name: "name", label: "Name", type: "text", required: true }, { name: "email", label: "Email", type: "email", required: true }, { name: "message", label: "Message", type: "textarea" }])}::jsonb, 'crm') on conflict do nothing`;
   let html = await (await get("/forms/form/install-request")).text();
   assert.match(html, /name="becomes" value="deal"/, "the CRM's form editor offers a deal straight away");
-  await db.sql`update forms set deals = true where key = 'install-request'`;
-  assert.match(await (await get("/forms/form/install-request")).text(), /name="becomes" value="deal" checked=""/);
+  // Its deals land in a stage it picks, owned by the person it names, as Pipedrive's web forms set both.
+  const [second] = await db.sql<{ key: string }>`select key from deal_stages where kind = 'open' and not archived order by position offset 1 limit 1`;
+  await db.sql`update forms set deals = true, owner = 'ann@team.example', deal_stage = ${second.key} where key = 'install-request'`;
+  html = await (await get("/forms/form/install-request")).text();
+  assert.match(html, /name="becomes" value="deal" checked=""/);
+  assert.match(html, new RegExp(`name="deal_stage"[\\s\\S]*<option value="${second.key}" selected=""`), "Deals land in: the form's stage");
+  assert.match(html, /name="owner"[^>]*value="ann@team.example"/, "Owner: the form's");
 
   // A submission, as the Website takes one: its lead is a deal by the next page.
   const sub = await insertSubmission(db, { form_key: "install-request", name: "Ivy Auto", email: "ivy.auto@example.com", phone: null, data: { message: "New AC for the shop" }, source: "website", page: null, status: "new" });
@@ -1005,11 +1010,12 @@ test("a form or a service can make each lead a deal straight away, as Pipedrive'
   const [lead] = await db.sql<{ status: string; deal_id: string | null }>`select status, deal_id::text as deal_id from leads where submission_id = ${sub}::bigint`;
   assert.equal(lead.status, "converted");
   assert.ok(lead.deal_id, "with its deal");
-  const [deal] = await db.sql<{ title: string; notes: string; stage: string; created_by: string }>`select title, notes, stage, created_by::text as created_by from deals where id = ${lead.deal_id}::bigint`;
-  assert.deepEqual({ ...deal }, { title: "Ivy Garage deal", notes: "New AC for the shop", stage: (await db.sql<{ key: string }>`select key from deal_stages where kind = 'open' and not archived order by position limit 1`)[0].key, created_by: "Website form" });
+  const [deal] = await db.sql<{ title: string; notes: string; stage: string; owner: string; created_by: string }>`select title, notes, stage, owner::text as owner, created_by::text as created_by from deals where id = ${lead.deal_id}::bigint`;
+  assert.deepEqual({ ...deal }, { title: "Ivy Garage deal", notes: "New AC for the shop", stage: second.key, owner: "ann@team.example", created_by: "Website form" });
+  assert.equal((await db.sql<{ owner: string }>`select owner::text as owner from leads where submission_id = ${sub}::bigint`)[0].owner, "ann@team.example", "the lead is the form's owner's too");
   assert.equal((await db.sql<{ status: string }>`select status from submissions where id = ${sub}::bigint`)[0].status, "done", "its submission done, as a convert does");
   assert.match(await (await get(`/deals/${lead.deal_id}`)).text(), /Where it came from[\s\S]*Converted/);
-  assert.equal((await db.sql`select 1 from follow_ups where deal_id = ${lead.deal_id}::bigint and title = 'Call back Ivy Auto'`).length, 1, "and its call back");
+  assert.equal((await db.sql<{ owner: string }>`select owner::text as owner from follow_ups where deal_id = ${lead.deal_id}::bigint and title = 'Call back Ivy Auto'`)[0].owner, "ann@team.example", "and its call back, theirs");
 
   // A claim nobody finished (the process stopped between): taken up again once it is a few minutes old.
   const sub2 = await insertSubmission(db, { form_key: "install-request", name: "Una Stuck", email: "una.stuck@example.com", phone: null, data: { message: "Stuck" }, source: "website", page: null, status: "new" });
@@ -1021,12 +1027,13 @@ test("a form or a service can make each lead a deal straight away, as Pipedrive'
   const [svc] = await db.sql<{ id: string }>`insert into booking_types (slug, name, duration_min, location_kind, location, price_cents, currency, deals) values ('auto-install', 'Install', 60, 'our_place', '1 Main St', 45000, 'usd', true) returning id::text as id`;
   assert.match(await (await get(`/services/${svc.id}`)).text(), /name="deals" value="1" checked=""/, "the service page offers it");
   const [c] = await db.sql<{ id: string }>`insert into customers (name, email, stage) values ('Bo Booker', 'bo.booker@example.com', 'lead') returning id::text as id`;
-  const [b] = await db.sql<{ id: string }>`insert into bookings (type_id, starts_at, ends_at, name, email, status, customer_id, source, location_kind) values (${svc.id}::bigint, now() + interval '2 days', now() + interval '2 days 1 hour', 'Bo Booker', 'bo.booker@example.com', 'confirmed', ${c.id}::bigint, 'website', 'our_place') returning id::text as id`;
+  const [host] = await db.sql<{ id: string }>`insert into resources (name, email, time_zone) values ('Hal Host', 'hal@team.example', 'UTC') returning id::text as id`;
+  const [b] = await db.sql<{ id: string }>`insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, status, customer_id, source, location_kind) values (${svc.id}::bigint, ${host.id}::bigint, now() + interval '2 days', now() + interval '2 days 1 hour', 'Bo Booker', 'bo.booker@example.com', 'confirmed', ${c.id}::bigint, 'website', 'our_place') returning id::text as id`;
   await db.sql`insert into leads (customer_id, source, booking_id, title) values (${c.id}::bigint, 'booking', ${b.id}::bigint, 'Install')`;
   // Two pages at once: one deal.
   await Promise.all([get("/deals"), get("/leads")]);
-  const made = await db.sql<{ value_cents: string; title: string; currency: string }>`select d.value_cents::text as value_cents, d.title, d.currency from deals d join leads l on l.deal_id = d.id where l.booking_id = ${b.id}::bigint`;
-  assert.deepEqual(made.map((r) => ({ ...r })), [{ value_cents: "45000", title: "Bo Booker deal", currency: "USD" }], "in the deals' own currency, as the board totals it");
+  const made = await db.sql<{ value_cents: string; title: string; currency: string; owner: string }>`select d.value_cents::text as value_cents, d.title, d.currency, d.owner::text as owner from deals d join leads l on l.deal_id = d.id where l.booking_id = ${b.id}::bigint`;
+  assert.deepEqual(made.map((r) => ({ ...r })), [{ value_cents: "45000", title: "Bo Booker deal", currency: "USD", owner: "hal@team.example" }], "in the deals' own currency, as the board totals it");
   assert.equal((await db.sql`select 1 from deals where customer_id = ${c.id}::bigint`).length, 1, "made once");
   assert.equal((await db.sql<{ deal_id: string }>`select deal_id::text as deal_id from bookings where id = ${b.id}::bigint`)[0].deal_id !== null, true, "the booking is on the deal");
 });

@@ -9,7 +9,7 @@ import type { Charge } from "./price";
 /** The form with this key, or null. A broken field in the row is left out, never rendered half-made. */
 export async function loadForm(db: Db, key: string): Promise<Form | null> {
   const [row] = await db.sql`
-    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads, deals
+    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads, deals, owner::text as owner, deal_stage
     from forms where key = ${key}`;
   return row ? toForm(row) : null;
 }
@@ -26,6 +26,8 @@ export function toForm(row: Record<string, any>): Form {
     active: row.active !== false,
     leads: row.leads !== false,
     deals: row.leads !== false && row.deals === true,
+    owner: row.owner ?? null,
+    deal_stage: row.deal_stage ?? null,
   };
 }
 
@@ -80,14 +82,17 @@ export async function insertSubmission(
  * is marked not spam.
  */
 export async function saveSubmitter(db: Db, id: string | number, user: string | null = null): Promise<CustomerRef | null> {
-  const [s] = await db.sql<{ name: string | null; email: string | null; phone: string | null; data: Record<string, unknown> | null; created_at: Date; source: string; leads: boolean }>`
-    select s.name, s.email::text as email, s.phone, s.data, s.created_at, coalesce(f.title, s.form_key) as source, coalesce(f.leads, true) as leads
+  const [s] = await db.sql<{ name: string | null; email: string | null; phone: string | null; data: Record<string, unknown> | null; created_at: Date; source: string; leads: boolean; owner: string | null }>`
+    select s.name, s.email::text as email, s.phone, s.data, s.created_at, coalesce(f.title, s.form_key) as source, coalesce(f.leads, true) as leads,
+           -- Read by name from the row, so a forms table an older app made (no owner yet) reads as no one.
+           to_jsonb(f) ->> 'owner' as owner
     from submissions s left join forms f on f.key = s.form_key
     where s.id = ${String(id)}::bigint and s.status <> 'spam' and s.form_key <> ${BOOKING_PAGE.key}`;
   if (!s) return null;
   const who = await savePerson(db, { name: s.name, email: s.email, phone: s.phone, source: s.source, at: s.created_at, answers: s.data }, user);
   // The enquiry itself is a lead, named for the form (customers saveLead; once per submission).
-  if (who && s.leads) await saveLead(db, { customerId: who.id, source: "form", title: s.source, submissionId: String(id), at: s.created_at }, user);
+  // The form's owner is the lead's, as Pipedrive's web forms assign one.
+  if (who && s.leads) await saveLead(db, { customerId: who.id, source: "form", title: s.source, submissionId: String(id), at: s.created_at, owner: s.owner }, user);
   return who;
 }
 

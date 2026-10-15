@@ -10,7 +10,7 @@ import type { LeadSource } from "../customers/customer";
 import { BOOKING_PAGE, saveSubmitter } from "../forms/store";
 import { cfg, dealsCfg, newLeadTask } from "../config";
 import { createDeal } from "./deals";
-import { firstOpenStage } from "./stages";
+import { listStages } from "./stages";
 import { todayIn } from "../reports/sql";
 import { EVENT_OF, spliced } from "./sql";
 import { addTask } from "./tasks";
@@ -192,18 +192,21 @@ export async function convertLead(db: Db, id: string, dealId: string, user: stri
  */
 export async function autoDeals(db: Db): Promise<number> {
   const sql = spliced((await presentTables(db)).forms ? AUTO_FORMS : NO_FORMS).sql(db);
-  const waiting = await sql<{ id: string; amount_cents: string | null; currency: string | null }>`
-    select l.id::text as id, coalesce(b.amount_cents, t.price_cents)::text as amount_cents, coalesce(b.currency, t.currency) as currency
+  const waiting = await sql<{ id: string; amount_cents: string | null; currency: string | null; stage: string | null; host: string | null }>`
+    select l.id::text as id, coalesce(b.amount_cents, t.price_cents)::text as amount_cents, coalesce(b.currency, t.currency) as currency,
+           {form_stage} as stage, r.email::text as host
     from leads l
     left join bookings b on b.id = l.booking_id
     left join booking_types t on t.id = b.type_id
+    left join resources r on r.id = b.resource_id
     {forms_join}
     where (l.status = 'open' or ({claim_left})) and (coalesce(t.deals, false) {forms_deal})
     order by l.created_at, l.id
     limit 20`;
   if (!waiting.length) return 0;
-  const stage = await firstOpenStage(db, "deals");
-  if (!stage) return 0;
+  // The form's stage when it is still an open one; else the first open stage.
+  const open = (await listStages(db, "deals")).filter((s) => s.kind === "open" && !s.archived);
+  if (!open.length) return 0;
   let made = 0;
   for (const w of waiting) {
     // Claimed: off Open first, so a second request finds nothing to do.
@@ -212,18 +215,21 @@ export async function autoDeals(db: Db): Promise<number> {
     if (!claimed) continue;
     const lead = (await getLead(db, w.id))!;
     const by = SOURCE_LABELS[lead.source];
+    const stage = open.find((s) => s.key === w.stage) ?? open[0];
+    // Whose: the lead's (the form's owner), else for a booking the person who takes it, as HubSpot gives a booked meeting's deal to its owner.
+    const owner = lead.owner ?? w.host;
     // Deals keep their currency as the config writes it ("USD"); a service's price is kept lowercase.
     const currency = ((w.amount_cents && w.currency) || dealsCfg.currency).toUpperCase();
     const release = () => db.sql`update leads set status = 'open' where id = ${w.id}::bigint and status = 'converted' and deal_id is null`;
     const deal = await createDeal(db, lead.customer_id, {
       title: dealTitleFor(lead), value_cents: w.amount_cents ? Number(w.amount_cents) : null, currency,
-      owner: lead.owner, expected_close: null, notes: lead.said,
+      owner, expected_close: null, notes: lead.said,
     }, stage.key, by).catch(async (e) => { await release(); throw e; });
     if (!deal) {
       await release();
       continue;
     }
-    await convertLead(db, w.id, deal.id, by, lead.owner);
+    await convertLead(db, w.id, deal.id, by, owner);
     made++;
   }
   return made;
@@ -232,10 +238,12 @@ export async function autoDeals(db: Db): Promise<number> {
 const CLAIM_LEFT = "l.status = 'converted' and l.deal_id is null and l.updated_at < now() - interval '5 minutes'";
 const AUTO_FORMS = {
   forms_join: "left join submissions s on s.id = l.submission_id left join forms f on f.key = s.form_key",
-  forms_deal: "or coalesce(f.deals, false)",
+  // By name from the row: a forms table an older app made, without these yet, reads as off.
+  forms_deal: "or coalesce((to_jsonb(f) ->> 'deals')::boolean, false)",
+  form_stage: "to_jsonb(f) ->> 'deal_stage'",
   claim_left: CLAIM_LEFT,
 };
-const NO_FORMS = { forms_join: "", forms_deal: "", claim_left: CLAIM_LEFT };
+const NO_FORMS = { forms_join: "", forms_deal: "", form_stage: "null::text", claim_left: CLAIM_LEFT };
 const CLAIM = spliced({ claim_left: CLAIM_LEFT });
 
 /** Archived with a reason (Not a fit, Spam, ...); its form submission follows: archived, or spam. */

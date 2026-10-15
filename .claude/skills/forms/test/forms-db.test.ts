@@ -466,6 +466,9 @@ test("the editor saves field changes as rows and refuses a stale version", async
     };
     assert.deepEqual(await becomes("contact"), { leads: false, deals: false });
     assert.deepEqual(await becomes("deal"), { leads: true, deals: false }, "no deals in this app: a lead");
+    const [{ v: v2 }] = await s.db.sql`select updated_at::text as v from forms where key = 'contact'`;
+    await post(app, "/admin/forms/form/contact", { ...fields3, version: v2, becomes: "lead", owner: "ann@team.example", deal_stage: "won" }, team);
+    assert.deepEqual({ ...(await s.db.sql`select owner::text as owner, deal_stage from forms where key = 'contact'`)[0] }, { owner: null, deal_stage: null }, "an owner and a stage only where the app has deals");
     assert.doesNotMatch(await (await app.request("https://site.example/admin/forms/form/contact", { headers: team })).text(), /value="deal"/);
 
     // The same post again carries the old version: refused, nothing changes.
