@@ -7,7 +7,7 @@ import { StatusBadge, type StatusOption } from "../admin/status";
 import { dealsCfg, vocab } from "../config";
 import { KIND_LABELS, type Pipeline, type StageWithCount } from "../crm/stages";
 import { STAGE_KINDS } from "../config-schema";
-import { Layout } from "./layout";
+import { Layout, SETTINGS_BACK } from "./layout";
 import { buttonClass, controlClass, Field, MESSAGES, primaryClass, quietClass } from "./ui";
 
 /** A kind as a badge, toned as a closed request's stage is on its page (ui.tsx stageOptions). */
@@ -19,7 +19,7 @@ const KIND_OPTIONS: StatusOption[] = [
 
 export function StagesPage(p: { user: string; deals: StageWithCount[]; statuses: StageWithCount[]; flash: { code?: string | null; n?: string | null } }) {
   return (
-    <Layout title="Stages and statuses" user={p.user} section="deals" back={{ href: "/deals", label: dealsCfg.many }}>
+    <Layout title="Stages and statuses" user={p.user} section="settings" back={SETTINGS_BACK}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <StageList
         pipeline="deals"

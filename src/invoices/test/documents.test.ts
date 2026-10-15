@@ -233,10 +233,17 @@ test("totals: outstanding, past due and paid this month, live money in one curre
     // Paid on 1 October in Chicago (05:30 UTC) counts in October; 30 September there does not.
     await s.db.sql`update invoices set status = 'paid', livemode = true, paid_at = '2026-10-01T05:30:00Z' where id = ${paidNow}::bigint`;
     await s.db.sql`update invoices set status = 'paid', livemode = true, paid_at = '2026-10-01T04:30:00Z' where id = ${paidBefore}::bigint`;
+    // What was paid is the payments on them: each invoice's, and $30 of the late one by check.
+    const pay = (id: string, cents: number, at: string) => s.db.sql`
+      insert into payments (amount_cents, total_cents, currency, status, kind, ref_type, ref_id, livemode, paid_at)
+      values (${cents}, ${cents}, 'usd', 'paid', 'invoice', 'invoice', ${id}, true, ${at}::timestamptz)`;
+    await pay(paidNow, 2500, "2026-10-01T05:30:00Z");
+    await pay(paidBefore, 6000, "2026-10-01T04:30:00Z");
+    await pay(late, 3000, "2026-10-05T15:00:00Z");
     assert.deepEqual(await invoiceTotals(s.db, { today: "2026-10-11", timeZone: "America/Chicago", currency: "usd" }), {
-      open: { cents: "14000", count: 2 },
-      due: { cents: "10000", count: 1 },
-      paid: { cents: "2500" },
+      open: { cents: "11000", count: 2 },
+      due: { cents: "7000", count: 1 },
+      paid: { cents: "5500" },
     });
   }));
 
@@ -255,5 +262,8 @@ test("owed: open invoices in live mode, per currency", (t) =>
       { currency: "eur", cents: "700", count: 1 },
       { currency: "usd", cents: "1500", count: 2 },
     ]);
+    // $4 of the $10 paid by hand: $6 is left on it.
+    await s.db.sql`insert into payments (amount_cents, total_cents, currency, status, kind, ref_type, ref_id, livemode) values (400, 400, 'usd', 'paid', 'invoice', 'invoice', ${a}, true)`;
+    assert.deepEqual((await owed(s.db, "ann@example.com"))[1], { currency: "usd", cents: "1100", count: 2 });
     assert.deepEqual((await taxRates(s.db)).length, 0);
   }));

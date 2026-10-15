@@ -25,7 +25,7 @@ import { postedFields, readFields } from "./crm/fields";
 import { everythingFrom } from "./crm/history";
 import { board, createDeal, customerDeals, dealChoices, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
 import {
-  addTask, customerTasks, doneTask, taskCounts, getTask, inPlay, listTasks, moveTask, nextTasks,
+  addTask, customerTasks, doneTask, taskCounts, getTask, inPlay, doneTasks, listTasks, moveTask, nextTasks,
   pickTaskKind, readDay, readTime,
 } from "./crm/tasks";
 import { home } from "./crm/home";
@@ -44,7 +44,10 @@ import { CustomerPage } from "./views/customer";
 import { CustomersPage, customerSpec, filterParams, NewCustomerPage, Results } from "./views/customers";
 import { HomePage } from "./views/home";
 import { NotificationsPage, UnreadCount } from "./views/notifications";
-import { Layout, SCHEDULE_TABS, WaitingView, type Section as NavSection } from "./views/layout";
+import { Layout, SCHEDULE_TABS, SETTINGS_BACK, WaitingView, type Section as NavSection } from "./views/layout";
+import { SettingsPage } from "./views/settings";
+import { SearchPage, SearchPeek } from "./views/search";
+import { search } from "./crm/search";
 import type { Frame } from "./admin/layout";
 import { Board, CLOSED_DAYS, DealPage, DealsPage, NewDealPage, PER_COLUMN, type BoardData, type DealFrom } from "./views/deals";
 import { NewTaskPage, TasksPage } from "./views/tasks";
@@ -79,12 +82,22 @@ import { CUSTOMER_EVENTS, EventPage, eventParams, EventResults, EventsPage, even
 
 type C = Context<AppEnv>;
 
-/** A skill's pages (bookings, forms, invoices) in the CRM's own frame: its section lit, the page's head in the CRM's header. */
-const frameIn = (section: NavSection): Frame => ({ title, user, back, sub, actions, children }) => (
-  <Layout title={title} user={user} section={section} back={back} sub={sub} actions={actions}>
-    {children}
-  </Layout>
-);
+/**
+ * A skill's pages (bookings, forms, invoices) in the CRM's own frame: its
+ * section lit (chosen by the tab a page is under, where one mount spans two),
+ * the page's head in the CRM's header. A Settings page's way back is Settings.
+ */
+const frameIn = (section: NavSection | ((current: string) => NavSection)): Frame => ({ title, user, back, sub, actions, current, children }) => {
+  const lit = typeof section === "function" ? section(current) : section;
+  return (
+    <Layout title={title} user={user} section={lit} back={back ?? (lit === "settings" ? SETTINGS_BACK : undefined)} sub={sub} actions={actions}>
+      {children}
+    </Layout>
+  );
+};
+/** The invoices skill's pages: quotes under Quotes, tax rates under Settings, the rest under Invoices. */
+const moneySection = (current: string): NavSection =>
+  current.startsWith("/invoices/quotes") ? "quotes" : current.startsWith("/invoices/tax-rates") ? "settings" : "invoices";
 const PAGE = 50;
 const app = new Hono<AppEnv>();
 
@@ -642,8 +655,10 @@ if (eventsCfg) {
       scheduleActions: <a href="/events/new" class={primaryClass}>New {one.toLowerCase()}</a>,
     }),
   );
-  app.route("/services", typeRoutes(dbOf, { ...team, base: "/services" }));
-  app.route("/team", peopleRoutes(dbOf, { ...team, base: "/team" }));
+  // Services and the team are Settings: one page each, no tabs.
+  const settings = { Frame: frameIn("settings"), nav: [] };
+  app.route("/services", typeRoutes(dbOf, { ...team, ...settings, base: "/services" }));
+  app.route("/team", peopleRoutes(dbOf, { ...team, ...settings, base: "/team" }));
 }
 
 // ---- forms ---------------------------------------------------------------------
@@ -665,13 +680,14 @@ app.route(
     links: {
       ...(eventsCfg ? { booking: (id: string) => `/schedule/${id}` } : {}),
       ...(invoicesCfg ? { payment: (id: string) => `/invoices/payments/${id}` } : {}),
+      lead: (id: string) => `/leads/${id}`,
     },
-    Frame: frameIn("forms"),
+    Frame: frameIn("settings"),
   }),
 );
 app.route(
   "/forms",
-  formEditor(dbOf, { base: "/forms", css: "/crm.css", timeZone: cfg.time_zone, source: "crm", submissions: "/forms/submissions", nav: FORM_TABS, Frame: frameIn("forms") }),
+  formEditor(dbOf, { base: "/forms", css: "/crm.css", timeZone: cfg.time_zone, source: "crm", submissions: "/forms/submissions", nav: FORM_TABS, Frame: frameIn("settings") }),
 );
 
 // ---- quotes and invoices ------------------------------------------------------
@@ -679,12 +695,10 @@ app.route(
 // owner's own sender, with a PDF where this runtime can print one (dev); an
 // invoice through the owner's Stripe account, which emails it.
 
-/** The Invoices section's tabs: the invoices skill's pages and the payments skill's, one set. */
+/** The Invoices section's tabs: the invoices skill's invoices and the payments skill's payments. Quotes are a section of their own, as Jobber's. */
 const INVOICE_TABS = [
-  { href: "/invoices/quotes", label: `${invoicesCfg?.word ?? "Quote"}s` },
   { href: "/invoices", label: "Invoices" },
   { href: "/invoices/payments", label: "Payments" },
-  { href: "/proposals", label: `${invoicesCfg?.word ?? "Quote"} sections` },
 ];
 
 if (invoicesCfg) {
@@ -695,14 +709,14 @@ if (invoicesCfg) {
       base: "/invoices/payments",
       css: "/crm.css",
       timeZone: cfg.time_zone,
-      Frame: frameIn("invoices"),
+      Frame: frameIn(moneySection),
       nav: INVOICE_TABS,
-      navLabel: "Quotes and invoices",
+      navLabel: "Invoices",
     }),
   );
   // A quote's proposal and the library of sections, before the invoice pages take /invoices/*.
   app.route("/", proposalAdmin(dbOf, {
-    opts: PROPOSAL_OPTS, Frame: frameIn("invoices"), css: "/crm.css", nav: INVOICE_TABS, quotes: "/invoices/quotes", base: linkBaseOf,
+    opts: PROPOSAL_OPTS, Frame: frameIn(moneySection), css: "/crm.css", nav: [], quotes: "/invoices/quotes", base: linkBaseOf,
   }));
   app.route(
     "/invoices",
@@ -738,7 +752,7 @@ if (invoicesCfg) {
         warning: (c, qt) => sampleWarning(dbOf(c), qt.id),
       },
       print: (c, html) => (c as unknown as C).env.runtime.print?.(html) ?? Promise.resolve(null),
-      Frame: frameIn("invoices"),
+      Frame: frameIn(moneySection),
       daysUntilDue: invoicesCfg.days_until_due,
       // A quote or an invoice that went out is contact with the customer; its page is made as it went.
       afterSend: async (c, doc) => {
@@ -751,6 +765,8 @@ if (invoicesCfg) {
         if (qt.status === "accepted") await afterAccepted(dbOf(c), qt, (c as unknown as C).var.user, answerDeps(c));
       },
       nav: INVOICE_TABS,
+      quoteNav: [],
+      settings: SETTINGS_BACK,
       // In a quote's or an invoice's Details: the customer's name opens their record, then the
       // request and the event it is for.
       links: async (c, linked) => {
@@ -901,11 +917,12 @@ app.post("/deals/:id/notes", async (c) => {
 
 // ---- tasks -----------------------------------------------------------
 
-// Every open task, everyone's unless the viewer narrows to theirs: a small team's list is short.
+// The viewer's open tasks, as HubSpot's task views are (Assignee: me) and as the sidebar counts them;
+// Everyone's on its own view, and Done (HubSpot's Completed) newest first.
 app.get("/tasks", async (c) => {
-  const mine = c.req.query("who") === "mine";
-  const rows = await listTasks(c.var.db, mine ? c.var.user : null, PAGE);
-  return c.html(<TasksPage user={c.var.user} mine={mine} today={today()} rows={rows.slice(0, PAGE)} more={rows.length > PAGE} flash={flashOf(c)} />);
+  const view = c.req.query("show") === "done" ? "done" : c.req.query("who") === "everyone" ? "everyone" : "mine";
+  const rows = view === "done" ? await doneTasks(c.var.db, PAGE) : await listTasks(c.var.db, view === "mine" ? c.var.user : null, PAGE);
+  return c.html(<TasksPage user={c.var.user} view={view} today={today()} rows={rows.slice(0, PAGE)} more={rows.length > PAGE} flash={flashOf(c)} />);
 });
 
 app.get("/tasks/new", async (c) => {
@@ -1108,6 +1125,18 @@ app.post("/deals/:id/archive", async (c) => {
 });
 
 // ---- stages ---------------------------------------------------------------
+app.get("/settings", (c) => c.html(<SettingsPage user={c.var.user} />));
+
+// Search: a few of each kind under the sidebar's box as you type, more on the page.
+app.get("/search/peek", async (c) => {
+  const q = clean(c.req.query("q"), 100) ?? "";
+  return c.html(<SearchPeek q={q} hits={await search(c.var.db, q, 4)} />);
+});
+app.get("/search", async (c) => {
+  const q = clean(c.req.query("q"), 100) ?? "";
+  return c.html(<SearchPage user={c.var.user} q={q} hits={await search(c.var.db, q, 20)} />);
+});
+
 // Both lists on one page: /stages/deals/... and /stages/customers/...
 
 app.get("/stages", async (c) => {

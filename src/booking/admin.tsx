@@ -101,6 +101,39 @@ const MESSAGES: FlashMessages = {
 /** Minor units as the editor shows them: 12000 usd is "120.00". */
 const amountText = (cents: number, currency: string) => (cents / 10 ** decimals(currency)).toFixed(decimals(currency));
 
+export type CalendarView = "day" | "week" | "month";
+
+/** First of the month a day is in, and the first of the months around it. */
+const monthOf = (day: string, step = 0) => {
+  const [y, m] = day.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + step, 1));
+  return d.toISOString().slice(0, 10);
+};
+
+/**
+ * What a calendar view shows around a day: its days, the whole weeks a month's
+ * grid needs (Monday first), the day the arrows go to, and its heading.
+ */
+export function calendarSpan(view: CalendarView, anchor: string): { days: string[]; grid: string[]; before: string; after: string; heading: string } {
+  const mondayOf = (day: string) => addDays(day, -((weekdayOf(day) + 6) % 7));
+  if (view === "day") {
+    return { days: [anchor], grid: [anchor], before: addDays(anchor, -1), after: addDays(anchor, 1), heading: formatShortDate(anchor) };
+  }
+  if (view === "week") {
+    const monday = mondayOf(anchor);
+    const days = [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(monday, i));
+    return { days, grid: days, before: addDays(monday, -7), after: addDays(monday, 7), heading: `Week of ${formatShortDate(monday, { long: true })}` };
+  }
+  const first = monthOf(anchor), next = monthOf(anchor, 1);
+  const days: string[] = [];
+  for (let d = first; d < next; d = addDays(d, 1)) days.push(d);
+  const grid: string[] = [];
+  for (let d = mondayOf(first); d < next || weekdayOf(d) !== 1; d = addDays(d, 1)) grid.push(d);
+  const [y, m] = first.split("-").map(Number);
+  const heading = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "long", year: "numeric" }).format(new Date(Date.UTC(y, m - 1, 1, 12)));
+  return { days, grid, before: monthOf(anchor, -1), after: next, heading };
+}
+
 export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
   const base = opts.base.replace(/\/+$/, "");
   const links = opts.nav ?? [{ href: base, label: "Schedule" }];
@@ -113,7 +146,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
 
-  // ---- the week, and booking for someone ------------------------------------------
+  // ---- the calendar (day, week, month), and booking for someone ----------------------
 
   const zoneOf = async (c: Team) => opts.timeZone ?? (await allPeople(getDb(c)))[0]?.time_zone ?? "UTC";
 
@@ -122,13 +155,15 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     const zone = await zoneOf(c);
     const people = await allPeople(d);
     const person = idParam(c.req.query("person"));
-    const asked = c.req.query("week") ?? "";
+    // Day, Week (the default) or Month, as Jobber's, Salesforce's and HubSpot's calendars; `date` is any day in it.
+    const view: CalendarView = (["day", "month"] as const).find((v) => v === c.req.query("view")) ?? "week";
+    const asked = c.req.query("date") ?? "";
     const today = localDate(new Date(), zone);
-    const anchor = /^\d{4}-\d{2}-\d{2}$/.test(asked) ? asked : today;
-    const monday = addDays(anchor, -((weekdayOf(anchor) + 6) % 7));
-    const days = [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(monday, i));
-    const from = dayBounds(days[0], zone).start.toISOString();
-    const to = dayBounds(days[6], zone).end.toISOString();
+    const anchor = /^\d{4}-\d{2}-\d{2}$/.test(asked) && !Number.isNaN(Date.parse(asked)) ? asked : today;
+    const span = calendarSpan(view, anchor);
+    const days = span.days;
+    const from = dayBounds(span.grid[0], zone).start.toISOString();
+    const to = dayBounds(span.grid[span.grid.length - 1], zone).end.toISOString();
     // A booking the team scheduled may have no service (its title says what) and nobody yet. One held
     // for a form still being paid is not the business's yet: its time is kept, but it is not here.
     const rows = await d.sql<{ id: string; submission_id: string | null; starts_at: Date; ends_at: Date; name: string; status: string; what: string | null; booked: boolean; host: string | null; location_kind: Booking["location_kind"]; location: string | null }>`
@@ -143,43 +178,25 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
       where t.starts_at < ${to}::timestamptz and t.ends_at > ${from}::timestamptz
         and (${person}::bigint is null or t.resource_id = ${person}::bigint)
       order by t.starts_at`;
-    const self = (week: string) => listUrl(base, { week, person });
+    const self = (date: string, v: CalendarView = view) => listUrl(base, { view: v === "week" ? null : v, date: date === today ? null : date, person });
     const time = (t: Date) => formatTime(new Date(t), zone);
-    const thisWeek = addDays(today, -((weekdayOf(today) + 6) % 7));
     const arrow = buttonClass + " w-9 px-0";
+    const unit = view === "day" ? "Day" : view === "week" ? "Week" : "Month";
+    const onDay = (day: string) => {
+      const b = dayBounds(day, zone);
+      return { b, mine: rows.filter((r) => new Date(r.starts_at) < b.end && new Date(r.ends_at) > b.start), away: off.filter((t) => new Date(t.starts_at) < b.end && new Date(t.ends_at) > b.start) };
+    };
     // A booking opens on the app's page for it; one without (the Website's, made elsewhere) opens on its Reschedule, which can also cancel it.
     const opened = (r: (typeof rows)[number]) =>
       opts.returnTo?.(r)?.href ?? (r.booked && r.status === "confirmed" && new Date(r.starts_at) > new Date() ? `${base}/${r.id}/reschedule` : null);
-    return framed(c, base, { title: "Schedule", actions: opts.scheduleActions ?? <a href={`${base}/new`} class={primaryClass}>Book for someone</a> }, (
-      <>
-        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div class="flex flex-wrap items-center gap-2">
-            <a href={self(addDays(monday, -7))} class={arrow} aria-label="Week before">&lsaquo;</a>
-            {monday !== thisWeek ? <a href={self(today)} class={buttonClass}>This week</a> : null}
-            <a href={self(addDays(monday, 7))} class={arrow} aria-label="Week after">&rsaquo;</a>
-            <h2 class="ml-2 font-semibold">Week of {formatShortDate(monday, { long: true })}</h2>
-          </div>
-          <form method="get" action={base} class="flex items-center gap-2">
-            <input type="hidden" name="week" value={monday} />
-            <label>
-              <span class="sr-only">Whose</span>
-              <Select name="person" onchange="this.form.submit()">
-                <option value="">Everyone</option>
-                {people.map((p) => <option value={p.id} selected={p.id === person}>{p.name}</option>)}
-              </Select>
-            </label>
-            <noscript><button class={buttonClass}>Show</button></noscript>
-          </form>
-        </div>
-        <ol class="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface shadow-card">
-          {days.map((day) => {
-            const b = dayBounds(day, zone);
-            const mine = rows.filter((r) => new Date(r.starts_at) < b.end && new Date(r.ends_at) > b.start);
-            const away = off.filter((t) => new Date(t.starts_at) < b.end && new Date(t.ends_at) > b.start);
+    const listOf = (ds: string[]) => (
+      <ol class="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface shadow-card">
+          {ds.map((day) => {
+            const { b, mine, away } = onDay(day);
             return (
               <li class={"flex flex-col gap-2 px-4 py-3 sm:flex-row sm:gap-6 " + (day === today ? "bg-accent/5" : "")}>
                 <h3 class={"w-36 shrink-0 text-label " + (day === today ? "font-semibold text-accent" : "font-semibold text-ink-2")}>
-                  {formatShortDate(day)}{day === today ? " · Today" : ""}
+                  {view === "day" ? <>{formatShortDate(day)}{day === today ? " · Today" : ""}</> : <a href={self(day, "day")} class="text-inherit no-underline hover:underline">{formatShortDate(day)}{day === today ? " · Today" : ""}</a>}
                 </h3>
                 {mine.length || away.length ? (
                   <ul class="flex min-w-0 flex-1 flex-col gap-2">
@@ -208,7 +225,75 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
               </li>
             );
           })}
-        </ol>
+      </ol>
+    );
+    // A month as a grid of weeks, Monday first, as every calendar's month view; each day its first few, then "+ more" to the day.
+    // Below sm the grid is too narrow to read, so a phone gets the month's days that have something, as a list.
+    const month = view === "month" ? (
+      <>
+        <div class="hidden overflow-hidden rounded-card border border-line bg-line shadow-card sm:grid sm:grid-cols-7 sm:gap-px">
+          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((w) => <p class={`bg-panel px-2 py-1.5 ${smallText} font-semibold text-ink-2`}>{w}</p>)}
+          {span.grid.map((day) => {
+            const { mine, away } = onDay(day);
+            const inMonth = day.slice(0, 7) === anchor.slice(0, 7);
+            return (
+              <div class={"min-h-28 min-w-0 px-2 py-1.5 " + (inMonth ? "bg-surface" : "bg-canvas")}>
+                <a href={self(day, "day")} aria-label={formatShortDate(day)}
+                  class={"inline-flex size-6 items-center justify-center rounded-full text-label font-semibold no-underline " + (day === today ? "bg-accent text-accent-ink" : inMonth ? "text-ink hover:bg-panel" : "text-ink-3 hover:bg-panel")}>
+                  {Number(day.slice(8))}
+                </a>
+                <ul class="mt-1 flex flex-col gap-0.5">
+                  {away.length ? <li class={`truncate ${smallText} text-ink-3`}>{away.map((t) => t.name).join(", ")} off</li> : null}
+                  {mine.slice(0, 3).map((r) => (
+                    <li class={`truncate ${smallText}`}>
+                      <span class="tabular-nums text-ink-3">{time(r.starts_at)}</span>{" "}
+                      {opened(r) ? <a href={opened(r)!} class="font-medium text-ink no-underline hover:underline">{r.name}</a> : <span class="font-medium">{r.name}</span>}
+                    </li>
+                  ))}
+                  {mine.length > 3 ? <li><a href={self(day, "day")} class={`${smallText} font-medium text-ink-2 no-underline hover:text-ink`}>+{mine.length - 3} more</a></li> : null}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+        <div class="sm:hidden">
+          {days.some((day) => onDay(day).mine.length || onDay(day).away.length) ? null : <p class="text-ink-3">Nothing scheduled this month.</p>}
+        </div>
+      </>
+    ) : null;
+    return framed(c, base, { title: "Schedule", actions: opts.scheduleActions ?? <a href={`${base}/new`} class={primaryClass}>Book for someone</a> }, (
+      <>
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <a href={self(span.before)} class={arrow} aria-label={`${unit} before`}>&lsaquo;</a>
+            {!span.grid.includes(today) || (view === "month" && today.slice(0, 7) !== anchor.slice(0, 7)) ? <a href={self(today)} class={buttonClass}>Today</a> : null}
+            <a href={self(span.after)} class={arrow} aria-label={`${unit} after`}>&rsaquo;</a>
+            <h2 class="ml-2 font-semibold">{span.heading}</h2>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <nav aria-label="View" class="inline-flex gap-0.5 rounded-control bg-panel p-0.5">
+              {(["day", "week", "month"] as const).map((v) => (
+                <a href={self(anchor, v)} aria-current={v === view ? "page" : undefined}
+                  class={"rounded-control px-3 py-1 font-medium no-underline " + (v === view ? "bg-surface text-ink shadow-card ring-1 ring-line" : "text-ink-2 hover:text-ink")}>
+                  {v === "day" ? "Day" : v === "week" ? "Week" : "Month"}
+                </a>
+              ))}
+            </nav>
+            <form method="get" action={base} class="flex items-center gap-2">
+              {view === "week" ? null : <input type="hidden" name="view" value={view} />}
+              <input type="hidden" name="date" value={anchor} />
+              <label>
+                <span class="sr-only">Whose</span>
+                <Select name="person" onchange="this.form.submit()">
+                  <option value="">Everyone</option>
+                  {people.map((p) => <option value={p.id} selected={p.id === person}>{p.name}</option>)}
+                </Select>
+              </label>
+              <noscript><button class={buttonClass}>Show</button></noscript>
+            </form>
+          </div>
+        </div>
+        {month ? <>{month}<div class="sm:hidden">{listOf(days.filter((day) => onDay(day).mine.length || onDay(day).away.length))}</div></> : listOf(days)}
         <p class={`mt-3 ${smallText} text-ink-3`}>Times are in {zoneName(zone)}.</p>
       </>
     ));

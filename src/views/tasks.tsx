@@ -1,5 +1,5 @@
-// Tasks, as HubSpot's and Todoist's open task lists: every open task, soonest
-// first under its day (Overdue first, in red), everyone's or mine, New task;
+// Tasks, as HubSpot's task views: mine (the default), everyone's, or done;
+// open ones soonest first under their day (Overdue first, in red), New task;
 // and the pieces the customer and
 // deal pages share: one task with Done and Reschedule, and the form that adds
 // one. Plain forms; every change is a POST answered with a 303 back to where
@@ -9,14 +9,16 @@ import { EmptyCard, When } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { dealsCfg, vocab } from "../config";
 import { addDays, TASK_KINDS, TASK_LABELS, type Task } from "../crm/tasks";
+import { formatTime } from "../booking/slots";
+import { todayIn } from "../reports/sql";
 import { Layout } from "./layout";
 import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, CustomerPicker, primaryClass, telHref, timeText, timeZone, quietClass, ViewLink, viewsClass } from "./ui";
 import { ownerSuggestions, personName } from "../crm/people";
 
 export type TasksProps = {
   user: string;
-  /** Only the viewer's; everyone's by default. */
-  mine: boolean;
+  /** The viewer's open tasks (the default), everyone's, or the done ones. */
+  view: "mine" | "everyone" | "done";
   today: string;
   rows: Task[];
   /** More than the page shows. */
@@ -25,18 +27,22 @@ export type TasksProps = {
 };
 
 export function TasksPage(p: TasksProps) {
-  const href = (mine: boolean) => listUrl("/tasks", { who: mine ? "mine" : null });
-  const self = href(p.mine);
+  const href = (view: TasksProps["view"]) => listUrl("/tasks", view === "done" ? { show: "done" } : { who: view === "everyone" ? "everyone" : null });
+  const self = href(p.view);
+  const mine = p.view === "mine";
   return (
     <Layout title="Tasks" user={p.user} section="tasks" actions={<a href="/tasks/new" class={primaryClass}>New task</a>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       <div class="mb-6">
-        <nav aria-label="Whose" class={viewsClass}>
-          <ViewLink href={href(false)} on={!p.mine}>Everyone</ViewLink>
-          <ViewLink href={href(true)} on={p.mine}>Mine</ViewLink>
+        <nav aria-label="Which tasks" class={viewsClass}>
+          <ViewLink href={href("mine")} on={mine}>Mine</ViewLink>
+          <ViewLink href={href("everyone")} on={p.view === "everyone"}>Everyone</ViewLink>
+          <ViewLink href={href("done")} on={p.view === "done"}>Done</ViewLink>
         </nav>
       </div>
-      {p.rows.length ? (
+      {p.view === "done" ? (
+        p.rows.length ? <DoneList rows={p.rows} today={p.today} /> : <EmptyCard title="Nothing done yet.">Tasks ticked off show here, newest first.</EmptyCard>
+      ) : p.rows.length ? (
         // Headed by day, as task lists are: Overdue, Today, Tomorrow, then each day after.
         <div class="flex flex-col gap-4">
           {groups(p.rows, p.today).map(([heading, rows]) => (
@@ -45,7 +51,7 @@ export function TasksPage(p: TasksProps) {
               <ol class="flex flex-col rounded-card border border-line bg-surface shadow-card">
                 {rows.map((task) => (
                   <li class="border-b border-line px-4 py-3 last:border-b-0">
-                    <TaskItem task={task} today={p.today} returnTo={self} showCustomer showOwner={!p.mine} grouped />
+                    <TaskItem task={task} today={p.today} returnTo={self} showCustomer showOwner={!mine} grouped />
                   </li>
                 ))}
               </ol>
@@ -54,14 +60,52 @@ export function TasksPage(p: TasksProps) {
         </div>
       ) : (
         <EmptyCard
-          title={p.mine ? "Nothing on your list." : "Nothing to do."}
+          title={mine ? "Nothing on your list." : "Nothing to do."}
           action={<a href="/tasks/new" class={buttonClass}>New task</a>}
         >
           A task is a call, email, meeting or to-do for one of your {vocab.many.toLowerCase()}, on a day. Add one here or from their page.
         </EmptyCard>
       )}
-      {p.more ? <p class="mt-3 text-label text-ink-3">The first {p.rows.length}; tick some off to see the rest.</p> : null}
+      {p.more ? <p class="mt-3 text-label text-ink-3">{p.view === "done" ? `The latest ${p.rows.length}.` : `The first ${p.rows.length}; tick some off to see the rest.`}</p> : null}
     </Layout>
+  );
+}
+
+/** The done ones under the day they were done, newest first: what, for whom, who did it and when. */
+function DoneList({ rows, today }: { rows: Task[]; today: string }) {
+  const days: [string, Task[]][] = [];
+  for (const task of rows) {
+    const heading = dueDayText(todayIn(timeZone, task.done_at!), today);
+    const last = days[days.length - 1];
+    if (last && last[0] === heading) last[1].push(task);
+    else days.push([heading, [task]]);
+  }
+  return (
+    <div class="flex flex-col gap-4">
+      {days.map(([heading, list]) => (
+        <section aria-label={heading}>
+          <h2 class="mb-2 text-label font-semibold text-ink-2">{heading}</h2>
+          <ol class="flex flex-col rounded-card border border-line bg-surface shadow-card">
+            {list.map((task) => (
+              <li class="flex items-start gap-3 border-b border-line px-4 py-3 last:border-b-0">
+                <span aria-hidden="true" class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-accent text-accent-ink">
+                  <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-3"><path d="m2.5 6.5 2.5 2.5 4.5-5" /></svg>
+                </span>
+                <div class="min-w-0 flex-1">
+                  <p class="break-words font-semibold text-ink-2 line-through decoration-ink-3">{task.title}</p>
+                  <p class="mt-0.5 flex flex-wrap gap-x-2 text-label text-ink-3">
+                    <span>{TASK_LABELS[task.kind]}</span>
+                    <a href={`/customers/${task.customer_id}`}>{task.customer_name}</a>
+                    {task.deal_id && task.deal_title ? <a href={`/deals/${task.deal_id}`}>{task.deal_title}</a> : null}
+                    <span>Done {formatTime(task.done_at!, timeZone)}{task.done_by ? ` by ${personName(task.done_by)}` : ""}</span>
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ))}
+    </div>
   );
 }
 

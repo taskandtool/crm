@@ -12,7 +12,7 @@ import { stripeWebhook } from "../../payments/webhook";
 import { invoicesAdmin } from "../admin";
 import { createInvoice, invoiceById } from "../invoices";
 import { createTaxRate } from "../../payments/tax";
-import { markPaidOutOfBand, sendInvoice, voidInvoice } from "../stripe";
+import { recordPayment, sendInvoice, voidInvoice } from "../stripe";
 import { invoiceEvents } from "../webhook";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -31,13 +31,15 @@ async function withDb(t: { skip: (m: string) => void }, fn: (s: Scratch) => Prom
   }
 }
 
-type Call = { method: string; path: string; params?: Record<string, any>; key?: string };
+type Call = { method: string; path: string; params?: Record<string, any>; key?: string; version?: string };
 
 /** A Stripe that keeps one invoice's state, answers like the API, and can fail a path once. */
 function fakeStripe(opts: { livemode?: boolean; failOnce?: string; id?: string } = {}) {
   const sid = opts.id ?? "in_1";
   const calls: Call[] = [];
   const items: { amount: number; key: string }[] = [];
+  const records = new Map<string, number>();
+  let attached = 0;
   let status = "draft";
   let failed = false;
   const inv = () => ({
@@ -45,9 +47,10 @@ function fakeStripe(opts: { livemode?: boolean; failOnce?: string; id?: string }
     invoice_pdf: status === "draft" ? null : "https://pay.stripe.com/invoice/1/pdf", due_date: status === "draft" ? null : 1_800_000_000,
     subtotal: items.reduce((n, i) => n + i.amount, 0), total: items.reduce((n, i) => n + i.amount, 0) + 1000,
     total_taxes: [{ amount: 1000 }], livemode: opts.livemode ?? false,
+    amount_remaining: items.reduce((n, i) => n + i.amount, 0) + 1000 - attached,
   });
   const stripe: Stripe = async (method, path, params, o) => {
-    calls.push({ method, path, params: params as any, key: o?.idempotencyKey });
+    calls.push({ method, path, params: params as any, key: o?.idempotencyKey, version: o?.version });
     if (opts.failOnce && path.endsWith(opts.failOnce) && !failed) {
       failed = true;
       throw new StripeError("Stripe is having a moment", 500, "api_error");
@@ -62,6 +65,17 @@ function fakeStripe(opts: { livemode?: boolean; failOnce?: string; id?: string }
     }
     if (path === `/v1/invoices/${sid}` && method === "GET") return inv() as any;
     if (path === `/v1/invoices/${sid}/finalize`) return ((status = "open"), inv()) as any;
+    // A payment record, one per idempotency key, as Stripe's are; attaching it once takes it off what is owed.
+    if (path === "/v1/payment_records/report_payment") {
+      const id = `pr_${o!.idempotencyKey}`;
+      if (!records.has(id)) records.set(id, Number((params as any).amount_requested.value));
+      return { id } as any;
+    }
+    if (path === `/v1/invoices/${sid}/attach_payment`) {
+      const pr = String((params as any).payment_record);
+      if (records.get(pr)! >= 0) ((attached += records.get(pr)!), records.set(pr, -1));
+      return inv() as any;
+    }
     if (path.startsWith(`/v1/invoices/${sid}/`)) return inv() as any;
     throw new Error(`unexpected ${method} ${path}`);
   };
@@ -145,19 +159,32 @@ test("a send that fails part way is finished by sending again, without a second 
     assert.equal(f.calls.filter((c) => c.path === "/v1/invoices").length, 1, "the invoice is made once");
   }));
 
-test("an empty or non-draft invoice is not sent; mark paid and void ask Stripe and change nothing here", (t) =>
+test("an empty or non-draft invoice is not sent; a payment by hand, all or part, is Stripe's record on it; void asks Stripe", (t) =>
   withDb(t, async (s) => {
     const f = fakeStripe();
     const zero = await draft(s, [{ description: "Free", quantity: "1", unit: "0", tax_rate_id: "" }]);
     assert.equal((await sendInvoice(s.db, f.stripe, zero.id, BY)).ok, false);
     assert.equal(f.calls.length, 0);
     const inv = await draft(s);
-    assert.equal((await markPaidOutOfBand(s.db, f.stripe, inv.id)).ok, false, "never sent");
+    const pay = (amountCents: number, key: string) => recordPayment(s.db, f.stripe, inv.id, { amountCents, method: "Check", paidOn: "2026-10-01", reference: "101", key }, BY);
+    assert.equal((await pay(4000, "key-one-aaaa")).ok, false, "never sent");
     await sendInvoice(s.db, f.stripe, inv.id, BY);
-    const paid = await markPaidOutOfBand(s.db, f.stripe, inv.id);
-    assert.ok(paid.ok);
-    const call = f.calls.at(-1)!;
-    assert.deepEqual([call.path, call.params, call.key], ["/v1/invoices/in_1/pay", { paid_out_of_band: true }, `pay-${inv.match_key}`]);
+    // Part of the $110.00: Stripe has a record attached to the invoice, the row is paid, the rest still owed.
+    const part = await pay(4000, "key-one-aaaa");
+    assert.ok(part.ok && part.remaining === 7000, JSON.stringify(part));
+    const report = f.calls.find((c) => c.path === "/v1/payment_records/report_payment")!;
+    assert.equal(report.version, "2026-08-26.dahlia", "a version that has payment records, whatever the account's default");
+    assert.deepEqual(report.params!.amount_requested, { value: 4000, currency: "usd" });
+    assert.equal(report.params!.customer_details.customer, "cus_1");
+    const [row] = await s.db.sql`select amount_cents::int as cents, status, stripe_payment_record_id as pr, description from payments where ref_id = ${inv.id}::text`;
+    assert.deepEqual({ ...row }, { cents: 4000, status: "paid", pr: "pr_record-" + inv.match_key + "-key-one-aaaa", description: "Invoice ACME-0001: Check 101" });
+    assert.ok((await pay(4000, "key-one-aaaa")).ok, "the same click again");
+    assert.equal((await s.db.sql`select 1 from payments where ref_id = ${inv.id}::text`).length, 1, "is one payment");
+    const over = await pay(7001, "key-two-bbbb");
+    assert.equal(over.ok, false);
+    assert.match(!over.ok ? over.message : "", /more than the \$70\.00 still owed/);
+    const rest = await pay(7000, "key-three-cc");
+    assert.ok(rest.ok && rest.remaining === 0);
     assert.equal((await invoiceById(s.db, inv.id))!.status, "open", "paid only when Stripe's event says so");
     assert.ok((await voidInvoice(s.db, f.stripe, inv.id)).ok);
     assert.equal((await invoiceById(s.db, inv.id))!.status, "open");
@@ -192,6 +219,32 @@ test("webhook: paid before finalized, events again, the payment and its intent o
     // A refund through the payments skill finds the row by its intent.
     await send("charge.refunded", { id: "ch_1", object: "charge", payment_intent: "pi_1", amount_refunded: 10000, refunded: true, created: 1_790_000_000 });
     assert.equal((await s.db.sql`select status from payments where id = ${pays[0].id}`)[0].status, "refunded");
+  }));
+
+test("webhook: part paid by hand, the rest online: the online row is only the rest; all by hand makes no online row", (t) =>
+  withDb(t, async (s) => {
+    const send = hook(s);
+    const byHand = (id: string, cents: number, status = "paid") => s.db.sql`
+      insert into payments (email, amount_cents, total_cents, currency, status, kind, ref_type, ref_id, stripe_payment_record_id, livemode)
+      values ('ann@example.com', ${cents}, ${cents}, 'usd', ${status}, 'invoice', 'invoice', ${id}, ${`pr_${id}_${cents}`}, true)`;
+    const a = await draft(s);
+    await s.db.sql`update invoices set stripe_invoice_id = 'in_live_1', status = 'open' where id = ${a.id}::bigint`;
+    await byHand(a.id, 4000);
+    // invoice.paid's amount_paid is all of it, the check too: the online row is what is left.
+    await send("invoice.paid", stripeInvoice("paid"));
+    await send("invoice_payment.paid", { id: "inpay_3", invoice: "in_live_1", status: "paid", amount_paid: 6000, payment: { type: "payment_intent", payment_intent: "pi_3" } });
+    const rows = await s.db.sql`select amount_cents::int as cents, stripe_payment_intent_id as pi, stripe_payment_record_id as pr from payments where ref_id = ${a.id} order by id`;
+    assert.deepEqual(rows.map((r) => ({ ...r })), [{ cents: 4000, pi: null, pr: `pr_${a.id}_4000` }, { cents: 6000, pi: "pi_3", pr: null }]);
+
+    // The last part by hand, still pending when Stripe's invoice.paid comes: nothing is counted twice.
+    const b = await draft(s);
+    await s.db.sql`update invoices set stripe_invoice_id = 'in_live_2', status = 'open' where id = ${b.id}::bigint`;
+    await byHand(b.id, 4000);
+    await byHand(b.id, 6000, "pending");
+    await send("invoice.paid", stripeInvoice("paid", { id: "in_live_2" }));
+    await send("invoice_payment.paid", { id: "inpay_4", invoice: "in_live_2", status: "paid", amount_paid: 6000, payment: { type: "payment_record", payment_record: "pr_x" } });
+    assert.equal((await s.db.sql`select count(*)::int as n from payments where ref_id = ${b.id}`)[0].n, 2);
+    assert.equal((await invoiceById(s.db, b.id))!.status, "paid");
   }));
 
 test("webhook: invoice.paid first leaves the intent to the invoice_payment that follows; out of band has none", (t) =>
@@ -236,7 +289,7 @@ test("webhook: invoice.paid first leaves the intent to the invoice_payment that 
     assert.equal((await invoiceById(s.db, c.id))!.status, "void");
   }));
 
-test("the pages: a GET asks, the POST sends; Mark paid waits for Stripe; from a quote once", (t) =>
+test("the pages: a GET asks, the POST sends; Record payment, part of it; from a quote once", (t) =>
   withDb(t, async (s) => {
     const f = fakeStripe();
     const went: string[] = [];
@@ -274,8 +327,18 @@ test("the pages: a GET asks, the POST sends; Mark paid waits for Stripe; from a 
     assert.match(html, /Stripe test mode/);
     assert.equal((await get(`/invoices/${id}/edit`)).status, 302, "no edits once in Stripe");
 
-    res = await post(`/invoices/${id}/paid`);
-    assert.match(res.headers.get("location")!, /saved=asked-paid$/);
+    // Record payment: what is owed by default; part of it leaves the rest owed, and the invoice open.
+    assert.match(html, /href="\/invoices\/\d+\/payment"[^>]*>Record payment</, "an owed invoice's one next step");
+    html = await (await get(`/invoices/${id}/payment`)).text();
+    assert.match(html, /name="amount"[^>]*value="100\.00"/);
+    const key = /name="key" value="([^"]+)"/.exec(html)![1];
+    res = await post(`/invoices/${id}/payment`, { key, amount: "500", method: "Cash", on: "2020-01-02", reference: "" });
+    assert.equal(res.status, 422);
+    assert.match(await res.text(), /more than the \$100\.00 still owed/);
+    res = await post(`/invoices/${id}/payment`, { key, amount: "40", method: "Cash", on: "2020-01-02", reference: "" });
+    assert.match(res.headers.get("location")!, /saved=payment-recorded$/);
+    html = await (await get(`/invoices/${id}`)).text();
+    assert.match(html, /Balance due<\/span><span[^>]*>\$60\.00/);
     assert.equal((await invoiceById(s.db, id))!.status, "open");
 
     // A Stripe refusal comes back on the page, as Stripe said it.
@@ -290,7 +353,7 @@ test("the pages: a GET asks, the POST sends; Mark paid waits for Stripe; from a 
     const [{ qid }] = await s.db.sql`select id::text as qid from quotes where number = 'Q-9'`;
     await s.db.sql`insert into quote_lines (quote_id, position, description, quantity, unit_cents, amount_cents) values (${qid}::bigint, 1, 'Thing', 1, 500, 500)`;
     html = await (await get(`/invoices/quotes/${qid}`)).text();
-    assert.match(html, /Make the invoice/);
+    assert.match(html, /<button class="[^"]*bg-accent[^"]*">New invoice<\/button>/, "an accepted quote's one next step");
     res = await post(`/invoices/quotes/${qid}/invoice`);
     const first = res.headers.get("location")!;
     assert.match(first, /\/invoices\/\d+\?saved=invoice-created$/);
@@ -298,6 +361,7 @@ test("the pages: a GET asks, the POST sends; Mark paid waits for Stripe; from a 
     assert.equal(res.headers.get("location"), first.replace("invoice-created", "invoiced"));
     html = await (await get(`/invoices/quotes/${qid}`)).text();
     assert.match(html, /Draft invoice<\/a>/);
+    assert.match(html, /Invoice the rest/, "once invoiced, the rest is under More");
     assert.match(html, /Invoice the rest/, "a second one bills what is left");
     res = await post(`/invoices/quotes/${qid}/invoice`, { seen: "1" });
     assert.match(res.headers.get("location")!, /saved=nothing-left$/, "the first billed it all");

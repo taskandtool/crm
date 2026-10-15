@@ -61,6 +61,18 @@
   document.addEventListener("click", function (e) {
     closeMenus(e.target.closest && e.target.closest("details[data-menu]"));
   });
+  // Search's matches under the box close on a click outside it or Escape, as a menu does.
+  function closePeek() {
+    var peek = document.getElementById("search-peek");
+    // Back to the empty placeholder the next answer swaps: no box, no ring.
+    if (peek && peek.firstChild) {
+      peek.className = "";
+      peek.replaceChildren();
+    }
+  }
+  document.addEventListener("click", function (e) {
+    if (!(e.target.closest && e.target.closest("[data-search-form]"))) closePeek();
+  });
   // The sidebar as a drawer below lg: the menu button opens it (without this,
   // its #nav link does through :target), Escape or the backdrop closes it.
   var html = document.documentElement;
@@ -88,6 +100,7 @@
   });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") {
+      closePeek();
       var open = document.querySelector("details[data-menu][open]");
       if (open) {
         closeMenus(null);

@@ -13,8 +13,8 @@ export type NavItem = { href: string; label: string };
 
 /** A page's head: its title, the list it belongs to, a line under the title, its actions (at most one primary). */
 export type Head = { title: string; back?: { href: string; label: string }; sub?: Child; actions?: Child };
-/** An app's own page frame (the CRM's layout), given each page's head. */
-export type Frame = (p: Head & { user: string; children: Child }) => Child;
+/** An app's own page frame (the CRM's layout), given each page's head and the tab it is under (`current`). */
+export type Frame = (p: Head & { user: string; current: string; children: Child }) => Child;
 
 /**
  * A section's pages as tabs, the current one underlined. One line that
@@ -49,8 +49,9 @@ function SectionPage(p: { Frame?: Frame; css: string; user: string; label: strin
       </AdminLayout>
     );
   }
-  const tabs = head.back ? null : <SectionTabs label={p.label} links={p.links} current={p.current} />;
-  return <>{p.Frame({ ...head, user: p.user, children: <>{tabs}{p.children}</> })}</>;
+  // One page is no set of tabs.
+  const tabs = head.back || p.links.length < 2 ? null : <SectionTabs label={p.label} links={p.links} current={p.current} />;
+  return <>{p.Frame({ ...head, user: p.user, current: p.current, children: <>{tabs}{p.children}</> })}</>;
 }
 
 /**

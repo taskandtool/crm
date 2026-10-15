@@ -23,7 +23,8 @@ export type Stripe = <T = any>(
   method: "GET" | "POST" | "DELETE",
   path: string,
   params?: Params,
-  opts?: { idempotencyKey?: string },
+  /** `version` pins Stripe's API version for a call that needs a newer one than the account's default. */
+  opts?: { idempotencyKey?: string; version?: string },
 ) => Promise<T>;
 
 /** Stripe's own error (`type`, `code`, `message`), or Task & Tool's refusal (`refusal`). */
@@ -59,6 +60,7 @@ export function stripeFrom(env: Env, fetchImpl: typeof fetch = fetch, slug = "st
     const form = params ? formEncode(params) : "";
     const target = path + (method !== "POST" && form ? "?" + form : "");
     const headers: Record<string, string> = {};
+    if (opts?.version) headers["Stripe-Version"] = opts.version;
     if (method === "POST") {
       headers["Content-Type"] = "application/x-www-form-urlencoded";
       headers["Idempotency-Key"] = opts!.idempotencyKey!;

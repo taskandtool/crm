@@ -200,6 +200,13 @@ export function AddToggle({ label, open, children }: { label: string; open?: boo
   );
 }
 
+/** "+ New quote" at a section's foot: the same quiet plus as Add task, to a page of its own. */
+export function AddLink({ href, children }: { href: string; children: Child }) {
+  return (
+    <a href={href} class={quietClass + " -ml-2.5 inline-flex items-center gap-1.5"}><Icon name="plus" class="size-4 text-ink-3" />{children}</a>
+  );
+}
+
 /**
  * Who a new task, event or deal is for, as Jobber's "Select a client": a
  * customer already here, or "Someone new", which opens their name, email and
@@ -390,6 +397,19 @@ export function ContactCard({ id, name, phone, email, more = [] }: { id: string;
 }
 
 /** One choice in a page's More menu: a link, or a form's button. */
+/** An archived record's line at the top of its page: what happened, and Unarchive beside it. */
+export function ArchivedNote({ children, action, fields = {} }: { children: Child; action: string; fields?: Record<string, string> }) {
+  return (
+    <div role="status" class="mb-4 flex flex-wrap items-center gap-3 rounded-card border border-line bg-panel px-4 py-2">
+      <span>{children}</span>
+      <form method="post" action={action}>
+        {Object.entries(fields).map(([name, value]) => <input type="hidden" name={name} value={value} />)}
+        <button class={buttonClass}>Unarchive</button>
+      </form>
+    </div>
+  );
+}
+
 export const menuItemClass = "block w-full rounded-control px-2.5 py-1.5 text-left font-medium text-ink no-underline hover:bg-panel";
 
 /** A page's other actions, behind More beside its one primary, as Jobber's More actions and its three dots. Nothing when there are none. */

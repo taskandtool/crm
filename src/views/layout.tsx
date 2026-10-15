@@ -1,5 +1,5 @@
 // The document around every page: head, the sidebar (search, New, the CRM's
-// sections, Setup, who is signed in; a drawer below lg), then the page. Scripts are the vendored htmx and
+// sections, Settings, who is signed in; a drawer below lg), then the page. Scripts are the vendored htmx and
 // crm.js on every page, and SortableJS only where something drags.
 import type { Child } from "hono/jsx";
 import { SectionTabs } from "../admin/layout";
@@ -21,21 +21,33 @@ const creates = [
 /** The sidebar's name: the business on its quotes once it has one, else what this is. */
 const brand = invoicesCfg?.name && !/to fill/i.test(invoicesCfg.name) ? invoicesCfg.name : "CRM";
 
-export type Section = "home" | "notifications" | "leads" | "tasks" | "deals" | "customers" | "schedule" | "forms" | "invoices";
+export type Section = "home" | "notifications" | "leads" | "tasks" | "deals" | "customers" | "schedule" | "quotes" | "invoices" | "settings" | "search";
 
 /**
- * Schedule, as Jobber's and Housecall Pro's: one place for the team's days.
- * The Calendar (every event) first, then each list, then what
- * can be booked and who takes it. Only the parts this CRM has.
+ * Schedule, as Jobber's: the team's days, as a calendar and as a list. What
+ * can be booked and who takes it are Settings, as Jobber keeps Products and
+ * services and the team there.
  */
 export const SCHEDULE_TABS = eventsCfg
   ? [
       { href: "/schedule", label: "Calendar" },
       { href: "/events", label: eventsCfg.many },
-      ...(showBooking ? [{ href: "/services", label: "Services" }] : []),
-      { href: "/team", label: "Team" },
     ]
   : [];
+
+/**
+ * Settings, as all four CRMs keep them behind one Settings entry: how the
+ * business is set up, apart from the daily work. Each page's way back is
+ * Settings. Only the parts this CRM has.
+ */
+export const SETTINGS = [
+  { href: "/forms", label: "Forms", about: "The forms on your website and what each asks. A submission can be a lead." },
+  { href: "/stages", label: "Stages and statuses", about: `The ${dealsCfg.one.toLowerCase()} pipeline's stages, and each ${vocab.one.toLowerCase()}'s status.` },
+  ...(eventsCfg && showBooking ? [{ href: "/services", label: "Services", about: "What customers book online: how long, where, the price, who takes it." }] : []),
+  ...(eventsCfg ? [{ href: "/team", label: "Team", about: "Who takes the work: their hours, time off and calendars." }] : []),
+  ...(invoicesCfg ? [{ href: "/invoices/tax-rates", label: "Tax rates", about: "The taxes you charge on quotes and invoices." }] : []),
+];
+export const SETTINGS_BACK = { href: "/settings", label: "Settings" };
 
 /** The Schedule's tabs on a page of its own (the events list); the booking pages draw theirs. */
 export function ScheduleTabs({ current }: { current: string }) {
@@ -60,9 +72,9 @@ export function Layout(props: {
 }) {
   const { title, heading, user, section, drag, wide, back, sub, actions, children } = props;
   // The daily work, in the order it happens (as Jobber's menu runs: clients,
-  // requests, the schedule, invoices); Setup sits at the sidebar's foot, as
-  // settings do in Catalyst and Linear. The stages are edited from the board
-  // they shape, as Pipedrive's Edit pipeline.
+  // requests, the schedule, quotes, invoices); Settings sits at the sidebar's
+  // foot, as Jobber's gear and Catalyst's settings do. The stages are also
+  // edited from the board they shape, as Pipedrive's Edit pipeline.
   const nav: { href: string; label: string; section: Section }[] = [
     { href: "/", label: "Home", section: "home" },
     { href: "/leads", label: "Leads", section: "leads" },
@@ -70,10 +82,10 @@ export function Layout(props: {
     { href: "/customers", label: vocab.many, section: "customers" },
     { href: "/deals", label: dealsCfg.many, section: "deals" },
     ...(SCHEDULE_TABS.length ? [{ href: SCHEDULE_TABS[0].href, label: "Schedule", section: "schedule" as const }] : []),
-    ...(invoicesCfg ? [{ href: "/invoices", label: "Invoices", section: "invoices" as const }] : []),
-  ];
-  const setup: { href: string; label: string; section: Section }[] = [
-    { href: "/forms", label: "Forms", section: "forms" },
+    ...(invoicesCfg ? [
+      { href: "/invoices/quotes", label: `${invoicesCfg.word}s`, section: "quotes" as const },
+      { href: "/invoices", label: "Invoices", section: "invoices" as const },
+    ] : []),
   ];
   const link = (n: { href: string; label: string; section: Section }) => {
     const on = section === n.section;
@@ -132,15 +144,18 @@ export function Layout(props: {
               <Icon name="close" />
             </a>
           </div>
-          {/* Search from any page, as HubSpot's and Pipedrive's top search: it opens the customers list filtered. "/" focuses it (crm.js). */}
-          <form method="get" action="/customers" role="search" class="relative">
-            <label>
-              <span class="sr-only">Search {vocab.many.toLowerCase()}</span>
+          {/* Search everything from any page, as Pipedrive's, HubSpot's and Salesforce's: matches grouped by kind
+              under the box as you type, and Enter for the whole page. "/" focuses it (crm.js). */}
+          <form method="get" action="/search" role="search" data-search-form class="relative">
+            <label class="relative block">
+              <span class="sr-only">Search</span>
               <Icon name="search" class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-ink-3" />
-              <input type="search" name="q" data-search placeholder={`Search ${vocab.many.toLowerCase()}`} autocomplete="off"
-                class={inputClass + " pr-8 pl-8"} />
-              <kbd aria-hidden="true" class="pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 rounded-control px-1.5 text-label text-ink-3 ring-1 ring-line lg:block">/</kbd>
+              <input type="search" name="q" data-search placeholder="Search" autocomplete="off"
+                hx-get="/search/peek" hx-trigger="input changed delay:200ms, search" hx-target="#search-peek" hx-swap="outerHTML"
+                class={inputClass + " peer pr-8 pl-8"} />
+              <kbd aria-hidden="true" class="pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 rounded-control px-1.5 text-label text-ink-3 ring-1 ring-line lg:block lg:peer-[:not(:placeholder-shown)]:hidden">/</kbd>
             </label>
+            <div id="search-peek"></div>
           </form>
           {/* Create from anywhere, as HubSpot's Create and Pipedrive's + menus. */}
           <details data-menu class="relative mt-3">
@@ -156,9 +171,8 @@ export function Layout(props: {
           <nav aria-label="CRM" class="mt-4 flex flex-col gap-0.5">
             {nav.map((n) => link(n))}
           </nav>
-          <nav aria-label="Setup" class="mt-auto flex flex-col gap-0.5 pt-8">
-            <p class="px-2.5 pb-1 text-label font-medium text-ink-3">Setup</p>
-            {setup.map((n) => link(n))}
+          <nav aria-label="Settings" class="mt-auto flex flex-col gap-0.5 pt-8">
+            {link({ href: "/settings", label: "Settings", section: "settings" })}
           </nav>
           <p class="mt-3 flex items-center gap-2.5 border-t border-line px-2.5 pt-4" title="Signed in through Task & Tool">
             <Avatar name={user} />

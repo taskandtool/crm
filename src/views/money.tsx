@@ -2,6 +2,7 @@
 // was quoted, what is owed now, what was paid) and an event's page (its quote and
 // invoice). An overdue one says Past due, as on the invoices page.
 import { Section } from "../admin/detail";
+import { AddLink } from "./ui";
 import { StatusBadge } from "../admin/status";
 import { listUrl } from "../admin/query";
 import type { Customer } from "../crm/customers";
@@ -51,9 +52,9 @@ export function CustomerMoney({ c, quotes, invoices, owed }: { c: Customer; quot
         </p>
       ) : null}
       <Docs quotes={quotes} invoices={invoices} />
-      <p class="mt-3 flex flex-wrap gap-x-4 text-label">
-        <a href={listUrl("/invoices/quotes/new", who)}>New quote</a>
-        <a href={listUrl("/invoices/new", who)}>New invoice</a>
+      <p class="mt-3 flex flex-wrap gap-x-4">
+        <AddLink href={listUrl("/invoices/quotes/new", who)}>New quote</AddLink>
+        <AddLink href={listUrl("/invoices/new", who)}>New invoice</AddLink>
       </p>
     </Section>
   );

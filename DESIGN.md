@@ -92,11 +92,19 @@ The sidebar layout of Catalyst and Tailwind Plus, with what a CRM adds
 
 - **The sidebar** (240px, on the canvas), top to bottom: the business name
   (`invoices.name` from `crm.config.json` once it is filled in, else
-  "CRM"); **search**, which opens the customers list filtered, with `/`
-  to focus it from any page; **New**, a menu of everything that can be made
-  (customer, deal, task, event, quote, invoice, as this CRM has them),
-  each its own page; the sections with their icons and counts; then, at
-  the foot, **Setup** (Forms) and the signed-in person with their avatar.
+  "CRM"); **search**, which finds every kind of record (contacts, leads,
+  deals, quotes, invoices), a few of each under the box as you type and the
+  whole page on Enter, with `/` to focus it from any page; **New**, a menu
+  of everything that can be made (customer, deal, task, event, quote,
+  invoice, as this CRM has them), each its own page; the sections with
+  their icons and counts (Home, Leads, Tasks, Contacts, Deals, Schedule,
+  Quotes, Invoices); then, at the foot, **Settings** and the signed-in
+  person with their avatar.
+- **Settings** is one page of everything about how the business is set
+  up, apart from the daily work, as all four CRMs keep it behind one
+  Settings: Forms, Stages and statuses, Services, Team, Tax rates. Each
+  of those pages goes back to Settings. Deals keeps Edit stages on the
+  board too, as Pipedrive and Jobber do.
 - **The current section** is a white pill with a ring; the rest are
   `ink-2` with an `ink-3` icon.
 - **The page** sits on one white panel inset 8px from the window,
@@ -110,12 +118,22 @@ The sidebar layout of Catalyst and Tailwind Plus, with what a CRM adds
 ## Composition
 
 - **Every page is one frame:** the list it belongs to above the title (a
-  small `ink-3` link with a ←), the title, then one line of who it is for,
-  with the page's actions on the right. At most one action is primary.
-- **A list page's primary action is New** (New customer, New deal, New
-  event), a page of its own. A record's page reads as values with **Edit**
-  for the form; who added it is one quiet line at its foot, beside Merge
-  and Archive.
+  small `ink-3` link with a ←), the title, then one line under it (the
+  status badge first, then who it is for and the key figure), with the
+  page's actions on the right. At most one action is primary.
+- **A list page's one action is New** (New lead, New contact, New deal),
+  a page of its own, primary. Nothing else sits there but a link to the
+  setting that shapes the list where the products put one (Edit stages on
+  the board).
+- **A record page's actions, left to right,** as Pipedrive's, HubSpot's
+  and Jobber's: the ways to reach the person (Call, Email), then **More**
+  (everything else: New quote, Edit, Preview, Merge, then Archive last),
+  then the one next step, primary, on the right: Convert to deal, Won,
+  Mark completed, Send, New invoice, Record payment. A contact has no
+  next step, so no primary. A section adds its own kind at its foot ("+
+  Add task", "+ New quote").
+- **An archived record** says so in one line at the top of its page, with
+  Unarchive beside it. Its foot is only who added it and when.
 - **Home** opens with a greeting by the business's hour ("Good morning,
   Dana"; no name when all we have is an email) and the date. **Its figures**
   are one card whose cells share 1px rules (Tailwind's stats block; no icon
@@ -131,17 +149,17 @@ The sidebar layout of Catalyst and Tailwind Plus, with what a CRM adds
 - **The leads** are a list, not a table, so a row wraps on a phone: the
   avatar, then the name, the metadata line (source, when), then what they
   said, two lines at most.
-- **Row actions:** at most two in view, the row's point as a secondary
-  button and clearing it as a quiet one (a lead's Convert to deal and Archive);
-  more than that go in a menu (below). An action that repeats on every
-  row and is not the row's point (Edit on a stage, Reschedule on a task)
-  is a quiet button. A page of rows is never a wall of outlined buttons.
-- **Views of one list** (Open, Converted and Archived; Today and Upcoming; Mine
-  and Everyone) are a segmented control (`viewsClass` and `ViewLink`): a
-  panel track with the current view raised on it. **Pages of one section**
-  (Calendar, Events, Services, Team) are tabs underlined in the accent,
-  14px medium (`SectionTabs`). A view filters what is here; a tab goes
-  somewhere else.
+- **A row opens its record;** the work is done there, as every list in
+  the four products. The one exception is a task, the work itself: its
+  tick and Reschedule sit on the row. A page of rows is never a wall of
+  outlined buttons.
+- **Views of one list** (Open, Converted and Archived; Active and
+  Archived; Mine, Everyone and Done; Day, Week and Month) are a segmented
+  control (`viewsClass` and `ViewLink`): a panel track with the current
+  view raised on it. **Pages of one section** (Calendar and Events;
+  Invoices and Payments; Forms and Submissions) are tabs underlined in the
+  accent, 14px medium (`SectionTabs`). A view filters what is here; a tab
+  goes somewhere else.
 - **The customers list** keeps one line per cell so every row is the same
   height: the avatar and name (the company under it), status, next task,
   email, phone, owner with their avatar, last contact. Columns drop as the
@@ -199,13 +217,14 @@ height (36px), so a row of them lines up with an input:
 | Kind | Class | Looks | For |
 |---|---|---|---|
 | Primary | `primaryClass` | Filled accent | The page's one main action: New on a list, Save on a form, Won on a deal. At most one in view; an empty state under a header that already has it uses the secondary. |
-| Secondary | `buttonClass` | White, a faint `line` ring and `shadow-card` | Every other action that stands alone: Edit stages, Call, New deal, Load more. |
-| Quiet | `quietClass` | No edge until pointed at, `ink-2` | An action that repeats on every row or sits at a page's foot: Edit, Reschedule, Merge, Archive, "+ Add task" (with the plus icon). |
+| Secondary | `buttonClass` | White, a faint `line` ring and `shadow-card` | Every other action that stands alone: Call, Email, More, Lost, Edit stages, Load more. |
+| Quiet | `quietClass` | No edge until pointed at, `ink-2` | An action that repeats on every row, or adds to a section: Reschedule, "+ Add task", "+ New quote" (with the plus icon). |
 
 A button's words start with a verb or New and name the thing ("New deal",
-"New quote"); an icon-only button (the menu, close) has an
-`aria-label`. Danger is not red: Archive is a quiet button with a clear
-label and a title saying nothing is deleted, because nothing is.
+"New quote"). **New** opens a page of its own; **Add** opens a form in
+place, in a section. An icon-only button (the menu, close) has an
+`aria-label`. Danger is not red: Archive is the last item under More,
+with a title saying nothing is deleted, because nothing is.
 
 ## Menus
 
@@ -213,7 +232,8 @@ A menu is `<details data-menu>`: the summary is the button, the list
 floats under it on `surface` with `shadow-lift` and a ring, each item a
 full-width row that tints on hover. `static/crm.js` closes it on a click
 outside and on Escape, which hands focus back to its button. The New menu,
-a stage's Edit and a task's Reschedule all work this way.
+More (`MoreMenu`), a lead's Archive (its reasons), a stage's Edit and a
+task's Reschedule all work this way.
 
 ## Inputs
 

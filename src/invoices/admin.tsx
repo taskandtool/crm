@@ -28,9 +28,9 @@ import { buttonClass, controlClass, FieldError, fieldClass, primaryClass, Select
 import type { GetDb } from "../data/db";
 import { envOf } from "../data/env";
 import { emailsCustomers, sendEmail, type Email, type Sent } from "../data/send";
-import { formatMoney } from "../payments/money";
+import { formatMoney, toMinor } from "../payments/money";
 import { stripeConnected, stripeFrom, type Stripe } from "../payments/stripe";
-import { addDays, invoiceHtml, quoteHtml, quoteMessage, sendQuote, taxSummary, todayIn } from "./document";
+import { addDays, invoiceHtml, isDay, quoteHtml, quoteMessage, sendQuote, taxSummary, todayIn } from "./document";
 import { createTaxRate, percentText, setTaxRateActive, taxRates, type TaxRate } from "../payments/tax";
 import { amountInput, type Errors, type SavedLine } from "./lines";
 import {
@@ -41,7 +41,7 @@ import {
   createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, INVOICE_STATUSES, INVOICE_STATUS_LABELS, invoiceTotals, pastDue, saveInvoice,
   type Invoice, type InvoiceRow, type InvoiceStatus,
 } from "./invoices";
-import { markPaidOutOfBand, markUncollectible, sendInvoice, voidInvoice } from "./stripe";
+import { markUncollectible, paidSoFar, PAYMENT_METHODS, recordPayment, sendInvoice, voidInvoice } from "./stripe";
 
 type Ctx = Context<{ Variables: TeamVars }>;
 export type { Frame } from "../admin/layout";
@@ -94,6 +94,10 @@ export type InvoicesAdminOptions = {
   /** Quotes as the app's own pages at a link (ProposalHooks). */
   proposal?: ProposalHooks;
   nav?: NavItem[];
+  /** The quotes pages' own tabs, when quotes are a section apart from invoices (the CRM's); default `nav`. */
+  quoteNav?: NavItem[];
+  /** Where Tax rates sits, its way back; default the invoices list (the CRM's: its Settings). */
+  settings?: { href: string; label: string };
   pageSize?: number;
   /** The app's own page frame (the CRM's layout and nav) instead of AdminLayout. */
   Frame?: Frame;
@@ -145,36 +149,55 @@ export const SHOWN_INVOICE: StatusOption[] = [...INVOICE_OPTIONS, { value: "due"
 function Totals({ totals, currency, base }: { totals: Awaited<ReturnType<typeof invoiceTotals>>; currency: string; base: string }) {
   const whole = (cents: string) => formatMoney(cents, currency).replace(/\.00$/, "");
   const count = (n: number) => (n === 1 ? "1 invoice" : `${n} invoices`);
-  const figure = (href: string, value: string, label: string, sub: string) => (
-    <a href={href} class="flex min-w-0 flex-col rounded-card border border-line bg-surface px-3 py-3 no-underline shadow-card hover:border-line-strong sm:px-4">
-      <span class="break-words font-semibold text-ink sm:text-title">{value}</span>
-      <span class="text-label text-ink-2">{label}</span>
-      <span class="hidden text-label text-ink-3 sm:block">{sub}</span>
+  // As the CRM's Home figures (Tailwind's stats block): one card, its cells sharing 1px rules; the label, the figure, a line of context.
+  const figure = (href: string, value: string, label: string, sub: string, late = false) => (
+    <a href={href} class="group flex min-w-0 flex-col bg-surface px-3 py-3 no-underline hover:bg-canvas sm:px-5 sm:py-4">
+      <span class="truncate text-label font-medium text-ink-2 group-hover:text-ink">{label}</span>
+      <span class="mt-1 break-words font-semibold tabular-nums text-ink sm:text-title">{value}</span>
+      <span class={"mt-1 hidden text-label sm:block " + (late ? "font-medium text-late" : "text-ink-3")}>{sub}</span>
     </a>
   );
   // One row on a phone too, as Stripe's own figures, so the list starts on the first screen.
   return (
-    <div class="mb-5 grid grid-cols-3 gap-2 sm:gap-3">
+    <div class="mb-5 grid grid-cols-3 gap-px overflow-hidden rounded-card bg-line shadow-card ring-1 ring-line">
       {figure(listUrl(base, { status: "open" }), whole(totals.open.cents), "Outstanding", count(totals.open.count))}
-      {figure(listUrl(base, { status: "due" }), whole(totals.due.cents), "Past due", totals.due.count ? count(totals.due.count) : "None late")}
+      {figure(listUrl(base, { status: "due" }), whole(totals.due.cents), "Past due", totals.due.count ? count(totals.due.count) : "None late", totals.due.count > 0)}
       {figure(listUrl(base, { status: "paid" }), whole(totals.paid.cents), "Paid this month", "Through Stripe and marked paid")}
     </div>
   );
 }
 
-/** A record's foot: when it was made and by whom, and its rare actions as quiet links. */
-function RecordFoot({ made, by, timeZone, children }: { made: Date; by: string | null; timeZone: string; children?: Child }) {
+/** A record's foot: when it was made and by whom. Its actions are in the header. */
+function RecordFoot({ made, by, timeZone }: { made: Date; by: string | null; timeZone: string }) {
   return (
-    <div class="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-3 text-label text-ink-3">
-      <p>Made <When at={made} timeZone={timeZone} />{by ? ` by ${by}` : ""}</p>
-      {children}
-    </div>
+    <p class="mt-6 border-t border-line pt-3 text-label text-ink-3">Added <When at={made} timeZone={timeZone} />{by ? ` by ${by}` : ""}</p>
   );
 }
 /** One choice in a page's More menu. */
 const menuItem = "block rounded-control px-2.5 py-1.5 font-medium text-ink no-underline hover:bg-panel";
-/** A quiet action in a record's foot: a POST, or a link to a page that says what will happen. */
-const footLink = "text-ink-2 underline decoration-line-strong underline-offset-2 hover:decoration-current";
+const menuButton = menuItem + " w-full text-left";
+
+/** A page's other actions behind More, beside its one next step, as Jobber's More actions. Nothing when there are none. */
+function More({ items }: { items: Child[] }) {
+  const shown = items.filter(Boolean);
+  if (!shown.length) return null;
+  return (
+    <details data-menu class="relative">
+      <summary class={buttonClass + " cursor-pointer list-none"}>More</summary>
+      <div class="absolute right-0 z-10 mt-1 flex w-48 flex-col rounded-control bg-surface p-1 shadow-lift ring-1 ring-line">{shown}</div>
+    </details>
+  );
+}
+
+/** An invoice from an accepted quote. `seen`: a second click finds the invoice the first one made, and makes nothing. */
+function InvoiceButton({ self, seen, label, cls }: { self: string; seen: number; label: string; cls: string }) {
+  return (
+    <form method="post" action={`${self}/invoice`}>
+      <input type="hidden" name="seen" value={String(seen)} />
+      <button class={cls}>{label}</button>
+    </form>
+  );
+}
 
 export const QUOTE_OPTIONS: StatusOption[] = SHOWN_QUOTE_STATUSES.map((s) => ({
   value: s,
@@ -197,7 +220,8 @@ const MESSAGES: FlashMessages = {
   "invoice-created": "Invoice drafted. Check it, then send it with Stripe.",
   "invoice-sent": "Sent. Stripe emailed the invoice from your Stripe account.",
   discarded: "Discarded. It stays on record as void.",
-  "asked-paid": "Stripe has it as paid. The invoice turns paid here when Stripe confirms, usually within seconds.",
+  "payment-recorded": "Payment recorded.",
+  "payment-recorded-all": "Payment recorded. Nothing is left to pay: the invoice turns paid here when Stripe confirms, usually within seconds.",
   "asked-void": "Stripe is voiding it. It turns void here when Stripe confirms.",
   "asked-uncollectible": "Stripe has it written off. It changes here when Stripe confirms.",
   invoiced: "That invoice is made already: here it is.",
@@ -264,7 +288,10 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
 
-  const framed = sectionPages({ Frame: opts.Frame, css: opts.css, label: "Quotes and invoices", links, messages: MESSAGES });
+  const invoicePages = sectionPages({ Frame: opts.Frame, css: opts.css, label: opts.quoteNav ? "Invoices" : "Quotes and invoices", links, messages: MESSAGES });
+  const quotePages = opts.quoteNav ? sectionPages({ Frame: opts.Frame, css: opts.css, label: `${opts.word ?? "Quote"}s`, links: opts.quoteNav, messages: MESSAGES }) : invoicePages;
+  // A quote's page under the quotes' tabs, everything else under the invoices'.
+  const framed: typeof invoicePages = (c, current, ...rest) => (current.startsWith(qbase) ? quotePages : invoicePages)(c, current, ...rest);
   const back = (c: Ctx, path: string, code: string) => c.redirect(withFlash(path, code), 303);
   // What sending needs: the owner's Stripe for invoices, their email for quotes.
   // A caller passed in (a test, another app) counts as there; null (Stripe not reachable just now) is not a no.
@@ -385,13 +412,25 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
           <span>{qt.name ?? qt.email} · {money(qt.total_cents, qt.currency)}</span>
         </p>
       ),
+      // As Jobber's quote and this app's invoice: one next step by status (send a draft; invoice an
+      // accepted one, Jobber's Convert to Job), everything else under More.
       actions: (
         <>
-          {open ? <a href={`${self}/edit`} class={buttonClass}>Edit</a> : null}
-          <a href={`${self}/document`} class={buttonClass} target="_blank">Preview</a>
-          {qt.status === "draft" || qt.status === "sent" ? (
-            <a href={`${self}/send`} class={primaryClass}>{qt.status === "sent" ? "Send again" : "Send"}</a>
-          ) : null}
+          <More items={[
+            open ? <a href={`${self}/edit`} class={menuItem}>Edit</a> : null,
+            <a href={`${self}/document`} class={menuItem} target="_blank">Preview</a>,
+            qt.status === "sent" ? <a href={`${self}/send`} class={menuItem}>Send again</a> : null,
+            // Their answer, by reply or on the phone.
+            open ? (opts.proposal
+              ? <a href={`${self}/accept`} class={menuItem}>Mark accepted</a>
+              : <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="accepted" /><button class={menuButton}>Mark accepted</button></form>) : null,
+            open ? <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="declined" /><button class={menuButton}>Mark declined</button></form> : null,
+            open && qt.status !== "expired" ? <form method="post" action={`${self}/expire`}><button class={menuButton}>Mark expired</button></form> : null,
+            qt.status === "accepted" && invoices.length ? <InvoiceButton self={self} seen={invoices.length} label="Invoice the rest" cls={menuButton} /> : null,
+            <form method="post" action={`${self}/copy`}><button class={menuButton}>Copy to a new {w}</button></form>,
+          ]} />
+          {qt.status === "draft" ? <a href={`${self}/send`} class={primaryClass}>Send</a>
+            : qt.status === "accepted" && !invoices.length ? <InvoiceButton self={self} seen={0} label="New invoice" cls={primaryClass} /> : null}
         </>
       ),
     }, (
@@ -411,19 +450,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             {panel}
           </div>
           <div class="flex flex-col gap-4">
-            {open ? (
-              <Section title="Their answer">
-                <p class="mb-3 text-label text-ink-3">When they say yes or no, by reply or on the phone.</p>
-                <div class="flex flex-wrap gap-2">
-                  {opts.proposal
-                    ? <a href={`${self}/accept`} class={buttonClass}>Mark accepted</a>
-                    : <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="accepted" /><button class={buttonClass}>Mark accepted</button></form>}
-                  <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="declined" /><button class={buttonClass}>Mark declined</button></form>
-                  {qt.status !== "expired" ? <form method="post" action={`${self}/expire`}><button class={buttonClass}>Mark expired</button></form> : null}
-                </div>
-              </Section>
-            ) : null}
-            {qt.status === "accepted" ? (
+            {invoices.length ? (
               <Section title="Invoices">
                 {invoices.map((i) => (
                   <p class="mb-2 flex flex-wrap items-center gap-2">
@@ -432,11 +459,6 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
                     {i.number ? <StatusBadge value={i.status} options={INVOICE_OPTIONS} /> : null}
                   </p>
                 ))}
-                {/* `seen`: a second click finds the invoice the first one made, and makes nothing. */}
-                <form method="post" action={`${self}/invoice`}>
-                  <input type="hidden" name="seen" value={String(invoices.length)} />
-                  <button class={invoices.length ? buttonClass : primaryClass}>{invoices.length ? "Invoice the rest" : "Make the invoice"}</button>
-                </form>
               </Section>
             ) : null}
             <Section title="Details">
@@ -452,9 +474,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             </Section>
           </div>
         </div>
-        <RecordFoot made={qt.created_at} by={qt.created_by} timeZone={opts.timeZone}>
-          <form method="post" action={`${self}/copy`}><button class={footLink}>Copy to a new {w}</button></form>
-        </RecordFoot>
+        <RecordFoot made={qt.created_at} by={qt.created_by} timeZone={opts.timeZone} />
       </>
     ));
   });
@@ -774,6 +794,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       from payments where ref_type = 'invoice' and ref_id = ${inv.id}::text and status in ('paid', 'refunded', 'partially_refunded')
       order by coalesce(paid_at, created_at)`;
     const owes = inv.status === "open" || inv.status === "uncollectible";
+    const paidTotal = paid.reduce((n, p) => n + Number(p.amount_cents), 0);
     // Jobber's More actions: everything but the one next step, in one menu.
     const more = [
       draft ? <a href={`${self}/edit`} class={menuItem}>Edit</a> : null,
@@ -782,7 +803,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       inv.pdf_url ? <a href={inv.pdf_url} target="_blank" rel="noopener" class={menuItem}>PDF</a> : null,
       inv.status === "open" ? <a href={`${self}/uncollectible`} class={menuItem}>Write off</a> : null,
       owes ? <a href={`${self}/void`} class={menuItem}>Void</a> : null,
-      draft ? <form method="post" action={`${self}/discard`}><button class={menuItem + " w-full text-left"}>Delete draft</button></form> : null,
+      draft ? <form method="post" action={`${self}/discard`}><button class={menuButton}>Delete draft</button></form> : null,
     ].filter(Boolean);
     return framed(c, base, {
       title: inv.number ? `Invoice ${inv.number}` : "Draft invoice",
@@ -798,16 +819,9 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       // its Collect payment), everything else under More.
       actions: (
         <>
-          {more.length ? (
-            <details data-menu class="relative">
-              <summary class={buttonClass + " cursor-pointer list-none"}>More</summary>
-              <div class="absolute right-0 z-10 mt-1 flex w-44 flex-col rounded-control bg-surface p-1 shadow-lift ring-1 ring-line">
-                {more}
-              </div>
-            </details>
-          ) : null}
+          <More items={more} />
           {inv.status === "draft" || (inv.status === "open" && !inv.sent_at) ? <a href={`${self}/send`} class={primaryClass}>Send invoice</a>
-            : owes ? <a href={`${self}/paid`} class={primaryClass}>Mark paid</a> : null}
+            : owes ? <a href={`${self}/payment`} class={primaryClass}>Record payment</a> : null}
         </>
       ),
     }, (
@@ -836,7 +850,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
                 ) : <p class="text-ink-3">No payment yet.</p>}
                 <p class="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3 font-semibold">
                   <span>Balance due</span>
-                  <span class="tabular-nums">{money(owes ? inv.total_cents : "0", inv.currency)}</span>
+                  <span class="tabular-nums">{money(owes ? Number(inv.total_cents) - paidTotal : 0, inv.currency)}</span>
                 </p>
               </Section>
             ) : null}
@@ -900,12 +914,6 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       run: async (c, i) => sendInvoice(getDb(c), stripeOf(c), i.id, c.get("user")),
     },
     {
-      path: "paid", title: "Mark paid", button: "Mark paid", done: "asked-paid",
-      allowed: (i) => i.status === "open" || i.status === "uncollectible",
-      say: (i) => `For ${money(i.total_cents, i.currency)} paid another way, in cash or by check. Stripe records it as paid outside Stripe; no card is charged. It cannot be undone.`,
-      run: (c, i) => markPaidOutOfBand(getDb(c), stripeOf(c), i.id),
-    },
-    {
       path: "void", title: "Void", button: "Void the invoice", done: "asked-void",
       allowed: (i) => i.status === "open" || i.status === "uncollectible",
       say: (i) => `${i.email} will no longer be able to pay it. It stays on record as void. It cannot be undone.`,
@@ -960,7 +968,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const rates = await taxRates(getDb(c));
     const self = `${base}/tax-rates`;
     // A setting, as Jobber and Stripe keep tax rates: reached from a quote's or invoice's Tax choice, not a tab.
-    return framed(c, self, { title: "Tax rates", back: { href: base, label: "Invoices" } }, (
+    return framed(c, self, { title: "Tax rates", back: opts.settings ?? { href: base, label: "Invoices" } }, (
       <>
         <p class="mb-4 max-w-prose text-ink-2">
           Quotes and invoices have no tax unless you choose one under their line items. Add the rates you charge here.
@@ -996,6 +1004,76 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       </>
     ), status);
   };
+
+  // ---- record a payment ------------------------------------------------------
+  // Paid another way (cash, a check, a transfer), all or part, as Jobber's Collect payment and HubSpot's
+  // Record payment: the amount (what is still owed, unless less came), how, when, and a reference.
+
+  const paymentPage = async (c: Ctx, inv: Invoice, v: { amount: string; method: string; on: string; reference: string; key: string }, problem: string | null, status = 200) => {
+    const self = `${base}/${inv.id}`;
+    const left = Number(inv.total_cents) - (await paidSoFar(getDb(c), inv.id));
+    const ready = await stripeReady(c);
+    return framed(c, base, { title: inv.number ? `Record payment: invoice ${inv.number}` : "Record payment", back: { href: self, label: inv.number ? `Invoice ${inv.number}` : "Draft invoice" } }, (
+      <>
+        {problem ? <p role="alert" class={"mb-4 " + alertClass}>{problem}</p> : null}
+        {ready ? null : needStripe}
+        <Section title="The payment" class="max-w-2xl">
+          <p class="mb-4 max-w-prose text-ink-2">
+            {money(left, inv.currency)} is still owed of {money(inv.total_cents, inv.currency)}. Stripe keeps the payment on the invoice; no card is charged.
+            Part of it leaves the rest owed on their payment page.
+          </p>
+          <form method="post" action={`${self}/payment`} class="grid gap-3 sm:grid-cols-2">
+            <input type="hidden" name="key" value={v.key} />
+            <label class={fieldClass}>Amount ({inv.currency.toUpperCase()})
+              <input name="amount" required inputmode="decimal" value={v.amount} class={controlClass} />
+            </label>
+            <label class={fieldClass}>Method
+              <select name="method" class={controlClass}>
+                {PAYMENT_METHODS.map((m) => <option value={m} selected={m === v.method}>{m}</option>)}
+              </select>
+            </label>
+            <label class={fieldClass}>Date paid
+              <input name="on" type="date" required value={v.on} max={todayIn(opts.timeZone)} class={controlClass} />
+            </label>
+            <label class={fieldClass}>Reference
+              <input name="reference" maxlength={100} value={v.reference} placeholder="Check number" class={controlClass} />
+            </label>
+            <div class="flex items-center gap-4 sm:col-span-2">
+              {ready ? <button class={primaryClass}>Record payment</button> : null}
+              <a href={self} class="text-label text-ink-2">Cancel</a>
+            </div>
+          </form>
+        </Section>
+      </>
+    ), status);
+  };
+  const owing = (i: Invoice) => i.status === "open" || i.status === "uncollectible";
+  app.get("/:id{[0-9]+}/payment", async (c) => {
+    const inv = await loadInvoice(c);
+    if (!inv) return c.notFound();
+    if (!owing(inv)) return back(c, `${base}/${inv.id}`, "not-now");
+    const left = Number(inv.total_cents) - (await paidSoFar(getDb(c), inv.id));
+    return paymentPage(c, inv, { amount: amountInput(left, inv.currency), method: "Check", on: todayIn(opts.timeZone), reference: "", key: crypto.randomUUID() }, null);
+  });
+  app.post("/:id{[0-9]+}/payment", async (c) => {
+    const inv = await loadInvoice(c);
+    if (!inv) return c.notFound();
+    const self = `${base}/${inv.id}`;
+    if (!owing(inv)) return back(c, self, "not-now");
+    const body = await c.req.parseBody();
+    const v = { amount: str(body.amount).trim(), method: str(body.method), on: str(body.on), reference: str(body.reference).trim().slice(0, 100), key: str(body.key) };
+    const cents = toMinor(v.amount, inv.currency);
+    const method = PAYMENT_METHODS.find((m) => m === v.method);
+    const today = todayIn(opts.timeZone);
+    const problem = cents === null || cents <= 0 ? "Enter the amount paid, like 120 or 120.50."
+      : !method ? "Choose how it was paid."
+      : !isDay(v.on) || v.on > today ? "Enter the day it was paid, today or before." : null;
+    if (problem) return paymentPage(c, inv, v, problem, 422);
+    const r = await recordPayment(getDb(c), stripeOf(c), inv.id, { amountCents: cents!, method: method!, paidOn: v.on, reference: v.reference || null, key: v.key }, c.get("user"));
+    // Stripe refused it: the form comes back with a new key, so a corrected amount is a new request to Stripe.
+    if (!r.ok) return paymentPage(c, inv, r.reason === "stripe" ? { ...v, key: crypto.randomUUID() } : v, r.message, r.reason === "stripe" ? 502 : 422);
+    return back(c, self, r.remaining === 0 ? "payment-recorded-all" : "payment-recorded");
+  });
 
   app.get("/tax-rates", (c) => ratesPage(c));
   app.post("/tax-rates", async (c) => {

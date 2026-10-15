@@ -32,10 +32,11 @@ runs anywhere with Node 20 and a Postgres.
   requests: a form fill or an online booking makes one as it comes in, and
   New lead adds a phone call or a walk-in. Open, Converted or Archived. A
   lead shows who, where it came from, what they said, and what they
-  already have (an open deal, a visit); Convert to deal opens the deal form
-  filled in, and Archive asks why and offers Undo.
+  already have (an open deal, a visit); on its page Convert to deal opens
+  the deal form filled in, and Archive asks why and offers Undo. A form's
+  submission follows its lead.
 - **Tasks**: a call, email, meeting, text or to-do due on a day, by
-  one person. Every open task on one list, overdue first, everyone's or mine, and
+  one person. Mine (the default), Everyone's or Done, overdue first, and
   New task; the next one at the top of a customer's page and on every
   card. Contacts' "Nothing planned" filter shows who is in play with
   nothing planned. Done goes on the timeline. A deal made from a lead
@@ -55,17 +56,21 @@ runs anywhere with Node 20 and a Postgres.
   one Activity timeline (notes and calls, and everything they sent,
   paid and were quoted) with a note box on top, and their events;
   beside it Details (details and custom fields, Edit), their deals, quotes
-  and invoices, possible duplicates, Merge and Archive.
+  and invoices, possible duplicates; Call, Email and More (New quote, Merge,
+  Archive) at the top.
+- **Search** from any page finds contacts, leads, deals, quotes and
+  invoices, a few of each as you type, the rest on its page.
 - **Schedule**: one record per event (the config names them: Event,
   Job, Appointment), whether a customer booked it online or the team put
   it on the schedule. Scheduled, then completed, no-show or cancelled,
   with who takes it, where, an amount and its own fields (which truck,
-  which room). The Calendar (the week by person), the list (upcoming, overdue, past,
-  all, exported as CSV), Services (what customers can book online, with
-  online booking on) and the Team (everyone's hours, time off and Google
-  or Outlook calendar). The public booking page is the Website's; both use
+  which room). The Calendar (a day, a week or a month, by person) and the
+  list (upcoming, overdue, past, all, exported as CSV). The public booking page is the Website's; both use
   the same table. Turned off for a business that keeps its schedule
   elsewhere.
+- **Settings**: the forms, the stages and statuses, Services (what
+  customers can book online, with online booking on), the Team (everyone's
+  hours, time off and Google or Outlook calendar) and tax rates.
 - **Proposals, quotes and invoices**: a quote with lines and tax, and the
   designed components you tick by name (about us, your team, reviews, case
   studies, a full-page photograph, questions, terms), which the AI fills
@@ -74,8 +79,9 @@ runs anywhere with Node 20 and a Postgres.
   or says why not, and you see when they opened it. Signing can make the
   first invoice, a deposit too, and take them straight to pay. The
   invoice is made in your Stripe account, which emails it and takes the
-  payment by card or bank on Stripe's page. Cash or a check is marked paid
-  there too. A customer's page shows what was quoted, what they owe now
+  payment by card or bank on Stripe's page. Cash, a check or a transfer is
+  recorded there too (Record payment), all of it or part; the rest stays
+  owed. A customer's page shows what was quoted, what they owe now
   and what they paid.
 - **The deals board**: a column per stage with its count and total, drag
   between them, or a select on each card on a phone or without JavaScript.
@@ -121,8 +127,8 @@ Edit stages on the board. A field that deserves a real column is an additive lin
 crm.config.json          the levers: words, statuses, deals, sources, fields, zone, events, invoices
 schema.sql               the tables, additive only, applied at start and deploy
 src/app.tsx              the Hono app: the team-only gate, the routes
-src/crm/                 home, customers, leads, stages, deals, tasks, events, notifications, history, merge, import
-src/views/               home, leads, tasks, deals, customers, a customer, events, notifications, stages
+src/crm/                 home, customers, leads, stages, deals, tasks, events, notifications, search, history, merge, import
+src/views/               home, leads, tasks, deals, customers, a customer, events, notifications, search, settings, stages
 src/booking/             a copy of the booking skill: the Schedule, Services and Team, the calendar sync job
 src/customers/           a copy of the customers skill: the customers and notes tables, the note box
 src/forms/               a copy of the forms skill: the submissions list, the form editor

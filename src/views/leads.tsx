@@ -15,7 +15,7 @@ import { ownerOptions, ownerSuggestions, personName } from "../crm/people";
 import type { Task } from "../crm/tasks";
 import { Layout } from "./layout";
 import { TasksSection } from "./tasks";
-import { ActivitySection, AddToggle, Avatar, buttonClass, ContactCard, controlClass, Field, MESSAGES, ReadThenEdit, PersonFields, primaryClass, quietClass, timeZone, ViewLink, viewsClass } from "./ui";
+import { ActivitySection, AddToggle, ArchivedNote, Avatar, buttonClass, ContactCard, controlClass, Field, MESSAGES, ReadThenEdit, PersonFields, primaryClass, timeZone, ViewLink, viewsClass } from "./ui";
 
 const LEAD_TONES: StatusOption[] = [
   { value: "open", label: "Open", tone: "accent" },
@@ -44,10 +44,10 @@ function Context({ l }: { l: Lead }) {
 }
 
 /** Archive, asking why, as HubSpot's Disqualification reason: a menu of the reasons. */
-function ArchiveMenu({ l, returnTo, quiet }: { l: Lead; returnTo: string; quiet?: boolean }) {
+function ArchiveMenu({ l, returnTo }: { l: Lead; returnTo: string }) {
   return (
     <details data-menu class="relative">
-      <summary class={(quiet ? quietClass : buttonClass) + " cursor-pointer list-none"} aria-label={`Archive ${l.customer_name}'s lead`}>Archive</summary>
+      <summary class={buttonClass + " cursor-pointer list-none"} aria-label={`Archive ${l.customer_name}'s lead`}>Archive</summary>
       <div class="absolute right-0 z-10 mt-1 w-44 rounded-control bg-surface p-1 shadow-lift ring-1 ring-line">
         <p class="px-2.5 py-1 text-label text-ink-3">Why?</p>
         {ARCHIVE_REASONS.map((reason) => (
@@ -62,19 +62,19 @@ function ArchiveMenu({ l, returnTo, quiet }: { l: Lead; returnTo: string; quiet?
   );
 }
 
-/** What to do with an open lead, as Pipedrive's: Convert to deal (the New deal form, filled in) or Archive. */
-function Actions({ l, returnTo, quiet }: { l: Lead; returnTo: string; quiet?: boolean }) {
+/** What to do with an open lead, as Pipedrive's lead: Archive (asking why), then Convert to deal (the New deal form, filled in), the one primary, last. */
+function Actions({ l, returnTo }: { l: Lead; returnTo: string }) {
   if (l.status !== "open") return null;
   return (
     <>
-      {/* The lead's page has one primary action, as Pipedrive's: Convert; a row's buttons stay secondary. */}
-      <a href={`/deals/new?from=lead.${l.id}`} class={quiet ? buttonClass : primaryClass}>Convert to {deal}</a>
-      <ArchiveMenu l={l} returnTo={returnTo} quiet={quiet} />
+      <ArchiveMenu l={l} returnTo={returnTo} />
+      <a href={`/deals/new?from=lead.${l.id}`} class={primaryClass}>Convert to {deal}</a>
     </>
   );
 }
 
-function Row({ l, self }: { l: Lead; self: string }) {
+/** One lead: the row opens it, where Convert and Archive are, as every list here opens its record. */
+function Row({ l }: { l: Lead }) {
   return (
     <li {...rowClick(`/leads/${l.id}`)} class="flex cursor-pointer flex-col gap-3 border-b border-line py-4 hover:bg-canvas/60 sm:flex-row sm:items-start sm:gap-4">
       <div class="flex min-w-0 flex-1 gap-3">
@@ -96,21 +96,17 @@ function Row({ l, self }: { l: Lead; self: string }) {
           {l.status === "open" ? <Context l={l} /> : null}
         </div>
       </div>
-      <div class="flex items-center gap-2 pl-11 sm:pl-0">
-        <Actions l={l} returnTo={self} quiet />
-      </div>
     </li>
   );
 }
 
 /** Everything under the filter. Also the htmx answer to the filter. */
 export function LeadResults({ filter, rows }: { filter: LeadFilter; rows: Lead[] }) {
-  const self = listUrl("/leads", params(filter));
   const narrowed = !!(filter.q || filter.source || filter.owner);
   return (
     <div id="results">
       {rows.length ? (
-        <ol class="flex flex-col border-t border-line">{rows.map((l) => <Row l={l} self={self} />)}</ol>
+        <ol class="flex flex-col border-t border-line">{rows.map((l) => <Row l={l} />)}</ol>
       ) : (
         <div class="border-t border-line py-10">
           {narrowed ? (
@@ -183,15 +179,11 @@ export function LeadPage(p: {
     <Layout title={l.customer_name} user={p.user} section="leads" back={{ href: "/leads", label: "Leads" }}
       sub={<span class="flex flex-wrap items-center gap-x-2 gap-y-1"><StatusBadge value={l.status} options={LEAD_TONES} />{sourceText(l)} · <When at={l.created_at} timeZone={timeZone} /></span>}
       // As Pipedrive's lead: Convert and Archive. Reaching them is the contact card's.
-      actions={<Actions l={l} returnTo={self} />}>
+      // Archived, it is off to the list with Undo, as an archived lead leaves Pipedrive's inbox.
+      actions={<Actions l={l} returnTo="/leads" />}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       {l.status === "converted" && l.deal_id ? <p role="status" class="mb-4 rounded-card border border-line bg-panel px-4 py-2">Converted to <a href={`/deals/${l.deal_id}`}>{l.deal_title}</a>.</p> : null}
-      {l.status === "archived" ? (
-        <div role="status" class="mb-4 flex flex-wrap items-center gap-3 rounded-card border border-line bg-panel px-4 py-2">
-          <span>Archived: {l.archived_reason}.</span>
-          <form method="post" action={`${self}/reopen`}><input type="hidden" name="return" value={self} /><button class={quietClass}>Unarchive</button></form>
-        </div>
-      ) : null}
+      {l.status === "archived" ? <ArchivedNote action={`${self}/reopen`} fields={{ return: self }}>Archived: {l.archived_reason}.</ArchivedNote> : null}
       <div class="grid gap-4 md:grid-cols-3">
         <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
           <Section title="What they said">

@@ -9,6 +9,7 @@ import { applySchema } from "../../data/migrate";
 import { scratch, why } from "../../data/test/scratch";
 import { bookingAdmin, peopleRoutes, typeRoutes } from "../admin";
 import { addWindow, createPerson, createType, setHosts } from "../hours";
+import { formatShortDate } from "../slots";
 import { bookingPages, type BookingEvent } from "../public";
 import { makeStamp } from "../../data/spam";
 import type { Scratch } from "../../data/test/scratch";
@@ -111,7 +112,7 @@ test("a visitor books, sees the time in their zone, downloads the invite, and ca
     assert.equal(events[0].host.name, "Pat");
 
     // The team sees it on the week; a stranger gets a 404.
-    const week = `/admin/schedule?week=${start.slice(0, 10)}`;
+    const week = `/admin/schedule?date=${start.slice(0, 10)}`;
     assert.equal((await app.request(week)).status, 404);
     html = await (await app.request(week, { headers: team })).text();
     // No page of the app's for it: its name opens its Reschedule, where it can be cancelled too.
@@ -362,12 +363,21 @@ test("the team books for someone: carried details, a time, the confirmation sent
     assert.match(await res.text(), /just taken/);
 
     const week = start.slice(0, 10);
-    html = await (await app.request(`/bookings?week=${week}`, { headers: team })).text();
+    html = await (await app.request(`/bookings?date=${week}`, { headers: team })).text();
     assert.match(html, /Joy Park<\/a><span class="text-ink-2"> · Intro call with Pat/);
     assert.equal((html.match(/<h3 class=/g) ?? []).length, 7, "seven days");
     assert.match(html, /Phone call: 555 202 3030/, "the team's own words for where");
-    const nextWeek = /href="(\/bookings\?week=[\d-]+)"[^>]*aria-label="Week after"/.exec(html)![1];
+    const nextWeek = /href="(\/bookings\?date=[\d-]+)"[^>]*aria-label="Week after"/.exec(html)![1];
     assert.doesNotMatch(await (await app.request(nextWeek, { headers: team })).text(), /Joy Park/);
+    // Day and Month, as every calendar has: the day alone, and the month's grid with the booking on its day.
+    const day = await (await app.request(`/bookings?view=day&date=${week}`, { headers: team })).text();
+    assert.equal((day.match(/<h3 class=/g) ?? []).length, 1, "one day");
+    assert.match(day, /Joy Park/);
+    assert.match(day, /aria-label="Day after"/);
+    const month = await (await app.request(`/bookings?view=month&date=${week}`, { headers: team })).text();
+    assert.match(month, new RegExp(`aria-label="${formatShortDate(week)}"[\\s\\S]*?Joy Park`), "on its day in the grid");
+    assert.match(month, /aria-current="page"[^>]*>Month</);
+    assert.match(month, /aria-label="Month after"/);
 
     // The team reschedules: the calendar leaves out its own time, a time moves it and the booker is told.
     const [joy] = await s.db.sql`select id::text as id, starts_at from bookings where email = 'joy@example.com' and status = 'confirmed'`;

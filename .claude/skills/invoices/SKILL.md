@@ -12,7 +12,7 @@ account (Stripe Invoicing), emailed by Stripe, paid on Stripe's hosted page. Bot
 what a customer was quoted, owes and paid. Builds on `data`, `admin` and
 `payments`.
 
-Version: 0.3.1 (taskandtool/skills)
+Version: 0.4.0 (taskandtool/skills)
 
 ## The rules
 
@@ -31,8 +31,11 @@ Version: 0.3.1 (taskandtool/skills)
   (`decided_by` is `ONLINE`'s "signed online" or "declined online"); a sent
   one the customer opened shows as Viewed (`viewed_at`). Invoices: a draft is ours; once
   sent it is Stripe's, and open, paid, void and uncollectible arrive only
-  from the verified webhook (`webhook.ts`). Mark paid, void and
-  uncollectible ask Stripe and wait for its event.
+  from the verified webhook (`webhook.ts`). Void and uncollectible ask
+  Stripe and wait for its event.
+- **Paid another way, all or part** (cash, a check, a transfer):
+  `recordPayment` is Stripe's payment record attached to the invoice and a
+  payments row; the invoice stays open with less owed until nothing is left.
 - **A quote is edited until it is accepted or declined**, sent or not;
   after that it is copied, never changed.
 - **Invoices belong to the customer.** A quote makes as many as asked:
@@ -61,7 +64,7 @@ revenue work as for any payment.
 | `quotes.ts` | A quote's life: create, save until decided, copy, sent, viewed, accepted, declined, expired |
 | `invoices.ts` | An invoice's life before Stripe: create, save a draft, from an accepted quote (all, a deposit, the rest), discard; `owed(db, email)` |
 | `document.tsx` | A quote or invoice as HTML on one sheet (previews, a quote's PDF); `sendQuote`, with a link or without |
-| `stripe.ts` | `sendInvoice` (safe to repeat), `markPaidOutOfBand`, `voidInvoice`, `markUncollectible` |
+| `stripe.ts` | `sendInvoice` (safe to repeat), `recordPayment` and `paidSoFar`, `voidInvoice`, `markUncollectible` |
 | `cli.ts` | `quotesCli`, `invoicesCli`: what the app's `scripts/quotes.mjs` and `scripts/invoices.mjs` run |
 | `webhook.ts` | `invoiceEvents` for the payments webhook |
 | `admin.tsx` | `invoicesAdmin(getDb, { base, css, source, timeZone, business, word?, proposal?, Frame?, send?, print?, stripe?, links?, afterDecide?, afterSend? })`: the team's pages, opening on what is outstanding, past due and paid this month. `proposal` (`ProposalHooks`) makes a quote the app's own page at a link |

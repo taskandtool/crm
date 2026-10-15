@@ -16,10 +16,11 @@ import { cut } from "../admin/keyset";
 import { done, fail, flag, flags, has, limitOf, localTime, misused, noMore, out, parseArgs, usage, type Args } from "../data/cli.mjs";
 import type { Db } from "../data/db";
 import { sendEmail } from "../data/send";
-import { formatMoney } from "../payments/money";
+import { createHash } from "node:crypto";
+import { formatMoney, toMinor } from "../payments/money";
 import { stripeFrom } from "../payments/stripe";
 import { createTaxRate, percentText, taxRates, type TaxRate } from "../payments/tax";
-import { addDays, quoteMessage, sendQuote, todayIn } from "./document";
+import { addDays, isDay, quoteMessage, sendQuote, todayIn } from "./document";
 import {
   createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, owed, saveInvoice, INVOICE_STATUSES,
   type Invoice, type InvoiceFields, type InvoiceStatus,
@@ -29,7 +30,7 @@ import {
   createQuote, decideQuote, expireQuote, markSent, quoteById, quotesFor, quotesPage, saveQuote, shownStatus, QUOTE_STATUSES,
   type Quote, type QuoteFields, type QuoteStatus,
 } from "./quotes";
-import { markPaidOutOfBand, markUncollectible, sendInvoice, voidInvoice } from "./stripe";
+import { markUncollectible, paidSoFar, PAYMENT_METHODS, recordPayment, sendInvoice, voidInvoice } from "./stripe";
 
 /** Someone a quote or invoice is for, as the app knows them. */
 export type Person = { email: string | null; name: string | null; phone: string | null; address: string | null };
@@ -368,9 +369,9 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
 const INVOICE_FIELDS = ["line", "days", "notes", "event", "currency", "as"];
 const INVOICE_FLAGS: Record<string, string[]> = {
   list: ["status", "find", "limit", "customer"], show: [], owed: [], add: INVOICE_FIELDS, edit: INVOICE_FIELDS, "from-quote": ["deposit", "rest", "as"],
-  discard: ["as"], send: ["confirm", "as"], "mark-paid": ["confirm", "as"], void: ["confirm", "as"], uncollectible: ["confirm", "as"],
+  discard: ["as"], send: ["confirm", "as"], "record-payment": ["amount", "method", "on", "reference", "confirm", "as"], void: ["confirm", "as"], uncollectible: ["confirm", "as"],
 };
-const INVOICE_ARITY: Record<string, number> = { list: 0, show: 1, owed: 1, add: 1, edit: 1, "from-quote": 1, discard: 1, send: 1, "mark-paid": 1, void: 1, uncollectible: 1 };
+const INVOICE_ARITY: Record<string, number> = { list: 0, show: 1, owed: 1, add: 1, edit: 1, "from-quote": 1, discard: 1, send: 1, "record-payment": 1, void: 1, uncollectible: 1 };
 
 export async function invoicesCli(argv: string[], cli: InvoicesCli): Promise<void> {
   const days = cli.daysUntilDue ?? 30;
@@ -386,19 +387,22 @@ export async function invoicesCli(argv: string[], cli: InvoicesCli): Promise<voi
   from-quote <quote id> --rest         what its invoices have not billed yet
   edit <id> [the add flags]            a draft not yet in Stripe; --line replaces every line
   discard <id>                         a draft not yet in Stripe: kept as void
-  send <id> | mark-paid <id> | void <id> | uncollectible <id>
+  send <id> | void <id> | uncollectible <id>
+  record-payment <id> [--amount 120.50] [--method ${PAYMENT_METHODS.map((m) => `"${m}"`).join("|")}] [--on YYYY-MM-DD] [--reference r]
+                                       paid another way, all that is owed (the default) or part
                                        prints exactly what would happen; does nothing
   ... --confirm                        does it: when the owner asked for it, or said yes to the preview
 ${cli.more?.help ?? ""}
 Stripe emails the invoice and hosts the page they pay on. Paid, void and
 uncollectible arrive from Stripe's webhook, a few seconds after: show it to
-see. mark-paid is for cash or a check; it charges nothing. --as records who acted.
+see. record-payment is for cash, a check or a transfer; it charges nothing, and
+the invoice stays open until nothing is owed. --as records who acted.
 
 Prints what happened first, then Next:. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`;
   const a = parseArgs(argv);
   const [cmd, ...rest] = a._;
   if (cli.off && has(a, "help")) console.log(cli.off + "\n");
-  const commands = ["list", "show", "owed", "add", "edit", "from-quote", "discard", "send", "mark-paid", "void", "uncollectible", ...Object.keys(cli.more?.commands ?? {})];
+  const commands = ["list", "show", "owed", "add", "edit", "from-quote", "discard", "send", "record-payment", "void", "uncollectible", ...Object.keys(cli.more?.commands ?? {})];
   usage(a, cmd, commands, HELP, "invoices", { ...INVOICE_FLAGS, ...cli.more?.flags });
   if (cli.off) fail(cli.off);
   const at = `invoices ${cmd}`;
@@ -526,20 +530,51 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         return done(at, `discarded #${inv.id}; it stays on record as void`);
       }
 
+      case "record-payment": {
+        const inv = await invoiceOr(db, rest[0]);
+        if (inv.status === "paid") {
+          if (json) return out(true, { already: "paid", invoice: inv }, String);
+          return done(at, `invoice #${inv.id} is already paid; left alone`, { next: `node scripts/invoices.mjs show ${inv.id}` });
+        }
+        if (inv.status !== "open" && inv.status !== "uncollectible") fail(`${at}: invoice #${inv.id} is ${inv.status}; only a sent one is paid`, `node scripts/invoices.mjs show ${inv.id}`);
+        const left = Number(inv.total_cents) - (await paidSoFar(db, inv.id));
+        const amount = flag(a, "amount");
+        const cents = amount ? toMinor(amount, inv.currency) : left;
+        if (cents === null || cents <= 0) misused(`${at}: --amount ${amount}: an amount like 120 or 120.50`, `node scripts/invoices.mjs record-payment ${inv.id} --amount 120.50`);
+        const method = PAYMENT_METHODS.find((m) => m.toLowerCase() === (flag(a, "method") ?? "Other").toLowerCase())
+          ?? misused(`${at}: --method: one of ${PAYMENT_METHODS.join(", ")}`, `node scripts/invoices.mjs record-payment ${inv.id} --method Check`);
+        const today = todayIn(cli.timeZone);
+        const on = flag(a, "on") ?? today;
+        if (!isDay(on) || on > today) misused(`${at}: --on ${on}: the day it was paid, today or before`, `node scripts/invoices.mjs record-payment ${inv.id} --on ${today}`);
+        const reference = flag(a, "reference")?.slice(0, 100) ?? null;
+        const say = `${money(cents!, inv.currency)} paid by ${method.toLowerCase()} on ${on}${reference ? ` (${reference})` : ""} is recorded on invoice ${inv.number ?? "#" + inv.id} in Stripe. No card is charged. ${cents === left ? "Nothing is left to pay." : `${money(left - cents!, inv.currency)} is still owed.`}`;
+        if (!has(a, "confirm")) {
+          if (json) return out(true, { would: say }, String);
+          return done(at, fmt(inv), { lines: [say], waits: `node scripts/invoices.mjs record-payment ${rest.join(" ")}` });
+        }
+        // The same payment asked twice is recorded once: the key is what it is. A second like it on the same day needs its own --reference.
+        const key = createHash("sha256").update([inv.id, cents, method, on, reference ?? ""].join("|")).digest("hex").slice(0, 40);
+        const r = await recordPayment(db, stripeOr(cli.env, at), inv.id, { amountCents: cents!, method, paidOn: on, reference, key }, by);
+        if (!r.ok) fail(`${at}: ${r.message}`, `node scripts/invoices.mjs show ${inv.id}`);
+        if (json) return out(true, { recorded: cents, remaining: r.remaining ?? null }, String);
+        return done(at, `recorded ${money(cents!, inv.currency)} on invoice #${inv.id}`, {
+          lines: [r.remaining === 0 ? "nothing is left to pay: it turns paid when Stripe's event arrives, a few seconds after" : `${money(r.remaining ?? left - cents!, inv.currency)} is still owed`],
+          next: `node scripts/invoices.mjs show ${inv.id}`,
+        });
+      }
+
       case "send":
-      case "mark-paid":
       case "void":
       case "uncollectible": {
         const inv = await invoiceOr(db, rest[0]);
         const say = {
           send: `Stripe makes invoice #${inv.id} in the owner's Stripe account and emails it to ${inv.email}: ${money(inv.total_cents, inv.currency)}, due ${inv.days_until_due} days after it is sent. After this it no longer changes here.`,
-          "mark-paid": `Invoice ${inv.number ?? "#" + inv.id} for ${money(inv.total_cents, inv.currency)} is recorded in Stripe as paid outside Stripe (cash or a check). No card is charged. It cannot be undone.`,
           void: `Invoice ${inv.number ?? "#" + inv.id} is voided in Stripe: ${inv.email} can no longer pay it. It cannot be undone.`,
           uncollectible: `Invoice ${inv.number ?? "#" + inv.id} is written off in Stripe. It can still be paid or voided later.`,
         }[cmd];
         // Already where the command would put it: done, and nothing goes to Stripe again.
         const already = cmd === "send" ? (inv.sent_at ? `sent ${local(inv.sent_at)}` : null)
-          : inv.status === { "mark-paid": "paid", void: "void", uncollectible: "uncollectible" }[cmd] ? inv.status : null;
+          : inv.status === { void: "void", uncollectible: "uncollectible" }[cmd] ? inv.status : null;
         if (already) {
           if (json) return out(true, { already: cmd, invoice: inv }, String);
           return done(at, `invoice #${inv.id} is already ${already}; left alone`, { next: `node scripts/invoices.mjs show ${inv.id}` });
@@ -556,7 +591,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
           if (json) return out(true, r.invoice, String);
           return done(at, `sent ${fmt(r.invoice)}`, { lines: [`their payment page: ${r.invoice.hosted_url ?? "(Stripe will add it)"}`], next: `node scripts/invoices.mjs show ${inv.id}` });
         }
-        const r = cmd === "mark-paid" ? await markPaidOutOfBand(db, stripe, inv.id) : cmd === "void" ? await voidInvoice(db, stripe, inv.id) : await markUncollectible(db, stripe, inv.id);
+        const r = cmd === "void" ? await voidInvoice(db, stripe, inv.id) : await markUncollectible(db, stripe, inv.id);
         if (!r.ok) fail(`${at}: ${r.message}`, `node scripts/invoices.mjs show ${inv.id}`);
         if (json) return out(true, { asked: cmd }, String);
         return done(at, `Stripe has it for invoice #${inv.id}`, { lines: ["it changes here when Stripe's event arrives, a few seconds after"], next: `node scripts/invoices.mjs show ${inv.id}` });

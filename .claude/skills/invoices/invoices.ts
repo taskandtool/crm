@@ -259,10 +259,15 @@ export async function invoicesPage(db: Db, f: InvoiceFilter, after: { k: string;
   return rows.map((r) => ({ ...toInvoice(r), k: r.k, past_due: r.past_due === true }));
 }
 
-/** What a customer owes now: open invoices, live mode only, one total per currency. */
+/**
+ * What a customer owes now: what is left on open invoices (the total, less a
+ * part paid by hand), live mode only, one total per currency.
+ */
 export async function owed(db: Db, email: string): Promise<{ currency: string; cents: string; count: number }[]> {
   const rows = await db.sql`
-    select currency, sum(total_cents)::text as cents, count(*)::int as count from invoices
+    select currency, sum(total_cents - coalesce((select sum(coalesce(p.total_cents, p.amount_cents)) from payments p
+             where p.ref_type = 'invoice' and p.ref_id = invoices.id::text and p.status in ('paid', 'refunded', 'partially_refunded')), 0))::text as cents,
+           count(*)::int as count from invoices
     where email = ${email}::citext and status = 'open' and livemode is true
       -- A quote's invoice is owed once its quote is accepted.
       and (quote_id is null or exists (select 1 from quotes q where q.id = invoices.quote_id and q.status = 'accepted'))
@@ -272,13 +277,17 @@ export async function owed(db: Db, email: string): Promise<{ currency: string; c
 
 /**
  * The money at a glance, in one currency, live mode only: what is owed
- * (open), the part of it past due, and what was paid this calendar month in
- * `timeZone`. A quote's invoice is owed once its quote is accepted.
+ * (what is left on open ones), the part of it past due, and what was paid on
+ * invoices this calendar month in `timeZone`. A quote's invoice is owed once
+ * its quote is accepted.
  */
 export async function invoiceTotals(db: Db, opts: { today: string; timeZone: string; currency: string }) {
   const [r] = await db.sql`
     with owed as (
-      select total_cents, due_date from invoices
+      -- What is left on each: the total, less a part paid by hand.
+      select total_cents - coalesce((select sum(coalesce(p.total_cents, p.amount_cents)) from payments p
+               where p.ref_type = 'invoice' and p.ref_id = invoices.id::text and p.status in ('paid', 'refunded', 'partially_refunded')), 0) as total_cents,
+             due_date from invoices
       where status = 'open' and livemode is true and currency = ${opts.currency}
         and (quote_id is null or exists (select 1 from quotes q where q.id = invoices.quote_id and q.status = 'accepted')))
     select
@@ -286,9 +295,10 @@ export async function invoiceTotals(db: Db, opts: { today: string; timeZone: str
       (select count(*)::int from owed) as open_count,
       (select coalesce(sum(total_cents), 0)::text from owed where due_date < ${opts.today}::date) as due_cents,
       (select count(*)::int from owed where due_date < ${opts.today}::date) as due_count,
-      (select coalesce(sum(total_cents), 0)::text from invoices
-        where status = 'paid' and livemode is true and currency = ${opts.currency}
-          and paid_at >= (date_trunc('month', ${opts.today}::date)::timestamp at time zone ${opts.timeZone})) as paid_cents`;
+      -- Every payment on an invoice this month, online or by hand, part or all.
+      (select coalesce(sum(coalesce(p.total_cents, p.amount_cents)), 0)::text from payments p
+        where p.ref_type = 'invoice' and p.status in ('paid', 'refunded', 'partially_refunded') and p.livemode is true and p.currency = ${opts.currency}
+          and p.paid_at >= (date_trunc('month', ${opts.today}::date)::timestamp at time zone ${opts.timeZone})) as paid_cents`;
   return {
     open: { cents: r.open_cents as string, count: Number(r.open_count) },
     due: { cents: r.due_cents as string, count: Number(r.due_count) },

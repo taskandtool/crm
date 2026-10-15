@@ -4,7 +4,7 @@ Read when setting up quotes and invoices, connecting Stripe or an email sender f
 
 ## Forms
 
-Under Forms: every submission from the project's forms, filtered by form
+Under Settings, Forms: every submission from the project's forms, filtered by form
 ("my orders" is the order form's), each with the booking and payment it led
 to, the ones someone started and did not finish, and the form editor. Each
 form says whether its submissions are leads (on, off for a newsletter).
@@ -55,7 +55,8 @@ and they reply to accept.
 
 An invoice is made in the owner's Stripe account: Stripe emails it and
 hosts the page the customer pays on. Paid, void and uncollectible arrive
-from Stripe's webhook; "Mark paid" is for cash or a check. A quote can make
+from Stripe's webhook; "Record payment" is for cash, a check or a transfer, all of it or part
+(`invoices.mjs record-payment`). A quote can make
 several ("Invoice the rest"). A customer's page shows what was quoted, what
 they owe now and what was paid; an event's page shows its quote and
 invoice.

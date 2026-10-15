@@ -8,7 +8,8 @@
 // status move named by the statuses it may come from:
 //
 //   invoice.finalized              draft -> open; number, hosted page, PDF
-//   invoice.paid                   draft | open | uncollectible -> paid; the payments row
+//   invoice.paid                   draft | open | uncollectible -> paid; the payments row for what was
+//                                  paid online (Stripe's amount_paid, less what was recorded by hand)
 //   invoice_payment.paid           the payments row, with its payment intent (refunds need it)
 //   invoice.payment_failed         noted; the invoice stays open
 //   invoice.voided                 draft | open | uncollectible -> void
@@ -67,6 +68,10 @@ export function planInvoiceEvent(event: StripeEvent) {
     total: isPayment ? null : int(o.total),
     // A payment: invoice.paid always makes the row (an out-of-band payment has no intent); invoice_payment.paid only when paid.
     pays: event.type === "invoice.paid" || (isPayment && o.status === "paid"),
+    // invoice.paid's amount_paid is everything paid on it, recorded by hand too; an invoice_payment's is its own.
+    cumulative: event.type === "invoice.paid",
+    // A payment record is one recorded by hand: its row is made when it is recorded (stripe.ts recordPayment).
+    byHand: isPayment && o.payment?.type === "payment_record",
     amountPaid: int(o.amount_paid),
     paidAt: when(o.status_transitions?.paid_at) ?? when(event.created),
     intent,
@@ -115,23 +120,29 @@ export async function applyInvoiceEvent(db: Db, event: StripeEvent, ch: InvoiceC
           updated_at = now()
         from target, ev where i.id = target.id
         returning i.*),
+      by_hand as (
+        select coalesce(sum(coalesce(p.total_cents, p.amount_cents)), 0) as cents from payments p, inv
+        where p.ref_type = 'invoice' and p.ref_id = inv.id::text and p.stripe_payment_record_id is not null and p.status in ('pending', 'paid')),
+      online as (
+        select inv.*, coalesce(${ch.amountPaid}::bigint, inv.total_cents) - case when ${ch.cumulative} then (select cents from by_hand) else 0 end as cents
+        from inv),
       pay as (
         insert into payments (email, name, amount_cents, total_cents, currency, status, kind, ref_type, ref_id, description,
                               stripe_payment_intent_id, livemode, source, paid_at, match_key)
-        select coalesce(inv.email, ${ch.email}::citext), inv.name, coalesce(${ch.amountPaid}::bigint, inv.total_cents),
-               coalesce(${ch.amountPaid}::bigint, inv.total_cents), inv.currency, 'paid', 'invoice',
-               'invoice', inv.id::text, 'Invoice ' || coalesce(inv.number, inv.id::text), ${ch.intent}::text, inv.livemode, inv.source,
-               coalesce(${ch.paidAt}::timestamptz, now()), inv.match_key
-        from inv
-        where ${ch.pays}
-          and not exists (select 1 from payments p where p.ref_type = 'invoice' and p.ref_id = inv.id::text and p.kind = 'invoice')
+        select coalesce(online.email, ${ch.email}::citext), online.name, online.cents, online.cents, online.currency, 'paid', 'invoice',
+               'invoice', online.id::text, 'Invoice ' || coalesce(online.number, online.id::text), ${ch.intent}::text, online.livemode, online.source,
+               coalesce(${ch.paidAt}::timestamptz, now()), online.match_key
+        from online
+        where ${ch.pays} and not ${ch.byHand} and online.cents > 0
+          and not exists (select 1 from payments p where p.ref_type = 'invoice' and p.ref_id = online.id::text and p.kind = 'invoice'
+                            and p.stripe_payment_record_id is null)
         on conflict (stripe_payment_intent_id) do nothing
         returning id),
       fill as (
         update payments p set stripe_payment_intent_id = ${ch.intent}::text, updated_at = now()
         from inv
         where ${ch.intent}::text is not null and p.ref_type = 'invoice' and p.ref_id = inv.id::text and p.kind = 'invoice'
-          and p.stripe_payment_intent_id is null
+          and p.stripe_payment_intent_id is null and p.stripe_payment_record_id is null
           and not exists (select 1 from payments x where x.stripe_payment_intent_id = ${ch.intent}::text)
         returning p.id)
       select exists (select 1 from ev) as fresh, (select id::text from inv) as invoice_id, (select status from inv) as status,

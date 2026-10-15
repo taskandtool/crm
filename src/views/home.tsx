@@ -49,7 +49,7 @@ function Numbers({ h }: { h: Home }) {
     <div class={"mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-card bg-line shadow-card ring-1 ring-line [&>*:last-child:nth-child(odd)]:col-span-2 lg:[&>*:last-child:nth-child(odd)]:col-span-1 " + (h.owed ? "lg:grid-cols-5" : "lg:grid-cols-4")}>
       <Stat href="/leads" label="Leads, 7 days" value={String(h.leads.current)} count={h.leads.current}
         sub={`${h.leads.previous} the week before`} chip={moved ? { text: (moved > 0 ? "+" : "") + moved, tone: moved > 0 ? "good" : "neutral" } : undefined} />
-      <Stat href="/tasks?who=mine" label="Your tasks due" value={String(due)} count={due}
+      <Stat href="/tasks" label="Your tasks due" value={String(due)} count={due}
         sub={h.due.overdue ? null : due ? "All today" : "Nothing overdue"} chip={h.due.overdue ? { text: `${h.due.overdue} overdue`, tone: "late" } : undefined} />
       <Stat href="/deals" label={`Open ${dealsCfg.many.toLowerCase()}`} value={formatWholeMoney(h.open.cents, dealsCfg.currency)}
         count={whole(h.open.cents)} currency={dealsCfg.currency} sub={deals(h.open.count)} />
@@ -111,7 +111,7 @@ export function HomePage({ user, h, flash }: { user: string; h: Home; flash: { c
               </li>
             ))}
           </Panel>
-          <Panel title="Your tasks due" href="/tasks?who=mine" link="All tasks" n={h.tasks.length} empty="Nothing due today.">
+          <Panel title="Your tasks due" href="/tasks" link="All tasks" n={h.tasks.length} empty="Nothing due today.">
             {h.tasks.map((t) => (
               <li class={row}><TaskItem task={t} today={h.today} returnTo="/" showCustomer /></li>
             ))}

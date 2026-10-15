@@ -114,7 +114,7 @@ test("a paid intake: questions, a time held inside the form, the price charged, 
     team.route("/admin/schedule", bookingAdmin(() => s.db, { base: "/admin/schedule", css: "/x.css", source: "website", timeZone: "UTC", sections }));
     team.route("/admin/submissions", formsAdmin(() => s.db, { base: "/admin/submissions", css: "/x.css", timeZone: "UTC", links: { booking: (id) => `/admin/schedule/${id}` } }));
     const asTeam = async (path: string) => (await team.request(path, { headers: { "x-tasktool-user": BY } })).text();
-    assert.doesNotMatch(await asTeam(`/admin/schedule?week=${start.slice(0, 10)}`), /Ann Lee/);
+    assert.doesNotMatch(await asTeam(`/admin/schedule?date=${start.slice(0, 10)}`), /Ann Lee/);
     const held = await asTeam(`/admin/submissions/${sub.id}`);
     assert.match(held, /Held until it is paid/);
     assert.doesNotMatch(held, /\/reschedule"/);

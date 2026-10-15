@@ -33,6 +33,8 @@ export function todayIn(zone: string, now = new Date()): string {
 }
 
 /** A YYYY-MM-DD calendar day `n` days on. */
+/** A real day as YYYY-MM-DD ("2026-02-30" is not one). */
+export const isDay = (v: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) && new Date(v + "T00:00:00Z").toISOString().slice(0, 10) === v;
 export const addDays = (day: string, n: number): string => new Date(Date.parse(day + "T00:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
 
 /** Tax per rate, from the stored line taxes, in the order the rates first appear. */

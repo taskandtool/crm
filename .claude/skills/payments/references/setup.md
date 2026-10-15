@@ -17,7 +17,8 @@ and nothing else:
 | Refunds | Write | the private payments page |
 | Tax Rates | Write | tax on checkout and invoice lines |
 | Customers | Write | invoices (the invoices skill) |
-| Invoices | Write | invoices: make, finalize, send, pay out of band, void |
+| Invoices | Write | invoices: make, finalize, send, void |
+| Payment Records | Write | a payment recorded by hand on an invoice (cash, a check, a transfer), all or part |
 | Payment Intents | Read | an invoice's payment, for refunds |
 | Balance | Read | Task & Tool checks a pasted key by reading it |
 

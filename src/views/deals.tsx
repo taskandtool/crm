@@ -23,7 +23,7 @@ import { TasksSection } from "./tasks";
 import { Layout } from "./layout";
 import type { Lead } from "../crm/leads";
 import { LeadList } from "./leads";
-import { ActivitySection, AddToggle, Avatar, buttonClass, ContactCard, controlClass, dueDayText, CustomerPicker, DueMark, Field, MESSAGES, primaryClass, quietClass, ReadThenEdit, RecordLine, stageOptions, timeZone } from "./ui";
+import { ActivitySection, AddLink, AddToggle, ArchivedNote, Avatar, buttonClass, ContactCard, controlClass, dueDayText, CustomerPicker, DueMark, Field, menuItemClass, MESSAGES, MoreMenu, primaryClass, ReadThenEdit, RecordLine, stageOptions, timeZone } from "./ui";
 import { ownerSuggestions, personName } from "../crm/people";
 
 /** How many cards a column shows; how many days won and lost ones stay on the board. */
@@ -262,10 +262,18 @@ export function DealPage(p: {
         </p>
       }
       // As Pipedrive's deal page: Won and Lost (with its reason) while it is open; Reopen once it is not.
+      // Pipedrive's order: the rest under More, then Lost, then Won (the one primary, last); Reopen once closed.
       actions={
         <>
-          {invoicesCfg && d.customer_email && !closed ? <a href={listUrl("/invoices/quotes/new", who)} class={buttonClass}>New quote</a> : null}
-          {!closed && wonStage ? move(wonStage.key, "Won", primaryClass) : null}
+          <MoreMenu items={[
+            invoicesCfg && d.customer_email && !closed ? <a href={listUrl("/invoices/quotes/new", who)} class={menuItemClass}>New {invoicesCfg.word.toLowerCase()}</a> : null,
+            d.archived_at ? null : (
+              <form method="post" action={`${self}/archive`}>
+                <input type="hidden" name="archived" value="1" />
+                <button class={menuItemClass} title="Takes it off the board. Nothing is deleted.">Archive</button>
+              </form>
+            ),
+          ]} />
           {!closed && lostStage ? (
             <details class="relative max-sm:open:basis-full">
               {/* On a phone it opens in place under the buttons; on a wide screen it floats under its own. */}
@@ -279,6 +287,7 @@ export function DealPage(p: {
               </div>
             </details>
           ) : null}
+          {!closed && wonStage ? move(wonStage.key, "Won", primaryClass) : null}
           {closed && firstOpen ? move(firstOpen.key, "Reopen", buttonClass) : null}
         </>
       }
@@ -289,9 +298,7 @@ export function DealPage(p: {
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       {!closed ? <StageBar stages={p.stages.filter((s) => s.kind === "open")} current={d.stage} self={self} /> : null}
       {d.archived_at ? (
-        <p role="status" class="mb-4 rounded-card border border-line bg-panel px-4 py-2">
-          Archived <When at={d.archived_at} timeZone={timeZone} />. Off the board; nothing is deleted.
-        </p>
+        <ArchivedNote action={`${self}/archive`} fields={{ archived: "0" }}>Archived <When at={d.archived_at} timeZone={timeZone} />. Off the board; nothing is deleted.</ArchivedNote>
       ) : null}
       <div class="grid gap-4 md:grid-cols-3">
         <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
@@ -330,6 +337,7 @@ export function DealPage(p: {
               ) : (
                 <p class="text-ink-3">No quotes yet. {d.customer_email ? `Accepting a quote marks the ${one} won.` : `Add an email to ${d.customer_name} to send a quote.`}</p>
               )}
+              {invoicesCfg && d.customer_email && !closed ? <p class="mt-3"><AddLink href={listUrl("/invoices/quotes/new", who)}>New quote</AddLink></p> : null}
             </Section>
           ) : null}
           {/* Last, as the contact's page and Pipedrive's History: what happened, after what is coming. */}
@@ -353,14 +361,7 @@ export function DealPage(p: {
           </Section>
         </div>
       </div>
-      <RecordLine added={d.created_at} addedBy={d.created_by} changed={d.updated_at} changedBy={d.updated_by}>
-        <form method="post" action={`${self}/archive`}>
-          <input type="hidden" name="archived" value={d.archived_at ? "0" : "1"} />
-          <button class={quietClass} title={d.archived_at ? "Puts it back on the board." : "Takes it off the board. Nothing is deleted."}>
-            {d.archived_at ? "Unarchive" : "Archive"}
-          </button>
-        </form>
-      </RecordLine>
+      <RecordLine added={d.created_at} addedBy={d.created_by} changed={d.updated_at} changedBy={d.updated_by} />
     </Layout>
   );
 }

@@ -5,7 +5,7 @@
 // makes a second invoice or a second line.
 //
 //   const r = await sendInvoice(db, stripeFrom(envOf(c)), id, user);
-//   await markPaidOutOfBand(db, stripe, id);   // cash or a check; `paid` arrives by the webhook
+//   await recordPayment(db, stripe, id, { amountCents: 4000, method: "Check", paidOn: "2026-10-15", reference: "101", key }, user);
 //
 // The owner asking for it in chat (or saying yes to its preview), or a
 // team member's click, sends, voids or marks paid. Past draft, the status here changes only from the webhook
@@ -16,9 +16,10 @@ import { formatMoney } from "../payments/money";
 import { stripeTaxRate, taxRates } from "../payments/tax";
 import { invoiceById, toInvoice, type Invoice } from "./invoices";
 
-export type StripeResult = { ok: true; invoice: Invoice } | { ok: false; reason: "not_found" | "status" | "empty" | "stripe"; message: string };
+type Reason = "not_found" | "status" | "empty" | "amount" | "stripe";
+export type StripeResult = { ok: true; invoice: Invoice } | { ok: false; reason: Reason; message: string };
 
-const fail = (reason: "not_found" | "status" | "empty" | "stripe", message: string): StripeResult => ({ ok: false, reason, message });
+const fail = (reason: Reason, message: string): StripeResult => ({ ok: false, reason, message });
 
 /**
  * Send a draft with Stripe: find or make the customer, make the tax rates its
@@ -120,7 +121,7 @@ async function ask(db: Db, stripe: Stripe, id: string, allowed: Invoice["status"
   if (!inv.stripe_invoice_id) return fail("status", "This invoice was never sent with Stripe.");
   if (!allowed.includes(inv.status)) return fail("status", `This invoice is ${inv.status}.`);
   try {
-    await stripe("POST", path(inv.stripe_invoice_id), keyPrefix === "pay" ? { paid_out_of_band: true } : {}, { idempotencyKey: `${keyPrefix}-${inv.match_key}` });
+    await stripe("POST", path(inv.stripe_invoice_id), {}, { idempotencyKey: `${keyPrefix}-${inv.match_key}` });
     return { ok: true, invoice: inv };
   } catch (e) {
     if (e instanceof StripeError) return fail("stripe", e.message);
@@ -128,9 +129,88 @@ async function ask(db: Db, stripe: Stripe, id: string, allowed: Invoice["status"
   }
 }
 
-/** Paid in cash or by check: Stripe records it, and its invoice.paid marks the invoice paid here. */
-export const markPaidOutOfBand = (db: Db, stripe: Stripe, id: string) =>
-  ask(db, stripe, id, ["open", "uncollectible"], (sid) => `/v1/invoices/${sid}/pay`, "pay");
+/** How a payment recorded by hand was made, as Jobber's and HubSpot's Record payment ask. */
+export const PAYMENT_METHODS = ["Cash", "Check", "Bank transfer", "Other"] as const;
+/** Stripe's payment records arrived in 2025-10-29.clover; these calls name a version that has them, whatever the account's default. */
+const RECORDS_VERSION = "2026-08-26.dahlia";
+
+/** What has been paid on an invoice so far, in cents: payments by hand and online. */
+export async function paidSoFar(db: Db, id: string): Promise<number> {
+  const [r] = await db.sql<{ cents: string }>`
+    select coalesce(sum(coalesce(total_cents, amount_cents)), 0)::text as cents from payments
+    where ref_type = 'invoice' and ref_id = ${id}::text and status in ('paid', 'refunded', 'partially_refunded')`;
+  return Number(r.cents);
+}
+
+export type RecordInput = {
+  amountCents: number;
+  method: (typeof PAYMENT_METHODS)[number];
+  /** YYYY-MM-DD, not after today. */
+  paidOn: string;
+  /** A check number, a transfer's reference. */
+  reference: string | null;
+  /** Random, from the form: the same click twice records one payment. */
+  key: string;
+};
+
+/**
+ * A payment taken another way (cash, a check, a transfer), all of what is
+ * owed or part of it, as Jobber's and HubSpot's Record payment: Stripe keeps
+ * it as a payment record attached to the invoice, which stays open with less
+ * to pay until nothing is left (then Stripe's invoice.paid marks it paid
+ * here). The payments row is made first, pending and marked as by hand
+ * (its record id a placeholder until Stripe's), so Stripe's invoice.paid,
+ * which can arrive before this call returns, never counts it as paid online.
+ * It turns paid once Stripe has it, or failed; the same key again retries it.
+ */
+export async function recordPayment(db: Db, stripe: Stripe, id: string, p: RecordInput, by: string): Promise<StripeResult & { remaining?: number }> {
+  const inv = await invoiceById(db, id);
+  if (!inv) return fail("not_found", "No such invoice.");
+  if (!inv.stripe_invoice_id || !inv.stripe_customer_id) return fail("status", "This invoice was never sent with Stripe.");
+  if (inv.status !== "open" && inv.status !== "uncollectible") return fail("status", `This invoice is ${inv.status}.`);
+  if (!/^[A-Za-z0-9-]{8,64}$/.test(p.key)) return fail("status", "Open the page again and record it from there.");
+  const [mine] = await db.sql<{ id: string; status: string }>`
+    select id::text as id, status from payments where ref_type = 'invoice' and ref_id = ${inv.id}::text and match_key = ${p.key}`;
+  if (mine?.status === "paid") return { ok: true, invoice: inv };
+  const balance = Number(inv.total_cents) - (await paidSoFar(db, inv.id));
+  if (!Number.isSafeInteger(p.amountCents) || p.amountCents <= 0) return fail("amount", "Enter the amount paid.");
+  if (p.amountCents > balance) return fail("amount", `That is more than the ${formatMoney(balance, inv.currency)} still owed.`);
+  const at = new Date(`${p.paidOn}T12:00:00Z`);
+  const now = Math.floor(Date.now() / 1000);
+  const when = Math.min(Math.floor(at.getTime() / 1000), now);
+  const what = [p.method, p.reference].filter(Boolean).join(" ");
+  const row = mine
+    ? (await db.sql<{ id: string }>`update payments set status = 'pending', updated_at = now() where id = ${mine.id}::bigint returning id::text as id`)[0]
+    : (await db.sql<{ id: string }>`
+        insert into payments (email, name, amount_cents, total_cents, currency, status, kind, ref_type, ref_id, description, livemode, source,
+                              match_key, stripe_payment_record_id, updated_by)
+        values (${inv.email}, ${inv.name}, ${p.amountCents}, ${p.amountCents}, ${inv.currency}, 'pending', 'invoice', 'invoice', ${inv.id}::text,
+                ${`Invoice ${inv.number ?? inv.id}: ${what}`}, ${inv.livemode}, ${inv.source}, ${p.key}, ${`pending-${p.key}`}, ${by})
+        returning id::text as id`)[0];
+  try {
+    const record = await stripe<{ id: string }>("POST", "/v1/payment_records/report_payment", {
+      amount_requested: { value: p.amountCents, currency: inv.currency },
+      initiated_at: when,
+      outcome: "guaranteed",
+      guaranteed: { guaranteed_at: when },
+      payment_method_details: { type: "custom", custom: { display_name: p.method } },
+      processor_details: { type: "custom", custom: { payment_reference: p.reference ?? p.method } },
+      customer_details: { customer: inv.stripe_customer_id },
+      description: what,
+      metadata: { invoice_id: inv.id, payment_key: p.key },
+    }, { idempotencyKey: `record-${inv.match_key}-${p.key}`, version: RECORDS_VERSION });
+    const after = await stripe<{ amount_remaining: number }>("POST", `/v1/invoices/${inv.stripe_invoice_id}/attach_payment`,
+      { payment_record: record.id }, { idempotencyKey: `attach-${inv.match_key}-${p.key}`, version: RECORDS_VERSION });
+    await db.sql`
+      update payments set status = 'paid', paid_at = ${at.toISOString()}::timestamptz, stripe_payment_record_id = ${record.id}, updated_at = now()
+      where id = ${row.id}::bigint`;
+    return { ok: true, invoice: inv, remaining: after.amount_remaining };
+  } catch (e) {
+    await db.sql`update payments set status = 'failed', updated_at = now() where id = ${row.id}::bigint and status = 'pending'`;
+    if (e instanceof StripeError) return fail("stripe", e.message);
+    throw e;
+  }
+}
 
 /** Void a sent invoice; its invoice.voided marks it void here. Never deleted. */
 export const voidInvoice = (db: Db, stripe: Stripe, id: string) =>

@@ -27,7 +27,7 @@ its booking onto the new deal.
 
 With `booking` on, customers book a **service** (an estimate visit, an
 installation, a video call) on the Website's `/book` page and one of the
-Team who takes it is booked. Under Schedule the team sets the Services
+Team who takes it is booked. Under Settings the team sets the Services
 (`/services`: length, gaps for travel, notice, where it happens) and
 who takes each, and each person's weekly hours, time off and Google or
 Outlook calendar (Team, `/team`). This CRM is private and never

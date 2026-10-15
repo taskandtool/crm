@@ -28,7 +28,7 @@ import { firstText } from "../crm/leads";
 import type { Lead } from "../crm/leads";
 import { ContactLeads } from "./leads";
 import { Layout } from "./layout";
-import { buttonClass, controlClass, CustomInput, Field, MESSAGES, primaryClass, quietClass, ReadThenEdit, RecordLine, SaveOnChange, shownField, stageOptions, telHref, timeZone } from "./ui";
+import { ArchivedNote, buttonClass, controlClass, menuItemClass, MoreMenu, CustomInput, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, shownField, stageOptions, telHref, timeZone } from "./ui";
 import { CustomerEvents, type Choices } from "./events";
 import { CustomerMoney, type Owed } from "./money";
 import type { Quote } from "../invoices/quotes";
@@ -75,19 +75,28 @@ export function CustomerPage(p: {
       back={{ href: "/customers", label: vocab.many }}
       sub={<div class="flex flex-wrap items-center gap-x-2 gap-y-1"><StatusBadge value={c.stage} options={stageOptions(stages)} /><Reach c={c} /></div>}
       // Actions only; the status is a value, shown under the name and changed in Details, as HubSpot's About card and Pipedrive's Summary hold it.
+      // As HubSpot's and Jobber's: the ways to reach them, then everything else under More, Archive last.
+      // No primary: a person has no one next step; each section adds its own.
       actions={
         <>
           {c.phone ? <a href={telHref(c.phone)} class={buttonClass}>Call</a> : null}
           {c.email ? <a href={`mailto:${c.email}`} class={buttonClass} title={c.email}>Email</a> : null}
-          {invoicesCfg ? <a href={listUrl("/invoices/quotes/new", { email: c.email, name: c.name, phone: c.phone, address: c.address })} class={buttonClass}>New quote</a> : null}
+          <MoreMenu items={[
+            invoicesCfg ? <a href={listUrl("/invoices/quotes/new", { email: c.email, name: c.name, phone: c.phone, address: c.address })} class={menuItemClass}>New {invoicesCfg.word.toLowerCase()}</a> : null,
+            <a href={`${self}/merge`} class={menuItemClass}>Merge</a>,
+            c.archived_at ? null : (
+              <form method="post" action={`${self}/archive`}>
+                <input type="hidden" name="archived" value="1" />
+                <button class={menuItemClass} title="Takes them out of the lists. Nothing is deleted.">Archive</button>
+              </form>
+            ),
+          ]} />
         </>
       }
     >
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       {c.archived_at ? (
-        <p role="status" class="mb-4 rounded-card border border-line bg-panel px-4 py-2">
-          Archived <When at={c.archived_at} timeZone={timeZone} />. Still here, left out of the lists.
-        </p>
+        <ArchivedNote action={`${self}/archive`} fields={{ archived: "0" }}>Archived <When at={c.archived_at} timeZone={timeZone} />. Still here, left out of the lists.</ArchivedNote>
       ) : null}
       <div class="grid gap-4 md:grid-cols-3">
         <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
@@ -135,15 +144,7 @@ export function CustomerPage(p: {
           ) : null}
         </div>
       </div>
-      <RecordLine added={c.created_at} addedBy={c.created_by} changed={c.updated_at} changedBy={c.updated_by}>
-        <a href={`${self}/merge`} class={quietClass}>Merge with another record</a>
-        <form method="post" action={`${self}/archive`}>
-          <input type="hidden" name="archived" value={c.archived_at ? "0" : "1"} />
-          <button class={quietClass} title={c.archived_at ? "Brings them back into the lists." : "Takes them out of the lists. Nothing is deleted."}>
-            {c.archived_at ? "Unarchive" : "Archive"}
-          </button>
-        </form>
-      </RecordLine>
+      <RecordLine added={c.created_at} addedBy={c.created_by} changed={c.updated_at} changedBy={c.updated_by} />
     </Layout>
   );
 }

@@ -29,15 +29,19 @@ alter table payments add column if not exists match_key text;
 -- What was paid in all, tax and fees included, from the paid session; amount_cents
 -- stays the subtotal the webhook checks. Null for a payment made before this column.
 alter table payments add column if not exists total_cents bigint;
+-- A payment taken another way (cash, a check, a bank transfer) and recorded on an
+-- invoice: Stripe's payment record for it, attached to the invoice there.
+alter table payments add column if not exists stripe_payment_record_id text;
 
 create index if not exists payments_ref on payments (ref_type, ref_id);
 create index if not exists payments_email on payments (email);
 create index if not exists payments_recent on payments (created_at desc, id desc);
 create unique index if not exists payments_intent on payments (stripe_payment_intent_id);
+create unique index if not exists payments_record on payments (stripe_payment_record_id);
 create index if not exists payments_email_trgm on payments using gin ((email::text) gin_trgm_ops);
 create index if not exists payments_name_trgm on payments using gin (name gin_trgm_ops);
 
-comment on table payments is 'Payments through the owner''s Stripe account. Status changes only from verified Stripe webhooks (payments skill).';
+comment on table payments is 'Payments through the owner''s Stripe account. Status changes only from verified Stripe webhooks (payments skill), or a payment recorded by hand on an invoice once Stripe has it (invoices skill).';
 
 create table if not exists stripe_events (
   id text primary key,                            -- Stripe's event id (evt_...): one row per event ever handled

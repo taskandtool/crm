@@ -9,7 +9,7 @@ import { cfg, dealsCfg, eventsCfg, ownerLabel, vocab } from "../config";
 import type { Customer, ListFilter } from "../crm/customers";
 import type { Stage } from "../crm/stages";
 import { Layout } from "./layout";
-import { Avatar, buttonClass, controlClass, DueMark, Field, MESSAGES, primaryClass, stageOptions, timeZone } from "./ui";
+import { Avatar, controlClass, DueMark, Field, MESSAGES, primaryClass, stageOptions, timeZone, ViewLink, viewsClass } from "./ui";
 import { ownerOptions, personName } from "../crm/people";
 
 /** Each row's next task (by customer id), who is still in play, and today in the business's zone: what the Next column says. */
@@ -100,13 +100,19 @@ export function CustomersPage(p: {
 }) {
   return (
     <Layout title={vocab.many} user={p.user} section="customers"
-      actions={<><a href="/stages#customers-list" class={buttonClass}>Edit statuses</a><a href="/customers/new" class={primaryClass}>New {vocab.one.toLowerCase()}</a></>}>
+      actions={<a href="/customers/new" class={primaryClass}>New {vocab.one.toLowerCase()}</a>}>
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
+      {/* Active or Archived as the list's views, as Leads has Open and Archived. */}
+      <nav aria-label={`Which ${vocab.many.toLowerCase()}`} class={"mb-4 " + viewsClass}>
+        <ViewLink href={listUrl("/customers", { ...filterParams(p.filter), show: null })} on={!p.filter.archived}>Active</ViewLink>
+        <ViewLink href={listUrl("/customers", { ...filterParams(p.filter), show: "archived" })} on={p.filter.archived}>Archived</ViewLink>
+      </nav>
       <SearchBar
         action="/customers"
         target="#results"
         q={p.filter.q}
         placeholder={`Search ${vocab.many.toLowerCase()}`}
+        keep={{ show: p.filter.archived ? "archived" : null }}
         filters={[
           { name: "stage", label: "Status", options: p.stages.map((s) => ({ value: s.key, label: s.label })), value: p.filter.stage, any: "Any status" },
           ...(p.facets.tags.length ? [{ name: "tag", label: "Tag", options: p.facets.tags.map((t) => ({ value: t, label: t })), value: p.filter.tag, any: "Any tag" }] : []),
@@ -119,7 +125,6 @@ export function CustomersPage(p: {
           },
           // As Pipedrive marks a deal with no activity: the ones in play with nothing planned next.
           { name: "next", label: "Next task", options: [{ value: "none", label: "Nothing planned" }], value: p.filter.unplanned ? "none" : null, any: "Any next task" },
-          { name: "show", label: "Show", options: [{ value: "archived", label: "Archived" }], value: p.filter.archived ? "archived" : null, any: "Active" },
         ]}
       />
       <Results stages={p.stages} filter={p.filter} rows={p.rows} next={p.next} paged={p.paged} nextOf={p.nextOf} />

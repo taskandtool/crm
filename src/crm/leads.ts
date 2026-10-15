@@ -154,29 +154,35 @@ export async function convertLead(db: Db, id: string, dealId: string, user: stri
   if (lead?.booking_id) {
     await db.sql`update bookings set deal_id = ${dealId}::bigint, updated_at = now(), updated_by = ${user} where id = ${lead.booking_id}::bigint and deal_id is null`;
   }
-  // Its form submission is dealt with too: done in the forms list. The CRM writes no other column of the forms skill's table.
-  if (lead?.submission_id) {
-    await db.sql`update submissions set status = 'done', updated_at = now(), updated_by = ${user} where id = ${lead.submission_id}::bigint and status in ('new', 'read')`;
-  }
+  // Its form submission is dealt with too: done in the forms list.
+  await submissionFollows(db, lead?.submission_id, "done", user);
   if (lead && newLeadTask) {
     await addTask(db, lead.customer_id, { kind: "call", title: `Call back ${lead.name}`, due_on: todayIn(cfg.time_zone), due_time: null, owner: user, deal_id: dealId }, user);
   }
   return !!lead;
 }
 
-/** Archived with a reason (Not a fit, Spam, ...). */
+/** Archived with a reason (Not a fit, Spam, ...); its form submission follows: archived, or spam. */
 export async function archiveLead(db: Db, id: string, reason: string, user: string): Promise<boolean> {
-  const rows = await db.sql`
+  const rows = await db.sql<{ submission_id: string | null }>`
     update leads set status = 'archived', archived_reason = ${reason.slice(0, 200)}, updated_at = now(), updated_by = ${user}
-    where id = ${id}::bigint and status = 'open' returning id`;
+    where id = ${id}::bigint and status = 'open' returning submission_id::text as submission_id`;
+  await submissionFollows(db, rows[0]?.submission_id, reason === "Spam" ? "spam" : "done", user);
   return rows.length > 0;
+}
+
+/** A lead's form submission takes the lead's state, so the forms list agrees with Leads. The CRM writes no other column of the forms skill's table. */
+async function submissionFollows(db: Db, submissionId: string | null | undefined, status: "read" | "done" | "spam", user: string) {
+  if (!submissionId) return;
+  await db.sql`update submissions set status = ${status}, updated_at = now(), updated_by = ${user} where id = ${submissionId}::bigint and status <> ${status}`;
 }
 
 /** Open again: Undo after Archive, or Unarchive on an archived lead. A converted one stays with its deal. */
 export async function reopenLead(db: Db, id: string, user: string): Promise<boolean> {
-  const rows = await db.sql`
+  const rows = await db.sql<{ submission_id: string | null }>`
     update leads set status = 'open', archived_reason = null, updated_at = now(), updated_by = ${user}
-    where id = ${id}::bigint and status = 'archived' returning id`;
+    where id = ${id}::bigint and status = 'archived' returning submission_id::text as submission_id`;
+  await submissionFollows(db, rows[0]?.submission_id, "read", user);
   return rows.length > 0;
 }
 

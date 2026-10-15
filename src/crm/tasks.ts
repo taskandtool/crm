@@ -185,6 +185,15 @@ export async function listTasks(db: Db, owner: string | null, limit = 100, dueBy
     limit ${limit + 1}`;
 }
 
+/** The ones done, newest first, whoever did them: the Tasks page's Done; `limit` and one more. */
+export async function doneTasks(db: Db, limit = 100): Promise<Task[]> {
+  return sql(db)<Task>`
+    select {select} {from}
+    where t.done_at is not null and c.archived_at is null
+    order by t.done_at desc, t.id desc
+    limit ${limit + 1}`;
+}
+
 /** How many are overdue and due today: everyone's, or one person's. */
 export async function taskCounts(db: Db, today: string, owner: string | null): Promise<{ overdue: number; today: number }> {
   const [r] = await db.sql<{ overdue: number; today: number }>`

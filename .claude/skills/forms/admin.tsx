@@ -46,8 +46,12 @@ export type FormsAdminOptions = {
   pageSize?: number;
   /** The app's own page frame (the CRM's layout and nav) instead of AdminLayout. */
   Frame?: Frame;
-  /** Where a booking's Reschedule and Cancel are (bookingAdmin's base and its id: `/admin/schedule/42`), and a payment's page where paymentsAdmin is. */
-  links?: { booking?: (id: string) => string; payment?: (id: string) => string };
+  /**
+   * Where a booking's Reschedule and Cancel are (bookingAdmin's base and its id: `/admin/schedule/42`), a payment's page
+   * where paymentsAdmin is, and a lead's page where the app has leads (the CRM's): a submission that is a lead is
+   * archived, converted or marked spam there, so its page here just opens it.
+   */
+  links?: { booking?: (id: string) => string; payment?: (id: string) => string; lead?: (id: string) => string };
 };
 
 
@@ -166,6 +170,14 @@ const AskNote = () => (
  * payment: a booking step, or a payment or products step, on a form whose
  * table is here. What the submissions list gives a column to.
  */
+/** The lead a submission made, where the project has leads. */
+async function leadOf(db: Db, submissionId: string): Promise<string | null> {
+  const [has] = await db.sql<{ leads: boolean }>`select to_regclass('leads') is not null as leads`;
+  if (!has.leads) return null;
+  const [l] = await db.sql<{ id: string }>`select id::text as id from leads where submission_id = ${submissionId}::bigint order by id limit 1`;
+  return l?.id ?? null;
+}
+
 async function leadsTo(db: Db, form: string | null): Promise<{ bookings: boolean; payments: boolean }> {
   const [has, forms] = await Promise.all([
     linkKinds(db),
@@ -364,14 +376,17 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
 
     const self = subUrl(r.id);
     const view = viewOf(r.status);
+    const lead = opts.links?.lead ? await leadOf(db, r.id) : null;
     const move = (status: string, label: string, primary = false) => (
       <form method="post" action={`${self}/status`}>
         <input type="hidden" name="status" value={status} />
         <button class={primary ? primaryClass : buttonClass}>{label}</button>
       </form>
     );
-    const actions =
-      view === "open" ? <>{move("done", "Archive", true)}{move("spam", "Mark as spam")}</>
+    // A lead's submission follows its lead (the app sets its status), as Pipedrive's and Salesforce's web forms
+    // make a lead and nothing else to sort: one way, to the lead.
+    const actions = lead && opts.links?.lead ? <a href={opts.links.lead(lead)} class={primaryClass}>Open lead</a>
+      : view === "open" ? <>{move("done", "Archive", true)}{move("spam", "Mark as spam")}</>
       : view === "archived" ? <>{move("read", "Move to Open")}{move("spam", "Mark as spam")}</>
       : move("read", "Not spam");
     const head = {
