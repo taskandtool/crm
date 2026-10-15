@@ -99,7 +99,8 @@ export function Layout(props: {
         <Icon name={n.section} class={"size-5 " + (on ? "text-ink" : "text-ink-3")} />
         {n.label}
         {/* How many tasks of mine are due and how many leads are open: filled in after the page loads so no page waits on them. */}
-        {n.section === "tasks" ? <span hx-get="/tasks/count" hx-trigger="load" hx-swap="outerHTML"></span> : null}
+        {/* Tasks' count asks again when a task is ticked off or undone on the page (tasks-changed). */}
+        {n.section === "tasks" ? <span class="contents" hx-get="/tasks/count" hx-trigger="load, tasks-changed from:body" hx-swap="innerHTML"></span> : null}
         {n.section === "leads" ? <span hx-get="/leads/count" hx-trigger="load" hx-swap="outerHTML"></span> : null}
       </a>
     );

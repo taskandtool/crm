@@ -258,7 +258,7 @@ export function NewLeadPage(p: { user: string; owners: string[]; flash: { code?:
           <textarea name="notes" rows={3} maxlength={10000} placeholder="What they said on the call" class={controlClass}></textarea>
         </Field>
         <div class="sm:col-span-2 flex flex-wrap items-center gap-3">
-          <button class={primaryClass}>Add lead</button>
+          <button class={primaryClass}>Create lead</button>
           <span class="text-label text-ink-3">An email or phone that is already here adds the lead to that {vocab.one.toLowerCase()}.</span>
         </div>
       </form>

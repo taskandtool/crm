@@ -137,26 +137,66 @@ function groups(rows: Task[], today: string): [string, Task[]][] {
   return out;
 }
 
+export type TaskItemProps = {
+  task: Task; today: string; returnTo: string; showCustomer?: boolean; showOwner?: boolean; grouped?: boolean;
+  /** The deal whose page this is: no link back to it. */ onDeal?: string | null;
+};
+
+/** How a task is shown here, sent with its tick and Undo so the answer draws it the same way. */
+function Shown({ p }: { p: TaskItemProps }) {
+  return (
+    <>
+      <input type="hidden" name="return" value={p.returnTo} />
+      {p.showCustomer ? <input type="hidden" name="show_customer" value="1" /> : null}
+      {p.showOwner ? <input type="hidden" name="show_owner" value="1" /> : null}
+      {p.grouped ? <input type="hidden" name="grouped" value="1" /> : null}
+      {p.onDeal ? <input type="hidden" name="on_deal" value={p.onDeal} /> : null}
+    </>
+  );
+}
+
+/** Read back what Shown sent. */
+export function shownFrom(body: Record<string, unknown>, task: Task, today: string, returnTo: string): TaskItemProps {
+  const on = typeof body.on_deal === "string" && /^\d{1,18}$/.test(body.on_deal) ? body.on_deal : null;
+  return { task, today, returnTo, showCustomer: body.show_customer === "1", showOwner: body.show_owner === "1", grouped: body.grouped === "1", onDeal: on };
+}
+
+/** The line under a task's title: for whom (a call shows their number) and which deal. */
+function ForWhom({ p }: { p: TaskItemProps }) {
+  const { task } = p;
+  const deal = task.deal_title && task.deal_id && task.deal_id !== p.onDeal;
+  if (!p.showCustomer && !deal) return null;
+  return (
+    <p class="mt-0.5 text-label text-ink-2">
+      {p.showCustomer ? <a href={`/customers/${task.customer_id}`}>{task.customer_name}</a> : null}
+      {p.showCustomer && task.kind === "call" && task.customer_phone ? <> · <a href={telHref(task.customer_phone)}>{task.customer_phone}</a></> : null}
+      {deal ? <>{p.showCustomer ? " · " : ""}<a href={`/deals/${task.deal_id}`}>{task.deal_title}</a></> : null}
+    </p>
+  );
+}
+
+const check = <svg aria-hidden="true" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-3"><path d="m2.5 6.5 2.5 2.5 4.5-5" /></svg>;
+
 /**
  * One task, as a task list shows one: a circle to tick it done, what and
  * for whom, and Reschedule (with "done, with a note" in the same menu).
  * `grouped` is in a list headed by its day, so only an overdue one says its date.
+ * The tick stays on the page, as Todoist's and HubSpot's do: htmx swaps the
+ * task for its done state (TaskDone) in place; without JavaScript it is a
+ * plain POST back to the page with "Task completed."
  */
-export function TaskItem(p: {
-  task: Task; today: string; returnTo: string; showCustomer?: boolean; showOwner?: boolean; grouped?: boolean;
-  /** The deal whose page this is: no link back to it. */ onDeal?: string | null;
-}) {
+export function TaskItem(p: TaskItemProps) {
   const { task, today } = p;
   const label = `${TASK_LABELS[task.kind]}: ${task.title}`;
-  const deal = task.deal_title && task.deal_id && task.deal_id !== p.onDeal;
   const overdue = task.due_on < today;
+  const swap = { "hx-post": `/tasks/${task.id}/done`, "hx-target": `#task-${task.id}`, "hx-swap": "outerHTML" };
   return (
-    <div class="flex items-start gap-3">
-      <form method="post" action={`/tasks/${task.id}/done`} class="pt-0.5">
-        <input type="hidden" name="return" value={p.returnTo} />
+    <div id={`task-${task.id}`} class="flex items-start gap-3">
+      <form method="post" action={`/tasks/${task.id}/done`} {...swap} class="pt-0.5">
+        <Shown p={p} />
         <button aria-label={`Mark done: ${label}`} title="Mark done"
           class="flex size-5 items-center justify-center rounded-full border-2 border-line-strong text-transparent hover:border-accent hover:bg-accent/10 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
-          <svg aria-hidden="true" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-3"><path d="m2.5 6.5 2.5 2.5 4.5-5" /></svg>
+          {check}
         </button>
       </form>
       <div class="min-w-0 flex-1">
@@ -168,13 +208,7 @@ export function TaskItem(p: {
           <span>{TASK_LABELS[task.kind]}</span>
           {p.showOwner && task.owner ? <span>{personName(task.owner)}</span> : null}
         </p>
-        {p.showCustomer || deal ? (
-          <p class="mt-0.5 text-label text-ink-2">
-            {p.showCustomer ? <a href={`/customers/${task.customer_id}`}>{task.customer_name}</a> : null}
-            {p.showCustomer && task.kind === "call" && task.customer_phone ? <> · <a href={telHref(task.customer_phone)}>{task.customer_phone}</a></> : null}
-            {deal ? <>{p.showCustomer ? " · " : ""}<a href={`/deals/${task.deal_id}`}>{task.deal_title}</a></> : null}
-          </p>
-        ) : null}
+        <ForWhom p={p} />
       </div>
       <details data-menu class="relative shrink-0">
         <summary class={quietClass + " cursor-pointer list-none"} aria-label={`Reschedule ${label}`}>Reschedule</summary>
@@ -195,8 +229,8 @@ export function TaskItem(p: {
             <input name="at" type="time" value={task.due_time ?? ""} aria-label="Time, or blank for any time" class={controlClass + " min-w-0"} />
             <button class={buttonClass + " col-span-2"}>Reschedule</button>
           </form>
-          <form method="post" action={`/tasks/${task.id}/done`} class="flex flex-col gap-2 border-t border-line pt-3">
-            <input type="hidden" name="return" value={p.returnTo} />
+          <form method="post" action={`/tasks/${task.id}/done`} {...swap} class="flex flex-col gap-2 border-t border-line pt-3">
+            <Shown p={p} />
             <Field label="Or mark it done, with what came of it">
               <textarea name="outcome" rows={2} maxlength={10000} class={controlClass}></textarea>
             </Field>
@@ -204,6 +238,31 @@ export function TaskItem(p: {
           </form>
         </div>
       </details>
+    </div>
+  );
+}
+
+/**
+ * A task just ticked off, where it was: the circle filled, the title struck
+ * through, and Undo, as Todoist and HubSpot show it. Gone from the list on the
+ * next visit. Its Undo puts the task back as it was (TaskItem).
+ */
+export function TaskDone(p: TaskItemProps) {
+  const { task } = p;
+  return (
+    <div id={`task-${task.id}`} role="status" class="flex items-start gap-3">
+      <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-accent text-accent-ink tick-pop">
+        {check}
+      </span>
+      <div class="min-w-0 flex-1">
+        <p class="break-words font-semibold text-ink-3 line-through decoration-ink-3">{task.title}</p>
+        <p class="mt-0.5 text-label text-ink-3">Done<span class="sr-only">: {task.title}</span></p>
+        <ForWhom p={p} />
+      </div>
+      <form method="post" action={`/tasks/${task.id}/undo`} hx-post={`/tasks/${task.id}/undo`} hx-target={`#task-${task.id}`} hx-swap="outerHTML" class="shrink-0">
+        <Shown p={p} />
+        <button class={quietClass}>Undo</button>
+      </form>
     </div>
   );
 }

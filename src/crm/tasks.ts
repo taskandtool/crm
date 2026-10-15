@@ -136,15 +136,20 @@ export async function doneTask(db: Db, id: string, outcome: string | null, user:
   if (!ID.test(id)) return null;
   const said = (outcome ?? "").trim().slice(0, 10_000);
   const [done] = await db.transaction([
+    // The task, locked and still open; its note; then the task done, naming the note (Undo takes it back).
     q`with d as (
-        update follow_ups set done_at = now(), done_by = ${user}, updated_at = now(), updated_by = ${user}
-        where id = ${id}::bigint and done_at is null
-        returning customer_id, kind, title)
-      insert into customer_notes (customer_id, kind, body, author, happened_at)
-      select d.customer_id, case when d.kind = 'task' then 'note' else d.kind end,
-             d.title || case when ${said}::text <> '' then E'\\n' || ${said}::text else '' end, ${user}, now()
-      from d
-      returning customer_id`,
+        select id, customer_id, kind, title from follow_ups where id = ${id}::bigint and done_at is null for update),
+      n as (
+        insert into customer_notes (customer_id, kind, body, author, happened_at)
+        select d.customer_id, case when d.kind = 'task' then 'note' else d.kind end,
+               d.title || case when ${said}::text <> '' then E'\\n' || ${said}::text else '' end, ${user}, now()
+        from d
+        returning id, customer_id),
+      t as (
+        update follow_ups f set done_at = now(), done_by = ${user}, done_note_id = (select id from n), updated_at = now(), updated_by = ${user}
+        from d where f.id = d.id
+        returning f.id)
+      select customer_id from n`,
     // notes.ts's rule: the latest call, email, meeting or text noted.
     q`update customers c set
         last_contact_at = greatest(c.last_contact_at, (select max(n.happened_at) from customer_notes n where n.customer_id = c.id and n.kind <> 'note')),
@@ -154,6 +159,34 @@ export async function doneTask(db: Db, id: string, outcome: string | null, user:
   ]);
   const task = await getTask(db, id);
   return task ? { task, already: done.length === 0 } : null;
+}
+
+/**
+ * Undo a tick, as Todoist's and HubSpot's: open again, and the timeline note
+ * it made gone. Their last contact goes back too when that note was it.
+ * False when it is open or missing.
+ */
+export async function undoTask(db: Db, id: string, user: string): Promise<boolean> {
+  if (!ID.test(id)) return false;
+  const [r] = await db.transaction([
+    q`with t as (
+        select id, customer_id, done_note_id from follow_ups where id = ${id}::bigint and done_at is not null for update),
+      gone as (
+        delete from customer_notes n using t where n.id = t.done_note_id returning n.happened_at, n.customer_id),
+      c as (
+        update customers c set
+          last_contact_at = (select max(x.happened_at) from customer_notes x
+                             where x.customer_id = c.id and x.kind <> 'note' and x.id <> (select done_note_id from t)),
+          updated_at = now(), updated_by = ${user}
+        from gone where c.id = gone.customer_id and c.last_contact_at = gone.happened_at
+        returning c.id),
+      u as (
+        update follow_ups f set done_at = null, done_by = null, done_note_id = null, updated_at = now(), updated_by = ${user}
+        from t where f.id = t.id
+        returning f.id)
+      select count(*)::int as n from u`,
+  ]);
+  return r[0].n > 0;
 }
 
 /** Move an open one to another day (and time, when given; null for any time). False when it is done or missing. */

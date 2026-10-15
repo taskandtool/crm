@@ -5,6 +5,16 @@
 /* The proposal's compiled stylesheet (styles/proposal.css) is not a source of the CRM's. */
 @source not "../src/proposals/style.ts";
 
+/* A task's circle filling as it is ticked off (DESIGN.md, Motion). */
+@media (prefers-reduced-motion: no-preference) {
+  .tick-pop { animation: tick-pop 200ms ease-out; }
+}
+@keyframes tick-pop {
+  0% { transform: scale(0.6); }
+  70% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
 @layer base {
   html {
     background: var(--color-canvas);

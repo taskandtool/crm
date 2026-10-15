@@ -796,7 +796,7 @@ export function typeRoutes(getDb: GetDb, opts: BookingAdminOptions) {
   const newPage = (c: Team, values: Record<string, unknown> = {}, errors: Errors = {}) =>
     framed(c, base, { title: "New service", back: { href: base, label: "Services" } }, (
       <div class="max-w-3xl rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
-        <TypeForm action={base} t={values} errors={errors} submit="Add service" publicBase={publicBase} currency={opts.currency} />
+        <TypeForm action={base} t={values} errors={errors} submit="Create service" publicBase={publicBase} currency={opts.currency} />
       </div>
     ), Object.keys(errors).length ? 422 : 200);
 
@@ -914,7 +914,7 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
     const d = getDb(c);
     const all = await allPeople(d);
     const hours = await Promise.all(all.map((r) => weeklyHours(d, r.id)));
-    return framed(c, base, { title: "Team", actions: <a href={`${base}/new`} class={primaryClass}>Add person</a> }, (
+    return framed(c, base, { title: "Team", actions: <a href={`${base}/new`} class={primaryClass}>New team member</a> }, (
       <>
         {all.length ? (
           <ul class="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface shadow-card">
@@ -937,9 +937,9 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
 
   const newPage = async (c: Team, values: Record<string, unknown> = {}, errors: Errors = {}) => {
     const all = await allPeople(getDb(c));
-    return framed(c, base, { title: "Add person", back: { href: base, label: "Team" } }, (
+    return framed(c, base, { title: "New team member", back: { href: base, label: "Team" } }, (
       <div class="max-w-3xl rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
-        <PersonForm action={base} r={values} errors={errors} submit="Add person" zone={opts.timeZone ?? all[0]?.time_zone ?? "UTC"} />
+        <PersonForm action={base} r={values} errors={errors} submit="Create team member" zone={opts.timeZone ?? all[0]?.time_zone ?? "UTC"} />
       </div>
     ), Object.keys(errors).length ? 422 : 200);
   };

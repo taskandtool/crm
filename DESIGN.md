@@ -243,9 +243,12 @@ it in `ink-3`. Search fields carry the search icon inside on the left.
 
 ## Motion
 
-SortableJS's drag animation, and Home's figures counting up once from 0
+SortableJS's drag animation, Home's figures counting up once from 0
 as the page opens (700ms, easing out, `crm.js`; the server's text is what
-stays). Nothing else moves. Reduced motion turns both off.
+stays), and a task's circle filling as it is ticked off (`tick-pop`, 200ms,
+in `styles/input.css`), where it stays struck through with Undo instead of
+the page reloading, as Todoist's and HubSpot's do. Nothing else moves.
+Reduced motion turns all three off.
 
 ## Words
 

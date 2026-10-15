@@ -100,6 +100,9 @@ create table if not exists follow_ups (
   updated_at   timestamptz not null default now()
 );
 
+-- The timeline note ticking one off made, so Undo takes it back.
+alter table follow_ups add column if not exists done_note_id bigint;
+
 create index if not exists follow_ups_open on follow_ups (due_on, due_time, id) where done_at is null;
 create index if not exists follow_ups_customer_open on follow_ups (customer_id, due_on) where done_at is null;
 create index if not exists follow_ups_owner_open on follow_ups (owner, due_on) where done_at is null;

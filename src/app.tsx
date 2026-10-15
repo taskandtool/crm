@@ -26,7 +26,7 @@ import { everythingFrom } from "./crm/history";
 import { board, createDeal, customerDeals, dealChoices, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
 import {
   addTask, customerTasks, doneTask, taskCounts, getTask, inPlay, doneTasks, listTasks, moveTask, nextTasks,
-  pickTaskKind, readDay, readTime,
+  pickTaskKind, readDay, readTime, undoTask,
 } from "./crm/tasks";
 import { home } from "./crm/home";
 import { isUnread, markSeen, NOTICE_LIMIT, notices, seenAt } from "./crm/notifications";
@@ -50,7 +50,7 @@ import { SearchPage, SearchPeek } from "./views/search";
 import { search } from "./crm/search";
 import type { Frame } from "./admin/layout";
 import { Board, CLOSED_DAYS, DealPage, DealsPage, NewDealPage, PER_COLUMN, type BoardData, type DealFrom } from "./views/deals";
-import { NewTaskPage, TasksPage } from "./views/tasks";
+import { NewTaskPage, shownFrom, TaskDone, TaskItem, TasksPage } from "./views/tasks";
 import { MergePage } from "./views/merge";
 import { StagesPage } from "./views/stages";
 import { bookingAdmin, peopleRoutes, typeRoutes } from "./booking/admin";
@@ -958,13 +958,36 @@ app.get("/tasks/count", async (c) => {
   );
 });
 
+// Ticked off: from htmx, the task's done state in its place (and the sidebar's count told), so the page
+// stays as it is; without JavaScript, back to the page with "Task completed."
 app.post("/tasks/:id/done", async (c) => {
   const id = idParam(c.req.param("id"));
   if (!id) return c.notFound();
   const body = await c.req.parseBody();
   const r = await doneTask(c.var.db, id, clean(body.outcome, 10_000), c.var.user);
   if (!r) return c.notFound();
-  return back(c, localPath(str(body.return), "", `/customers/${r.task.customer_id}`), r.already ? "task-already" : "task-done");
+  const ret = localPath(str(body.return), "", `/customers/${r.task.customer_id}`);
+  if (isPartial(c)) {
+    c.header("HX-Trigger", "tasks-changed");
+    return c.html(<TaskDone {...shownFrom(body, r.task, today(), ret)} />);
+  }
+  return back(c, ret, r.already ? "task-already" : "task-done");
+});
+
+// Undo a tick: open again, as it was.
+app.post("/tasks/:id/undo", async (c) => {
+  const id = idParam(c.req.param("id"));
+  if (!id) return c.notFound();
+  const body = await c.req.parseBody();
+  const opened = await undoTask(c.var.db, id, c.var.user);
+  const task = await getTask(c.var.db, id);
+  if (!task) return c.notFound();
+  const ret = localPath(str(body.return), "", `/customers/${task.customer_id}`);
+  if (isPartial(c)) {
+    c.header("HX-Trigger", "tasks-changed");
+    return c.html(task.done_at ? <TaskDone {...shownFrom(body, task, today(), ret)} /> : <TaskItem {...shownFrom(body, task, today(), ret)} />);
+  }
+  return back(c, ret, opened ? "task-undone" : "task-already");
 });
 
 app.post("/tasks/:id/move", async (c) => {
@@ -1112,6 +1135,12 @@ app.post("/deals/:id/stage", async (c) => {
   let code = "deal-stage";
   if (current.stage === stage && "lost_reason" in body) code = (await setLostReason(db, id, reason, c.var.user)) ? "deal-saved" : "pick-stage";
   else if (!(await setDealStage(db, id, stage, c.var.user, reason))) code = "pick-stage";
+  else {
+    // Say what happened, as Pipedrive does: won, lost, or open again; a move between open stages is a stage change.
+    const kinds = new Map((await listStages(db, "deals")).map((s) => [s.key, s.kind]));
+    const to = kinds.get(stage), from = kinds.get(current.stage);
+    code = to === "won" ? "deal-won" : to === "lost" ? "deal-lost" : from && from !== "open" ? "deal-reopened" : "deal-stage";
+  }
   // From the board (htmx: a drag or a card's select) the answer is the board itself.
   if (isPartial(c) && ret === "/deals") return c.html(<Board data={await boardData(c)} />);
   return back(c, ret, code);

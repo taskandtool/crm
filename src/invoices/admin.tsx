@@ -162,7 +162,7 @@ function Totals({ totals, currency, base }: { totals: Awaited<ReturnType<typeof 
     <div class="mb-5 grid grid-cols-3 gap-px overflow-hidden rounded-card bg-line shadow-card ring-1 ring-line">
       {figure(listUrl(base, { status: "open" }), whole(totals.open.cents), "Outstanding", count(totals.open.count))}
       {figure(listUrl(base, { status: "due" }), whole(totals.due.cents), "Past due", totals.due.count ? count(totals.due.count) : "None late", totals.due.count > 0)}
-      {figure(listUrl(base, { status: "paid" }), whole(totals.paid.cents), "Paid this month", "Through Stripe and marked paid")}
+      {figure(listUrl(base, { status: "paid" }), whole(totals.paid.cents), "Paid this month", "Online and recorded by hand")}
     </div>
   );
 }

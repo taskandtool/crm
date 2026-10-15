@@ -341,7 +341,7 @@ test("deals: the board's columns and totals; a move answers htmx with the board 
   assert.equal((await getCustomer(db, pat.id))!.stage, "customer", "a won deal makes a lead a customer");
 
   const plain = await post(`/deals/${dealId}/stage`, { stage: "lost", return: "/deals" });
-  assert.equal(plain.headers.get("location"), "/deals?saved=deal-stage");
+  assert.equal(plain.headers.get("location"), "/deals?saved=deal-lost", "it says what happened: lost");
   // Why it was lost, said on its page after the move.
   assert.equal((await post(`/deals/${dealId}/stage`, { status: "lost", lost_reason: "Price", return: `/deals/${dealId}` })).headers.get("location"), `/deals/${dealId}?saved=deal-saved`);
   const [d] = await db.sql<{ lost_reason: string; closed: boolean }>`select lost_reason, closed_at is not null as closed from deals where id = ${dealId}::bigint`;
@@ -407,6 +407,25 @@ test("tasks: added, listed for today, the nav's count, done onto the timeline, m
   assert.ok((await getCustomer(db, id))!.last_contact_at, "a call done is contact");
   assert.match(await (await get(`/customers/${id}`)).text(), /No task scheduled\./);
   assert.match(await (await get("/tasks?show=done")).text(), /Call about the estimate[\s\S]*Done /, "Done lists it, newest first");
+
+  // Ticked from the page (htmx): the task's done state comes back in its place, the sidebar told; Undo puts it back and takes its note away.
+  await post(`/customers/${id}/tasks`, { kind: "call", title: "Tick me in place", on: today });
+  const [tk] = await db.sql<{ id: string }>`select id::text as id from follow_ups where title = 'Tick me in place'`;
+  const hxHeaders = { ...ME, origin: HOST, "hx-request": "true" };
+  const ticked = await post(`/tasks/${tk.id}/done`, { return: "/tasks", show_customer: "1" }, hxHeaders);
+  assert.equal(ticked.status, 200);
+  assert.equal(ticked.headers.get("hx-trigger"), "tasks-changed");
+  const tickedHtml = await ticked.text();
+  assert.match(tickedHtml, new RegExp(`^<div id="task-${tk.id}" role="status"[\\s\\S]*line-through[\\s\\S]*Tick me in place[\\s\\S]*/tasks/${tk.id}/undo[\\s\\S]*>Undo<`));
+  assert.match(tickedHtml, /href="\/customers\/\d+"/, "drawn as the list drew it: with whom");
+  const notesFor = async () => (await db.sql`select 1 from customer_notes where customer_id = ${id}::bigint and body like 'Tick me in place%'`).length;
+  assert.equal(await notesFor(), 1);
+  const undone = await (await post(`/tasks/${tk.id}/undo`, { return: "/tasks", show_customer: "1" }, hxHeaders)).text();
+  assert.match(undone, new RegExp(`^<div id="task-${tk.id}" class=[\\s\\S]*aria-label="Mark done: Call: Tick me in place"`));
+  assert.equal(await notesFor(), 0, "its note is gone with the tick");
+  assert.equal((await db.sql<{ done_at: Date | null }>`select done_at from follow_ups where id = ${tk.id}::bigint`)[0].done_at, null);
+  assert.equal((await post(`/tasks/${tk.id}/undo`, { return: "/tasks" })).headers.get("location"), "/tasks?saved=task-already", "an open one has nothing to undo");
+  await db.sql`delete from follow_ups where id = ${tk.id}::bigint`;
 
   // New task from the Tasks page: for the customer picked, or for someone new.
   assert.match(await (await get("/tasks/new")).text(), /<option value="\d+">Fay Lo \(fay@example\.com\)<\/option>/, "the picker offers who is here");
