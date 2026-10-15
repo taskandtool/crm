@@ -31,13 +31,14 @@ for (const script of scripts) {
 const READ: Record<string, string[]> = {
   "customers.mjs": ["list"], "events.mjs": ["list"], "stages.mjs": ["list"], "forms.mjs": ["list"],
   "quotes.mjs": ["list"], "invoices.mjs": ["list"], "import.mjs": ["file.csv"], "export.mjs": [], "migrate.mjs": [],
-  "deals.mjs": ["list"], "tasks.mjs": ["list"], "leads.mjs": ["list"],
+  "deals.mjs": ["list"], "tasks.mjs": ["list"], "leads.mjs": ["list"], "proposal-font.mjs": ["Caladea"], "proposal-photo.mjs": ["photo.jpg"], "proposal-read.mjs": ["https://example.com"], "proposal-preview.mjs": [],
 };
 test("every script is in the bad-input table", () => assert.deepEqual(Object.keys(READ).sort(), [...scripts].sort()));
 
 for (const [script, args] of Object.entries(READ)) {
   test(`${script} refuses an unknown flag`, () => refused(run(script, [...args, "--bogus"]), 2, `${script} --bogus`));
-  if (args.length && script !== "import.mjs") {
+  // these take a file or a family, not a command
+  if (args.length && !["import.mjs", "proposal-font.mjs", "proposal-photo.mjs", "proposal-read.mjs"].includes(script)) {
     test(`${script} refuses a command it does not have`, () => refused(run(script, ["nope"]), 2, `${script} nope`));
   }
 }

@@ -5,7 +5,7 @@
 //
 //   const r = readLines([{ description: "Install", quantity: "1", unit: "450.00" }], "usd", rates);
 //   if (!r.ok) show(r.errors);   // { "lines.0.unit": "Enter a price like 12.50." }
-import type { Query } from "../data/db";
+import type { Db, Query } from "../data/db";
 import { decimals, toMinor } from "../payments/money";
 import type { TaxRate } from "../payments/tax";
 
@@ -22,9 +22,10 @@ export const MAX_LINES = 100;
  * Read lines as typed: blank rows are dropped, each row needs a description
  * and a price, a quantity defaults to 1. Errors are keyed `lines.<i>.<field>`
  * by the row's index in the input. A tax rate must be one of `rates` and
- * active.
+ * active, or one the document's lines already carry (`kept`): an archived
+ * rate stays on what uses it, it is only not offered for new lines.
  */
-export function readLines(input: unknown, currency: string, rates: TaxRate[]): Saved<Line[]> {
+export function readLines(input: unknown, currency: string, rates: TaxRate[], kept: readonly string[] = []): Saved<Line[]> {
   const rows = Array.isArray(input) ? (input as LineInput[]) : [];
   const errors: Errors = {};
   const out: Line[] = [];
@@ -41,7 +42,7 @@ export function readLines(input: unknown, currency: string, rates: TaxRate[]): S
     if (!/^\d{1,9}(\.\d{1,2})?$/.test(qty) || Number(qty) <= 0) errors[`${at}.quantity`] = "Enter a quantity like 1 or 2.5.";
     const cents = toMinor(unit, currency);
     if (cents === null) errors[`${at}.unit`] = decimals(currency) ? "Enter a price like 12.50." : "Enter a whole price like 1200.";
-    if (rate && !rates.some((r) => r.id === rate && r.active)) errors[`${at}.tax_rate_id`] = "Choose a tax rate from the list.";
+    if (rate && !rates.some((r) => r.id === rate && (r.active || kept.includes(r.id)))) errors[`${at}.tax_rate_id`] = "Choose a tax rate from the list.";
     out.push({ description, quantity: qty, unit_cents: cents ?? 0, tax_rate_id: rate || null });
   });
   if (out.length > MAX_LINES) errors.lines = `Up to ${MAX_LINES} lines.`;
@@ -90,6 +91,13 @@ export function clearLines(kind: DocKind, id: string): Query {
     text: `delete from ${d.lines} where ${d.key} = $1::bigint and exists (select 1 from ${d.table} where ${d.table}.id = $1::bigint and ${d.editable})`,
     values: [id],
   };
+}
+
+/** The tax rates a document's lines carry now, so a save keeps an archived one (readLines `kept`). */
+export async function keptRates(db: Db, kind: DocKind, id: string): Promise<string[]> {
+  const d = DOC[kind];
+  const [rows] = await db.transaction([{ text: `select distinct tax_rate_id::text as id from ${d.lines} where ${d.key} = $1::bigint and tax_rate_id is not null`, values: [id] }]);
+  return rows.map((r) => String(r.id));
 }
 
 /**

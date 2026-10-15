@@ -4,20 +4,22 @@
    loads nothing else. These tokens are the starter's; make them the
    business's from brand/visual-identity.md (its colours, its fonts). A font
    is a WOFF2 file in static/fonts/ named in an @font-face below, never a
-   font service. */
+   font service: node scripts/proposal-font.mjs "<Family>" puts one there. */
 @import "tailwindcss" source(none);
 /* The page's own files only: the team's pages (admin.tsx) are the CRM's look. */
 @source "../src/proposals/components";
 @source "../src/proposals/page.tsx";
 @source "../src/proposals/public.tsx";
 
+/* fonts: written by scripts/proposal-font.mjs */
 @font-face {
-  font-family: "Inter";
+  font-family: "Schibsted Grotesk";
   font-style: normal;
-  font-weight: 100 900;
+  font-weight: 400 900;
   font-display: swap;
-  src: url("/fonts/inter-latin-wght-normal.woff2") format("woff2");
+  src: url("/fonts/schibsted-grotesk-latin-wght-normal.woff2") format("woff2");
 }
+/* end fonts */
 
 @theme {
   /* Grounds: the page, a tinted band, the dark band (a cover without a photo, reviews). */
@@ -36,8 +38,8 @@
   --color-line-strong: #c9cec9;
   --color-line-night: rgb(245 246 243 / 0.16);
 
-  --font-display: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  --font-body: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-display: "Schibsted Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-body: "Schibsted Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 
   /* The cover's title. */
   --text-hero: clamp(2.75rem, 7vw, 5.5rem);

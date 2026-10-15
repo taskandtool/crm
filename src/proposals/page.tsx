@@ -5,16 +5,37 @@
 // customer's link, where the two markers are filled: the sign-off's state,
 // and the bar that leads to it. Nothing else is drawn when it is asked for.
 import { raw } from "hono/html";
-import { COMPONENTS, type PageData } from "./components";
+import { COMPONENTS, type Ground, type PageData, type View } from "./components";
 import { Accept, AcceptBar, type AcceptState } from "./components/signoff";
 import { PROPOSAL_CSS } from "./style";
 
 const ACCEPT_MARK = "<!--tt-accept-->";
 const BAR_MARK = "<!--tt-bar-->";
 
+// Bands with a ground of their own: the dark ones, and the photograph edge to edge.
+const OWN_GROUND: Record<string, "night" | "photo"> = { cover: "night", reviews: "night", gallery: "photo" };
+
 /** The page as stored: the sign-off's place and the bar are markers. `keys` are the ticked components; the always-on ones are added. */
 export function renderPage(d: PageData, keys: string[]): string {
-  const shown = COMPONENTS.filter((c) => c.always || keys.includes(c.key));
+  const ticked = COMPONENTS.filter((c) => c.always || keys.includes(c.key));
+  // Only the ones that show something (a note for them needs the quote's message) count for the grounds.
+  const probe: View = { ...d, ground: () => "light" };
+  const shown = ticked.filter((c) => c.render(probe) !== null);
+  // Light and tinted in turn, so no two neighbours share a ground; a dark band or a photograph starts again.
+  const grounds = new Map<string, Ground>();
+  let prev: string = "night";
+  for (const c of shown) {
+    const own = OWN_GROUND[c.key];
+    if (own) {
+      prev = own;
+      continue;
+    }
+    const g: Ground = prev === "light" ? "panel" : "light";
+    grounds.set(c.key, g);
+    prev = g;
+  }
+  const view: View = { ...d, ground: (key) => grounds.get(key) ?? "light" };
+  const signoff = prev === "panel" ? "bg-canvas" : "bg-panel";
   const doc = (
     <html lang="en">
       <head>
@@ -27,10 +48,9 @@ export function renderPage(d: PageData, keys: string[]): string {
       </head>
       <body class="bg-canvas font-body text-body text-ink">
         <main>
-          {shown.map((c) => c.render(d))}
-          <section id="accept" class="bg-panel py-20 sm:py-28 print:break-before-page">
+          {shown.map((c) => c.render(view))}
+          <section id="accept" class={`${signoff} py-20 sm:py-28 print:break-before-page`}>
             <div class="mx-auto max-w-read px-6 sm:px-10">
-              <p class="mb-4 text-eyebrow uppercase text-accent">Next step</p>
               <h2 class="mb-10 font-display text-section">Ready to go ahead?</h2>
               {raw(ACCEPT_MARK)}
             </div>

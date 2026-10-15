@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applySchema } from "../../data/migrate";
 import { scratch, why, type Scratch } from "../../data/test/scratch";
-import { createTaxRate, percentToBp, taxRates } from "../../payments/tax";
+import { createTaxRate, percentToBp, setTaxRateActive, taxRates } from "../../payments/tax";
 import { readLines } from "../lines";
 import { copyQuote, createQuote, decideQuote, expireQuote, markSent, quoteById, quotesFor, saveQuote, shownStatus } from "../quotes";
 import { createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoiceTotals, owed, saveInvoice } from "../invoices";
@@ -109,6 +109,28 @@ test("a quote is edited in place, sent too; once accepted it refuses and a copy 
     assert.equal(copy.total_cents, "1500");
     assert.deepEqual((await quoteById(s.db, copy.id))!.lines.map((l) => [l.description, l.amount_cents]), [["B", "1500"]]);
     assert.equal(await copyQuote(s.db, "999999", BY, "crm"), null);
+  }));
+
+test("an archived tax rate stays on the quote and invoice that carry it, and is not offered for new ones", (t) =>
+  withDb(t, async (s) => {
+    const rate = await createTaxRate(s.db, { name: "Old tax", percent: "5" }, BY);
+    assert.ok(rate.ok);
+    const line = { description: "Install", unit: "100", tax_rate_id: rate.value.id };
+    const qt = await createQuote(s.db, { ...ann, lines: [line] }, BY, "crm");
+    const inv = await createInvoice(s.db, { ...ann, lines: [line] }, BY, "crm");
+    assert.ok(qt.ok && inv.ok);
+    await setTaxRateActive(s.db, rate.value.id, false, BY);
+    const q2 = await saveQuote(s.db, qt.value.id, { ...ann, notes: "Edited", lines: [line] }, BY);
+    assert.ok(q2.ok, JSON.stringify(q2));
+    assert.equal(q2.value.tax_cents, "500");
+    const i2 = await saveInvoice(s.db, inv.value.id, { ...ann, notes: "Edited", lines: [line] }, BY);
+    assert.ok(i2.ok, JSON.stringify(i2));
+    const fresh = await createQuote(s.db, { ...ann, lines: [line] }, BY, "crm");
+    assert.ok(!fresh.ok && fresh.errors["lines.0.tax_rate_id"]);
+    const other = await createQuote(s.db, { ...ann, lines: [{ description: "A", unit: "1" }] }, BY, "crm");
+    assert.ok(other.ok);
+    const added = await saveQuote(s.db, other.value.id, { ...ann, lines: [line] }, BY);
+    assert.ok(!added.ok && added.errors["lines.0.tax_rate_id"], "a quote that did not carry it cannot take it up");
   }));
 
 test("two saves at once leave one set of lines", (t) =>

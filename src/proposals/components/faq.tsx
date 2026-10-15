@@ -12,11 +12,11 @@ const QUESTIONS = [
 
 export const faq: ProposalComponent = {
   key: "faq", label: "Questions", shows: "Questions customers ask, answered", on: false, sample: true,
-  render: () => (
-    <Band id="faq" tone="panel">
+  render: (d) => (
+    <Band id="faq" tone={d.ground("faq")}>
       <Inner>
         <div class="grid gap-12 md:grid-cols-12">
-          <div class="md:col-span-4"><Heading eyebrow="Good to know" title="Questions" /></div>
+          <div class="md:col-span-4"><Heading title="Questions" /></div>
           <dl class="flex flex-col md:col-span-8">
             {QUESTIONS.map((x) => (
               <div class="border-b border-line-strong py-6 first:pt-0">

@@ -1,5 +1,5 @@
 // What every component is made of: a full-width band in one of three
-// grounds, the page's column, a heading with its eyebrow, a photograph (or
+// grounds, the page's column, a heading, a photograph (or
 // the slot it fills until there is one) and stars. Change the look here and
 // in styles/proposal.css, not in each component.
 import type { Child } from "hono/jsx";
@@ -27,11 +27,10 @@ export const Inner = ({ children, read }: { children: Child; read?: boolean }) =
   <div class={`mx-auto px-6 sm:px-10 ${read ? "max-w-read" : "max-w-page"}`}>{children}</div>
 );
 
-/** A component's title, with the small line above it. */
-export function Heading({ eyebrow, title, night, children }: { eyebrow?: string; title: string; night?: boolean; children?: Child }) {
+/** A component's title, and the line under it when it has one. */
+export function Heading({ title, night, children }: { title: string; night?: boolean; children?: Child }) {
   return (
     <div class="max-w-read">
-      {eyebrow ? <p class={`mb-4 text-eyebrow uppercase ${night ? "text-night-muted" : "text-accent"}`}>{eyebrow}</p> : null}
       <h2 class="font-display text-section">{title}</h2>
       {children ? <div class={`mt-6 text-lede ${night ? "text-night-muted" : "text-muted"}`}>{children}</div> : null}
     </div>

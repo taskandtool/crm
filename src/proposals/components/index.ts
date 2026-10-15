@@ -20,4 +20,4 @@ export const COMPONENTS: ProposalComponent[] = [cover, intro, about, approach, g
 
 /** The ones a person picks; the rest are on every proposal. */
 export const PICKABLE = COMPONENTS.filter((c) => !c.always);
-export type { PageData, ProposalComponent } from "./types";
+export type { Ground, PageData, ProposalComponent, View } from "./types";

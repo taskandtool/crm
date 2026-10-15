@@ -9,11 +9,11 @@ const CLIENTS: { name: string; logo?: string | null }[] = [
 ];
 
 export const clients: ProposalComponent = {
-  key: "clients", label: "Trusted by", shows: "A strip of client names or logos", on: false, sample: true,
-  render: () => (
-    <Band id="clients" tight>
+  key: "clients", label: "Clients", shows: "A strip of client names or logos", on: false, sample: true,
+  render: (d) => (
+    <Band id="clients" tone={d.ground("clients")} tight>
       <Inner>
-        <p class="text-center text-eyebrow uppercase text-muted">Trusted by</p>
+        <p class="text-center text-small text-muted">Some of the people we work for</p>
         <ul class="mt-8 flex flex-wrap items-center justify-center gap-x-12 gap-y-6">
           {CLIENTS.map((c) => (
             <li>{c.logo ? <img src={c.logo} alt={c.name} class="h-9 w-auto object-contain opacity-80" /> : <span class="text-title text-muted">{c.name}</span>}</li>

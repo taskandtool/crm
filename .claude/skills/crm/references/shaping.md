@@ -18,7 +18,13 @@ infer. Then:
    rather than archive and re-add. A rename keeps the key (`new` labelled
    `Enquiry`); that is fine, since nobody sees a key and every script
    takes the label too.
-3. `npm run check`, then show the owner Home, a lead, a contact and the deals board.
+3. The proposals, from the business's own website (ask for it when no note
+   names it): `node scripts/proposal-read.mjs <url>` and the `brand` skill
+   fill the brand record, then write each component from it and set its font
+   (`references/money.md`, "A component is its file"). With no website,
+   the samples stay and Send says so.
+4. `npm run check`, then show the owner Home, a lead, a contact, the deals
+   board and a quote's Preview.
 
 A status says who someone is (Lead, Customer); a deal stage says where one
 piece of work is (Estimate sent). A trade's per-job steps are deal stages,

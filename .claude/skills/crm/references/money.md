@@ -22,7 +22,7 @@ Proposal or Estimate.
 **A quote is a proposal page**: designed components in their order, the
 quote's own (cover, its message as A note for them, pricing, terms) and the
 business's (About us, How we'll do it, a full photograph, Our work, Our team,
-Reviews, Trusted by, Questions). The team ticks them by name on the quote's
+Reviews, Clients, Questions). The team ticks them by name on the quote's
 page; you tick them with `node scripts/quotes.mjs proposal <id> --components
 about,reviews` (no flag: what it has). A quote's own words for this customer
 go in its message (`--notes`).
@@ -30,16 +30,23 @@ go in its message (`--notes`).
 **A component is its file** in `src/proposals/components/`: its design and
 its words written in, registered in `index.ts`. It starts with sample words
 (`sample: true`, and Send says so while one is ticked). Make it the
-business's from the brand record: `tt-crawl brand <their site>` and the
-`brand` skill fill `brand/` (look, logo, photographs in `brand/images/`)
-and `public/` (business, services, team, proof); write the component's words
-from those notes, verbatim for reviews, never invented, then set `sample:
-false`. Photographs are `photo("brand/images/<file>")`, at most 600 KB each:
-built into the page. Change a component's look, add one (a file and a line in
+business's from the brand record: `node scripts/proposal-read.mjs <their
+site>` reads their site (homepage, menu, gallery, reviews, about, team) and, when the app has the
+connection, their Google listing (rating, its count, named reviews); the
+`brand` skill turns those into `brand/` (look, logo, photographs in
+`brand/images/`) and `public/` (business, services, team, proof). Write
+every component from those notes, verbatim for reviews, never invented, then
+set `sample: false`: a job with no stated result still has its photograph,
+its place and what was done. A figure, a bio or a rating only where a source
+states it; what none gives is simply left out. Where two sources disagree,
+use the business's newest own page. The reply says what went in: no list of
+what is missing, conflicts, or what the owner could add. Photographs are `photo("brand/images/<file>")`, built into
+the page: `node scripts/proposal-photo.mjs <file>` puts one there at page
+size, `--crop` cutting off a logo or a frame laid on it. Change a component's look, add one (a file and a line in
 `index.ts`) or remove one when asked. The look as a whole is
-`styles/proposal.css`: its tokens from `brand/visual-identity.md`, fonts as
-WOFF2 in `static/fonts/`. After any change: `npm run css`, `npm run check`,
-then Preview a quote. The page runs no script and loads nothing: keep it so.
+`styles/proposal.css`: its tokens from `brand/visual-identity.md`, its fonts
+by `node scripts/proposal-font.mjs "<Family>" --for display|body`. After any change: `npm run css`, `npm run check`,
+then `node scripts/proposal-preview.mjs` and read the desktop images it names. The page runs no script and loads nothing: keep it so.
 
 **Sending** gives a private link: emailed through the owner's sender, or
 Copy link (`send <id> --link --confirm`). The customer opens it signed out,

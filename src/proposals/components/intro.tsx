@@ -9,10 +9,10 @@ export const intro: ProposalComponent = {
     const note = d.quote.notes?.trim();
     if (!note) return null;
     return (
-      <Band id="intro">
+      <Band id="intro" tone={d.ground("intro")}>
         <Inner>
           <div class="grid gap-10 md:grid-cols-12">
-            <p class="text-eyebrow uppercase text-accent md:col-span-4">A note for you</p>
+            <h2 class="font-display text-title md:col-span-4">A note for you</h2>
             <div class="md:col-span-8">
               <Lines text={note} class="text-lede" />
               {d.business ? <p class="mt-10 text-small text-muted">{d.business}</p> : null}

@@ -21,6 +21,11 @@ export type PageData = {
   afterSign: string;
 };
 
+/** A light band's ground, given by the page so no two neighbours share one. */
+export type Ground = "light" | "panel";
+/** What a component renders with: the page's data, and the ground the page gave its band. */
+export type View = PageData & { ground: (key: string) => Ground };
+
 export type ProposalComponent = {
   key: string;
   /** Its name on the quote's checklist. */
@@ -36,5 +41,5 @@ export type ProposalComponent = {
    * record, then set this to false; until then Send says so.
    */
   sample: boolean;
-  render: (d: PageData) => Child;
+  render: (d: View) => Child;
 };

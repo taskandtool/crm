@@ -11,6 +11,7 @@
 //     code production runs on Cloudflare stays portable
 //   - the manifest, the skill, the vendored scripts are there
 //   - src/proposals/style.ts and photos.ts are what styles/proposal.css and the components make
+//   - the proposal components' written words pass the tropes skill
 //   - the typecheck passes
 // Exit 1 with the findings when something is off.
 import { spawnSync } from "node:child_process";
@@ -86,6 +87,14 @@ if (!existsSync("static/vendor/htmx.min.js") || !existsSync("static/vendor/Sorta
 // the proposal's stylesheet and photographs are what styles/proposal.css and its components make
 const pc = spawnSync("node", ["scripts/proposal-build.mjs", "--check"], { encoding: "utf8" });
 if (pc.status !== 0) findings.push((pc.stderr || pc.stdout).trim());
+
+// the words the AI wrote into the proposal components, through the tropes skill
+const copy = spawnSync("node_modules/.bin/tsx", ["scripts/proposal-copy.ts"], { encoding: "utf8" });
+if (copy.status !== 0) findings.push("the proposal components' words could not be checked:\n" + (copy.stderr || "").trim().split("\n").slice(0, 6).join("\n"));
+else {
+  for (const line of copy.stdout.split("\n").filter(Boolean)) findings.push(line);
+  if (copy.stderr) process.stderr.write(copy.stderr);
+}
 
 // typecheck
 const tc = spawnSync("node_modules/.bin/tsc", ["--noEmit", "-p", "."], { encoding: "utf8" });

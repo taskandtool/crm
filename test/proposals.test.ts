@@ -5,6 +5,10 @@
 // dead link. Skipped without TEST_DATABASE_URL.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import app from "../src/app";
 import { seeds } from "../src/config";
 import type { Db } from "../src/data/db";
@@ -12,6 +16,7 @@ import { setup } from "../src/db/setup";
 import { invoiceById, invoicesFor } from "../src/invoices/invoices";
 import { quoteById } from "../src/invoices/quotes";
 import { markEmailed } from "../src/proposals/store";
+import { chooseFaces, END, latinFaces, rewrite, START } from "../scripts/proposal-font.mjs";
 import type { Runtime } from "../src/runtime";
 import { scratch, type Scratch } from "./scratch";
 
@@ -105,7 +110,7 @@ test("a proposal end to end: built, linked, opened, changed under them, signed; 
   assert.match(doc, /id="reviews"/);
   assert.doesNotMatch(doc, /id="team"/, "a component not ticked is not on the page");
   assert.match(doc, /id="pricing"/, "pricing is on every one");
-  assert.match(doc, /A photograph of the team or the work, from your website/, "a photograph's slot says what belongs there");
+  assert.match(doc, /The team or the work/, "a photograph's slot says what belongs there");
   assert.match(doc, /A preview: on the customer(&#39;|')s page this form signs it/);
   assert.doesNotMatch(doc, /<script/);
 
@@ -210,7 +215,7 @@ test("declined at the link: the quote declined, its deal lost with their reason;
   const id = await newQuote("cy@example.com", "Cy Lo", deal);
   const token = tokenOf(await (await post(`/invoices/quotes/${id}/send`, { how: "link" })).text());
   const html = await (await get(`/q/${token}`, NOBODY)).text();
-  assert.match(html, /Not going ahead\?/);
+  assert.match(html, /Decline it, and tell us why/);
   const res = await post(`/q/${token}/decline`, { reason: "Price", note: "Too much for now.", page: shaOf(html) }, NOBODY);
   assert.equal(res.status, 303);
   const qt = (await quoteById(db, id))!;
@@ -269,5 +274,49 @@ test("in production the edge's header says whether /q is open; a visitor's own h
     assert.match(await ask({}), /customers cannot open \/q\/ on production yet/);
   } finally {
     if (saved !== undefined) process.env.PROPOSAL_BASE_URL = saved;
+  }
+});
+
+test("proposal-font: the latin faces, the weights each role uses, the token and the fonts block rewritten", () => {
+  const sheet = (w: number, url: string, sub = "latin") => `/* ${sub} */\n@font-face {\n  font-family: 'X';\n  font-style: normal;\n  font-weight: ${w};\n  src: url(${url}) format('woff2');\n}\n`;
+  const statics = latinFaces([400, 700, 900].map((w) => sheet(w, `https://g/x${w}.woff2`)).join("") + sheet(400, "https://g/ext.woff2", "latin-ext"));
+  assert.deepEqual(statics.map((f: { min: number }) => f.min), [400, 700, 900], "latin only");
+  assert.deepEqual(chooseFaces(statics, ["display"]).map((f: { min: number }) => f.min), [700]);
+  assert.deepEqual(chooseFaces(statics, ["display", "body"]).map((f: { min: number }) => f.min), [700, 400]);
+  const variable = latinFaces(sheet(400, "https://g/v.woff2") + sheet(700, "https://g/v.woff2"));
+  assert.deepEqual(variable, [{ url: "https://g/v.woff2", min: 400, max: 700 }], "one file for a variable family");
+
+  const css = `${START}\n@font-face {\n  font-family: "Old";\n  src: url("/fonts/old.woff2");\n}\n${END}\n@theme {\n  --font-display: "Old", serif;\n  --font-body: "Old", sans-serif;\n}`;
+  const once = rewrite(css, "New", ["display"], [{ url: "u", min: 700, max: 700 }])!;
+  assert.match(once, /--font-display: "New", serif;/, "fallbacks kept");
+  assert.match(once, /font-family: "Old"/, "still the body's");
+  assert.match(once, /url\("\/fonts\/new-latin-700-normal\.woff2"\)/);
+  const both = rewrite(once, "New", ["body"], [{ url: "u", min: 400, max: 700 }])!;
+  assert.doesNotMatch(both, /"Old"/, "a family no token names loses its @font-face");
+  assert.equal((both.match(/font-family: "New"/g) ?? []).length, 1, "the family's faces replaced, not added twice");
+  assert.equal(rewrite("@theme {}", "New", ["body"], []), null, "no fonts block");
+  assert.match(rewrite(`${START}\n${END}\n--font-display: Georgia, serif;`, "New", ["display"], [])!, /--font-display: "New", serif;/, "an unquoted family too");
+});
+
+test("proposal-photo: a photo cut and sized into brand/images/, the line to name it by", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "proposal-photo-"));
+  try {
+    const src = join(dir, "crew-on-roof-1a2b3c4d.png");
+    const made = spawnSync("python3", ["-c", "import sys\nfrom PIL import Image\nImage.new('RGB', (3200, 1000), (200, 40, 40)).save(sys.argv[1])", src]);
+    if (made.status !== 0) return t.skip("Pillow is not installed here");
+    const script = join(process.cwd(), "scripts", "proposal-photo.mjs");
+    const r = spawnSync("node", [script, src, "--crop", "0,0,25,0"], { cwd: dir, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /wrote brand\/images\/crew-on-roof\.webp from .*: 1600 x 667, \d+ KB, cut 25% right from 3200 x 1000/);
+    assert.match(r.stdout, /photo\("brand\/images\/crew-on-roof\.webp"\)/);
+    assert.ok(statSync(join(dir, "brand", "images", "crew-on-roof.webp")).size <= 600 * 1024);
+    const again = spawnSync("node", [script, src, "--crop", "0,0,25,0"], { cwd: dir, encoding: "utf8" });
+    assert.match(again.stdout, /replaced brand\/images\/crew-on-roof\.webp/, "safe to run twice");
+    const named = spawnSync("node", [script, src, "--as", "Cover House.webp"], { cwd: dir, encoding: "utf8" });
+    assert.match(named.stdout, /wrote brand\/images\/cover-house\.webp/, "--as with an extension names the file once");
+    const bad = spawnSync("node", [script, src, "--crop", "60,0,40,0"], { cwd: dir, encoding: "utf8" });
+    assert.equal(bad.status, 2, "a crop that leaves nothing is misuse");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

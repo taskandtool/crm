@@ -68,9 +68,9 @@ function photos() {
   for (const path of [...named].sort()) {
     const type = TYPES[extname(path).toLowerCase()];
     if (!type) { problems.push(`${path}: a photograph is .jpg, .png, .webp or .svg`); continue; }
-    if (!existsSync(path)) { problems.push(`${path}: not found (paths are from the app's folder, e.g. brand/images/team.jpg)`); continue; }
+    if (!existsSync(path)) { problems.push(`${path}: not found (paths are from the app's folder; node scripts/proposal-photo.mjs <file> puts one in brand/images/)`); continue; }
     const size = statSync(path).size;
-    if (size > MAX_PHOTO) { problems.push(`${path}: ${Math.ceil(size / 1024)} KB, over ${MAX_PHOTO / 1024} KB; use a smaller copy (at most 1600 pixels wide)`); continue; }
+    if (size > MAX_PHOTO) { problems.push(`${path}: ${Math.ceil(size / 1024)} KB, over ${MAX_PHOTO / 1024} KB; node scripts/proposal-photo.mjs ${path} makes a smaller copy`); continue; }
     total += size;
     out[path] = `data:${type};base64,${readFileSync(path).toString("base64")}`;
   }

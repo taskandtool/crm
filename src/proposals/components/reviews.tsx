@@ -12,18 +12,20 @@ const MORE = [
   { quote: "A second review, short and specific about the work.", name: "Customer name", where: "Their company", stars: 5 },
   { quote: "A third, ideally about something like this job.", name: "Customer name", where: "Their town", stars: 5 },
 ];
-// The rating, its count and its source, from public/proof.md.
-const RATING = { stars: 4.9, count: "120 reviews", source: "Google" };
+// The rating, its count and its source, from public/proof.md; null when no source states all three.
+const RATING: { stars: number; count: string; source: string } | null = { stars: 4.9, count: "120 reviews", source: "Google" };
 
 export const reviews: ProposalComponent = {
   key: "reviews", label: "Reviews", shows: "What customers say, with their stars", on: true, sample: true,
   render: () => (
     <Band id="reviews" tone="night">
       <Inner>
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <Stars n={RATING.stars} night />
-          <p class="text-small text-night-muted">{RATING.stars} from {RATING.count} on {RATING.source}</p>
-        </div>
+        {RATING ? (
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <Stars n={RATING.stars} night />
+            <p class="text-small text-night-muted">{RATING.stars} from {RATING.count} on {RATING.source}</p>
+          </div>
+        ) : <Stars n={FEATURED.stars} night />}
         <figure class="mt-10 max-w-4xl">
           <blockquote class="font-display text-quote">“{FEATURED.quote}”</blockquote>
           <figcaption class="mt-8 text-small text-night-muted">{FEATURED.name}, {FEATURED.where}</figcaption>

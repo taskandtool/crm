@@ -14,7 +14,7 @@
 import { likePattern } from "../admin/query";
 import { q, type Db } from "../data/db";
 import { taxRates } from "../payments/tax";
-import { clearLines, insertLines, readLines, sumLines, toLine, type Errors, type Line, type Saved, type SavedLine } from "./lines";
+import { clearLines, insertLines, keptRates, readLines, sumLines, toLine, type Errors, type Line, type Saved, type SavedLine } from "./lines";
 import { readHead } from "./quotes";
 
 export const INVOICE_STATUSES = ["draft", "open", "paid", "void", "uncollectible"] as const;
@@ -68,13 +68,13 @@ export type InvoiceFields = {
   lines?: unknown;
 };
 
-async function readInvoice(db: Db, f: InvoiceFields) {
+async function readInvoice(db: Db, f: InvoiceFields, id?: string) {
   const errors: Errors = {};
   const head = readHead({ ...f, valid_until: null, terms: null }, errors);
   const raw = typeof f.days_until_due === "string" ? f.days_until_due.trim() : f.days_until_due == null ? "" : String(f.days_until_due);
   const days = raw === "" ? 30 : Number(raw);
   if (!/^\d{1,3}$/.test(raw || "30") || days > 365) errors.days_until_due = "Enter the days to pay, 0 to 365.";
-  const lines = readLines(f.lines, head.currency, await taxRates(db));
+  const lines = readLines(f.lines, head.currency, await taxRates(db), id ? await keptRates(db, "invoice", id) : []);
   if (!lines.ok) Object.assign(errors, lines.errors);
   return Object.keys(errors).length || !lines.ok
     ? ({ ok: false, errors } as const)
@@ -99,7 +99,7 @@ export async function createInvoice(db: Db, f: InvoiceFields, by: string, source
 /** Replace a draft's customer, terms and lines; refused (errors.status) once it went to Stripe. */
 export async function saveInvoice(db: Db, id: string, f: InvoiceFields, by: string): Promise<Saved<Invoice>> {
   if (!/^\d{1,18}$/.test(id)) return { ok: false, errors: { status: "No such invoice." } };
-  const r = await readInvoice(db, f);
+  const r = await readInvoice(db, f, id);
   if (!r.ok) return r;
   const { head: h, days } = r.value;
   const out = await db.transaction([

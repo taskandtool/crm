@@ -46,6 +46,10 @@ node scripts/stages.mjs list                    # deal stages (--statuses: a cus
 node scripts/forms.mjs submissions --form order # a form's submissions with their booking and payment; list, show, save
 node scripts/quotes.mjs proposal 7 --components about,reviews,team   # the components it has
 node scripts/quotes.mjs send 7                  # prints the email; --confirm sends it with its link
+node scripts/proposal-read.mjs https://theirsite.com   # their site (homepage, menu, gallery, reviews, about, team) and their Google listing when connected
+node scripts/proposal-font.mjs "Caladea" --for display   # the business's font into the proposal page
+node scripts/proposal-preview.mjs              # the proposal on a made-up quote, as screenshots to read
+node scripts/proposal-photo.mjs raw/site/<host>/images/<file> --crop 0,0,25,0   # a photo into brand/images/ at page size, a logo in a corner cut off
 node scripts/invoices.mjs send 3                # one invoice: what Stripe will do; --confirm does it
 node scripts/import.mjs file.csv --dry-run      # a list in; always the dry run first
 node scripts/export.mjs --out customers.csv     # the list out

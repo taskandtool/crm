@@ -9,10 +9,10 @@ export const terms: ProposalComponent = {
     const t = d.quote.terms?.trim();
     if (!t) return null;
     return (
-      <Band id="terms" tight>
+      <Band id="terms" tone={d.ground("terms")} tight>
         <Inner>
           <div class="grid gap-10 md:grid-cols-12">
-            <div class="md:col-span-4"><Heading eyebrow="The fine print" title="Terms" /></div>
+            <div class="md:col-span-4"><Heading title="Terms" /></div>
             <Lines text={t} class="text-small text-muted md:col-span-8" />
           </div>
         </Inner>

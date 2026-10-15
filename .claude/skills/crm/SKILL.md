@@ -32,7 +32,7 @@ A customer record on Hono (server-rendered JSX, htmx, SortableJS, Postgres).
   forms tables (it shows submissions and edits forms), the booking tables
   (always: the schedule's events are bookings), and, when invoices are on, the payments and invoices
   tables (quotes, invoices, tax rates, refunds, the Stripe events), and the
-  proposals' (`src/proposals/schema.sql`: sections, pictures, links, opens, signatures).
+  proposals' (`src/proposals/schema.sql`: the components ticked, the page and its link, opens, signatures).
 
 ## Read next
 
@@ -40,7 +40,7 @@ A customer record on Hono (server-rendered JSX, htmx, SortableJS, Postgres).
 |---|---|
 | Changing words, statuses, deal stages, custom fields, a real column; deals, tasks, the morning email, merging | `references/levers.md` |
 | The schedule: events, what can be booked online, the Team's hours and calendars, booking messages | `references/schedule.md` |
-| Forms here; quotes as proposals (sections, the link, signing, how they look); setting up invoices, Stripe or the email sender | `references/money.md`, then the `invoices` skill |
+| Forms here; quotes as proposals (their components, the link, signing, how they look); setting up invoices, Stripe or the email sender | `references/money.md`, then the `invoices` skill |
 | Shaping the CRM for a business; importing or exporting a list | `references/shaping.md` |
 
 ## Dev, on this machine

@@ -18,7 +18,7 @@ import { q, type Db } from "../data/db";
 import { normalizeEmail } from "../data/email";
 import { currencyCode } from "../payments/money";
 import { taxRates } from "../payments/tax";
-import { clearLines, insertLines, readLines, sumLines, toLine, type Errors, type Line, type Saved, type SavedLine } from "./lines";
+import { clearLines, insertLines, keptRates, readLines, sumLines, toLine, type Errors, type Line, type Saved, type SavedLine } from "./lines";
 
 export const QUOTE_STATUSES = ["draft", "sent", "accepted", "declined", "expired"] as const;
 export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
@@ -113,10 +113,10 @@ export function readHead(f: QuoteFields & { currency?: unknown }, errors: Errors
 
 const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s + "T00:00:00Z")) && new Date(s + "T00:00:00Z").toISOString().startsWith(s);
 
-async function readQuote(db: Db, f: QuoteFields): Promise<Saved<{ head: Head; lines: Line[] }>> {
+async function readQuote(db: Db, f: QuoteFields, id?: string): Promise<Saved<{ head: Head; lines: Line[] }>> {
   const errors: Errors = {};
   const head = readHead(f, errors);
-  const lines = readLines(f.lines, head.currency, await taxRates(db));
+  const lines = readLines(f.lines, head.currency, await taxRates(db), id ? await keptRates(db, "quote", id) : []);
   if (!lines.ok) Object.assign(errors, lines.errors);
   return Object.keys(errors).length || !lines.ok ? { ok: false, errors } : { ok: true, value: { head, lines: lines.value } };
 }
@@ -145,7 +145,7 @@ export async function createQuote(db: Db, f: QuoteFields, by: string, source: st
  */
 export async function saveQuote(db: Db, id: string, f: QuoteFields, by: string): Promise<Saved<Quote>> {
   if (!/^\d{1,18}$/.test(id)) return { ok: false, errors: { status: "No such quote." } };
-  const r = await readQuote(db, f);
+  const r = await readQuote(db, f, id);
   if (!r.ok) return r;
   const h = r.value.head;
   const out = await db.transaction([

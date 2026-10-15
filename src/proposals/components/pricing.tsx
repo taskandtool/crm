@@ -12,14 +12,14 @@ export const pricing: ProposalComponent = {
     const m = (c: string | number) => formatMoney(c, q.currency, d.locale);
     const taxes = taxSummary(q.lines, d.rates);
     return (
-      <Band id="pricing">
+      <Band id="pricing" tone={d.ground("pricing")}>
         <Inner>
           <div class="grid gap-12 md:grid-cols-12">
             <div class="md:col-span-4">
-              <Heading eyebrow="Your investment" title="Pricing" />
+              <Heading title="The price" />
             </div>
             <div class="md:col-span-8">
-              <table class="w-full border-collapse text-body tabular-nums">
+              <table class="w-full border-collapse text-body">
                 <thead>
                   <tr class="border-b border-line-strong text-left text-eyebrow uppercase text-muted">
                     <th scope="col" class="pb-4 font-semibold">What</th>
@@ -46,7 +46,7 @@ export const pricing: ProposalComponent = {
                 <span class="text-eyebrow uppercase">Total</span>
                 <span class="font-display text-figure">{m(q.total_cents)}</span>
               </div>
-              <p class="mt-8 rounded-box bg-panel p-6 text-body">{d.afterSign}</p>
+              <p class="mt-8 rounded-box border border-line bg-canvas p-6 text-body">{d.afterSign}</p>
             </div>
           </div>
         </Inner>

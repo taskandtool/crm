@@ -34,8 +34,10 @@ usable file, say so; do not draw one.
 
 `brand/images/` holds a small curated set (about 10 to 30) of the
 business's best real photographs, copied from `raw/`. Pick for quality and
-range: the work, the place, the people, the product. Leave out stock,
-icons, theme art and anything blurry or tiny. From a crawl,
+range: the work, the place, the people, the product; a gallery's photographs
+are the work itself. Leave out stock, icons, theme art, anything blurry or
+tiny, and any with a logo, words or a frame laid on it (a video's thumbnail
+often has). From a crawl,
 `_index/business-card.json` lists the photographs, widest first, with their sizes, and
 `tt-crawl sheet --from raw/site/<host>` shows them numbered: describe each
 from that one look.
