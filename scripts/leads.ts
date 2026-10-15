@@ -1,7 +1,7 @@
 // Leads from chat: the same as the Leads pages. `node scripts/leads.mjs --help`.
 import { dealsCfg } from "../src/config";
 import { saveLead, type LeadSource } from "../src/customers/customer";
-import { ARCHIVE_REASONS, archiveLead, getLead, listLeads, MANUAL_SOURCES, reopenLead, SOURCE_LABELS, sourceText, type Lead, type LeadStatus } from "../src/crm/leads";
+import { ARCHIVE_REASONS, archiveLead, autoDeals, getLead, listLeads, MANUAL_SOURCES, reopenLead, SOURCE_LABELS, sourceText, type Lead, type LeadStatus } from "../src/crm/leads";
 import { clean } from "../src/crm/text";
 import { done, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, ownerOf, resolveCustomer, usage, who, withDb } from "./lib";
 
@@ -51,6 +51,7 @@ const fmt = (l: Lead) =>
 const convert = (l: Lead) => `node scripts/deals.mjs add ${l.customer_id} --lead ${l.id}`;
 
 await withDb(async (db) => {
+  await autoDeals(db); // a form's or a service's leads that are deals straight away are deals by now
   const user = who(a);
   const result = (data: unknown, what: string, opts: Parameters<typeof done>[2] = {}) => (json ? out(true, data, String) : done(at, what, opts));
   const leadOr = async (id: string) => (await getLead(db, id.replace(/^#/, ""))) ?? fail(`${at}: no lead ${id}`, "node scripts/leads.mjs list");

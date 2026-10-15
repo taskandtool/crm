@@ -59,6 +59,8 @@ export type BookingType = {
   /** What a payment step charges for it, in minor units of `currency`; null is free. */
   price_cents: number | null;
   currency: string | null;
+  /** Each online booking of it becomes a deal straight away, where an app has deals (the CRM makes it). */
+  deals?: boolean;
 };
 
 export type Booking = {
@@ -136,6 +138,7 @@ export function toType(r: Record<string, any>): BookingType {
     buffer_after_min: Number(r.buffer_after_min), min_notice_min: Number(r.min_notice_min), horizon_days: Number(r.horizon_days),
     location_kind: r.location_kind, location: r.location ?? null, position: Number(r.position), active: !!r.active,
     price_cents: r.price_cents == null ? null : Number(r.price_cents), currency: r.currency ?? null,
+    deals: r.deals === true,
   };
 }
 

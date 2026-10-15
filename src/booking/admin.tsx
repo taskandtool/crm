@@ -41,6 +41,8 @@ export type BookingAdminOptions = {
   nav?: NavItem[];
   /** The app's own page frame (the CRM's layout and nav) instead of AdminLayout. */
   Frame?: Frame;
+  /** This app makes deals (the CRM): a service can make each online booking a deal straight away. */
+  deals?: boolean;
   /** Where each section is mounted, so one links to another (a service's Book for someone, a person's services). */
   sections: { schedule: string; services: string; team: string };
   /** The business's zone: the Schedule shows times in it. Absent, the first person's. */
@@ -643,7 +645,7 @@ const Active = ({ value, label, hint }: { value: unknown; label: string; hint?: 
 const RULES = ["interval_min", "buffer_before_min", "buffer_after_min", "min_notice_min", "horizon_days", "position", "currency", "slug"];
 
 /** A service's fields; the same form adds one. The address or link shows only for a place of ours or a video call. */
-function TypeForm({ action, t, errors = {}, submit, publicBase, currency }: { action: string; t: Record<string, unknown>; errors?: Errors; submit: string; publicBase?: string; currency?: string }) {
+function TypeForm({ action, t, errors = {}, submit, publicBase, currency, deals }: { action: string; t: Record<string, unknown>; errors?: Errors; submit: string; publicBase?: string; currency?: string; deals?: boolean }) {
   const v = valueOf(t);
   const kind = v("location_kind") || "their_place";
   const rulesOpen = RULES.some((k) => errors[k]);
@@ -694,6 +696,17 @@ function TypeForm({ action, t, errors = {}, submit, publicBase, currency }: { ac
         </div>
       </details>
       <Active value={t.active} label="Can be booked" hint="Off hides it from the booking page; bookings already made stay." />
+      {/* As Jobber's job booking: each online booking is a job to win at once, its lead marked converted. */}
+      {deals ? (
+        <label class="flex items-start gap-3 sm:col-span-2">
+          <input type="hidden" name="deals" value="0" />
+          <input type="checkbox" name="deals" value="1" checked={one(t.deals) === true || one(t.deals) === "1"} class="mt-1 size-4 shrink-0 accent-accent" />
+          <span class="flex flex-col">
+            <span class="text-sm/6 font-medium">Each booking becomes a deal, straight away</span>
+            <Hint text="In the pipeline's first stage, its value the price, its lead marked converted. Off: a lead to look at first." />
+          </span>
+        </label>
+      ) : null}
       <div class="sm:col-span-2"><button class={primaryClass}>{submit}</button></div>
     </form>
   );
@@ -741,6 +754,7 @@ const typeFields = (body: Record<string, unknown>): TypeFields => ({
   duration_min: str(body.duration_min), interval_min: str(body.interval_min), buffer_before_min: str(body.buffer_before_min),
   buffer_after_min: str(body.buffer_after_min), min_notice_min: str(body.min_notice_min), horizon_days: str(body.horizon_days),
   position: str(body.position), active: str(one(body.active)), price: str(body.price), currency: str(body.currency),
+  deals: str(one(body.deals)),
 });
 const personFields = (body: Record<string, unknown>): PersonFields => ({
   name: str(body.name), email: str(body.email), time_zone: str(body.time_zone), active: str(one(body.active)),
@@ -796,7 +810,7 @@ export function typeRoutes(getDb: GetDb, opts: BookingAdminOptions) {
   const newPage = (c: Team, values: Record<string, unknown> = {}, errors: Errors = {}) =>
     framed(c, base, { title: "New service", back: { href: base, label: "Services" } }, (
       <div class="max-w-3xl rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
-        <TypeForm action={base} t={values} errors={errors} submit="Create service" publicBase={publicBase} currency={opts.currency} />
+        <TypeForm action={base} t={values} errors={errors} submit="Create service" publicBase={publicBase} currency={opts.currency} deals={opts.deals} />
       </div>
     ), Object.keys(errors).length ? 422 : 200);
 
@@ -818,7 +832,7 @@ export function typeRoutes(getDb: GetDb, opts: BookingAdminOptions) {
       <>
         <div class="grid gap-4 md:grid-cols-3">
           <Section title="Details" class="md:col-span-2">
-            <TypeForm action={self} t={problems.values ?? t} errors={problems.errors} submit="Save" publicBase={publicBase} currency={opts.currency} />
+            <TypeForm action={self} t={problems.values ?? t} errors={problems.errors} submit="Save" publicBase={publicBase} currency={opts.currency} deals={opts.deals} />
           </Section>
           <Section title="Who takes it" class="self-start">
             {people.length ? (

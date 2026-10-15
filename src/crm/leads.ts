@@ -8,7 +8,9 @@ import { likePattern } from "../admin/query";
 import type { Db } from "../data/db";
 import type { LeadSource } from "../customers/customer";
 import { BOOKING_PAGE, saveSubmitter } from "../forms/store";
-import { cfg, newLeadTask } from "../config";
+import { cfg, dealsCfg, newLeadTask } from "../config";
+import { createDeal } from "./deals";
+import { firstOpenStage } from "./stages";
 import { todayIn } from "../reports/sql";
 import { EVENT_OF, spliced } from "./sql";
 import { addTask } from "./tasks";
@@ -30,6 +32,7 @@ export type Lead = {
   id: string;
   customer_id: string;
   customer_name: string;
+  customer_company: string | null;
   customer_email: string | null;
   customer_phone: string | null;
   source: LeadSource;
@@ -62,7 +65,7 @@ export type Lead = {
 // submission's answers come only where the project has a submissions table (tables.ts).
 const leadTexts = (submissions: boolean) =>
   spliced({
-    columns: `l.id::text as id, l.customer_id::text as customer_id, c.name as customer_name, c.email::text as customer_email, c.phone as customer_phone,
+    columns: `l.id::text as id, l.customer_id::text as customer_id, c.name as customer_name, c.company as customer_company, c.email::text as customer_email, c.phone as customer_phone,
       l.source, l.title, l.notes, l.owner::text as owner, l.status, l.archived_reason, l.deal_id::text as deal_id, d.title as deal_title,
       l.submission_id::text as submission_id, l.booking_id::text as booking_id, l.created_at, l.created_by::text as created_by,
       l.updated_at, l.updated_by::text as updated_by, ${submissions ? "s.data" : "null::jsonb"} as answers,
@@ -99,11 +102,12 @@ export const sourceText = (l: Pick<Lead, "source" | "title">) => `${SOURCE_LABEL
 /**
  * What a deal made from a lead is called. A lead the team typed says what the
  * work is ("Thermostat swap"); one a form or an online booking made says only
- * the form or the service, so its deal is named for the person, as
- * Pipedrive's default ("Rosa Delgado deal"). Either can be renamed.
+ * the form or the service, so its deal is named for who it is for: their
+ * company, as Salesforce names a converted opportunity, else the person, as
+ * Pipedrive's leads are ("Acme Bakery deal", "Rosa Delgado deal"). Either can be renamed.
  */
-export const dealTitleFor = (l: Pick<Lead, "source" | "title" | "customer_name">) =>
-  l.source === "form" || l.source === "booking" ? `${l.customer_name} deal` : l.title;
+export const dealTitleFor = (l: Pick<Lead, "source" | "title" | "customer_name" | "customer_company">) =>
+  l.source === "form" || l.source === "booking" ? `${l.customer_company?.trim() || l.customer_name} deal` : l.title;
 
 const toLead = (r: Omit<Lead, "said">): Lead => ({ ...r, said: r.notes ?? firstText(r.answers) });
 
@@ -154,11 +158,12 @@ export async function openLeadCount(db: Db): Promise<number> {
  * deal gets its first step, "Call back <name>" (the deal's contact) today
  * for whoever converted it, unless crm.config.json's tasks.new_lead is false.
  */
-export async function convertLead(db: Db, id: string, dealId: string, user: string): Promise<boolean> {
+export async function convertLead(db: Db, id: string, dealId: string, user: string, taskOwner: string | null = user): Promise<boolean> {
   const [lead] = await db.sql<{ submission_id: string | null; booking_id: string | null; customer_id: string; name: string }>`
     update leads l set status = 'converted', deal_id = ${dealId}::bigint, archived_reason = null, updated_at = now(), updated_by = ${user}
     from deals d join customers c on c.id = d.customer_id
-    where l.id = ${id}::bigint and l.status = 'open' and d.id = ${dealId}::bigint
+    -- Open, or claimed by autoDeals (converted, its deal not made yet).
+    where l.id = ${id}::bigint and (l.status = 'open' or (l.status = 'converted' and l.deal_id is null)) and d.id = ${dealId}::bigint
     returning l.submission_id::text as submission_id, l.booking_id::text as booking_id, d.customer_id::text as customer_id, c.name`;
   if (lead?.booking_id) {
     await db.sql`update bookings set deal_id = ${dealId}::bigint, updated_at = now(), updated_by = ${user} where id = ${lead.booking_id}::bigint and deal_id is null`;
@@ -166,10 +171,64 @@ export async function convertLead(db: Db, id: string, dealId: string, user: stri
   // Its form submission is dealt with too: done in the forms list.
   await submissionFollows(db, lead?.submission_id, "done", user);
   if (lead && newLeadTask) {
-    await addTask(db, lead.customer_id, { kind: "call", title: `Call back ${lead.name}`, due_on: todayIn(cfg.time_zone), due_time: null, owner: user, deal_id: dealId }, user);
+    await addTask(db, lead.customer_id, { kind: "call", title: `Call back ${lead.name}`, due_on: todayIn(cfg.time_zone), due_time: null, owner: taskOwner, deal_id: dealId }, user);
   }
   return !!lead;
 }
+
+/**
+ * Leads a form or a service says are deals straight away (forms.deals,
+ * booking_types.deals), as Pipedrive's web forms save a deal and Jobber's job
+ * booking converts its request: each made a deal in the first open stage,
+ * named as a convert names it, with what they wrote as its notes and the
+ * booking's amount (else the service's price) as its value, then converted
+ * as Convert to deal does (its submission done, its booking on the deal, a
+ * "Call back" task). The lead stays, converted, as the deal's "Where it came
+ * from". Each is claimed before its deal is made, so two requests at once
+ * make one deal; a lead with no open stage to land in is let go. Cheap when
+ * none is waiting; run before the team's pages and the AI's lists.
+ */
+export async function autoDeals(db: Db): Promise<number> {
+  const sql = spliced((await presentTables(db)).forms ? AUTO_FORMS : NO_FORMS).sql(db);
+  const waiting = await sql<{ id: string; amount_cents: string | null; currency: string | null }>`
+    select l.id::text as id, coalesce(b.amount_cents, t.price_cents)::text as amount_cents, coalesce(b.currency, t.currency) as currency
+    from leads l
+    left join bookings b on b.id = l.booking_id
+    left join booking_types t on t.id = b.type_id
+    {forms_join}
+    where l.status = 'open' and (coalesce(t.deals, false) {forms_deal})
+    order by l.created_at, l.id
+    limit 20`;
+  if (!waiting.length) return 0;
+  const stage = await firstOpenStage(db, "deals");
+  if (!stage) return 0;
+  let made = 0;
+  for (const w of waiting) {
+    // Claimed: off Open first, so a second request finds nothing to do.
+    const [claimed] = await db.sql<{ id: string }>`
+      update leads set status = 'converted', updated_at = now() where id = ${w.id}::bigint and status = 'open' returning id::text as id`;
+    if (!claimed) continue;
+    const lead = (await getLead(db, w.id))!;
+    const by = SOURCE_LABELS[lead.source];
+    const currency = (w.amount_cents && w.currency) || dealsCfg.currency;
+    const deal = await createDeal(db, lead.customer_id, {
+      title: dealTitleFor(lead), value_cents: w.amount_cents ? Number(w.amount_cents) : null, currency,
+      owner: lead.owner, expected_close: null, notes: lead.said,
+    }, stage.key, by);
+    if (!deal) {
+      await db.sql`update leads set status = 'open' where id = ${w.id}::bigint and deal_id is null`;
+      continue;
+    }
+    await convertLead(db, w.id, deal.id, by, lead.owner);
+    made++;
+  }
+  return made;
+}
+const AUTO_FORMS = {
+  forms_join: "left join submissions s on s.id = l.submission_id left join forms f on f.key = s.form_key",
+  forms_deal: "or coalesce(f.deals, false)",
+};
+const NO_FORMS = { forms_join: "", forms_deal: "" };
 
 /** Archived with a reason (Not a fit, Spam, ...); its form submission follows: archived, or spam. */
 export async function archiveLead(db: Db, id: string, reason: string, user: string): Promise<boolean> {

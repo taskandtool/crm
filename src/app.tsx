@@ -33,7 +33,7 @@ import { isUnread, markSeen, NOTICE_LIMIT, notices, seenAt } from "./crm/notific
 import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
 import { addNote, listNotes, pickNoteKind, wallTime } from "./customers/notes";
 import { phoneKey, saveLead, savePerson } from "./customers/customer";
-import { archiveLead, ARCHIVE_REASONS, contactLeads, convertLead, dealLeads, dealTitleFor, getLead, LEAD_STATUSES, listLeads, MANUAL_SOURCES, openLeadCount, reopenLead, saveLeadDetails, SOURCE_LABELS, type LeadStatus } from "./crm/leads";
+import { archiveLead, ARCHIVE_REASONS, autoDeals, contactLeads, convertLead, dealLeads, dealTitleFor, getLead, LEAD_STATUSES, listLeads, MANUAL_SOURCES, openLeadCount, reopenLead, saveLeadDetails, SOURCE_LABELS, type LeadStatus } from "./crm/leads";
 import { LeadPage, LeadResults, LeadsPage, NewLeadPage, type LeadFilter } from "./views/leads";
 import { addEvent, customerEvents, eventCsvColumns, eventsPage, getEvent, inviteDomain, saveEvent, startWall, tellBooker, touchFor, type Event, type EventFilter, type EventInput } from "./crm/events";
 import { addStage, archiveStage, editStage, firstOpenStage, listStages, moveStage, pickKind, pickPipeline, restoreStage, stagesWithCounts, type Pipeline, type StageResult } from "./crm/stages";
@@ -182,6 +182,8 @@ app.use("*", async (c, next) => {
   c.set("db", opened.db);
   try {
     await loadTeam(opened.db);
+    // Leads a form or a service makes deals straight away are deals by the time a page shows (not for its small htmx asks).
+    if (c.req.method === "GET" && !isPartial(c)) await autoDeals(opened.db).catch((e) => console.error("automatic deals:", e));
     await next();
   } finally {
     if (opened.close) closeAfter(c, opened.close);
@@ -656,7 +658,8 @@ if (eventsCfg) {
     }),
   );
   // Services and the team are Settings: one page each, no tabs.
-  const settings = { Frame: frameIn("settings"), nav: [] };
+  // `deals`: a service can make each online booking a deal straight away (autoDeals).
+  const settings = { Frame: frameIn("settings"), nav: [], deals: true };
   app.route("/services", typeRoutes(dbOf, { ...team, ...settings, base: "/services" }));
   app.route("/team", peopleRoutes(dbOf, { ...team, ...settings, base: "/team" }));
 }
@@ -687,7 +690,7 @@ app.route(
 );
 app.route(
   "/forms",
-  formEditor(dbOf, { base: "/forms", css: "/crm.css", timeZone: cfg.time_zone, source: "crm", submissions: "/forms/submissions", nav: FORM_TABS, Frame: frameIn("settings") }),
+  formEditor(dbOf, { base: "/forms", css: "/crm.css", timeZone: cfg.time_zone, source: "crm", submissions: "/forms/submissions", nav: FORM_TABS, Frame: frameIn("settings"), deals: true }),
 );
 
 // ---- quotes and invoices ------------------------------------------------------

@@ -34,7 +34,9 @@ runs anywhere with Node 20 and a Postgres.
   lead shows who, where it came from, what they said, and what they
   already have (an open deal, a visit); on its page Convert to deal opens
   the deal form filled in, and Archive asks why and offers Undo. A form's
-  submission follows its lead.
+  submission follows its lead. A form or a service can make each lead a
+  deal straight away (Settings), as Pipedrive's web forms and Jobber's job
+  bookings do.
 - **Tasks**: a call, email, meeting, text or to-do due on a day, by
   one person. Mine (the default), Everyone's or Done, overdue first, and
   New task; the next one at the top of a customer's page and on every

@@ -272,7 +272,7 @@ export function DealPage(p: {
   // A won or lost deal shows what happened; nothing on it asks for a next step.
   const closed = !!stage && stage.kind !== "open";
   // A new quote's first line is the deal's title when that names the work; not "Rosa Delgado deal".
-  const who = { email: d.customer_email, name: d.customer_name, phone: d.customer_phone, deal: d.id, line: d.title === `${d.customer_name} deal` ? undefined : d.title };
+  const who = { email: d.customer_email, name: d.customer_name, phone: d.customer_phone, deal: d.id, line: / deal$/.test(d.title) ? undefined : d.title };
   const wonStage = p.stages.find((s) => s.kind === "won");
   const lostStage = p.stages.find((s) => s.kind === "lost");
   const firstOpen = p.stages.find((s) => s.kind === "open");

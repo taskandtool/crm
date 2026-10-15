@@ -5,7 +5,7 @@ import { firstOfKind, firstOpenStage, listStages, resolveStage } from "../src/cr
 import { amountText, clean, parseAmount } from "../src/crm/text";
 import { formatMoney } from "../src/payments/money";
 import { readDay } from "../src/crm/tasks";
-import { convertLead, dealTitleFor, getLead } from "../src/crm/leads";
+import { autoDeals, convertLead, dealTitleFor, getLead } from "../src/crm/leads";
 import { done, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, ownerOf, resolveCustomer, usage, who, withDb } from "./lib";
 
 const one = dealsCfg.one.toLowerCase();
@@ -65,6 +65,7 @@ function closeFlag(current: string | null): string | null {
 }
 
 await withDb(async (db) => {
+  await autoDeals(db); // a form's or a service's leads that are deals straight away are deals by now
   const stages = await listStages(db, "deals", { archived: true });
   const active = stages.filter((s) => !s.archived);
   const label = (k: string) => stages.find((s) => s.key === k)?.label ?? k;

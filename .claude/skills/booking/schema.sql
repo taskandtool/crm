@@ -48,6 +48,9 @@ create table if not exists booking_types (
   updated_at timestamptz not null default now()
 );
 create unique index if not exists booking_types_slug on booking_types (slug);
+-- Each online booking of it becomes a deal straight away, made by the app that has
+-- deals (the CRM), as Jobber's job booking converts its request.
+alter table booking_types add column if not exists deals boolean not null default false;
 
 -- Who can take a type. With several, the booker picks one or takes the
 -- first free; each booking goes to one person.

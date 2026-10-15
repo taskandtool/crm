@@ -17,6 +17,11 @@ create table if not exists forms (
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
+-- Each submission's lead becomes a deal straight away, made by the app that has
+-- deals (the CRM), as Pipedrive's web forms save a deal and Jobber's job booking
+-- converts its request. Only with leads on.
+alter table forms add column if not exists deals boolean not null default false;
+
 
 create table if not exists submissions (
   id          bigserial primary key,

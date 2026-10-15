@@ -9,7 +9,7 @@ import type { Charge } from "./price";
 /** The form with this key, or null. A broken field in the row is left out, never rendered half-made. */
 export async function loadForm(db: Db, key: string): Promise<Form | null> {
   const [row] = await db.sql`
-    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads
+    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads, deals
     from forms where key = ${key}`;
   return row ? toForm(row) : null;
 }
@@ -25,6 +25,7 @@ export function toForm(row: Record<string, any>): Form {
     submit_label: row.submit_label ?? null,
     active: row.active !== false,
     leads: row.leads !== false,
+    deals: row.leads !== false && row.deals === true,
   };
 }
 

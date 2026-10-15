@@ -149,6 +149,8 @@ export type TypeFields = {
   min_notice_min: unknown; horizon_days: unknown; location_kind: unknown; location?: unknown; position?: unknown; active?: unknown;
   /** Typed, like "120.00"; empty is free. In `currency` (default usd). */
   price?: unknown; currency?: unknown;
+  /** "1": each online booking becomes a deal straight away (an app with deals). */
+  deals?: unknown;
 };
 
 export const LOCATION_LABELS: Record<LocationKind, string> = {
@@ -204,6 +206,7 @@ export function readType(f: TypeFields): { ok: true; value: Omit<BookingType, "i
       location_kind: kind!, location: (kind === "our_place" || kind === "video") && location ? location : null,
       position, active: checked(f.active),
       price_cents: price && price > 0 ? price : null, currency: price && price > 0 ? currency : null,
+      deals: f.deals === "1",
     },
   };
 }
@@ -226,9 +229,9 @@ export async function createType(db: Db, f: TypeFields, by: string, source: stri
 async function insertType(db: Db, v: Extract<ReturnType<typeof readType>, { ok: true }>["value"], by: string, source: string): Promise<BookingType | null> {
   const rows = await db.sql`
     insert into booking_types (slug, name, description, duration_min, interval_min, buffer_before_min, buffer_after_min,
-      min_notice_min, horizon_days, location_kind, location, position, active, price_cents, currency, source, updated_by)
+      min_notice_min, horizon_days, location_kind, location, position, active, price_cents, currency, deals, source, updated_by)
     values (${v.slug}, ${v.name}, ${v.description}, ${v.duration_min}, ${v.interval_min}, ${v.buffer_before_min}, ${v.buffer_after_min},
-      ${v.min_notice_min}, ${v.horizon_days}, ${v.location_kind}, ${v.location}, ${v.position}, ${v.active}, ${v.price_cents}, ${v.currency}, ${source}, ${by})
+      ${v.min_notice_min}, ${v.horizon_days}, ${v.location_kind}, ${v.location}, ${v.position}, ${v.active}, ${v.price_cents}, ${v.currency}, ${!!v.deals}, ${source}, ${by})
     on conflict (slug) do nothing
     returning *`;
   return rows.length ? toType(rows[0]) : null;
@@ -244,7 +247,7 @@ export async function saveType(db: Db, id: string, f: TypeFields, by: string): P
       duration_min = ${v.duration_min}, interval_min = ${v.interval_min}, buffer_before_min = ${v.buffer_before_min},
       buffer_after_min = ${v.buffer_after_min}, min_notice_min = ${v.min_notice_min}, horizon_days = ${v.horizon_days},
       location_kind = ${v.location_kind}, location = ${v.location}, position = ${v.position}, active = ${v.active},
-      price_cents = ${v.price_cents}, currency = ${v.currency}, updated_by = ${by}, updated_at = now()
+      price_cents = ${v.price_cents}, currency = ${v.currency}, deals = ${!!v.deals}, updated_by = ${by}, updated_at = now()
     where id = ${id}::bigint and not exists (select 1 from booking_types o where o.slug = ${v.slug} and o.id <> ${id}::bigint)
     returning *`;
   return rows.length ? { ok: true, value: toType(rows[0]) } : { ok: false, errors: TAKEN };

@@ -41,9 +41,9 @@ export const SCHEDULE_TABS = eventsCfg
  * Settings. Only the parts this CRM has.
  */
 export const SETTINGS = [
-  { href: "/forms", label: "Forms", about: "The forms on your website and what each asks. A submission can be a lead." },
+  { href: "/forms", label: "Forms", about: "The forms on your website and what each asks. Each submission is a lead, or a deal straight away." },
   { href: "/stages", label: "Stages and statuses", about: `The ${dealsCfg.one.toLowerCase()} pipeline's stages, and each ${vocab.one.toLowerCase()}'s status.` },
-  ...(eventsCfg && showBooking ? [{ href: "/services", label: "Services", about: "What customers book online: how long, where, the price, who takes it." }] : []),
+  ...(eventsCfg && showBooking ? [{ href: "/services", label: "Services", about: "What customers book online: how long, where, the price, who takes it, and whether a booking is a deal straight away." }] : []),
   ...(eventsCfg ? [{ href: "/team", label: "Team", about: "Who takes the work: their hours, time off and calendars." }] : []),
   ...(invoicesCfg ? [{ href: "/invoices/tax-rates", label: "Tax rates", about: "The taxes you charge on quotes and invoices." }] : []),
 ];

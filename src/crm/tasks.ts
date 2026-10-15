@@ -10,7 +10,8 @@
 // nobody should be on for long, quietest first.
 import { q, type Db } from "../data/db";
 import { sameAs } from "./people";
-import { NOTHING_PLANNED, spliced } from "./sql";
+import { byEmail, EVENT_OF, NOTHING_PLANNED, spliced } from "./sql";
+import { present as presentTables } from "./tables";
 import { addDays } from "../reports/sql";
 
 export { addDays };
@@ -163,30 +164,52 @@ export async function doneTask(db: Db, id: string, outcome: string | null, user:
 
 /**
  * Undo a tick, as Todoist's and HubSpot's: open again, and the timeline note
- * it made gone. Their last contact goes back too when that note was it.
+ * it made gone (found by its id, or, for one ticked before ids were kept, as
+ * the note written in the same instant). When that note was their last
+ * contact, their last contact is worked out again from what is left
+ * (lastContactFrom), as HubSpot's last activity date is.
  * False when it is open or missing.
  */
 export async function undoTask(db: Db, id: string, user: string): Promise<boolean> {
   if (!ID.test(id)) return false;
-  const [r] = await db.transaction([
-    q`with t as (
-        select id, customer_id, done_note_id from follow_ups where id = ${id}::bigint and done_at is not null for update),
-      gone as (
-        delete from customer_notes n using t where n.id = t.done_note_id returning n.happened_at, n.customer_id),
-      c as (
-        update customers c set
-          last_contact_at = (select max(x.happened_at) from customer_notes x
-                             where x.customer_id = c.id and x.kind <> 'note' and x.id <> (select done_note_id from t)),
-          updated_at = now(), updated_by = ${user}
-        from gone where c.id = gone.customer_id and c.last_contact_at = gone.happened_at
-        returning c.id),
-      u as (
-        update follow_ups f set done_at = null, done_by = null, done_note_id = null, updated_at = now(), updated_by = ${user}
-        from t where f.id = t.id
-        returning f.id)
-      select count(*)::int as n from u`,
-  ]);
-  return r[0].n > 0;
+  const [r] = await db.sql<{ customer_id: string; was_last: boolean }>`
+    with t as (
+      select id, customer_id, done_note_id, done_at, done_by, title from follow_ups where id = ${id}::bigint and done_at is not null for update),
+    note as (
+      select n.id, n.happened_at from customer_notes n, t
+      where n.id = t.done_note_id
+         or (t.done_note_id is null and n.customer_id = t.customer_id and n.happened_at = t.done_at
+             and n.author is not distinct from t.done_by and (n.body = t.title or n.body like t.title || E'\n%'))
+      order by n.id limit 1),
+    gone as (delete from customer_notes n using note where n.id = note.id returning n.happened_at),
+    u as (
+      update follow_ups f set done_at = null, done_by = null, done_note_id = null, updated_at = now(), updated_by = ${user}
+      from t where f.id = t.id
+      returning f.customer_id)
+    select u.customer_id::text as customer_id,
+           exists (select 1 from customers c, gone where c.id = u.customer_id and c.last_contact_at = gone.happened_at) as was_last
+    from u`;
+  if (!r) return false;
+  if (r.was_last) await lastContactFrom(db, r.customer_id, user);
+  return true;
+}
+
+/**
+ * Their last contact, worked out again from everything that counts as
+ * contact: a call, email, meeting or text noted, a completed event, a quote
+ * or an invoice sent to them. Used when the one that was it is taken back.
+ */
+export async function lastContactFrom(db: Db, customerId: string, user: string): Promise<void> {
+  const has = await presentTables(db);
+  const sent = (table: string, on: boolean) => (on ? `(select max(x.sent_at) from ${table} x where ${byEmail("x")})` : "null::timestamptz");
+  await spliced({ event_of: EVENT_OF, quotes: sent("quotes", has.quotes), invoices: sent("invoices", has.invoices) }).sql(db)`
+    update customers c set
+      last_contact_at = greatest(
+        (select max(n.happened_at) from customer_notes n where n.customer_id = c.id and n.kind <> 'note'),
+        (select max(b.starts_at) from bookings b where b.status = 'completed' and b.starts_at <= now() and {event_of}),
+        {quotes}, {invoices}),
+      updated_at = now(), updated_by = ${user}
+    where c.id = ${customerId}::bigint`;
 }
 
 /** Move an open one to another day (and time, when given; null for any time). False when it is done or missing. */

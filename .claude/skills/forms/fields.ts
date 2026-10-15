@@ -64,6 +64,8 @@ export interface Form {
   active: boolean;
   /** Each submission is a lead (customers saveLead); off for a newsletter sign-up or a job application. */
   leads: boolean;
+  /** Its lead becomes a deal straight away, where an app has deals (the CRM makes it). */
+  deals?: boolean;
 }
 
 /** What a browser posts: one string per name, or several for a checkbox group. */

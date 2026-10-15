@@ -456,6 +456,21 @@ test("tasks: added, listed for today, the nav's count, done onto the timeline, m
   assert.equal((await post(`/tasks/${tk.id}/undo`, { return: "/tasks" })).headers.get("location"), "/tasks?saved=task-already", "an open one has nothing to undo");
   await db.sql`delete from follow_ups where id = ${tk.id}::bigint`;
 
+  // One ticked before ticks named their note: Undo finds the note written in the same instant, and their
+  // last contact goes back to the latest that is left (an earlier call), not to nothing and not left at the tick.
+  const [fresh] = await db.sql<{ id: string }>`insert into customers (name, email, stage) values ('Undo Person', 'undo.person@example.com', 'lead') returning id::text as id`;
+  await post(`/customers/${fresh.id}/notes`, { kind: "call", body: "An earlier call", at: "2026-01-05T10:00" });
+  await post(`/customers/${fresh.id}/tasks`, { kind: "call", title: "Ticked the old way", on: today });
+  const [old] = await db.sql<{ id: string }>`select id::text as id from follow_ups where title = 'Ticked the old way'`;
+  await post(`/tasks/${old.id}/done`, { return: "/tasks" });
+  await db.sql`update follow_ups set done_note_id = null where id = ${old.id}::bigint`;
+  const lastOf = async () => (await db.sql<{ at: string | null }>`select to_char(last_contact_at at time zone 'UTC', 'YYYY-MM-DD') as at from customers where id = ${fresh.id}::bigint`)[0].at;
+  assert.equal(await lastOf(), new Date().toISOString().slice(0, 10), "the tick was their last contact");
+  await post(`/tasks/${old.id}/undo`, { return: "/tasks" });
+  assert.equal((await db.sql`select 1 from customer_notes where customer_id = ${fresh.id}::bigint and body = 'Ticked the old way'`).length, 0, "its note found and gone");
+  assert.equal(await lastOf(), "2026-01-05", "back to the earlier call");
+  await db.sql`delete from follow_ups where id = ${old.id}::bigint`;
+
   // New task from the Tasks page: for the customer picked, or for someone new.
   assert.match(await (await get("/tasks/new")).text(), /<option value="\d+">Fay Lo \(fay@example\.com\)<\/option>/, "the picker offers who is here");
   assert.equal((await post("/tasks", { name: "Fay Lo", title: "" , on: today })).headers.get("location"), "/tasks/new?saved=task-needs");
@@ -972,4 +987,39 @@ test("production's per-request pool stays open until a long CSV has streamed", a
   for (let i = 0; !closed && i < 100; i++) await new Promise((ok) => setTimeout(ok, 10));
   assert.ok(closed, "the pool is closed once the body is sent");
   await db.sql`delete from customers where email like 'bulk%@example.com'`;
+});
+
+test("a form or a service can make each lead a deal straight away, as Pipedrive's web forms and Jobber's job bookings do", async (t) => {
+  if (skip) return t.skip(skip);
+  // The form editor offers it, and saving it keeps it.
+  await db.sql`insert into forms (key, title, fields, source) values ('install-request', 'Install request', ${JSON.stringify([{ name: "name", label: "Name", type: "text", required: true }, { name: "email", label: "Email", type: "email", required: true }, { name: "message", label: "Message", type: "textarea" }])}::jsonb, 'crm') on conflict do nothing`;
+  let html = await (await get("/forms/form/install-request")).text();
+  assert.match(html, /name="becomes" value="deal"/, "the CRM's form editor offers a deal straight away");
+  await db.sql`update forms set deals = true where key = 'install-request'`;
+  assert.match(await (await get("/forms/form/install-request")).text(), /name="becomes" value="deal" checked=""/);
+
+  // A submission, as the Website takes one: its lead is a deal by the next page.
+  const sub = await insertSubmission(db, { form_key: "install-request", name: "Ivy Auto", email: "ivy.auto@example.com", phone: null, data: { message: "New AC for the shop" }, source: "website", page: null, status: "new" });
+  await get("/");
+  const [lead] = await db.sql<{ status: string; deal_id: string | null }>`select status, deal_id::text as deal_id from leads where submission_id = ${sub}::bigint`;
+  assert.equal(lead.status, "converted");
+  assert.ok(lead.deal_id, "with its deal");
+  const [deal] = await db.sql<{ title: string; notes: string; stage: string; created_by: string }>`select title, notes, stage, created_by::text as created_by from deals where id = ${lead.deal_id}::bigint`;
+  assert.deepEqual({ ...deal }, { title: "Ivy Auto deal", notes: "New AC for the shop", stage: (await db.sql<{ key: string }>`select key from deal_stages where kind = 'open' and not archived order by position limit 1`)[0].key, created_by: "Website form" });
+  assert.equal((await db.sql<{ status: string }>`select status from submissions where id = ${sub}::bigint`)[0].status, "done", "its submission done, as a convert does");
+  assert.match(await (await get(`/deals/${lead.deal_id}`)).text(), /Where it came from[\s\S]*Converted/);
+  assert.equal((await db.sql`select 1 from follow_ups where deal_id = ${lead.deal_id}::bigint and title = 'Call back Ivy Auto'`).length, 1, "and its call back");
+
+  // A service that books deals: the booking's lead is a deal, its value the service's price.
+  const [svc] = await db.sql<{ id: string }>`insert into booking_types (slug, name, duration_min, location_kind, location, price_cents, currency, deals) values ('auto-install', 'Install', 60, 'our_place', '1 Main St', 45000, 'usd', true) returning id::text as id`;
+  assert.match(await (await get(`/services/${svc.id}`)).text(), /name="deals" value="1" checked=""/, "the service page offers it");
+  const [c] = await db.sql<{ id: string }>`insert into customers (name, email, stage) values ('Bo Booker', 'bo.booker@example.com', 'lead') returning id::text as id`;
+  const [b] = await db.sql<{ id: string }>`insert into bookings (type_id, starts_at, ends_at, name, email, status, customer_id, source, location_kind) values (${svc.id}::bigint, now() + interval '2 days', now() + interval '2 days 1 hour', 'Bo Booker', 'bo.booker@example.com', 'confirmed', ${c.id}::bigint, 'website', 'our_place') returning id::text as id`;
+  await db.sql`insert into leads (customer_id, source, booking_id, title) values (${c.id}::bigint, 'booking', ${b.id}::bigint, 'Install')`;
+  // Two pages at once: one deal.
+  await Promise.all([get("/deals"), get("/leads")]);
+  const made = await db.sql<{ value_cents: string; title: string }>`select d.value_cents::text as value_cents, d.title from deals d join leads l on l.deal_id = d.id where l.booking_id = ${b.id}::bigint`;
+  assert.deepEqual(made.map((r) => ({ ...r })), [{ value_cents: "45000", title: "Bo Booker deal" }]);
+  assert.equal((await db.sql`select 1 from deals where customer_id = ${c.id}::bigint`).length, 1, "made once");
+  assert.equal((await db.sql<{ deal_id: string }>`select deal_id::text as deal_id from bookings where id = ${b.id}::bigint`)[0].deal_id !== null, true, "the booking is on the deal");
 });

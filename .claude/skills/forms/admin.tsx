@@ -344,7 +344,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       from submissions where id = ${id}::bigint`;
     if (!r) return c.notFound();
     const [formRow] = await db.sql`
-      select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads
+      select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads, deals
       from forms where key = ${r.form_key}`;
     const form = formRow ? toForm(formRow) : null;
     const title = formTitle(r.form_key, form?.title);
@@ -603,7 +603,11 @@ function PaymentCard({ p, label, at }: { p: Payment; label: string; at?: (id: st
  * is new on it, a new form, the editor, a CSV export of a form's submissions,
  * and who stopped part way. `submissions` is where formsAdmin is mounted.
  */
-export function formEditor(getDb: GetDb, opts: { base: string; css: string; timeZone: string; source: string; submissions: string; nav?: NavItem[]; Frame?: Frame }) {
+/**
+ * `deals`: this app makes deals (the CRM), so a form can make each submission a deal straight away;
+ * without it a submission is a lead or just a contact.
+ */
+export function formEditor(getDb: GetDb, opts: { base: string; css: string; timeZone: string; source: string; submissions: string; nav?: NavItem[]; Frame?: Frame; deals?: boolean }) {
   const base = opts.base.replace(/\/+$/, "");
   const subs = opts.submissions;
   const nav = opts.nav ?? [{ href: base, label: "Forms" }, { href: subs, label: "Submissions" }];
@@ -713,7 +717,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
     const found = await formRow(getDb(c), c.req.param("key"));
     if (!found) return c.notFound();
     const team = await teamOf(envOf(c));
-    return framed(c, base, editorHead(found.form), <Editor base={base} form={found.form} raw={found.raw} version={found.version} team={team} />);
+    return framed(c, base, editorHead(found.form), <Editor base={base} form={found.form} raw={found.raw} version={found.version} team={team} deals={!!opts.deals} />);
   });
 
   app.post("/form/:key", async (c) => {
@@ -741,13 +745,14 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
       submit_label: draft.submit_label || null,
       active: draft.active,
       leads: draft.leads,
+      deals: draft.leads && draft.deals && !!opts.deals,
     };
     const again = (status: 409 | 422, note?: string, version = draft.version) =>
       framed(
           c,
           base,
           editorHead(found.form),
-          <Editor base={base} form={form} raw={draft.fields} version={version} problems={problems} formProblems={formProblems} note={note} team={team} />, status);
+          <Editor base={base} form={form} raw={draft.fields} version={version} problems={problems} formProblems={formProblems} note={note} team={team} deals={!!opts.deals} />, status);
     if (Object.keys(problems).length || Object.keys(formProblems).length) return again(422);
 
     // Saved only over the version the editor opened, so two people editing at
@@ -756,7 +761,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
       update forms
       set title = ${form.title}, fields = ${JSON.stringify(fields)}::jsonb, notify_emails = ${form.notify_emails}::citext[],
           redirect_to = ${form.redirect_to}, success_message = ${form.success_message}, submit_label = ${form.submit_label},
-          active = ${form.active}, leads = ${form.leads}, updated_by = ${c.get("user")}, updated_at = now()
+          active = ${form.active}, leads = ${form.leads}, deals = ${form.deals}, updated_by = ${c.get("user")}, updated_at = now()
       where key = ${form.key} and updated_at::text = ${draft.version}
       returning key`;
     if (!saved.length) {
@@ -862,7 +867,7 @@ async function allForms(db: Db) {
 
 async function formRow(db: Db, key: string) {
   const [row] = await db.sql`
-    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads,
+    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads, deals,
            updated_at::text as version
     from forms where key = ${key}`;
   return row ? { form: toForm(row), raw: (Array.isArray(row.fields) ? row.fields : []) as Record<string, unknown>[], version: row.version as string } : null;
@@ -892,6 +897,7 @@ type Draft = {
   badEmails: string[];
   active: boolean;
   leads: boolean;
+  deals: boolean;
   fields: Record<string, unknown>[];
 };
 
@@ -961,7 +967,9 @@ function readEditor(body: Record<string, unknown>): Draft {
     notify_emails: [...new Set(good)],
     badEmails: emails.filter((e) => !normalizeEmail(e)),
     active: s("active") !== "",
-    leads: s("leads") !== "",
+    // What each submission becomes: a lead (the default), a deal straight away, or just a contact.
+    leads: s("becomes") !== "contact",
+    deals: s("becomes") === "deal",
     fields,
   };
 }
@@ -995,8 +1003,11 @@ function Editor(props: {
   note?: string;
   /** Who Task & Tool email reaches, when it is the sender (data/send.ts teamOf). */
   team?: Person[] | null;
+  /** This app makes deals: offer "a deal, straight away". */
+  deals?: boolean;
 }) {
   const { base, form, raw, version, problems = {}, formProblems = {}, note, team } = props;
+  const becomes = !form.leads ? "contact" : form.deals ? "deal" : "lead";
   const text = (v: unknown) => (typeof v === "string" ? v : "");
   return (
     <form method="post" action={`${base}/form/${form.key}`} class="flex flex-col gap-6">
@@ -1047,13 +1058,20 @@ function Editor(props: {
             <input type="checkbox" name="active" value="yes" checked={form.active} class="size-4" />
             Taking submissions
           </label>
-          <label class="flex items-start gap-2">
-            <input type="checkbox" name="leads" value="yes" checked={form.leads} class="mt-1 size-4" aria-describedby="p-leads-help" />
-            <span>
-              Each submission is a lead
-              <span id="p-leads-help" class="block font-normal text-ink-3">Off for a newsletter sign-up or a job application: the person is still saved as a contact.</span>
-            </span>
-          </label>
+          {/* What each submission becomes, as Pipedrive's web forms save a lead or a deal; the person is a contact either way. */}
+          <fieldset class="flex flex-col gap-2 sm:col-span-2">
+            <legend class="mb-1 font-medium">Each submission becomes</legend>
+            {[
+              ["lead", "A lead", "To look at first, then convert to a deal or archive."],
+              ...(props.deals ? [["deal", "A deal, straight away", "In the pipeline's first stage, its lead marked converted. For a form that is always a job to win."]] : []),
+              ["contact", "Just a contact", "For a newsletter sign-up or a job application."],
+            ].map(([value, label, help]) => (
+              <label class="flex items-start gap-2">
+                <input type="radio" name="becomes" value={value} checked={becomes === value} class="mt-1 size-4" />
+                <span>{label}<span class="block font-normal text-ink-3">{help}</span></span>
+              </label>
+            ))}
+          </fieldset>
         </div>
       </Section>
       <Section title="Questions">
