@@ -65,6 +65,8 @@ export type Payment = {
   description: string | null;
   stripe_checkout_session_id: string | null;
   stripe_payment_intent_id: string | null;
+  /** Set for a payment recorded by hand on an invoice (the invoices skill): money that never went through Stripe. */
+  stripe_payment_record_id: string | null;
   refunded_cents: string;
   livemode: boolean | null;
   source: string | null;
@@ -159,6 +161,7 @@ export const refundable = (p: Payment) => (p.status === "paid" || p.status === "
 function whyNotRefundable(p: Payment): string {
   if (p.status === "refunded") return "Refunded in full.";
   if (p.status !== "paid" && p.status !== "partially_refunded") return "Only a paid payment can be refunded.";
+  if (p.stripe_payment_record_id) return "Paid another way (cash, a check, a transfer) and recorded by hand: give it back the same way. Nothing went through Stripe to refund.";
   if (!p.stripe_payment_intent_id) return "Stripe has not confirmed this payment yet. Try again in a minute.";
   return "Nothing is left to refund.";
 }

@@ -340,12 +340,18 @@ test("the pages: a GET asks, the POST sends; Record payment, part of it; from a 
     html = await (await get(`/invoices/${id}`)).text();
     assert.match(html, /Balance due<\/span><span[^>]*>\$60\.00/);
     assert.equal((await invoiceById(s.db, id))!.status, "open");
+    // Part paid: Stripe will not void it, so Void is not offered, and asking for it is refused; Write off still is.
+    assert.doesNotMatch(html, />Void</);
+    assert.match(html, />Write off</);
+    assert.match((await get(`/invoices/${id}/void`)).headers.get("location")!, /saved=not-now$/);
 
     // A Stripe refusal comes back on the page, as Stripe said it.
     const refusing: Stripe = async () => { throw new StripeError("This API key cannot void invoices", 403); };
     const app2 = new Hono();
     app2.route("/invoices", invoicesAdmin(() => s.db, { base: "/invoices", css: "/x.css", source: "crm", timeZone: "UTC", business: "", stripe: () => refusing }));
-    res = await app2.request(HOST + `/invoices/${id}/void`, { method: "POST", headers });
+    // An open invoice with nothing paid on it, so Void is asked of Stripe.
+    const [{ fresh }] = await s.db.sql`insert into invoices (email, currency, status, stripe_invoice_id, sent_at, total_cents) values ('ann@example.com', 'usd', 'open', 'in_refuse', now(), 500) returning id::text as fresh`;
+    res = await app2.request(HOST + `/invoices/${fresh}/void`, { method: "POST", headers });
     assert.match(decodeURIComponent(res.headers.get("location")!.replace(/\+/g, " ")), /\/void\?problem=This API key cannot void invoices/);
 
     // From an accepted quote, once.

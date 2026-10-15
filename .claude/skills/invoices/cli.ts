@@ -583,6 +583,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
           if (json) return out(true, { would: say }, String);
           return done(at, fmt(inv), { lines: [say], waits: `node scripts/invoices.mjs ${cmd} ${inv.id}` });
         }
+        if (cmd === "void" && (await paidSoFar(db, inv.id)) > 0) fail(`${at}: part of invoice #${inv.id} is paid; Stripe will not void it. Write it off instead`, `node scripts/invoices.mjs uncollectible ${inv.id}`);
         const stripe = stripeOr(cli.env, at);
         if (cmd === "send") {
           const r = await sendInvoice(db, stripe, inv.id, by);

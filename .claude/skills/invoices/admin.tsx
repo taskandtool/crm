@@ -802,7 +802,8 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       inv.hosted_url && inv.status !== "void" ? <a href={inv.hosted_url} target="_blank" rel="noopener" class={menuItem}>Payment page</a> : null,
       inv.pdf_url ? <a href={inv.pdf_url} target="_blank" rel="noopener" class={menuItem}>PDF</a> : null,
       inv.status === "open" ? <a href={`${self}/uncollectible`} class={menuItem}>Write off</a> : null,
-      owes ? <a href={`${self}/void`} class={menuItem}>Void</a> : null,
+      // Not once anything is paid on it: Stripe refuses, so Write off is the way.
+      owes && !paidTotal ? <a href={`${self}/void`} class={menuItem}>Void</a> : null,
       draft ? <form method="post" action={`${self}/discard`}><button class={menuButton}>Delete draft</button></form> : null,
     ].filter(Boolean);
     return framed(c, base, {
@@ -904,7 +905,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   });
 
   // Each Stripe action: a page that says exactly what will happen, then its POST.
-  type Act = { path: string; title: string; allowed: (i: Invoice) => boolean; say: (i: Invoice) => string; button: string;
+  type Act = { path: string; title: string; allowed: (i: Invoice, c: Ctx) => boolean | Promise<boolean>; say: (i: Invoice) => string; button: string;
     run: (c: Ctx, i: Invoice) => Promise<{ ok: true } | { ok: false; message: string }>; done: string };
   const acts: Act[] = [
     {
@@ -915,7 +916,8 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     },
     {
       path: "void", title: "Void", button: "Void the invoice", done: "asked-void",
-      allowed: (i) => i.status === "open" || i.status === "uncollectible",
+      // Stripe refuses to void an invoice with a payment on it (one recorded by hand, too); write it off instead.
+      allowed: async (i, c) => (i.status === "open" || i.status === "uncollectible") && (await paidSoFar(getDb(c), i.id)) === 0,
       say: (i) => `${i.email} will no longer be able to pay it. It stays on record as void. It cannot be undone.`,
       run: (c, i) => voidInvoice(getDb(c), stripeOf(c), i.id),
     },
@@ -931,7 +933,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       const inv = await loadInvoice(c);
       if (!inv) return c.notFound();
       const self = `${base}/${inv.id}`;
-      if (!act.allowed(inv)) return back(c, self, "not-now");
+      if (!(await act.allowed(inv, c))) return back(c, self, "not-now");
       const problem = c.req.query("problem");
       const ready = await stripeReady(c);
       return framed(c, base, { title: inv.number ? `${act.title}: invoice ${inv.number}` : `${act.title} to ${inv.name || inv.email}`, back: { href: self, label: inv.number ? `Invoice ${inv.number}` : "Draft invoice" } }, (
@@ -953,7 +955,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       const inv = await loadInvoice(c);
       if (!inv) return c.notFound();
       const self = `${base}/${inv.id}`;
-      if (!act.allowed(inv)) return back(c, self, "not-now");
+      if (!(await act.allowed(inv, c))) return back(c, self, "not-now");
       if (!(await stripeReady(c))) return c.redirect(`${self}/${act.path}`, 303);
       const r = await act.run(c, inv);
       if (!r.ok) return c.redirect(listUrl(`${self}/${act.path}`, { problem: r.message }), 303);
