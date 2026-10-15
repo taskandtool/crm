@@ -13,7 +13,8 @@ function groups(h: Hits, q: string): Group[] {
   const word = invoicesCfg?.word ?? "Quote";
   const all: Group[] = [
     { label: vocab.many, hits: h.contacts, href: (id) => `/customers/${id}`, all: listUrl("/customers", { q }) },
-    { label: "Leads", hits: h.leads, href: (id) => `/leads/${id}`, all: listUrl("/leads", { q }) },
+    // No "All leads": the list shows one status at a time, and these are every status.
+    { label: "Leads", hits: h.leads, href: (id) => `/leads/${id}`, all: null },
     { label: dealsCfg.many, hits: h.deals, href: (id) => `/deals/${id}`, all: null },
     // Quotes and invoices only where this CRM shows them; the tables may be another app's.
     { label: `${word}s`, hits: invoicesCfg ? h.quotes : [], href: (id) => `/invoices/quotes/${id}`, all: listUrl("/invoices/quotes", { q }) },

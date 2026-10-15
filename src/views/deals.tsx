@@ -5,7 +5,7 @@
 import type { Child } from "hono/jsx";
 import { Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
-import { rowClick, When } from "../admin/list";
+import { EmptyCard, rowClick, When } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { StatusBadge, StatusForm } from "../admin/status";
 import { dealsCfg, invoicesCfg, ownerLabel, vocab } from "../config";
@@ -42,6 +42,8 @@ export type BoardData = {
   /** Each deal's next open task, by deal id. */
   next: Map<string, { due_on: string; due_time: string | null }>;
   today: string;
+  /** How many are archived, off the board. */
+  archived: number;
 };
 
 export function DealsPage(p: { user: string; data: BoardData; flash: { code?: string | null; n?: string | null } }) {
@@ -60,7 +62,36 @@ function OpenTotal({ data }: { data: BoardData }) {
   const open = data.stages.filter((s) => s.kind === "open").map((s) => data.totals[s.key]).filter(Boolean);
   const count = open.reduce((n, t) => n + t.count, 0);
   const cents = open.reduce((n, t) => n + BigInt(t.cents), 0n);
-  return <p>{count} open{cents > 0n ? ` · ${formatWholeMoney(cents.toString(), dealsCfg.currency)}` : ""}</p>;
+  return (
+    <p>
+      {count} open{cents > 0n ? ` · ${formatWholeMoney(cents.toString(), dealsCfg.currency)}` : ""}
+      {/* Archived ones are off the board; Pipedrive keeps them a filter away, here a link. */}
+      {data.archived ? <> · <a href="/deals/archived">{data.archived} archived</a></> : null}
+    </p>
+  );
+}
+
+/** The archived deals, as a list: each opens its page, where Unarchive is. */
+export function ArchivedDealsPage(p: { user: string; deals: Deal[] }) {
+  return (
+    <Layout title={`Archived ${many}`} user={p.user} section="deals" back={{ href: "/deals", label: dealsCfg.many }}>
+      {p.deals.length ? (
+        <ul class="flex flex-col divide-y divide-line rounded-card bg-surface shadow-card ring-1 ring-line">
+          {p.deals.map((d) => (
+            <li {...rowClick(`/deals/${d.id}`)} class="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-canvas/60">
+              <div class="min-w-0 flex-1">
+                <a href={`/deals/${d.id}`} class="block truncate font-medium text-ink no-underline hover:underline">{d.title}</a>
+                <p class="truncate text-label text-ink-3">{d.customer_name} · Archived <When at={d.archived_at} timeZone={timeZone} day /></p>
+              </div>
+              {worth(d) ? <span class="shrink-0 font-medium tabular-nums">{worth(d)}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <EmptyCard title={`No archived ${many}.`}>Archive takes a {one} off the board; it shows here, and its page brings it back.</EmptyCard>
+      )}
+    </Layout>
+  );
 }
 
 /** What a deal made from a lead starts from: the lead, who, what they asked and said, and their deals already open. */

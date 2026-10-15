@@ -268,6 +268,22 @@ export async function closingBy(db: Db, day: string, limit: number): Promise<Dea
 }
 
 /** Deals for the script's list: by one stage or a kind of stage, an owner, a customer; most recently changed first, `limit` and one more. */
+/** The archived ones, last archived first: off the board, as Pipedrive's archived deals, opened from here to Unarchive. */
+export async function archivedDeals(db: Db, limit = 200): Promise<Deal[]> {
+  const { sql } = await dealSql(db);
+  return sql<Deal>`
+    select {deal} from deals d join customers c on c.id = d.customer_id join deal_stages s on s.key = d.stage
+    where d.archived_at is not null
+    order by d.archived_at desc, d.id desc
+    limit ${limit}`;
+}
+
+/** How many are archived: the board's way to them. */
+export async function archivedCount(db: Db): Promise<number> {
+  const [r] = await db.sql<{ n: number }>`select count(*)::int as n from deals where archived_at is not null`;
+  return r.n;
+}
+
 export async function listDeals(db: Db, f: { stage: string | null; kind: StageKind | null; owner: string | null; customerId: string | null }, limit: number): Promise<Deal[]> {
   const { sql } = await dealSql(db);
   return sql<Deal>`

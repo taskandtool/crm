@@ -23,7 +23,7 @@ import {
 import { csvColumns } from "./crm/columns";
 import { postedFields, readFields } from "./crm/fields";
 import { everythingFrom } from "./crm/history";
-import { board, createDeal, customerDeals, dealChoices, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
+import { archivedCount, archivedDeals, board, createDeal, customerDeals, dealChoices, getDeal, saveDeal, setDealArchived, setDealStage, setLostReason, winFromQuotes, type DealInput } from "./crm/deals";
 import {
   addTask, customerTasks, doneTask, taskCounts, getTask, inPlay, doneTasks, listTasks, moveTask, nextTasks,
   pickTaskKind, readDay, readTime, undoTask,
@@ -49,7 +49,7 @@ import { SettingsPage } from "./views/settings";
 import { SearchPage, SearchPeek } from "./views/search";
 import { search } from "./crm/search";
 import type { Frame } from "./admin/layout";
-import { Board, CLOSED_DAYS, DealPage, DealsPage, NewDealPage, PER_COLUMN, type BoardData, type DealFrom } from "./views/deals";
+import { ArchivedDealsPage, Board, CLOSED_DAYS, DealPage, DealsPage, NewDealPage, PER_COLUMN, type BoardData, type DealFrom } from "./views/deals";
 import { NewTaskPage, shownFrom, TaskDone, TaskItem, TasksPage } from "./views/tasks";
 import { MergePage } from "./views/merge";
 import { StagesPage } from "./views/stages";
@@ -1037,13 +1037,16 @@ async function boardData(c: C): Promise<BoardData> {
     listStages(db, "deals"),
     board(db, { per: PER_COLUMN, closedDays: CLOSED_DAYS, currency: dealsCfg.currency }),
   ]);
-  return { stages, cards, totals, next: await nextTasks(db, cards.map((d) => d.id), "deal"), today: today() };
+  const [next, archived] = await Promise.all([nextTasks(db, cards.map((d) => d.id), "deal"), archivedCount(db)]);
+  return { stages, cards, totals, next, today: today(), archived };
 }
 
 app.get("/deals", async (c) => {
   if (isPartial(c)) return c.html(<Board data={await boardData(c)} />);
   return c.html(<DealsPage user={c.var.user} data={await boardData(c)} flash={flashOf(c)} />);
 });
+
+app.get("/deals/archived", async (c) => c.html(<ArchivedDealsPage user={c.var.user} deals={await archivedDeals(c.var.db)} />));
 
 // New deal; from a lead (?from=lead.12), filled in from it first, as Pipedrive's Convert to
 // deal: the person, the deal named for what they asked, what they wrote as its notes, and

@@ -99,6 +99,8 @@ type Item = Keyed & {
   data: Record<string, unknown> | null;
   /** Its booking and payment (linked.ts). */
   linked?: Linked;
+  /** A lead's (where the app has leads): its status follows the lead, so it is not moved in bulk. */
+  lead?: boolean;
 };
 type Filter = { q: string | null; form: string | null };
 
@@ -170,6 +172,15 @@ const AskNote = () => (
  * payment: a booking step, or a payment or products step, on a form whose
  * table is here. What the submissions list gives a column to.
  */
+/** Which of these submissions made a lead, where the project has leads. */
+async function leadIds(db: Db, ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const [has] = await db.sql<{ leads: boolean }>`select to_regclass('leads') is not null as leads`;
+  if (!has.leads) return new Set();
+  const rows = await db.sql<{ id: string }>`select distinct submission_id::text as id from leads where submission_id = any(${ids}::bigint[])`;
+  return new Set(rows.map((r) => r.id));
+}
+
 /** The lead a submission made, where the project has leads. */
 async function leadOf(db: Db, submissionId: string): Promise<string | null> {
   const [has] = await db.sql<{ leads: boolean }>`select to_regclass('leads') is not null as leads`;
@@ -205,7 +216,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
   const spec = (view: View, showForm: boolean, titles: Map<string, string>, has: { bookings: boolean; payments: boolean }): TableSpec<Item> => ({
     id: "subs",
     href: (r) => subUrl(r.id),
-    select: { form: "bulk", label: who },
+    select: { form: "bulk", label: who, can: (r) => !r.lead },
     columns: [
       {
         label: "From",
@@ -244,7 +255,8 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     const after = readCursor(c.req.query("after"));
     const { page: rows, next } = cut(await listPage(db, v.statuses, f, after, size), size);
     const linked = await linkedTo(db, rows.map((r) => r.id));
-    const withLinks = rows.map((r) => ({ ...r, linked: linked.get(r.id) }));
+    const leads = opts.links?.lead ? await leadIds(db, rows.map((r) => r.id)) : new Set<string>();
+    const withLinks = rows.map((r) => ({ ...r, linked: linked.get(r.id), lead: leads.has(r.id) }));
     const { forms, titles, fresh } = await formsAndKeys(db);
     const self = listUrl(here, { q: f.q, form: f.form });
     const more = (cur: string) => listUrl(here, { q: f.q, form: f.form, after: cur });
@@ -303,8 +315,11 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     const ids = formIds(body.id);
     if (!ids.length || !status) return c.redirect(withFlash(ret, "none-selected"), 303);
     const db = getDb(c);
+    // A lead's submission follows its lead (archived, spam, open again there): never moved in bulk here.
+    const theirs = opts.links?.lead ? await leadIds(db, ids) : new Set<string>();
+    const movable = ids.filter((id) => !theirs.has(id));
     const changed = await db.sql<{ id: string; was: string }>`
-      with was as (select id, status from submissions where id = any(${ids}::bigint[]) for update)
+      with was as (select id, status from submissions where id = any(${movable}::bigint[]) for update)
       update submissions s
       set status = ${status}, updated_at = now(), updated_by = ${c.get("user")}
       from was where s.id = was.id and s.status <> ${status}

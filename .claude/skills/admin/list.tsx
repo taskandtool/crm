@@ -23,7 +23,8 @@ export type TableSpec<T extends { id: string | number | bigint }> = {
   /** Detail URL; the first column links to it. */
   href?: (row: T) => string;
   /** A checkbox per row belonging to the bulk form with this id (`form=`), so rows added by Load more join it. */
-  select?: { form: string; label: (row: T) => string };
+  /** A checkbox per row for a bulk form; `can` leaves it off a row that cannot be moved with the rest. */
+  select?: { form: string; label: (row: T) => string; can?: (row: T) => boolean };
 };
 
 export type Option = { value: string; label: string };
@@ -175,7 +176,9 @@ export function TableRow<T extends { id: string | number | bigint }>({ spec, row
     <tr id={`${spec.id}-row-${row.id}`} class={"group hover:bg-panel/60" + (href ? " cursor-pointer" : "")} {...(href ? rowClick(href) : {})}>
       {spec.select ? (
         <td class={cell + " border-b border-line group-last:border-b-0"}>
-          <input type="checkbox" name="id" value={String(row.id)} form={spec.select.form} aria-label={`Select ${spec.select.label(row)}`} />
+          {spec.select.can && !spec.select.can(row) ? null : (
+            <input type="checkbox" name="id" value={String(row.id)} form={spec.select.form} aria-label={`Select ${spec.select.label(row)}`} />
+          )}
         </td>
       ) : null}
       {spec.columns.map((c, i) => (

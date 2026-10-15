@@ -108,6 +108,7 @@ test("search finds every kind of record: grouped under the box as you type, and 
   const page = await (await get("/search?q=searchable")).text();
   assert.match(page, new RegExp(`href="/leads/${lead}"`));
   assert.match(page, /href="\/customers\?q=searchable"[^>]*>All contacts/);
+  assert.doesNotMatch(page, />All leads</, "the leads list shows one status at a time; search shows every status");
 });
 
 test("Home: the figures and the four short lists; the form's person is a contact and their request a lead", async (t) => {
@@ -232,6 +233,11 @@ test("leads: a form fill and a phone call; convert to a deal, archive with Undo"
   const subPage = await (await get(`/forms/submissions/${subId}`)).text();
   assert.match(subPage, new RegExp(`href="/leads/${formLead.id}"[^>]*>Open lead<`));
   assert.doesNotMatch(subPage, />Mark as spam</, "sorted on the lead, not twice");
+  // Nor in bulk: no checkbox on its row, and a bulk move leaves it as its lead has it.
+  assert.doesNotMatch(await (await get("/forms/submissions")).text(), new RegExp(`name="id" value="${subId}"`));
+  const before = await subStatus();
+  await post("/forms/submissions/bulk", { id: String(subId), status: "done" });
+  assert.equal(await subStatus(), before, "a lead's submission is not moved in bulk");
 
   // Convert to deal: the New deal form, filled in from the lead; saving converts it and clears its request.
   const form = await (await get(`/deals/new?from=lead.${formLead.id}`)).text();
@@ -416,6 +422,13 @@ test("tasks: added, listed for today, the nav's count, done onto the timeline, m
   assert.ok((await getCustomer(db, id))!.last_contact_at, "a call done is contact");
   assert.match(await (await get(`/customers/${id}`)).text(), /No task scheduled\./);
   assert.match(await (await get("/tasks?show=done")).text(), /Call about the estimate[\s\S]*Done /, "Done lists it, newest first");
+
+  // Archived deals: off the board, a link away, as Pipedrive's archived deals are a filter away.
+  await post(`/customers/${id}/deals`, { title: "Shelved deal" });
+  const [shelved] = await db.sql<{ id: string }>`select id::text as id from deals where title = 'Shelved deal'`;
+  await post(`/deals/${shelved.id}/archive`, { archived: "1" });
+  assert.match(await (await get("/deals")).text(), /href="\/deals\/archived">\d+ archived</);
+  assert.match(await (await get("/deals/archived")).text(), new RegExp(`href="/deals/${shelved.id}"[^>]*>Shelved deal<`));
 
   // A deal's page shows the invoices its quotes made, as HubSpot's deal does: was it paid?
   const dealNow = await post(`/customers/${id}/deals`, { title: "Invoiced deal", value: "100" });
