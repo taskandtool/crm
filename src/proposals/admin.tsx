@@ -9,7 +9,7 @@ import { FieldList, Section } from "../admin/detail";
 import { withFlash, type FlashMessages } from "../admin/flash";
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { sectionPages, type Frame, type NavItem } from "../admin/layout";
-import { When } from "../admin/list";
+import { AskAi, When } from "../admin/list";
 import { idParam, str } from "../admin/query";
 import { buttonClass, controlClass, fieldClass, inputClass, primaryClass, smallText } from "../admin/status";
 import type { GetDb, Db } from "../data/db";
@@ -37,8 +37,8 @@ export type ProposalAdminOpts = {
 
 const MESSAGES: FlashMessages = {};
 
-/** A component's tag beside its name while its words are the starter's. */
-const SampleTag = () => <span class="ml-2 rounded-control bg-panel px-1.5 py-0.5 text-label text-ink-2">Sample words</span>;
+/** Beside a component's name while its words are the starter's; gone once the AI writes it. */
+const SampleTag = () => <span class="text-ink-3"> (sample)</span>;
 
 export function proposalAdmin(getDb: GetDb, o: ProposalAdminOpts) {
   const app = new Hono<{ Variables: TeamVars }>();
@@ -116,7 +116,7 @@ export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, 
         {
           label: "Components",
           value: isEditable(qt) ? null : shown.length
-            ? <>{shown.map((cpt, i) => <>{i ? ", " : ""}{cpt.label}{cpt.sample ? <span class="text-ink-3"> (sample words)</span> : null}</>)}</>
+            ? <>{shown.map((cpt, i) => <>{i ? ", " : ""}{cpt.label}{cpt.sample ? <SampleTag /> : null}</>)}</>
             : "None: a plain quote, its price and sign-off",
         },
         { label: "When they sign", value: after ? after.replace(/^When they sign: /, "").replace(/^./, (x) => x.toUpperCase()) : null },
@@ -129,7 +129,7 @@ export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, 
         <form method="post" action={`${self}/proposal`} class="mt-5 flex flex-col gap-5 border-t border-line pt-5">
           <fieldset>
             <legend class="mb-1 font-semibold">Components</legend>
-            <p class={smallText + " mb-2 text-ink-3"}>A {w} is its price and sign-off; tick what else it shows. Ask the AI to change how one looks or what it says, or to add one.</p>
+            <p class={smallText + " mb-2 text-ink-3"}>A {w} is its price and sign-off; tick what else it shows.</p>
             <ul class="flex flex-col divide-y divide-line">
               {PICKABLE.map((cpt) => (
                 <li class="py-2.5">
@@ -143,6 +143,18 @@ export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, 
                 </li>
               ))}
             </ul>
+            <div class="mt-3 rounded-control bg-panel p-4">
+              <p class={smallText + " max-w-prose text-ink-2"}>
+                One marked (sample) still has the starter's words. The AI writes each from your website, or from what you
+                tell it, and can add a section or redesign any of them.
+              </p>
+              <p class={smallText + " mt-3 text-ink-2"}>Ask the AI in this app's chat:</p>
+              <div class="mt-2 flex flex-col gap-2">
+                <AskAi label={false} ask="Read our website and write our proposal sections from it." />
+                <AskAi label={false} ask={`Add a section to our ${w}s about our warranty.`} />
+                <AskAi label={false} ask={`Make our ${w}s look more like our website.`} />
+              </div>
+            </div>
           </fieldset>
           <label class={fieldClass}>Title<input name="title" value={p?.title ?? ""} maxlength={160} placeholder={`${o.opts.word} ${qt.number}`} class={inputClass} /></label>
           <fieldset class="flex flex-col gap-2">

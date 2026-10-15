@@ -95,7 +95,8 @@ test("a proposal end to end: built, linked, opened, changed under them, signed; 
   // The quote's page: the components by name, with check marks; one not registered is refused.
   let html = await (await get(`/invoices/quotes/${id}`)).text();
   assert.match(html, /name="components" value="about"/);
-  assert.match(html, /Sample words/, "a component still showing the starter's words says so");
+  assert.match(html, /About us<\/span><span class="text-ink-3"> \(sample\)/, "a component still showing the starter's words says so");
+  assert.match(html, /Read our website and write our proposal sections from it\./, "and what to ask the AI");
   let res = await post(`/invoices/quotes/${id}/proposal`, { title: "A new fence", components: ["about", "nope"], first_invoice: "draft" });
   assert.match(decodeURIComponent(res.headers.get("location")!), /Nothing was saved: No component nope/);
 

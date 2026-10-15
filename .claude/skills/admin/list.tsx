@@ -117,13 +117,20 @@ export function SetupNeeded({ title, children, ask }: { title: string; children:
     <div role="status" class="mb-4 rounded-card bg-surface p-4 shadow-card ring-1 ring-line">
       <p class="font-semibold text-ink">{title}</p>
       <p class="mt-1 max-w-prose text-ink-2">{children}</p>
-      <div class="mt-3 flex flex-wrap items-center gap-2">
-        <span class="text-label text-ink-2">Ask the AI in this app's chat:</span>
-        <q class="rounded-control bg-panel px-2 py-1 text-label text-ink">{ask}</q>
-        <button type="button" class={buttonClass} onclick={`navigator.clipboard.writeText(${JSON.stringify(ask)}).then(() => { this.textContent = "Copied" })`}>
-          Copy
-        </button>
-      </div>
+      <AskAi class="mt-3" ask={ask} />
+    </div>
+  );
+}
+
+/** Words to say to the AI in this app's chat, with a button that copies them; `label` false under a heading that says so once. */
+export function AskAi({ ask, label = true, class: cls = "" }: { ask: string; label?: boolean; class?: string }) {
+  return (
+    <div class={`flex flex-wrap items-center gap-2 ${cls}`}>
+      {label ? <span class="text-label text-ink-2">Ask the AI in this app's chat:</span> : null}
+      <q class="rounded-control bg-panel px-2 py-1 text-label text-ink">{ask}</q>
+      <button type="button" class={buttonClass} onclick={`navigator.clipboard.writeText(${JSON.stringify(ask)}).then(() => { this.textContent = "Copied" })`}>
+        Copy
+      </button>
     </div>
   );
 }

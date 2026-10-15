@@ -1,5 +1,5 @@
 // The cover, when it is ticked: the business's best photograph edge to
-// edge, darkened so the title reads; the dark ground until there is one.
+// edge, darkened so the title reads; without one, the dark ground alone.
 // Without it the page opens on the Masthead, a plain document's head, as an
 // invoice does. The quote gives the title, who it is for and its dates.
 import { dayText, todayIn } from "../../invoices/document";
@@ -45,9 +45,8 @@ export const cover: ProposalComponent = {
     return (
       <header class="relative flex min-h-screen flex-col bg-night text-night-ink print:min-h-[100vh]">
         {COVER ? <Picture src={COVER} alt="" label="" class="absolute inset-0 size-full" /> : null}
-        {COVER ? <div class="absolute inset-0 bg-night/55" /> : (
-          <p class="absolute right-6 top-24 text-small text-night-muted sm:right-10 print:hidden">Your best photograph goes here, edge to edge</p>
-        )}
+        {/* No photograph: the dark ground and the title, with nothing said about it (this page is the customer's). */}
+        {COVER ? <div class="absolute inset-0 bg-night/55" /> : null}
         <div class="relative mx-auto flex w-full max-w-page flex-1 flex-col px-6 py-8 sm:px-10 sm:py-10">
           <div class="flex items-center justify-between gap-6">
             {LOGO ? <img src={LOGO} alt={d.business} class="h-10 w-auto max-w-56 object-contain" /> : <span class="text-title">{d.business}</span>}

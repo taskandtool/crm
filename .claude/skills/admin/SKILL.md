@@ -88,7 +88,7 @@ fragment. The table, history restores, bulk forms and flash messages:
 | `keyset.ts` | cursors (`makeCursor`, `readCursor`, `cut`), `everyPage` for exports, and the microsecond rule |
 | `csv.ts` | `csvCell`, `csvResponse`: defused, streamed, BOM-first CSV |
 | `query.ts` | `likePattern`, `listUrl`, `localPath`, `isPartial`, `formIds`, `idParam` |
-| `list.tsx` | `DataTable`, `TableRows`, `TableRow`, `LoadMoreRow`, `SearchBar`, `When`, `rowClick`, `rowLink`; `EmptyState`, `EmptyCard`, `NoMatches`, `SetupNeeded` |
+| `list.tsx` | `DataTable`, `TableRows`, `TableRow`, `LoadMoreRow`, `SearchBar`, `When`, `rowClick`, `rowLink`; `EmptyState`, `EmptyCard`, `NoMatches`, `SetupNeeded`, `AskAi` (words to say to the AI, with Copy) |
 | `status.tsx` | `StatusBadge` (token tones), `StatusForm` (plain or row-swapping), `pickStatus`; `controlClass`, `inputClass`, `buttonClass`, `primaryClass`, `quietClass`, `SELECTED_ONLY`, `fieldClass`, `linkClass`, `smallText`, `Select`, `FieldError`, the one look of every control |
 | `bulk.tsx` | `BulkForm`: the form the row checkboxes post to, shown only once a row is ticked (`SELECTED_ONLY`) |
 | `detail.tsx` | `Section`, `FieldList`, `JsonData` (nested, escaped) |
