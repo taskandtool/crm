@@ -342,6 +342,10 @@ test("deals: the board's columns and totals; a move answers htmx with the board 
 
   const plain = await post(`/deals/${dealId}/stage`, { stage: "lost", return: "/deals" });
   assert.equal(plain.headers.get("location"), "/deals?saved=deal-lost", "it says what happened: lost");
+  assert.equal((await post(`/deals/${dealId}/stage`, { stage: "won", return: "/deals" })).headers.get("location"), "/deals?saved=deal-won");
+  const firstOpen = (await db.sql<{ key: string }>`select key from deal_stages where kind = 'open' and not archived order by position limit 1`)[0].key;
+  assert.equal((await post(`/deals/${dealId}/stage`, { stage: firstOpen, return: "/deals" })).headers.get("location"), "/deals?saved=deal-reopened");
+  await post(`/deals/${dealId}/stage`, { stage: "lost", return: "/deals" });
   // Why it was lost, said on its page after the move.
   assert.equal((await post(`/deals/${dealId}/stage`, { status: "lost", lost_reason: "Price", return: `/deals/${dealId}` })).headers.get("location"), `/deals/${dealId}?saved=deal-saved`);
   const [d] = await db.sql<{ lost_reason: string; closed: boolean }>`select lost_reason, closed_at is not null as closed from deals where id = ${dealId}::bigint`;

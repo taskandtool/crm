@@ -985,7 +985,7 @@ app.post("/tasks/:id/undo", async (c) => {
   const ret = localPath(str(body.return), "", `/customers/${task.customer_id}`);
   if (isPartial(c)) {
     c.header("HX-Trigger", "tasks-changed");
-    return c.html(task.done_at ? <TaskDone {...shownFrom(body, task, today(), ret)} /> : <TaskItem {...shownFrom(body, task, today(), ret)} />);
+    return c.html(task.done_at ? <TaskDone {...shownFrom(body, task, today(), ret)} /> : <TaskItem {...shownFrom(body, task, today(), ret)} focus />);
   }
   return back(c, ret, opened ? "task-undone" : "task-already");
 });

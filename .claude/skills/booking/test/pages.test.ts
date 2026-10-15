@@ -150,7 +150,7 @@ test("a visitor books, sees the time in their zone, downloads the invite, and ca
     assert.match(await (await app.request(`/admin/team/${r.value.id}`, { headers: team })).text(), /Dentist/);
     html = await (await app.request("/admin/team", { headers: team })).text();
     assert.match(html, /Pat<\/span>/);
-    assert.match(html, /href="\/admin\/team\/new"/, "Add person");
+    assert.match(html, /href="\/admin\/team\/new"/, "New team member");
 
     // Services: a new one, listed once someone takes it; renamed; refused without the address people come to.
     res = await app.request("/admin/services", form({

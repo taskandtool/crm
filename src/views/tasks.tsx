@@ -140,6 +140,7 @@ function groups(rows: Task[], today: string): [string, Task[]][] {
 export type TaskItemProps = {
   task: Task; today: string; returnTo: string; showCustomer?: boolean; showOwner?: boolean; grouped?: boolean;
   /** The deal whose page this is: no link back to it. */ onDeal?: string | null;
+  /** Drawn by Undo: its circle takes the focus back, so a keyboard keeps its place. */ focus?: boolean;
 };
 
 /** How a task is shown here, sent with its tick and Undo so the answer draws it the same way. */
@@ -194,7 +195,7 @@ export function TaskItem(p: TaskItemProps) {
     <div id={`task-${task.id}`} class="flex items-start gap-3">
       <form method="post" action={`/tasks/${task.id}/done`} {...swap} class="pt-0.5">
         <Shown p={p} />
-        <button aria-label={`Mark done: ${label}`} title="Mark done"
+        <button aria-label={`Mark done: ${label}`} title="Mark done" autofocus={p.focus}
           class="flex size-5 items-center justify-center rounded-full border-2 border-line-strong text-transparent hover:border-accent hover:bg-accent/10 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
           {check}
         </button>
@@ -261,7 +262,8 @@ export function TaskDone(p: TaskItemProps) {
       </div>
       <form method="post" action={`/tasks/${task.id}/undo`} hx-post={`/tasks/${task.id}/undo`} hx-target={`#task-${task.id}`} hx-swap="outerHTML" class="shrink-0">
         <Shown p={p} />
-        <button class={quietClass}>Undo</button>
+        {/* The circle it replaced had the focus: Undo takes it (htmx focuses autofocus in what it swaps in). */}
+        <button class={quietClass} autofocus>Undo</button>
       </form>
     </div>
   );
