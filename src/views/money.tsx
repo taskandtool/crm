@@ -12,6 +12,9 @@ import { When } from "../admin/list";
 import { pastDue, type Invoice } from "../invoices/invoices";
 import { shownStatus, type Quote } from "../invoices/quotes";
 import { formatMoney } from "../payments/money";
+import { cardName, type Card } from "../invoices/cards";
+import type { Recurring } from "../invoices/recurring";
+import { CardsOnFile, RecurringLines } from "../invoices/recurring-admin";
 import { timeZone } from "./ui";
 
 export type Owed = { currency: string; cents: string; count: number };
@@ -41,9 +44,13 @@ export function Docs({ quotes, invoices }: { quotes: Quote[]; invoices: Invoice[
   );
 }
 
-/** A customer's quotes and invoices, and what they owe now (open, live money, one figure per currency). */
-export function CustomerMoney({ c, quotes, invoices, owed }: { c: Customer; quotes: Quote[]; invoices: Invoice[]; owed: Owed[] }) {
+/**
+ * A customer's quotes and invoices, what they owe now (open, live money, one
+ * figure per currency), their recurring invoices and the cards they saved.
+ */
+export function CustomerMoney({ c, quotes, invoices, owed, recurring, cards }: { c: Customer; quotes: Quote[]; invoices: Invoice[]; owed: Owed[]; recurring: Recurring[]; cards: Card[] }) {
   const who = { email: c.email, name: c.name, phone: c.phone, address: c.address };
+  const charged = cards.find((x) => x.isDefault && x.livemode) ?? cards.find((x) => x.isDefault) ?? null;
   return (
     <Section title="Quotes and invoices">
       {owed.length ? (
@@ -52,9 +59,22 @@ export function CustomerMoney({ c, quotes, invoices, owed }: { c: Customer; quot
         </p>
       ) : null}
       <Docs quotes={quotes} invoices={invoices} />
+      {recurring.length ? (
+        <div class="mt-4 border-t border-line pt-3">
+          <h3 class="mb-1 font-semibold">Recurring</h3>
+          <RecurringLines list={recurring} base="/invoices" card={charged ? cardName(charged) : null} />
+        </div>
+      ) : null}
+      {cards.length || recurring.some((r) => r.mode === "charge" && r.status !== "ended") ? (
+        <div class="mt-4 border-t border-line pt-3">
+          <h3 class="mb-1 font-semibold">Card on file</h3>
+          {c.email ? <CardsOnFile cards={cards} base="/invoices" back={`/customers/${c.id}`} email={c.email} /> : null}
+        </div>
+      ) : null}
       <p class="mt-3 flex flex-wrap gap-x-4">
         <AddLink href={listUrl("/invoices/quotes/new", who)}>New quote</AddLink>
         <AddLink href={listUrl("/invoices/new", who)}>New invoice</AddLink>
+        <AddLink href={listUrl("/invoices/recurring/new", who)}>New recurring invoice</AddLink>
       </p>
     </Section>
   );

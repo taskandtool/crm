@@ -52,12 +52,13 @@ export function readLines(input: unknown, currency: string, rates: TaxRate[], ke
 
 // A document's lines and totals. The tables are chosen from this fixed map,
 // never from input. Lines change only while the document is editable: a
-// quote until it is accepted or declined (quotes.ts EDITABLE), or a draft
-// invoice not yet sent to Stripe.
-export type DocKind = "quote" | "invoice";
+// quote until it is accepted or declined (quotes.ts EDITABLE), a draft
+// invoice not yet sent to Stripe, or a recurring invoice until it ends.
+export type DocKind = "quote" | "invoice" | "recurring";
 const DOC = {
   quote: { table: "quotes", lines: "quote_lines", key: "quote_id", editable: "quotes.status in ('draft', 'sent', 'expired')" },
   invoice: { table: "invoices", lines: "invoice_lines", key: "invoice_id", editable: "invoices.status = 'draft' and invoices.stripe_invoice_id is null" },
+  recurring: { table: "recurring_invoices", lines: "recurring_invoice_lines", key: "recurring_id", editable: "recurring_invoices.status <> 'ended'" },
 } as const;
 
 /** The document's id: the given one, or (null) the one just inserted in this transaction. */

@@ -49,6 +49,11 @@ export type Invoice = {
   sent_at: Date | null;
   paid_at: Date | null;
   payment_failed_at: Date | null;
+  /** How it is collected once sent: Stripe emails it, or charges the card on file. */
+  collect: "email" | "charge";
+  /** The recurring invoice that made it, and the period (its date) it bills. */
+  recurring_id: string | null;
+  period_on: string | null;
   source: string | null;
   created_by: string | null;
   updated_by: string | null;
@@ -91,7 +96,7 @@ export async function createInvoice(db: Db, f: InvoiceFields, by: string, source
       values (${h.email}, ${h.name}, ${h.phone}, ${h.address}, ${h.currency}, ${days}, ${h.notes}, ${h.visit_id}::bigint, ${source}, ${by}, ${by})`,
     insertLines("invoice", null, r.value.lines),
     sumLines("invoice", null),
-    q`select *, to_char(due_date, 'YYYY-MM-DD') as due_day from invoices where id = currval(pg_get_serial_sequence('invoices', 'id'))`,
+    q`select *, to_char(due_date, 'YYYY-MM-DD') as due_day, to_char(period_on, 'YYYY-MM-DD') as period_day from invoices where id = currval(pg_get_serial_sequence('invoices', 'id'))`,
   ]);
   return { ok: true, value: toInvoice(out[3][0]) };
 }
@@ -110,7 +115,7 @@ export async function saveInvoice(db: Db, id: string, f: InvoiceFields, by: stri
     clearLines("invoice", id),
     insertLines("invoice", id, r.value.lines),
     sumLines("invoice", id),
-    q`select *, to_char(due_date, 'YYYY-MM-DD') as due_day from invoices where id = ${id}::bigint`,
+    q`select *, to_char(due_date, 'YYYY-MM-DD') as due_day, to_char(period_on, 'YYYY-MM-DD') as period_day from invoices where id = ${id}::bigint`,
   ]);
   const before = out[0][0];
   if (!before) return { ok: false, errors: { status: "No such invoice." } };
@@ -192,7 +197,7 @@ export async function invoiceFromQuote(db: Db, quoteId: string, by: string, sour
                    coalesce(sum(l.tax_cents) filter (where not coalesce(t.inclusive, false)), 0) as exclusive
             from invoice_lines l left join tax_rates t on t.id = l.tax_rate_id group by l.invoice_id) s
       where invoices.quote_id = ${quoteId}::bigint and invoices.created_at = now() and invoices.status = 'draft' and s.invoice_id = invoices.id
-      returning invoices.*, to_char(invoices.due_date, 'YYYY-MM-DD') as due_day`,
+      returning invoices.*, to_char(invoices.due_date, 'YYYY-MM-DD') as due_day, to_char(invoices.period_on, 'YYYY-MM-DD') as period_day`,
     // After the insert, so it sees an invoice another request made while this one waited for the lock.
     q`select max(id)::text as id, count(*)::int as n from invoices where quote_id = ${quoteId}::bigint and status <> 'void'`,
   ]);
@@ -216,7 +221,7 @@ export async function discardInvoice(db: Db, id: string, by: string): Promise<bo
 export async function invoiceById(db: Db, id: string): Promise<(Invoice & { lines: SavedLine[] }) | null> {
   if (!/^\d{1,18}$/.test(id)) return null;
   const [rows, lines] = await Promise.all([
-    db.sql`select *, to_char(due_date, 'YYYY-MM-DD') as due_day from invoices where id = ${id}::bigint`,
+    db.sql`select *, to_char(due_date, 'YYYY-MM-DD') as due_day, to_char(period_on, 'YYYY-MM-DD') as period_day from invoices where id = ${id}::bigint`,
     db.sql`select * from invoice_lines where invoice_id = ${id}::bigint order by position, id`,
   ]);
   return rows[0] ? { ...toInvoice(rows[0]), lines: lines.map(toLine) } : null;
@@ -230,7 +235,7 @@ export const pastDue = (inv: Invoice, today: string, quote: { status: string } |
 export async function invoicesFor(db: Db, by: { email?: string | null; visitId?: string | null; quoteId?: string | null }): Promise<Invoice[]> {
   const email = by.email ?? null, visit = by.visitId ?? null, quote = by.quoteId ?? null;
   const rows = await db.sql`
-    select *, to_char(due_date, 'YYYY-MM-DD') as due_day from invoices
+    select *, to_char(due_date, 'YYYY-MM-DD') as due_day, to_char(period_on, 'YYYY-MM-DD') as period_day from invoices
     where (${email}::citext is null or email = ${email}::citext)
       and (${visit}::bigint is null or visit_id = ${visit}::bigint)
       and (${quote}::bigint is null or quote_id = ${quote}::bigint)
@@ -247,7 +252,7 @@ export async function invoicesPage(db: Db, f: InvoiceFilter, after: { k: string;
   const k = after?.k ?? null, id = after?.id ?? null;
   const rows = await db.sql`
     select * from (
-      select *, to_char(due_date, 'YYYY-MM-DD') as due_day, created_at::text as k,
+      select *, to_char(due_date, 'YYYY-MM-DD') as due_day, to_char(period_on, 'YYYY-MM-DD') as period_day, created_at::text as k,
              (status = 'open' and due_date < ${today}::date
               and (quote_id is null or exists (select 1 from quotes q where q.id = invoices.quote_id and q.status = 'accepted'))) as past_due
       from invoices
@@ -333,6 +338,10 @@ export const toInvoice = (r: Record<string, any>): Invoice => ({
   sent_at: r.sent_at ? new Date(r.sent_at) : null,
   paid_at: r.paid_at ? new Date(r.paid_at) : null,
   payment_failed_at: r.payment_failed_at ? new Date(r.payment_failed_at) : null,
+  collect: r.collect === "charge" ? "charge" : "email",
+  recurring_id: r.recurring_id == null ? null : String(r.recurring_id),
+  // As due_date: a date column read as text, never as local midnight.
+  period_on: r.period_day ?? null,
   source: r.source ?? null,
   created_by: r.created_by ?? null,
   updated_by: r.updated_by ?? null,

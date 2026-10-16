@@ -1,12 +1,12 @@
-// quotesCli or invoicesCli (the first argument) as an app's scripts run them,
+// quotesCli, invoicesCli or recurringCli (the first argument) as an app's scripts run them,
 // for cli.test.ts: on CLI_DB's database, or, without one, exiting 3 if the
 // database is opened.
 import pg from "pg";
 import { fromPool } from "../../data/pg";
-import { invoicesCli, quotesCli } from "../cli";
+import { invoicesCli, quotesCli, recurringCli } from "../cli";
 
 const [which, ...argv] = process.argv.slice(2);
-await (which === "quotes" ? quotesCli : invoicesCli)(argv, {
+await (which === "quotes" ? quotesCli : which === "recurring" ? recurringCli : invoicesCli)(argv, {
   business: "Acme",
   currency: "usd",
   timeZone: "UTC",

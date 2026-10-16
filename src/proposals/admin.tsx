@@ -20,6 +20,7 @@ import { COMPONENTS, PICKABLE } from "./components";
 import { fillPage } from "./page";
 import { signedState } from "./sign";
 import type { Base } from "./link";
+import { describe, recurringList } from "../invoices/recurring";
 import { afterSign, chosenKeys, ensureProposal, mintLink, opensOf, proposalOf, saveProposal, storePage, type ProposalOpts } from "./store";
 
 type Ctx = Context<{ Variables: TeamVars }>;
@@ -99,11 +100,14 @@ export function proposalAdmin(getDb: GetDb, o: ProposalAdminOpts) {
 /** The proposal's part of a quote's page: its components, what signing does, its link, who opened it, the answer. */
 export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, o: { opts: ProposalOpts; quotes: string; timeZone: string }): Promise<Child> {
   await ensureProposal(db, qt);
-  const [p, keys, opens, rates] = await Promise.all([proposalOf(db, qt.id), chosenKeys(db, qt.id), opensOf(db, qt.id), taxRates(db)]);
+  const [p, keys, opens, rates, linked] = await Promise.all([proposalOf(db, qt.id), chosenKeys(db, qt.id), opensOf(db, qt.id), taxRates(db), recurringList(db, { quoteId: qt.id })]);
+  // "Then, recurring": the recurring invoice waiting on this quote (or started by its yes).
+  const recurring = linked.filter((r) => r.status !== "ended");
+  const invoicesBase = o.quotes.replace(/\/quotes$/, "");
   const [sig] = await db.sql`select name, email::text as email, signed_at, ip from quote_signatures where quote_id = ${qt.id}::bigint`;
   const self = `${o.quotes}/${qt.id}`;
   const shown = COMPONENTS.filter((cpt) => !cpt.always && keys.includes(cpt.key));
-  const after = p ? afterSign(p, qt, rates).team : null;
+  const after = p ? afterSign(p, qt, rates, undefined, recurring.filter((r) => r.status === "pending")).team : null;
   const w = o.opts.word.toLowerCase();
   const opened = opens.customer
     ? <>Opened {opens.customer === 1 ? "once" : `${opens.customer} times`}, last <When at={opens.last!} timeZone={o.timeZone} /></>
@@ -166,6 +170,24 @@ export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, 
               <input name="deposit_percent" value={p?.deposit_percent ? String(p.deposit_percent) : ""} inputmode="numeric" placeholder="50" class={inputClass} />
             </label>
           </fieldset>
+          <div>
+            <p class="mb-1 font-semibold">Then, recurring</p>
+            {recurring.length ? (
+              <ul class="flex flex-col gap-2">
+                {recurring.map((r) => (
+                  <li>
+                    <span class="block max-w-prose">{describe(r)}</span>
+                    <a href={`${invoicesBase}/recurring/${r.id}`} class={smallText}>{r.status === "pending" ? "Change it" : "Open it"}</a>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p class={smallText + " max-w-prose text-ink-3"}>
+                A monthly retainer or a payment plan: it starts when they sign, and the {w} shows it beside the total.{" "}
+                <a href={`${invoicesBase}/recurring/new?quote=${qt.id}`}>Add a recurring invoice</a>
+              </p>
+            )}
+          </div>
           <div class="flex flex-wrap items-center gap-2">
             <button class={primaryClass}>Save</button>
             <a href={`${self}/document`} target="_blank" class={buttonClass}>Preview</a>

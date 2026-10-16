@@ -17,7 +17,8 @@ and nothing else:
 | Refunds | Write | the private payments page |
 | Tax Rates | Write | tax on checkout and invoice lines |
 | Customers | Write | invoices (the invoices skill) |
-| Invoices | Write | invoices: make, finalize, send, void |
+| Invoices | Write | invoices: make, finalize, send, charge, void |
+| Payment Methods | Write | invoices: the cards a customer saved, and removing one |
 | Payment Records | Write | a payment recorded by hand on an invoice (cash, a check, a transfer), all or part |
 | Payment Intents | Read | an invoice's payment, for refunds |
 | Balance | Read | Task & Tool checks a pasted key by reading it |
@@ -54,10 +55,31 @@ another slug: `stripeFrom(envOf(c), fetch, "stripe-eu")`.
    `charge.refunded`, `payment_intent.payment_failed`, and with invoices
    `invoice.finalized`, `invoice.paid`, `invoice_payment.paid`,
    `invoice.payment_failed`, `invoice.voided`,
-   `invoice.marked_uncollectible`, `invoice.deleted`.
-   An app without invoices registers only the first six.
+   `invoice.marked_uncollectible`, `invoice.deleted`, and for saved cards
+   `payment_method.attached`, `payment_method.detached`, `customer.updated`.
+   An app without invoices registers only the first six. Never
+   `invoice.created`: Stripe holds automatic charges for up to 72 hours
+   when an endpoint does not answer it.
 4. The owner copies the endpoint's signing secret (`whsec_…`) into the form from
    `python3 ~/tools/taskandtool.py request-secret STRIPE_WEBHOOK_SECRET`; then
    `python3 ~/tools/taskandtool.py restart`. Test and live mode are separate
    endpoints with separate secrets. After an inbound URL rotation, change
    the URL in Stripe too.
+
+## Charging a saved card (invoices)
+
+A card is saved on the Stripe customer when they pay an invoice on
+Stripe's page; the invoices skill charges it by name. The owner turns
+these on in Stripe:
+
+| Setting | Where in Stripe | Why |
+|---|---|---|
+| Save customer payment information: Offer or Always | Settings, Billing, Invoices, Default payment terms | cards saved from Stripe's invoice page |
+| One-time invoice retries | Settings, Billing, Invoices, Advanced invoicing features | Stripe retries a refused charge |
+| Successful payments | Settings, Emails | a receipt for a charged invoice; Stripe sends none without it |
+
+Stripe's "card payment failed" and "confirm your payment" emails are for
+subscriptions, and Stripe will not email the page of an invoice it charges.
+A refused charge here makes a task, and `invoices.mjs email-page <id>`
+emails the customer the invoice's payment page through the owner's own
+sender (Resend or Postmark); with none, it prints the link to pass on.

@@ -9,7 +9,9 @@
 //
 // A decline names its reason; the quote is declined and its deal lost with it.
 // Mark accepted on the team's page runs the same "After they sign"
-// (afterAccepted), so a yes by phone reaches the same invoices.
+// (afterAccepted), so a yes by phone reaches the same invoices. "Then,
+// recurring" is a recurring invoice waiting on the quote (pending): the yes
+// starts it, and a no ends it.
 import { q, type Db } from "../data/db";
 import type { Email, Sent } from "../data/send";
 import type { Stripe } from "../payments/stripe";
@@ -22,6 +24,8 @@ import { todayIn } from "../invoices/document";
 import { invoiceFromQuote, invoicesFor } from "../invoices/invoices";
 import { isEditable, ONLINE, quoteById, type Quote } from "../invoices/quotes";
 import { sendInvoice } from "../invoices/stripe";
+import { describe, endForQuote, recurringList, startFromQuote } from "../invoices/recurring";
+import { recurringTask } from "../crm/recurring";
 import { tokenHash } from "../data/token";
 import { fillPage } from "./page";
 import { afterSign, pageFor, proposalOf, storePage, type ProposalOpts } from "./store";
@@ -50,12 +54,26 @@ async function taskFor(db: Db, qt: Quote, title: string, deps: AnswerDeps): Prom
 /**
  * "After they sign", for an accepted quote: the first invoice it names,
  * made once (a repeat finds it and makes nothing), and sent through Stripe
- * when that was chosen. A Stripe failure leaves the draft and a task naming
- * the error.
+ * when that was chosen; then its recurring invoice starts, if it has one. A
+ * Stripe failure leaves the draft and a task naming the error.
  */
 export async function afterAccepted(db: Db, qt: Quote, by: string, deps: AnswerDeps): Promise<Accepted> {
+  if (qt.status !== "accepted") return { lines: [] };
+  const first = await firstInvoice(db, qt, by, deps);
+  const started = await startFromQuote(db, qt.id, {
+    today: todayIn(deps.opts.timeZone), timeZone: deps.opts.timeZone, stripe: deps.stripe, task: recurringTask(db), by,
+  });
+  const recurring = started.map(({ recurring: r, first: made }) =>
+    `started ${r.title}: ${describe(r)}${made ? ` Its first invoice is ${made.outcome === "failed" ? `a draft (${made.message})` : made.outcome === "charged" ? "charged" : made.outcome === "draft" ? "a draft" : "sent"}.` : ""}`);
+  return { lines: [...first.lines, ...recurring] };
+}
+
+/** The customer said no: the recurring invoice waiting on the quote never starts. */
+export const afterDeclined = (db: Db, qt: Quote, by: string) => endForQuote(db, qt.id, by);
+
+async function firstInvoice(db: Db, qt: Quote, by: string, deps: AnswerDeps): Promise<Accepted> {
   const p = await proposalOf(db, qt.id);
-  if (!p || p.first_invoice === "none" || qt.status !== "accepted") return { lines: [] };
+  if (!p || p.first_invoice === "none") return { lines: [] };
   const share = p.deposit_percent ? { kind: "percent" as const, percent: p.deposit_percent } : { kind: "all" as const };
   const made = await invoiceFromQuote(db, qt.id, by, "crm", deps.daysUntilDue, { share, seen: 0 });
   if (!made.ok) {
@@ -75,7 +93,7 @@ export async function afterAccepted(db: Db, qt: Quote, by: string, deps: AnswerD
     await taskFor(db, qt, problem, deps);
     return { lines: [problem] };
   }
-  const sent = await sendInvoice(db, stripe, inv.id, by);
+  const sent = await sendInvoice(db, stripe, inv.id, by, { timeZone: deps.opts.timeZone });
   if (!sent.ok) {
     const problem = `Send the ${what} for ${qt.name ?? qt.email} (${qt.number}): Stripe said ${sent.message}`;
     await taskFor(db, qt, problem, deps);
@@ -212,6 +230,7 @@ export async function declineProposal(db: Db, quoteId: string, input: { reason: 
       where quote_id = ${quoteId}::bigint and exists (select 1 from quotes where id = ${quoteId}::bigint and decided_by = ${ONLINE.declined})`,
   ]);
   if (!out[0].length) return false;
+  await afterDeclined(db, qt, ONLINE.declined);
   if (qt.deal_id) {
     // Its deal is lost with their reason, if it is still open.
     const [lost] = await db.sql<{ key: string }>`
@@ -236,8 +255,8 @@ export async function proposalDocument(db: Db, qt: Quote, opts: ProposalOpts): P
 
 /** What accepting it does, for the team, in a sentence (Mark accepted's page). */
 export async function onAcceptSentence(db: Db, qt: Quote): Promise<string | null> {
-  const p = await proposalOf(db, qt.id);
-  if (!p || p.first_invoice === "none") return null;
-  const full = await quoteById(db, qt.id);
-  return full ? afterSign(p, full, await taxRates(db)).team.replace(/^When they sign: /, "Accepting it does this too: ") : null;
+  const [p, full, recurring] = await Promise.all([proposalOf(db, qt.id), quoteById(db, qt.id), recurringList(db, { quoteId: qt.id })]);
+  const waiting = recurring.filter((r) => r.status === "pending");
+  if (!p || !full || (p.first_invoice === "none" && !waiting.length)) return null;
+  return afterSign(p, full, await taxRates(db), undefined, waiting).team.replace(/^When they sign: /, "Accepting it does this too: ");
 }

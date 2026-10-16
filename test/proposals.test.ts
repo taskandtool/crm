@@ -10,7 +10,8 @@ import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import app from "../src/app";
-import { seeds } from "../src/config";
+import { cfg, seeds } from "../src/config";
+import { todayIn } from "../src/invoices/document";
 import type { Db } from "../src/data/db";
 import { setup } from "../src/db/setup";
 import { invoiceById, invoicesFor } from "../src/invoices/invoices";
@@ -195,6 +196,53 @@ test("a proposal end to end: built, linked, opened, changed under them, signed; 
   res = await post(`/invoices/quotes/${id}/proposal`, { title: "Changed", components: ["team"] });
   assert.match(decodeURIComponent(res.headers.get("location")!), /Nothing was saved: It was accepted/);
   assert.deepEqual((await db.sql`select key from quote_components where quote_id = ${id}::bigint order by key`).map((r) => r.key), ["about", "reviews"]);
+});
+
+test("then, recurring: a weekly plan waits on the proposal, shown beside the total; signing starts it and makes today's; a no ends another", async (t) => {
+  if (skip) return t.skip(skip);
+  const { deal } = await customerWithDeal("Eve Park", "eve@example.com");
+  const id = await newQuote("eve@example.com", "Eve Park", deal, "500.00");
+  let html = await (await get(`/invoices/quotes/${id}`)).text();
+  assert.match(html, new RegExp(`href="/invoices/recurring/new\\?quote=${id}"`));
+  assert.match(await (await get(`/invoices/recurring/new?quote=${id}`)).text(), /value="eve@example\.com"/, "the form starts from the quote's customer");
+
+  // Weekly from today, so any day of the month will do; a draft for the team, so no Stripe here.
+  const today = todayIn(cfg.time_zone);
+  let res = await post("/invoices/recurring", {
+    quote_id: id, email: "eve@example.com", name: "Eve Park", currency: "usd", title: "Weekly lawn care", period: "week", every: "1", first_on: today,
+    ends: "never", mode: "draft", days_ahead: "0", days_until_due: "14", description: ["Mowing", ""], quantity: ["", ""], unit: ["60", ""], tax: "",
+  });
+  assert.match(res.headers.get("location")!, new RegExp(`/invoices/quotes/${id}\\?saved=recurring-pending$`));
+  const [rec] = await db.sql`select id::text as id, status from recurring_invoices where quote_id = ${id}::bigint`;
+  assert.equal(rec.status, "pending");
+  html = await (await get(`/invoices/quotes/${id}`)).text();
+  assert.match(html, /A recurring invoice starts\. An invoice for \$60\.00, every week on/);
+
+  const token = tokenOf(await (await post(`/invoices/quotes/${id}/send`, { how: "link" })).text());
+  html = await (await get(`/q/${token}`, NOBODY)).text();
+  assert.match(html, /\$60\.00 every week on \w+, invoiced to you\./, "the customer reads it beside the total");
+  assert.match(html, /\$500\.00/, "and the total stays the one-off amount");
+  res = await post(`/q/${token}`, { name: "Eve Park", agree: "1", page: shaOf(html) }, NOBODY);
+  assert.equal(res.status, 303);
+
+  const [after] = await db.sql`select status, made, to_char(next_on, 'YYYY-MM-DD') as next_on from recurring_invoices where id = ${rec.id}::bigint`;
+  assert.deepEqual([after.status, after.made], ["active", 1]);
+  assert.equal(after.next_on, new Date(Date.parse(today + "T00:00:00Z") + 7 * 86_400_000).toISOString().slice(0, 10));
+  const [inv] = await db.sql`select status, quote_id, to_char(period_on, 'YYYY-MM-DD') as period_on from invoices where recurring_id = ${rec.id}::bigint`;
+  assert.deepEqual([inv.status, inv.quote_id, inv.period_on], ["draft", null, today], "today's is made at once, and not listed on the proposal");
+  const [task] = await db.sql`select title from follow_ups where title like 'Review Eve Park%'`;
+  assert.match(task.title, /^Review Eve Park's invoice for the week of/);
+
+  // A second proposal with its own plan, declined at the link: the plan never starts.
+  const other = await newQuote("eve@example.com", "Eve Park", deal, "100.00");
+  await post("/invoices/recurring", {
+    quote_id: other, email: "eve@example.com", currency: "usd", title: "Monthly care", period: "month", every: "1", first_on: "2099-01-01",
+    ends: "never", mode: "send", description: ["Care", ""], quantity: ["", ""], unit: ["40", ""], tax: "",
+  });
+  const t2 = tokenOf(await (await post(`/invoices/quotes/${other}/send`, { how: "link" })).text());
+  const page2 = await (await get(`/q/${t2}`, NOBODY)).text();
+  await post(`/q/${t2}/decline`, { reason: "Price", note: "", page: shaOf(page2) }, NOBODY);
+  assert.equal((await db.sql`select status from recurring_invoices where quote_id = ${other}::bigint`)[0].status, "ended");
 });
 
 test("emailed: the link goes by the owner's sender with nothing attached; an open in the first minute is a mail scanner", async (t) => {

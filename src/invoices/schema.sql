@@ -121,6 +121,93 @@ create table if not exists stripe_customers (
   primary key (email, livemode)
 );
 
+-- How a sent invoice is collected: Stripe emails it to be paid (email), or
+-- charges the customer's card on file (charge). Set when it is sent, so a
+-- send that stopped part way finishes the same way.
+alter table invoices add column if not exists collect text not null default 'email' check (collect in ('email', 'charge'));
+-- An invoice a recurring invoice made: which one, and the period (its date) it bills. One per period.
+alter table invoices add column if not exists recurring_id bigint;
+alter table invoices add column if not exists period_on date;
+create unique index if not exists invoices_period on invoices (recurring_id, period_on) where recurring_id is not null;
+
+-- A recurring invoice: lines that become an ordinary invoice on each date,
+-- every `every` weeks, months or years from `first_on` (its day is every
+-- invoice's day; the 1st to the 28th for months and years, so no month is
+-- short of it). `next_n` is the next period's number from 0 and `next_on`
+-- its date. `mode` is what happens on the date: a draft for a person
+-- (made `days_ahead` early), sent to be paid, or charged to the card on file
+-- (emailed while there is none). `pending` waits for its quote's yes; the
+-- job reads only `active` ones. Ends on `ends_on`, or after `ends_after`
+-- invoices (`made`). Totals are summed from its lines, as a draft's are.
+create table if not exists recurring_invoices (
+  id bigserial primary key,
+  email citext not null,
+  name text,
+  phone text,
+  address text,
+  title text not null,
+  currency text not null check (currency ~ '^[a-z]{3}$'),
+  subtotal_cents bigint not null default 0,
+  tax_cents bigint not null default 0,
+  total_cents bigint not null default 0,
+  unit text not null check (unit in ('week', 'month', 'year')),
+  every integer not null default 1 check (every between 1 and 12),
+  first_on date not null,
+  next_n integer not null default 0,
+  next_on date not null,
+  ends_on date,
+  ends_after integer check (ends_after between 1 and 1000),
+  made integer not null default 0,
+  mode text not null default 'send' check (mode in ('draft', 'send', 'charge')),
+  days_ahead integer not null default 3 check (days_ahead between 0 and 14),
+  days_until_due integer not null default 30 check (days_until_due between 0 and 365),
+  notes text,
+  note_for_team text,
+  owner citext,
+  status text not null default 'active' check (status in ('pending', 'active', 'paused', 'ended')),
+  quote_id bigint,
+  checked_at timestamptz,
+  source text,
+  created_by citext,
+  updated_by citext,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists recurring_invoices_due on recurring_invoices (next_on) where status = 'active';
+create index if not exists recurring_invoices_email on recurring_invoices (email);
+create index if not exists recurring_invoices_quote on recurring_invoices (quote_id) where quote_id is not null;
+
+create table if not exists recurring_invoice_lines (
+  id bigserial primary key,
+  recurring_id bigint not null references recurring_invoices (id),
+  position integer not null,
+  description text not null,
+  quantity numeric(12, 2) not null check (quantity > 0),
+  unit_cents bigint not null check (unit_cents >= 0),
+  tax_rate_id bigint references tax_rates (id),
+  amount_cents bigint not null,
+  tax_cents bigint not null default 0
+);
+create index if not exists recurring_invoice_lines_recurring on recurring_invoice_lines (recurring_id, position);
+
+-- The cards saved on our Stripe customers (on a hosted invoice page, or in
+-- Stripe's Dashboard), mirrored from Stripe's events and refreshed before a
+-- charge. Brand, last four and expiry only: Stripe keeps the card.
+create table if not exists stripe_cards (
+  stripe_payment_method_id text primary key,
+  stripe_customer_id text not null,
+  livemode boolean not null,
+  brand text,
+  last4 text,
+  exp_month integer,
+  exp_year integer,
+  attached_at timestamptz not null default now(),
+  detached_at timestamptz
+);
+create index if not exists stripe_cards_customer on stripe_cards (stripe_customer_id) where detached_at is null;
+-- The card the CRM charges for this customer: their first saved card, or the one a person chose.
+alter table stripe_customers add column if not exists default_card text;
+
 comment on table quotes is 'Quotes the team sends through the owner''s own sender (invoices skill). Editable until accepted or declined. Status moves forward only.';
 comment on table invoices is 'Invoices made, sent and collected by the owner''s Stripe account (invoices skill). Past draft, status changes only from verified Stripe webhooks.';
 comment on column invoices.status is 'draft until sent with Stripe; then Stripe''s, moved only by the webhook, never backwards.';

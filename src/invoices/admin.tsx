@@ -24,7 +24,7 @@ import { cut, readCursor } from "../admin/keyset";
 import { sectionPages, type Frame, type NavItem } from "../admin/layout";
 import { DataTable, EmptyState, NoMatches, SearchBar, SetupNeeded, TableRows, When, type TableSpec } from "../admin/list";
 import { idParam, isPartial, listUrl, str } from "../admin/query";
-import { buttonClass, controlClass, FieldError, fieldClass, primaryClass, Select, StatusBadge, type StatusOption } from "../admin/status";
+import { buttonClass, controlClass, fieldClass, primaryClass, StatusBadge, type StatusOption } from "../admin/status";
 import type { GetDb } from "../data/db";
 import { envOf } from "../data/env";
 import { emailsCustomers, sendEmail, type Email, type Sent } from "../data/send";
@@ -33,6 +33,7 @@ import { stripeConnected, stripeFrom, type Stripe } from "../payments/stripe";
 import { addDays, invoiceHtml, isDay, quoteHtml, quoteMessage, sendQuote, taxSummary, todayIn } from "./document";
 import { createTaxRate, percentText, setTaxRateActive, taxRates, type TaxRate } from "../payments/tax";
 import { amountInput, type Errors, type SavedLine } from "./lines";
+import { CustomerFields, formLines, LineItems, linesOf } from "./form";
 import {
   copyQuote, createQuote, decideQuote, expireQuote, isEditable, markSent, QUOTE_STATUS_LABELS, quoteById, quotesPage, saveQuote, SHOWN_QUOTE_STATUSES, shownStatus,
   type Quote, type QuoteRow, type ShownQuoteStatus,
@@ -41,7 +42,9 @@ import {
   createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, INVOICE_STATUSES, INVOICE_STATUS_LABELS, invoiceTotals, pastDue, saveInvoice,
   type Invoice, type InvoiceRow, type InvoiceStatus,
 } from "./invoices";
-import { markUncollectible, paidSoFar, PAYMENT_METHODS, recordPayment, sendInvoice, voidInvoice } from "./stripe";
+import { cardName, defaultCard } from "./cards";
+import { RECURRING_MESSAGES, recurringRoutes } from "./recurring-admin";
+import { chargeInvoice, emailPaymentPage, markUncollectible, paidSoFar, PAYMENT_METHODS, recordPayment, sendInvoice, voidInvoice } from "./stripe";
 
 type Ctx = Context<{ Variables: TeamVars }>;
 export type { Frame } from "../admin/layout";
@@ -120,6 +123,8 @@ export type InvoicesAdminOptions = {
   daysUntilDue?: number;
   /** The Stripe caller; default stripeFrom(envOf(c)), the owner's connected account. */
   stripe?: (c: Ctx) => Stripe;
+  /** A customer's record in the app by email (a recurring invoice's Bill to links to it); null when there is none. */
+  customerHref?: (c: Ctx, email: string) => Promise<string | null>;
 };
 
 const INVOICE_OPTIONS: StatusOption[] = INVOICE_STATUSES.map((s) => ({
@@ -219,6 +224,9 @@ const MESSAGES: FlashMessages = {
   "not-now": "Not from its current status. Nothing changed.",
   "invoice-created": "Invoice drafted. Check it, then send it with Stripe.",
   "invoice-sent": "Sent. Stripe emailed the invoice from your Stripe account.",
+  "invoice-charged": "Charged. It turns paid here when Stripe confirms, usually within seconds.",
+  "page-emailed": "Stripe emailed them the payment page.",
+  "charge-refused": "The card was refused. The invoice is open: email them the payment page, or try the card again later.",
   discarded: "Discarded. It stays on record as void.",
   "payment-recorded": "Payment recorded.",
   "payment-recorded-all": "Payment recorded. Nothing is left to pay: the invoice turns paid here when Stripe confirms, usually within seconds.",
@@ -229,33 +237,10 @@ const MESSAGES: FlashMessages = {
   "rate-added": "Tax rate added.",
   "rate-saved": "Saved.",
   gone: "That is no longer there.",
+  ...RECURRING_MESSAGES,
 };
 
 
-
-/**
- * The form's repeated line fields as rows, by index. Tax is one choice for
- * the whole document (`tax`, as Jobber's): it goes on every line that has
- * something on it. "mixed" keeps each line's own (one the AI made per line).
- */
-function formLines(body: Record<string, unknown>): { description: string; quantity: string; unit: string; tax_rate_id: string }[] {
-  const all = (k: string) => {
-    const v = body[k];
-    return Array.isArray(v) ? v.map(str) : v === undefined ? [] : [str(v)];
-  };
-  const d = all("description"), q = all("quantity"), u = all("unit"), t = all("tax_rate_id");
-  const tax = str(body.tax);
-  return Array.from({ length: Math.min(Math.max(d.length, q.length, u.length), 200) }, (_, i) => ({
-    description: d[i] ?? "", quantity: q[i] ?? "", unit: u[i] ?? "",
-    tax_rate_id: tax === "mixed" ? (t[i] ?? "") : (d[i] ?? "").trim() || (u[i] ?? "").trim() ? tax : "",
-  }));
-}
-
-/** The one tax a document's lines share: "" for none, a rate's id, or "mixed" when the lines differ. */
-function docTax(lines: { tax_rate_id: string }[]): string {
-  const ids = new Set(lines.map((l) => l.tax_rate_id));
-  return ids.size > 1 ? "mixed" : ([...ids][0] ?? "");
-}
 
 type FormValues = {
   email: string; name: string; phone: string; address: string; currency: string; valid_until: string; notes: string; terms: string;
@@ -270,9 +255,6 @@ function readForm(body: Record<string, unknown>): FormValues {
   };
 }
 
-/** A document's lines as the form shows them. */
-const linesOf = (d: { currency: string; lines: SavedLine[] }) =>
-  d.lines.map((l) => ({ description: l.description, quantity: l.quantity, unit: amountInput(l.unit_cents, d.currency), tax_rate_id: l.tax_rate_id ?? "" }));
 
 export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   const base = opts.base.replace(/\/+$/, "");
@@ -281,6 +263,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   const links = opts.nav ?? [
     { href: qbase, label: `${opts.word ?? "Quote"}s` },
     { href: base, label: "Invoices" },
+    { href: `${base}/recurring`, label: "Recurring" },
   ];
   const stripeOf = opts.stripe ?? ((c: Ctx) => stripeFrom(envOf(c)));
   const doc = { business: opts.business, timeZone: opts.timeZone, word: opts.word };
@@ -803,6 +786,8 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       from payments where ref_type = 'invoice' and ref_id = ${inv.id}::text and status in ('paid', 'refunded', 'partially_refunded')
       order by coalesce(paid_at, created_at)`;
     const owes = inv.status === "open" || inv.status === "uncollectible";
+    // The card on file a charge would use (the mirror; the charge page reads Stripe first).
+    const card = inv.status === "draft" || inv.status === "open" ? await defaultCard(getDb(c), inv.email, inv.livemode ?? false) : null;
     const paidTotal = paid.reduce((n, p) => n + Number(p.amount_cents), 0);
     // Jobber's More actions: everything but the one next step, in one menu.
     const more = [
@@ -810,6 +795,8 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       !inv.pdf_url ? <a href={`${self}/document`} target="_blank" class={menuItem}>Preview</a> : null,
       inv.hosted_url && inv.status !== "void" ? <a href={inv.hosted_url} target="_blank" rel="noopener" class={menuItem}>Payment page</a> : null,
       inv.pdf_url ? <a href={inv.pdf_url} target="_blank" rel="noopener" class={menuItem}>PDF</a> : null,
+      inv.status === "open" && inv.sent_at && card ? <a href={`${self}/charge`} class={menuItem}>Charge {cardName(card)}</a> : null,
+      inv.status === "open" && inv.sent_at ? <a href={`${self}/email-page`} class={menuItem}>Email them the payment page</a> : null,
       inv.status === "open" ? <a href={`${self}/uncollectible`} class={menuItem}>Write off</a> : null,
       // Not once anything is paid on it: Stripe refuses, so Write off is the way.
       owes && !paidTotal ? <a href={`${self}/void`} class={menuItem}>Void</a> : null,
@@ -838,7 +825,8 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       <>
         {inv.payment_failed_at && inv.status === "open" ? (
           <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">
-            A payment attempt failed <When at={inv.payment_failed_at} timeZone={opts.timeZone} />. The invoice is still open on their payment page.
+            A payment attempt failed <When at={inv.payment_failed_at} timeZone={opts.timeZone} />. The invoice is still open on their payment page.{" "}
+            <a href={`${self}/email-page`}>Email them the payment page</a>{card ? <> or <a href={`${self}/charge`}>charge {cardName(card)} again</a></> : null}.
           </p>
         ) : null}
         <div class="grid gap-4 md:grid-cols-3">
@@ -875,6 +863,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
                 { label: "Bill to", value: <Party doc={inv} href={linked.customer} /> },
                 inv.due_date ? { label: "Due", value: <When at={`${inv.due_date}T00:00:00Z`} timeZone="UTC" day /> } : { label: "Payment due", value: `${inv.days_until_due} ${inv.days_until_due === 1 ? "day" : "days"} after it is sent` },
                 { label: "Sent", value: inv.sent_at ? <When at={inv.sent_at} timeZone={opts.timeZone} /> : null },
+                { label: "Paid by", value: inv.sent_at && inv.collect === "charge" ? "Their card on file" : null },
                 { label: "Paid", value: inv.paid_at ? <When at={inv.paid_at} timeZone={opts.timeZone} /> : null },
                 { label: "Quote", value: quote ? <a href={`${qbase}/${quote.id}`}>Quote {quote.number}</a> : null },
                 ...(linked.more ?? []),
@@ -918,13 +907,28 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 
   // Each Stripe action: a page that says exactly what will happen, then its POST.
   type Act = { path: string; title: string; allowed: (i: Invoice, c: Ctx) => boolean | Promise<boolean>; say: (i: Invoice) => string; button: string;
-    run: (c: Ctx, i: Invoice) => Promise<{ ok: true } | { ok: false; message: string }>; done: string };
+    run: (c: Ctx, i: Invoice, body: Record<string, unknown>) => Promise<{ ok: true } | { ok: false; message: string }>; done: string | ((body: Record<string, unknown>) => string) };
+  const cardOf = (c: Ctx, i: Invoice) => defaultCard(getDb(c), i.email, i.livemode ?? false);
   const acts: Act[] = [
     {
-      path: "send", title: "Send invoice", button: "Send invoice", done: "invoice-sent",
+      path: "send", title: "Send invoice", button: "Email it to pay", done: (b) => (str(b.collect) === "charge" ? "invoice-charged" : "invoice-sent"),
       allowed: (i) => i.status === "draft" || (i.status === "open" && !i.sent_at),
       say: (i) => `Stripe makes this invoice in your Stripe account and emails it to ${i.email}: ${money(i.total_cents, i.currency)}, due ${i.days_until_due} days after it is sent. They pay on Stripe's page. After this the invoice no longer changes here.`,
-      run: async (c, i) => sendInvoice(getDb(c), stripeOf(c), i.id, c.get("user")),
+      run: async (c, i, b) => sendInvoice(getDb(c), stripeOf(c), i.id, c.get("user"), { collect: str(b.collect) === "charge" ? "charge" : "email", timeZone: opts.timeZone }),
+    },
+    {
+      path: "charge", title: "Charge card", button: "Charge the card", done: "invoice-charged",
+      allowed: async (i, c) => i.status === "open" && !!i.sent_at && !!(await cardOf(c, i)),
+      say: (i) => `What is left on this invoice is charged now to the card ${i.name ?? i.email} saved. Charge a card only with their agreement to pay this way (a signed proposal that says so is that).`,
+      run: (c, i) => chargeInvoice(getDb(c), stripeOf(c), i.id, c.get("user")),
+    },
+    {
+      path: "email-page", title: "Email the payment page", button: "Email the payment page", done: "page-emailed",
+      allowed: (i) => i.status === "open" && !!i.stripe_invoice_id,
+      say: (i) => i.collect === "charge"
+        ? `${i.email} is emailed from your own address this invoice's payment page, where they can pay with any card or confirm the charge their bank asked about. Stripe does not email the page of an invoice it charges.`
+        : `Stripe emails ${i.email} this invoice's payment page, where they can pay with any card.`,
+      run: (c, i) => emailPaymentPage(getDb(c), stripeOf(c), i.id, { send: (mail) => send(c, mail), business: opts.business, replyTo: c.get("user") }),
     },
     {
       path: "void", title: "Void", button: "Void the invoice", done: "asked-void",
@@ -948,14 +952,22 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       if (!(await act.allowed(inv, c))) return back(c, self, "not-now");
       const problem = c.req.query("problem");
       const ready = await stripeReady(c);
+      // Send offers Charge only when they saved a card (the mirror; the charge reads Stripe first).
+      const card = act.path === "send" ? await cardOf(c, inv) : null;
       return framed(c, base, { title: inv.number ? `${act.title}: invoice ${inv.number}` : `${act.title} to ${inv.name || inv.email}`, back: { href: self, label: inv.number ? `Invoice ${inv.number}` : "Draft invoice" } }, (
         <>
           {problem ? <p role="alert" class={"mb-4 " + alertClass}>{problem}</p> : null}
           {ready ? null : needStripe}
           <Section title="What happens" class="max-w-2xl">
             <p class="mb-4 max-w-prose">{act.say(inv)}</p>
-            <form method="post" action={`${self}/${act.path}`} class="flex items-center gap-4">
-              {ready ? <button class={primaryClass}>{act.button}</button> : null}
+            {act.path === "send" && card && ready ? (
+              <p class="mb-4 max-w-prose">
+                Or charge {cardName(card)}, the card they saved, now: no email to pay. Charge a card only with their agreement to pay this way; a signed proposal that says so is that.
+              </p>
+            ) : null}
+            <form method="post" action={`${self}/${act.path}`} class="flex flex-wrap items-center gap-4">
+              {ready ? <button class={primaryClass} name="collect" value="email">{act.button}</button> : null}
+              {ready && act.path === "send" && card ? <button class={buttonClass} name="collect" value="charge">Charge {cardName(card)}</button> : null}
               {act.path === "send" ? <a href={`${self}/document`} target="_blank" class={buttonClass}>Preview the invoice</a> : null}
               <a href={self} class="text-label text-ink-2">Cancel</a>
             </form>
@@ -969,12 +981,28 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       const self = `${base}/${inv.id}`;
       if (!(await act.allowed(inv, c))) return back(c, self, "not-now");
       if (!(await stripeReady(c))) return c.redirect(`${self}/${act.path}`, 303);
-      const r = await act.run(c, inv);
-      if (!r.ok) return c.redirect(listUrl(`${self}/${act.path}`, { problem: r.message }), 303);
+      const body = await c.req.parseBody();
+      const r = await act.run(c, inv, body);
+      if (!r.ok) {
+        // A refused charge sent the invoice all the same: its page says so and offers what next.
+        if ("reason" in r && (r.reason === "declined" || r.reason === "action")) return back(c, self, "charge-refused");
+        return c.redirect(listUrl(`${self}/${act.path}`, { problem: r.message }), 303);
+      }
       if (act.path === "send") await sent(c, { kind: "invoice", id: inv.id, email: inv.email });
-      return back(c, self, act.done);
+      return back(c, self, typeof act.done === "string" ? act.done : act.done(body));
     });
   }
+
+  // ---- recurring invoices and saved cards (recurring-admin.tsx) ------------
+
+  recurringRoutes(app, {
+    getDb, base, timeZone: opts.timeZone, currency: (opts.currency ?? "usd").toLowerCase(), daysUntilDue: opts.daysUntilDue ?? 30, source: opts.source,
+    framed, back, stripeOf, More, Lines, menuItem, menuButton, customerHref: opts.customerHref, word: W,
+    quoteChanged: async (c, quoteId) => {
+      const qt = opts.proposal ? await quoteById(getDb(c), quoteId) : null;
+      if (qt) await opts.proposal!.saved(c, qt);
+    },
+  });
 
   // ---- tax rates -------------------------------------------------------------
 
@@ -1143,7 +1171,6 @@ export function Lines({ qt, rates }: { qt: { currency: string; subtotal_cents: s
   );
 }
 
-const BLANK_ROWS = 3;
 
 /**
  * A quote or invoice, new or being edited; `submit` says which: Create quote when it posts to the list (a new one), Save when to its own page.
@@ -1152,57 +1179,15 @@ const BLANK_ROWS = 3;
 function DocForm({ kind, action, v, errors, rates, cancel, submit, taxPage, currency }: { kind: "quote" | "invoice"; action: string; v: FormValues; errors: Errors; rates: TaxRate[]; cancel: string; submit: string; taxPage: string; currency?: string }) {
   const ownCurrency = !!currency && v.currency.toLowerCase() === currency.toLowerCase() && !errors.currency;
   const err = (k: string) => (errors[k] ? <span class="text-ink" id={`err-${k.replace(/\./g, "-")}`}>{errors[k]}</span> : null);
-  const offered = rates.filter((r) => r.active || v.lines.some((l) => l.tax_rate_id === r.id));
-  const rows = [...v.lines, ...Array.from({ length: Math.max(BLANK_ROWS, 5 - v.lines.length) }, () => ({ description: "", quantity: "", unit: "", tax_rate_id: "" }))];
   const problems = Object.keys(errors).length;
-  const tax = docTax(v.lines.filter((l) => l.description || l.unit));
-  const mixed = tax === "mixed";
-  const taxError = Object.entries(errors).find(([k]) => k.endsWith(".tax_rate_id"))?.[1];
   return (
     <form method="post" action={action} class="flex flex-col gap-4">
       {problems ? <p role="alert" class={alertClass}>Fix what is marked below. Nothing was saved.</p> : null}
       {errors.status ? <p role="alert" class={alertClass}>{errors.status}</p> : null}
       <input type="hidden" name="visit_id" value={v.visit_id} />
       {kind === "quote" ? <input type="hidden" name="deal_id" value={v.deal_id} /> : null}
-      <Section title="Customer">
-        <div class="grid gap-3 sm:grid-cols-2">
-          <label class={fieldClass}>Email<input name="email" type="email" required value={v.email} maxlength={254} class={controlClass} />{err("email")}</label>
-          <label class={fieldClass}>Name<input name="name" value={v.name} maxlength={200} class={controlClass} />{err("name")}</label>
-          <label class={fieldClass}>Phone<input name="phone" type="tel" value={v.phone} maxlength={50} class={controlClass} />{err("phone")}</label>
-          <label class={fieldClass}>Address<input name="address" value={v.address} maxlength={500} autocomplete="off" class={controlClass} />{err("address")}</label>
-        </div>
-      </Section>
-      <Section title="Line items">
-        <p class="mb-3 text-label text-ink-3">Blank rows are left out. Save to get more rows.</p>
-        {err("lines")}
-        <div class="flex flex-col gap-3">
-          {rows.map((l, i) => {
-            // The column names show once, over the first row; each row's own are for a phone and a screen reader.
-            const name = (text: string) => <span class={i ? "sm:sr-only" : ""}>{text}</span>;
-            return (
-            <fieldset class={"grid gap-2 sm:grid-cols-12 " + (i ? "border-t border-line pt-3 sm:border-0 sm:pt-0" : "")}>
-              <legend class="sr-only">Line {i + 1}</legend>
-              <label class={fieldClass + " sm:col-span-8"}>{name("Description")}<input name="description" value={l.description} maxlength={500} class={controlClass} />{err(`lines.${i}.description`)}</label>
-              <label class={fieldClass + " sm:col-span-2"}>{name("Qty")}<input name="quantity" value={l.quantity} placeholder="1" inputmode="decimal" class={controlClass} />{err(`lines.${i}.quantity`)}</label>
-              <label class={fieldClass + " sm:col-span-2"}>{name("Price")}<input name="unit" value={l.unit} inputmode="decimal" class={controlClass} />{err(`lines.${i}.unit`)}</label>
-              {mixed ? <input type="hidden" name="tax_rate_id" value={l.tax_rate_id} /> : null}
-            </fieldset>
-            );
-          })}
-        </div>
-        {/* One tax for the whole document, none unless chosen; rates are kept on their own page. */}
-        <div class="mt-4 flex flex-wrap items-end gap-3 border-t border-line pt-4">
-          <label class={fieldClass}>Tax
-            <Select name="tax" aria-describedby={taxError ? "tax-error" : undefined}>
-              <option value="">No tax</option>
-              {offered.map((r) => <option value={r.id} selected={r.id === tax}>{r.name} ({percentText(r.percent_bp)})</option>)}
-              {mixed ? <option value="mixed" selected>Different on each line</option> : null}
-            </Select>
-          </label>
-          <a href={taxPage} class="pb-2 text-label text-ink-2">Manage tax rates</a>
-          <FieldError id="tax-error" text={taxError} />
-        </div>
-      </Section>
+      <CustomerFields v={v} errors={errors} />
+      <LineItems lines={v.lines} errors={errors} rates={rates} taxPage={taxPage} />
       <Section title={kind === "quote" ? "Terms" : "Payment"}>
         <div class="grid gap-3 sm:grid-cols-2">
           {ownCurrency ? <input type="hidden" name="currency" value={v.currency} /> : <label class={fieldClass}>Currency<input name="currency" value={v.currency} maxlength={3} class={controlClass} />{err("currency")}</label>}

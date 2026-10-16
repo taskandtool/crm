@@ -10,10 +10,10 @@ import { applySchema } from "../../data/migrate";
 import { scratch, why } from "../../data/test/scratch";
 
 const runner = fileURLToPath(new URL("./run-cli.ts", import.meta.url));
-const run = (which: "quotes" | "invoices", args: string[], db = "") =>
+const run = (which: "quotes" | "invoices" | "recurring", args: string[], db = "") =>
   spawnSync(process.execPath, ["--import", "tsx", runner, which, ...args], { encoding: "utf8", env: { ...process.env, CLI_DB: db } });
 
-for (const which of ["quotes", "invoices"] as const) {
+for (const which of ["quotes", "invoices", "recurring"] as const) {
   for (const h of ["--help", "-h"]) {
     test(`${which} ${h} prints the usage and exits 0`, () => {
       const r = run(which, [h]);
@@ -119,5 +119,33 @@ test("quotes and invoices, end to end short of sending", { skip: !process.env.TE
     assert.equal(r.stdout, "invoices owed: ann@example.com owes nothing on an open invoice\n");
   } finally {
     await t.drop();
+  }
+});
+
+test("recurring refuses a schedule it cannot read before opening the database; adds only with --confirm", async (t) => {
+  for (const [args, said] of [
+    [["add", "ann@example.com", "--every", "fortnightly"], /^recurring add: --every fortnightly: write it as week, 2 weeks/],
+    [["add", "ann@example.com", "--mode", "auto"], /^recurring add: --mode is one of draft, send, charge/],
+    [["edit", "3", "--quote", "4"], /^recurring edit: --quote takes a quote's id, on add/],
+  ] as const) {
+    const r = run("recurring", [...args]);
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, said);
+  }
+  const s = await scratch();
+  if (!s) return t.skip(why);
+  try {
+    for (const f of ["../../payments/schema.sql", "../schema.sql"]) await applySchema(s.db, readFileSync(fileURLToPath(new URL(f, import.meta.url)), "utf8"));
+    const args = ["add", "ann@example.com", "--name", "Maintenance plan", "--line", "Monthly care|300", "--first", "2026-11-01", "--every", "quarter", "--mode", "charge", "--times", "4"];
+    let r = run("recurring", args, s.url);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /^recurring add: would add Maintenance plan for ann@example\.com/);
+    assert.match(r.stdout, /An invoice for \$300\.00, every 3 months on the 1st from Nov 1, 2026 for 4 invoices \(the last on Aug 1, 2027\), charged to their card/);
+    assert.equal((await s.db.sql`select count(*)::int as n from recurring_invoices`)[0].n, 0, "a preview saves nothing");
+    r = run("recurring", [...args, "--confirm"], s.url);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /^recurring add: added #1/);
+  } finally {
+    await s.drop();
   }
 });

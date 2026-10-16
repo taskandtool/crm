@@ -13,6 +13,7 @@ import { taxRates, type TaxRate } from "../payments/tax";
 import { newToken, tokenHash, TOKEN_SHAPE } from "../data/token";
 import { EDITABLE, isEditable, quoteById, type Quote } from "../invoices/quotes";
 import type { Errors, Saved, SavedLine } from "../invoices/lines";
+import { describe, describeForCustomer, recurringList, type Recurring } from "../invoices/recurring";
 import { COMPONENTS, PICKABLE, type PageData } from "./components";
 import { renderPage } from "./page";
 
@@ -145,8 +146,22 @@ function depositCents(lines: SavedLine[], rates: TaxRate[], pct: number): number
   return total;
 }
 
-/** What signing does, in a sentence for the customer (printed under the total) and one for the team. */
-export function afterSign(p: Pick<Proposal, "first_invoice" | "deposit_percent">, qt: Quote & { lines: SavedLine[] }, rates: TaxRate[], locale?: string): { customer: string; team: string } {
+/**
+ * What signing does, in a sentence for the customer (printed under the total)
+ * and one for the team: the first invoice, then any recurring invoice waiting
+ * on the quote ("Then, recurring"), shown beside the total, never added to it.
+ */
+export function afterSign(p: Pick<Proposal, "first_invoice" | "deposit_percent">, qt: Quote & { lines: SavedLine[] }, rates: TaxRate[], locale?: string, recurring: Recurring[] = []): { customer: string; team: string } {
+  const first = firstSentence(p, qt, rates, locale);
+  if (!recurring.length) return first;
+  const none = p.first_invoice === "none";
+  return {
+    customer: `${none ? "" : first.customer + " "}${recurring.map(describeForCustomer).join(" ")}`,
+    team: `${none ? "When they sign: a recurring invoice starts." : `${first.team} Then a recurring invoice starts.`} ${recurring.map((r) => describe(r)).join(" ")}`,
+  };
+}
+
+function firstSentence(p: Pick<Proposal, "first_invoice" | "deposit_percent">, qt: Quote & { lines: SavedLine[] }, rates: TaxRate[], locale?: string): { customer: string; team: string } {
   const m = (c: number | string) => formatMoney(c, qt.currency, locale);
   const pct = p.deposit_percent;
   const amount = pct ? depositCents(qt.lines, rates, pct) : Number(qt.total_cents);
@@ -168,11 +183,11 @@ export async function pageFor(db: Db, quoteId: string, opts: ProposalOpts): Prom
   const qt = await quoteById(db, quoteId);
   if (!qt) return null;
   await ensureProposal(db, qt);
-  const [p, keys, rates] = await Promise.all([proposalOf(db, quoteId), chosenKeys(db, quoteId), taxRates(db)]);
+  const [p, keys, rates, recurring] = await Promise.all([proposalOf(db, quoteId), chosenKeys(db, quoteId), taxRates(db), recurringList(db, { quoteId })]);
   const data: PageData = {
     word: opts.word, business: opts.business, timeZone: opts.timeZone, locale: opts.locale, quote: qt, rates,
     title: p?.title?.trim() || `${opts.word} ${qt.number}`,
-    afterSign: afterSign(p!, qt, rates, opts.locale).customer,
+    afterSign: afterSign(p!, qt, rates, opts.locale, recurring.filter((r) => r.status !== "ended")).customer,
   };
   const html = renderPage(data, keys);
   return { html, sha: await tokenHash(html), bytes: new TextEncoder().encode(html).length };

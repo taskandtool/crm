@@ -30,7 +30,12 @@ import {
   createQuote, decideQuote, expireQuote, markSent, quoteById, quotesFor, quotesPage, saveQuote, shownStatus, QUOTE_STATUSES,
   type Quote, type QuoteFields, type QuoteStatus,
 } from "./quotes";
-import { markUncollectible, paidSoFar, PAYMENT_METHODS, recordPayment, sendInvoice, voidInvoice } from "./stripe";
+import { cardName, chargeCard, defaultCard } from "./cards";
+import {
+  createRecurring, describe, endRecurring, invoicesOf, makeNow, MODES, pauseRecurring, periodLabel, previewRecurring, recurringById, recurringList, resumeRecurring,
+  saveRecurring, shortDay, type Recurring, type RecurringFields,
+} from "./recurring";
+import { chargeInvoice, emailPaymentPage, markUncollectible, paidSoFar, PAYMENT_METHODS, recordPayment, sendInvoice, voidInvoice } from "./stripe";
 
 /** Someone a quote or invoice is for, as the app knows them. */
 export type Person = { email: string | null; name: string | null; phone: string | null; address: string | null };
@@ -64,6 +69,8 @@ export type InvoicesCli = {
   more?: { help: string; commands: Record<string, Extra>; flags?: Record<string, string[]> };
   /** What the business calls a quote: "Quote" (default), "Proposal" or "Estimate". */
   word?: string;
+  /** recurring.mjs: a recurring invoice on a quote changed, so the app re-makes what the quote shows (default: proposal.saved). */
+  quoteSaved?: (db: Db, qt: Quote) => Promise<void>;
   /** Quotes as the app's own pages at a link the customer reads and accepts (the CRM's proposals). */
   proposal?: {
     /** After a quote is added or edited here: the app keeps its page current. */
@@ -372,9 +379,9 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
 const INVOICE_FIELDS = ["line", "days", "notes", "event", "currency", "as"];
 const INVOICE_FLAGS: Record<string, string[]> = {
   list: ["status", "find", "limit", "customer"], show: [], owed: [], add: INVOICE_FIELDS, edit: INVOICE_FIELDS, "from-quote": ["deposit", "rest", "as"],
-  discard: ["as"], send: ["confirm", "as"], "record-payment": ["amount", "method", "on", "reference", "confirm", "as"], void: ["confirm", "as"], uncollectible: ["confirm", "as"],
+  discard: ["as"], send: ["charge", "confirm", "as"], charge: ["confirm", "as"], "email-page": ["confirm", "as"], "record-payment": ["amount", "method", "on", "reference", "confirm", "as"], void: ["confirm", "as"], uncollectible: ["confirm", "as"],
 };
-const INVOICE_ARITY: Record<string, number> = { list: 0, show: 1, owed: 1, add: 1, edit: 1, "from-quote": 1, discard: 1, send: 1, "record-payment": 1, void: 1, uncollectible: 1 };
+const INVOICE_ARITY: Record<string, number> = { list: 0, show: 1, owed: 1, add: 1, edit: 1, "from-quote": 1, discard: 1, send: 1, charge: 1, "email-page": 1, "record-payment": 1, void: 1, uncollectible: 1 };
 
 export async function invoicesCli(argv: string[], cli: InvoicesCli): Promise<void> {
   const days = cli.daysUntilDue ?? 30;
@@ -391,6 +398,9 @@ export async function invoicesCli(argv: string[], cli: InvoicesCli): Promise<voi
   edit <id> [the add flags]            a draft not yet in Stripe; --line replaces every line
   discard <id>                         a draft not yet in Stripe: kept as void
   send <id> | void <id> | uncollectible <id>
+  send <id> --charge                   charged to the card they saved, not emailed to pay
+  charge <id>                          an open invoice, charged now to their card (again, after a refusal)
+  email-page <id>                      Stripe emails them an open invoice's payment page (a refused or unconfirmed charge)
   record-payment <id> [--amount 120.50] [--method ${PAYMENT_METHODS.map((m) => `"${m}"`).join("|")}] [--on YYYY-MM-DD] [--reference r]
                                        paid another way, all that is owed (the default) or part
                                        prints exactly what would happen; does nothing
@@ -398,14 +408,16 @@ export async function invoicesCli(argv: string[], cli: InvoicesCli): Promise<voi
 ${cli.more?.help ?? ""}
 Stripe emails the invoice and hosts the page they pay on. Paid, void and
 uncollectible arrive from Stripe's webhook, a few seconds after: show it to
-see. record-payment is for cash, a check or a transfer; it charges nothing, and
+see. Charge a card only with the customer's agreement to pay that way (a
+signed proposal that says so is that); a card is saved when they pay an
+invoice on Stripe's page. record-payment is for cash, a check or a transfer; it charges nothing, and
 the invoice stays open until nothing is owed. --as records who acted.
 
 Prints what happened first, then Next:. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`;
   const a = parseArgs(argv);
   const [cmd, ...rest] = a._;
   if (cli.off && has(a, "help")) console.log(cli.off + "\n");
-  const commands = ["list", "show", "owed", "add", "edit", "from-quote", "discard", "send", "record-payment", "void", "uncollectible", ...Object.keys(cli.more?.commands ?? {})];
+  const commands = ["list", "show", "owed", "add", "edit", "from-quote", "discard", "send", "charge", "email-page", "record-payment", "void", "uncollectible", ...Object.keys(cli.more?.commands ?? {})];
   usage(a, cmd, commands, HELP, "invoices", { ...INVOICE_FLAGS, ...cli.more?.flags });
   if (cli.off) fail(cli.off);
   const at = `invoices ${cmd}`;
@@ -566,12 +578,49 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         });
       }
 
+      case "charge":
+      case "email-page": {
+        const inv = await invoiceOr(db, rest[0]);
+        if (inv.status !== "open") fail(`${at}: invoice #${inv.id} is ${inv.status}; only an open one`, `node scripts/invoices.mjs show ${inv.id}`);
+        if (cmd === "charge" && !inv.sent_at) fail(`${at}: invoice #${inv.id} is not sent yet`, `node scripts/invoices.mjs send ${inv.id} --charge`);
+        const card = cmd === "charge" ? await defaultCard(db, inv.email, inv.livemode ?? false) : null;
+        if (cmd === "charge" && !card) fail(`${at}: ${inv.name ?? inv.email} has no card on file; a card is saved when they pay an invoice on Stripe's page`, `node scripts/invoices.mjs email-page ${inv.id}`);
+        const say = cmd === "charge"
+          ? `What is left on invoice ${inv.number ?? "#" + inv.id} is charged now to ${cardName(card!)}, the card ${inv.email} saved.`
+          : inv.collect === "charge"
+            ? `${inv.email} is emailed from the owner's own address the payment page of invoice ${inv.number ?? "#" + inv.id}, where they pay with any card or confirm a charge (Stripe does not email the page of an invoice it charges).`
+            : `Stripe emails ${inv.email} the payment page of invoice ${inv.number ?? "#" + inv.id}, where they pay with any card.`;
+        if (!has(a, "confirm")) {
+          if (json) return out(true, { would: say }, String);
+          return done(at, fmt(inv), { lines: [say], waits: `node scripts/invoices.mjs ${cmd} ${inv.id}` });
+        }
+        const stripe = stripeOr(cli.env, at);
+        const r = cmd === "charge" ? await chargeInvoice(db, stripe, inv.id, by)
+          : await emailPaymentPage(db, stripe, inv.id, { send: (mail) => sendEmail(cli.env, mail), business: cli.business, replyTo: by.includes("@") ? by : null });
+        if (!r.ok) fail(`${at}: ${r.message}`, cmd === "charge" ? `node scripts/invoices.mjs email-page ${inv.id}` : `node scripts/invoices.mjs show ${inv.id}`);
+        if (json) return out(true, { done: cmd }, String);
+        return done(at, cmd === "charge" ? `charged ${cardName(card!)} for invoice #${inv.id}` : `emailed ${inv.email} the payment page`, {
+          lines: cmd === "charge" ? ["it turns paid here when Stripe's event arrives, a few seconds after"] : [],
+          next: `node scripts/invoices.mjs show ${inv.id}`,
+        });
+      }
+
       case "send":
       case "void":
       case "uncollectible": {
         const inv = await invoiceOr(db, rest[0]);
+        const charge = cmd === "send" && has(a, "charge");
+        // The card a charge would use, read from Stripe (a preview, so the owner sees which).
+        const card = charge && !inv.sent_at ? await (async () => {
+          const stripe = stripeOr(cli.env, at);
+          const { livemode } = await stripe<{ livemode: boolean }>("GET", "/v1/balance");
+          return chargeCard(db, stripe, inv.email, livemode);
+        })() : null;
+        if (charge && !inv.sent_at && !card) fail(`${at}: ${inv.name ?? inv.email} has no card on file; a card is saved when they pay an invoice on Stripe's page`, `node scripts/invoices.mjs send ${inv.id}`);
         const say = {
-          send: `Stripe makes invoice #${inv.id} in the owner's Stripe account and emails it to ${inv.email}: ${money(inv.total_cents, inv.currency)}, due ${inv.days_until_due} days after it is sent. After this it no longer changes here.`,
+          send: charge
+            ? `Stripe makes invoice #${inv.id} in the owner's Stripe account and charges ${card ? cardName(card) : "the card"}, the card ${inv.email} saved: ${money(inv.total_cents, inv.currency)}. After this it no longer changes here.`
+            : `Stripe makes invoice #${inv.id} in the owner's Stripe account and emails it to ${inv.email}: ${money(inv.total_cents, inv.currency)}, due ${inv.days_until_due} days after it is sent. After this it no longer changes here.`,
           void: `Invoice ${inv.number ?? "#" + inv.id} is voided in Stripe: ${inv.email} can no longer pay it. It cannot be undone.`,
           uncollectible: `Invoice ${inv.number ?? "#" + inv.id} is written off in Stripe. It can still be paid or voided later.`,
         }[cmd];
@@ -589,8 +638,8 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         if (cmd === "void" && (await paidSoFar(db, inv.id)) > 0) fail(`${at}: part of invoice #${inv.id} is paid; Stripe will not void it. Write it off instead`, `node scripts/invoices.mjs uncollectible ${inv.id}`);
         const stripe = stripeOr(cli.env, at);
         if (cmd === "send") {
-          const r = await sendInvoice(db, stripe, inv.id, by);
-          if (!r.ok) fail(`${at}: ${r.message}`, `node scripts/invoices.mjs show ${inv.id}`);
+          const r = await sendInvoice(db, stripe, inv.id, by, { collect: charge ? "charge" : "email", timeZone: cli.timeZone });
+          if (!r.ok) fail(`${at}: ${r.message}`, r.reason === "declined" || r.reason === "action" ? `node scripts/invoices.mjs email-page ${inv.id}` : `node scripts/invoices.mjs show ${inv.id}`);
           await cli.afterSend?.(db, { kind: "invoice", id: inv.id, email: inv.email }, by);
           if (json) return out(true, r.invoice, String);
           return done(at, `sent ${fmt(r.invoice)}`, { lines: [`their payment page: ${r.invoice.hosted_url ?? "(Stripe will add it)"}`], next: `node scripts/invoices.mjs show ${inv.id}` });
@@ -599,6 +648,178 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         if (!r.ok) fail(`${at}: ${r.message}`, `node scripts/invoices.mjs show ${inv.id}`);
         if (json) return out(true, { asked: cmd }, String);
         return done(at, `Stripe has it for invoice #${inv.id}`, { lines: ["it changes here when Stripe's event arrives, a few seconds after"], next: `node scripts/invoices.mjs show ${inv.id}` });
+      }
+    }
+  });
+}
+
+// ---- recurring invoices ------------------------------------------------------
+
+const RECURRING_FIELDS = ["name", "every", "first", "ends", "times", "mode", "ahead", "days", "notes", "note-for-team", "owner", "line", "quote", "currency", "confirm", "as"];
+const RECURRING_FLAGS: Record<string, string[]> = {
+  list: ["all", "customer"], show: [], add: RECURRING_FIELDS, edit: RECURRING_FIELDS,
+  pause: ["as"], resume: ["confirm", "as"], end: ["confirm", "as"], "make-now": ["as"],
+};
+const RECURRING_ARITY: Record<string, number> = { list: 0, show: 1, add: 1, edit: 1, pause: 1, resume: 1, end: 1, "make-now": 1 };
+
+/** "month", "2 weeks", "quarter", "year": every n units. */
+function everyOf(v: string | undefined, at: string): { unit: string; every: string } {
+  const t = (v ?? "month").trim().toLowerCase();
+  if (t === "quarter" || t === "quarterly") return { unit: "month", every: "3" };
+  // "monthly" is month, "weekly" week, "yearly" year.
+  const m = /^(?:every\s+)?(\d{1,2})?\s*(week|month|year)s?$/.exec(t.replace(/ly$/, ""));
+  if (!m) misused(`${at}: --every ${v}: write it as week, 2 weeks, month, 3 months, quarter or year`, "node scripts/recurring.mjs add ann@example.com --every month ...");
+  return { unit: m![2], every: m![1] ?? "1" };
+}
+
+/**
+ * Recurring invoices from chat: the same record as the Recurring tab. Adding
+ * or changing one shows what it will do and waits for --confirm, as sending
+ * does: from then on it sends or charges by itself on its dates.
+ */
+export async function recurringCli(argv: string[], cli: InvoicesCli): Promise<void> {
+  const days = cli.daysUntilDue ?? 30;
+  const HELP = `recurring.mjs <command> [...] [--json] [--as <email>]      invoices made on a schedule
+
+  list [--all]                         every recurring invoice not ended (--all: ended too), next date first
+  list --customer <who>
+  show <id>                            what it does, its next date, the invoices it made
+  add <who> --name "Maintenance plan" --line "<what>|[qty|]<price>[|<tax rate>]"... --first YYYY-MM-DD
+      [--every month|2 weeks|quarter|year] [--mode draft|send|charge] [--ends YYYY-MM-DD | --times 12]
+      [--ahead 3] [--days ${days}] [--notes "to the customer"] [--note-for-team "add 12% of ad spend"] [--owner <who gets its tasks>]
+      [--quote <id>]                   with a quote not yet accepted: it starts at their yes
+  edit <id> [the add flags]            from the next invoice; how often and the first date are fixed once one is made
+  pause <id> | resume <id> | end <id>
+  make-now <id>                        the next period's invoice now, as a draft to check and send
+  add, edit, resume and end print what they would do; ... --confirm does it
+
+--mode: draft (a draft --ahead days early, with a task: an amount that
+changes), send (Stripe emails it to pay; the default), charge (the card they
+saved; emailed to pay until they have one). A month's or year's first date
+is the 1st to the 28th. Dates are in ${cli.timeZone}. A daily scheduled job
+("Recurring invoices") makes each one on its date.
+
+Prints what happened first, then Next:. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`;
+  const a = parseArgs(argv);
+  const [cmd, ...rest] = a._;
+  usage(a, cmd, Object.keys(RECURRING_FLAGS), HELP, "recurring", RECURRING_FLAGS);
+  if (cli.off) fail(cli.off);
+  const at = `recurring ${cmd}`;
+  noMore(rest, RECURRING_ARITY[cmd], at);
+  const json = has(a, "json");
+  const fmt = (r: Recurring) => [`#${r.id}`, `[${r.status}]`, r.name ? `${r.name} <${r.email}>` : r.email, r.title, money(r.total_cents, r.currency),
+    r.status === "active" ? `next ${r.next_on}` : "", r.mode].filter(Boolean).join("  ");
+  const one = async (db: Db, id: string | undefined) => {
+    if (!id || !ID.test(id)) misused(`${at}: name a recurring invoice by its id`, "node scripts/recurring.mjs list");
+    return (await recurringById(db, id)) ?? fail(`${at}: no recurring invoice ${id}`, "node scripts/recurring.mjs list");
+  };
+  // Wrong input is refused before the database is opened.
+  const every = (cmd === "add" || cmd === "edit") && has(a, "every") ? everyOf(flag(a, "every"), at) : null;
+  if (has(a, "mode") && !MODES.includes(flag(a, "mode") as never)) misused(`${at}: --mode is one of ${MODES.join(", ")}`, "node scripts/recurring.mjs --help");
+  if (has(a, "ends") && has(a, "times")) misused(`${at}: --ends or --times, not both`, "node scripts/recurring.mjs --help");
+  const quoteId = flag(a, "quote");
+  if (quoteId !== undefined && (!ID.test(quoteId) || cmd !== "add")) misused(`${at}: --quote takes a quote's id, on add`, "node scripts/quotes.mjs list");
+  const cardFor = async (db: Db, r: Recurring) => (r.mode === "charge" ? await defaultCard(db, r.email, true) ?? await defaultCard(db, r.email, false) : null);
+
+  await cli.withDb(async (db) => {
+    const by = actor(a);
+    switch (cmd) {
+      case "list": {
+        const p = has(a, "customer") ? await personOf(db, cli, flag(a, "customer"), at) : null;
+        const rows = await recurringList(db, p ? { email: p.email } : { all: has(a, "all") });
+        if (json) return out(true, rows, String);
+        return done(at, rows.length ? plural(rows.length, "recurring invoice") : "no recurring invoices", { lines: rows.map(fmt) });
+      }
+      case "show": {
+        const r = await one(db, rest[0]);
+        const card = await cardFor(db, r);
+        const made = await invoicesOf(db, r.id);
+        if (json) return out(true, { ...r, invoices: made }, String);
+        return done(at, fmt(r), {
+          lines: [
+            describe(r, card ? cardName(card) : null),
+            ...r.lines.map((l) => `${l.position}. ${l.description}: ${l.quantity} x ${money(l.unit_cents, r.currency)} = ${money(l.amount_cents, r.currency)}`),
+            r.status === "pending" ? `starts when quote #${r.quote_id} is accepted` : r.status === "active" ? `next: ${shortDay(r.next_on)}` : "",
+            r.note_for_team ? `note for the team: ${r.note_for_team}` : "",
+            ...made.map((i) => `invoice #${i.id} for ${i.period_on ? periodLabel(r.unit, i.period_on) : "?"}: [${i.status}] ${money(i.total_cents, i.currency)}`),
+          ].filter(Boolean),
+        });
+      }
+      case "add":
+      case "edit": {
+        const rates = await taxRates(db);
+        const now = cmd === "edit" ? await one(db, rest[0]) : null;
+        let f: RecurringFields;
+        if (now) {
+          f = {
+            email: now.email, name: now.name, phone: now.phone, address: now.address, currency: now.currency, title: now.title, unit: now.unit,
+            every: String(now.every), first_on: now.first_on, ends: now.ends_after ? "after" : now.ends_on ? "on" : "never", ends_on: now.ends_on, ends_after: now.ends_after,
+            mode: now.mode, days_ahead: now.days_ahead, days_until_due: now.days_until_due, notes: now.notes, note_for_team: now.note_for_team, owner: now.owner,
+            lines: now.lines.map((l) => ({ description: l.description, quantity: l.quantity, unit: amountInput(l.unit_cents, now.currency), tax_rate_id: l.tax_rate_id ?? "" })),
+          };
+        } else {
+          const p = await personOf(db, cli, rest[0], at);
+          f = { ...p, currency: cli.currency, unit: "month", every: "1", mode: "send", days_until_due: String(days), ends: "never", lines: [] };
+        }
+        if (has(a, "name")) f.title = flag(a, "name");
+        if (every) Object.assign(f, every);
+        if (has(a, "first")) f.first_on = flag(a, "first");
+        if (has(a, "ends")) Object.assign(f, flag(a, "ends") === "never" ? { ends: "never" } : { ends: "on", ends_on: flag(a, "ends") });
+        if (has(a, "times")) Object.assign(f, { ends: "after", ends_after: flag(a, "times") });
+        if (has(a, "mode")) f.mode = flag(a, "mode");
+        if (has(a, "ahead")) f.days_ahead = flag(a, "ahead");
+        if (has(a, "days")) f.days_until_due = flag(a, "days");
+        if (has(a, "notes")) f.notes = flag(a, "notes");
+        if (has(a, "note-for-team")) f.note_for_team = flag(a, "note-for-team");
+        if (has(a, "owner")) f.owner = flag(a, "owner");
+        if (has(a, "currency")) f.currency = flag(a, "currency");
+        if (has(a, "line")) f.lines = lineFlags(a, rates, "recurring");
+        const quote = quoteId ? (await quoteById(db, quoteId)) ?? fail(`${at}: no quote ${quoteId}`, "node scripts/quotes.mjs list") : null;
+        const pending = quote && ["draft", "sent", "expired"].includes(quote.status) ? { quoteId: quote.id } : undefined;
+        if (!has(a, "confirm")) {
+          // A dry run: checked, then shown in words; nothing saved.
+          const shown = now ?? null;
+          const preview = await previewRecurring(db, f, now ?? undefined);
+          if (!preview.ok) fail(`${at}: not saved\n${problems(preview.errors)}`, "node scripts/recurring.mjs --help");
+          const words = describe(preview.value, null);
+          if (json) return out(true, { would: words }, String);
+          return done(at, `${shown ? "would save" : "would add"} ${preview.value.title} for ${preview.value.name ?? preview.value.email}`, {
+            lines: [words, pending ? `it starts when quote #${quote!.id} is accepted` : ""].filter(Boolean),
+            waits: `node scripts/recurring.mjs ${argv.filter((x) => x !== "--json").join(" ")}`,
+          });
+        }
+        const r = now ? await saveRecurring(db, now.id, f, by) : await createRecurring(db, f, by, cli.source, { pending });
+        if (!r.ok) fail(`${at}: not saved\n${problems(r.errors)}`, "node scripts/recurring.mjs --help");
+        if (quote?.status === "accepted" && !now) await db.sql`update recurring_invoices set quote_id = ${quote.id}::bigint where id = ${r.value.id}::bigint`;
+        // What the quote shows (the CRM's proposal page) says what follows its yes.
+        const onQuote = pending ? quote : now?.status === "pending" && now.quote_id ? await quoteById(db, now.quote_id) : null;
+        if (onQuote) await (cli.quoteSaved ?? cli.proposal?.saved)?.(db, onQuote);
+        if (json) return out(true, r.value, String);
+        return done(at, `${now ? "saved" : r.value.status === "pending" ? "added, waiting for the quote's yes:" : "added"} ${fmt(r.value)}`, {
+          lines: [describe(r.value, null)],
+          next: `node scripts/recurring.mjs show ${r.value.id}`,
+        });
+      }
+      case "pause":
+      case "resume":
+      case "end": {
+        const r = await one(db, rest[0]);
+        const say = { pause: "Nothing is made until it is resumed.", resume: `It starts again from the next date to come; dates missed while paused are not made. ${describe(r, null)}`, end: "No more invoices are made. Those it made stay. It cannot be restarted." }[cmd];
+        if (cmd !== "pause" && !has(a, "confirm")) {
+          if (json) return out(true, { would: say }, String);
+          return done(at, fmt(r), { lines: [say], waits: `node scripts/recurring.mjs ${cmd} ${r.id}` });
+        }
+        const ok = cmd === "pause" ? await pauseRecurring(db, r.id, by) : cmd === "resume" ? await resumeRecurring(db, r.id, by, todayIn(cli.timeZone)) : await endRecurring(db, r.id, by);
+        if (!ok) fail(`${at}: #${r.id} is ${r.status}`, `node scripts/recurring.mjs show ${r.id}`);
+        if (json) return out(true, { done: cmd }, String);
+        return done(at, `${{ pause: "paused", resume: "resumed", end: "ended" }[cmd]} #${r.id}`, { lines: [say], next: `node scripts/recurring.mjs show ${r.id}` });
+      }
+      case "make-now": {
+        const r = await one(db, rest[0]);
+        const inv = await makeNow(db, r.id, { today: todayIn(cli.timeZone), timeZone: cli.timeZone, stripe: () => stripeOr(cli.env, at), by });
+        if (!inv) fail(`${at}: #${r.id} is ${r.status}, or has ended`, `node scripts/recurring.mjs show ${r.id}`);
+        if (json) return out(true, inv, String);
+        return done(at, `made invoice #${inv!.id} for ${periodLabel(r.unit, inv!.period_on!)} as a draft`, { next: `node scripts/invoices.mjs send ${inv!.id}` });
       }
     }
   });
