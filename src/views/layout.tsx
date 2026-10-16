@@ -5,6 +5,7 @@ import type { Child } from "hono/jsx";
 import { SectionTabs } from "../admin/layout";
 import { dealsCfg, eventsCfg, invoicesCfg, showBooking, vocab } from "../config";
 import { Icon } from "./icons";
+import { UnreadBadge } from "../phone/admin";
 import { inputClass } from "../admin/status";
 import { Avatar, buttonClass } from "./ui";
 
@@ -21,7 +22,7 @@ const creates = [
 /** The sidebar's name: the business on its quotes once it has one, else what this is. */
 const brand = invoicesCfg?.name && !/to fill/i.test(invoicesCfg.name) ? invoicesCfg.name : "CRM";
 
-export type Section = "home" | "notifications" | "leads" | "tasks" | "deals" | "customers" | "schedule" | "quotes" | "invoices" | "settings" | "search";
+export type Section = "home" | "messages" | "notifications" | "leads" | "tasks" | "deals" | "customers" | "schedule" | "quotes" | "invoices" | "settings" | "search";
 
 /**
  * Schedule, as Jobber's: the team's days, as a calendar and as a list. What
@@ -45,6 +46,7 @@ export const SETTINGS = [
   { href: "/stages", label: "Stages and statuses", about: `The ${dealsCfg.one.toLowerCase()} pipeline's stages, and each ${vocab.one.toLowerCase()}'s status.` },
   ...(eventsCfg && showBooking ? [{ href: "/services", label: "Services", about: "What customers book online: how long, where, the price, who takes it, and whether a booking is a deal straight away." }] : []),
   ...(eventsCfg ? [{ href: "/team", label: "Team", about: "Who takes the work: their hours, time off and calendars." }] : []),
+  { href: "/phone", label: "Phone and texts", about: "Your business number: calls that ring your phone, missed-call texts, and the texts that go on their own." },
   ...(invoicesCfg ? [{ href: "/invoices/tax-rates", label: "Tax rates", about: "The taxes you charge on quotes and invoices." }] : []),
 ];
 export const SETTINGS_BACK = { href: "/settings", label: "Settings" };
@@ -105,6 +107,8 @@ export function Layout(props: {
       </a>
     );
   };
+  // Messages is there once the business has a number: asked after the page loads, as the counts are.
+  const messages = <span hx-get={`/nav/messages${section === "messages" ? "?on=1" : ""}`} hx-trigger="load" hx-swap="outerHTML"></span>;
   return (
     <html lang="en">
       <head>
@@ -170,7 +174,7 @@ export function Layout(props: {
             </div>
           </details>
           <nav aria-label="CRM" class="mt-4 flex flex-col gap-0.5">
-            {nav.map((n) => link(n))}
+            {nav.map((n) => (n.section === "home" ? <>{link(n)}{messages}</> : link(n)))}
           </nav>
           <nav aria-label="Settings" class="mt-auto flex flex-col gap-0.5 pt-8">
             {link({ href: "/settings", label: "Settings", section: "settings" })}
@@ -242,5 +246,21 @@ export function WaitingView({ state, error }: { state: string; error: string }) 
         </p>
       </body>
     </html>
+  );
+}
+
+/** Messages in the sidebar (phone skill), with its unread count. */
+export function MessagesLink({ on, unread }: { on: boolean; unread: number }) {
+  return (
+    <a
+      href="/messages"
+      aria-current={on ? "page" : undefined}
+      class={"flex items-center gap-2.5 rounded-control px-2.5 py-2 font-medium no-underline " +
+        (on ? "bg-surface text-ink shadow-card ring-1 ring-line" : "text-ink-2 hover:bg-surface/60 hover:text-ink")}
+    >
+      <Icon name="messages" class={"size-5 " + (on ? "text-ink" : "text-ink-3")} />
+      Messages
+      <UnreadBadge n={unread} />
+    </a>
   );
 }

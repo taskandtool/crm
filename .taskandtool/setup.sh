@@ -14,6 +14,9 @@
 #      Pillow (scripts/proposal-photo.mjs sizes the photographs with it)
 #   4. registers the `web` service (`npm run dev`) so the CRM runs in dev on
 #      the machine's URL, or restarts it after a replacement
+#   5. schedules the automatic texts' job (src/phone-job.ts) every 15
+#      minutes, once: the phone skill's follow-ups, by email until Twilio is
+#      connected
 #
 # The database is not this script's business: the platform grants
 # DATABASE_URL, and the server waits for it and sets up its tables when it
@@ -76,6 +79,22 @@ python3 -c "import PIL" 2>/dev/null || python3 -m pip install --quiet pillow 2>&
 if [ -f "$HOME/tools/taskandtool.py" ]; then
   echo "== serving dev (npm run dev on port 3000)"
   python3 "$HOME/tools/taskandtool.py" serve "npm run dev" --port 3000
+fi
+
+# 5. The automatic texts' job: scheduled once, so a form's follow-ups go (by
+# email until Twilio is connected) from the first day. Never fatal.
+# Matched by its command, so a job the owner renamed is not made again; when
+# the jobs can't be listed, nothing is scheduled (the next run tries again).
+if [ -f "$HOME/tools/taskandtool.py" ]; then
+  if jobs=$(python3 "$HOME/tools/taskandtool.py" list-jobs --json 2>/dev/null); then
+    if ! printf '%s' "$jobs" | grep -q "src/phone-job.ts"; then
+      echo "== scheduling the automatic texts"
+      python3 "$HOME/tools/taskandtool.py" schedule-job "Automatic texts" --when "*/15 * * * *" --command "npx tsx src/phone-job.ts" --team-only \
+        || echo "== warning: the automatic texts' job is not scheduled; run this script again"
+    fi
+  else
+    echo "== warning: couldn't list the jobs, so the automatic texts' job waits for the next run of this script"
+  fi
 fi
 
 echo "== crm starter app setup done"

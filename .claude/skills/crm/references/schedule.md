@@ -48,9 +48,9 @@ connection's slug is not the vendor's name. With no sender nothing is sent.
 Schedule the reminders once, if `python3 ~/tools/taskandtool.py list-jobs`
 does not show them:
 `python3 ~/tools/taskandtool.py schedule-job "Booking reminders" --when "*/15 * * * *" --command "npx tsx src/booking/reminders-job.ts"`.
-A text message instead is a `Send` written against the owner's Twilio
-connection (the `booking` skill's "Messages and reminders"). Never send
-through Task & Tool.
+Texts are the `phone` skill's: the confirmation and the day-before text
+go from the business number once Twilio approves it, beside these emails
+(`node scripts/phone.mjs flows`). Never send through Task & Tool.
 
 Calendars and the booking skill's other rules are in the `booking` skill;
 the calendar sync job is `src/booking/sync.ts` (schedule it as that skill

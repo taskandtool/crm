@@ -146,8 +146,9 @@ test("the manifest follows the platform's rules", () => {
   assert.equal(m.slug, "crm");
   assert.match(m.version, /^\d+\.\d+\.\d+$/);
   assert.deepEqual(m.needs.capabilities, [{ kind: "postgres", strength: "required" }]);
-  // Task & Tool email, so the morning email and new submissions reach the team with nothing set up.
-  assert.deepEqual(m.needs.connections.map((c: { provider: string; strength: string }) => [c.provider, c.strength]), [["taskandtool", "suggested"]]);
+  // Task & Tool email, so the morning email and new submissions reach the team with nothing set up; Twilio for the
+  // business number and Stripe for invoices are suggested, never required (docs/plans/crm-calls-and-texts.md, "Without Twilio").
+  assert.deepEqual(m.needs.connections.map((c: { provider: string; strength: string }) => [c.provider, c.strength]), [["taskandtool", "suggested"], ["twilio", "suggested"], ["stripe", "suggested"]]);
   assert.deepEqual(m.ready, { service: "web" });
   const ids = new Set<string>();
   for (const s of m.suggestions) {

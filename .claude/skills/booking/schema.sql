@@ -223,3 +223,8 @@ create table if not exists booking_changes (
 create index if not exists booking_changes_recent on booking_changes (created_at desc, id desc);
 create index if not exists booking_changes_booking on booking_changes (booking_id);
 comment on table booking_changes is 'A booker''s own move or cancel, through their manage link: when, and from which start to which (none for a cancel).';
+
+-- What a booker agreed to: the words of the texting box they ticked, and when
+-- (the phone skill's Booked and Looking forward texts go only with it).
+alter table bookings add column if not exists text_consent text;
+alter table bookings add column if not exists text_consent_at timestamptz;

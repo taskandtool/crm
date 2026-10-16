@@ -298,6 +298,10 @@ export type BookInput = {
   holdUntil?: Date | null;
   /** Booked by the team for someone (a phone call), not by the booker: no lead, the team has them already. */
   byTeam?: boolean;
+  /** Their lead already open (a text's booking link carried it): the booking joins it rather than making another. */
+  leadId?: string | null;
+  /** The words of the texting box they ticked (the phone skill's), kept on the booking. */
+  textConsent?: string | null;
 };
 
 export type BookResult =
@@ -412,8 +416,12 @@ export async function takeSlot(db: Db, type: BookingType, slot: OpenSlot, input:
   }, null);
   // Booked online by the booker themselves, it is their lead too (customers saveLead), as
   // Jobber's online booking makes a request; a form's booking step has the submission's.
+  if (input.textConsent) await db.sql`update bookings set text_consent = ${input.textConsent}, text_consent_at = now() where id = ${row.id}::bigint`;
   if (who && !input.byTeam && !input.submissionId) {
-    await saveLead(db, { customerId: who.id, source: "booking", title: type.name, bookingId: String(row.id), at: new Date(row.created_at) }, null);
+    const joined = input.leadId && /^\d{1,18}$/.test(input.leadId)
+      ? await db.sql`update leads set booking_id = ${row.id}::bigint, updated_at = now() where id = ${input.leadId}::bigint and customer_id = ${who.id}::bigint and status = 'open' and booking_id is null returning id`
+      : [];
+    if (!joined.length) await saveLead(db, { customerId: who.id, source: "booking", title: type.name, bookingId: String(row.id), at: new Date(row.created_at) }, null);
   }
   return { ok: true, booking: toBooking(row), token };
 }

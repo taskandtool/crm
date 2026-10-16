@@ -30,8 +30,8 @@ for (const script of scripts) {
 
 const READ: Record<string, string[]> = {
   "customers.mjs": ["list"], "events.mjs": ["list"], "stages.mjs": ["list"], "forms.mjs": ["list"],
-  "quotes.mjs": ["list"], "invoices.mjs": ["list"], "import.mjs": ["file.csv"], "export.mjs": [], "migrate.mjs": [],
-  "deals.mjs": ["list"], "tasks.mjs": ["list"], "leads.mjs": ["list"], "proposal-font.mjs": ["Caladea"], "proposal-photo.mjs": ["photo.jpg"], "proposal-read.mjs": ["https://example.com"], "proposal-preview.mjs": [],
+  "quotes.mjs": ["list"], "invoices.mjs": ["list"], "recurring.mjs": ["list"], "import.mjs": ["file.csv"], "export.mjs": [], "migrate.mjs": [],
+  "deals.mjs": ["list"], "tasks.mjs": ["list"], "leads.mjs": ["list"], "proposal-font.mjs": ["Caladea"], "proposal-photo.mjs": ["photo.jpg"], "proposal-read.mjs": ["https://example.com"], "proposal-preview.mjs": [], "phone.mjs": ["status"],
 };
 test("every script is in the bad-input table", () => assert.deepEqual(Object.keys(READ).sort(), [...scripts].sort()));
 

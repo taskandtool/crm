@@ -15,6 +15,7 @@ import { Avatar, dueDayText, timeZone } from "./ui";
 function noticeHref(n: Notice): string | null {
   if (n.kind === "change") return eventsCfg ? `/events/${n.booking_id}` : null;
   if (n.kind === "quote") return invoicesCfg ? `/invoices/quotes/${n.id}` : null;
+  if (n.kind === "phone") return `/messages/${n.remote_key}`;
   return invoicesCfg ? `/invoices/payments/${n.id}` : null;
 }
 
@@ -26,6 +27,10 @@ function Said({ n }: { n: Notice }) {
     return n.starts_at
       ? <>{who} moved {what} to <When at={n.starts_at} timeZone={timeZone} /></>
       : <>{who} cancelled {what} on <When at={n.was_starts_at} timeZone={timeZone} /></>;
+  }
+  if (n.kind === "phone") {
+    if (n.what === "text") return <>{who} texted{n.body ? <>: <span class="text-ink">{n.body.length > 80 ? n.body.slice(0, 80) + "…" : n.body}</span></> : null}</>;
+    return n.what === "voicemail" ? <>{who} left a voicemail</> : <>Missed call from {who}</>;
   }
   const word = invoicesCfg?.word ?? "Quote";
   if (n.kind === "quote") {

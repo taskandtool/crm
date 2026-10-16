@@ -43,6 +43,7 @@ A customer record on Hono (server-rendered JSX, htmx, SortableJS, Postgres).
 | Forms here; quotes as proposals (their components, the link, signing, how they look); setting up invoices, Stripe or the email sender | `references/money.md`, then the `invoices` skill |
 | Writing or changing a proposal component's words | `references/proposal-writing.md` |
 | Shaping the CRM for a business; importing or exporting a list | `references/shaping.md` |
+| The business number, Messages, the automatic texts and their words | the `phone` skill; `node scripts/phone.mjs --help` |
 
 ## Dev, on this machine
 

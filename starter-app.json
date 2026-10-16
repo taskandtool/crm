@@ -1,11 +1,13 @@
 {
   "schema_version": 1,
   "slug": "crm",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "needs": {
     "capabilities": [{ "kind": "postgres", "strength": "required" }],
     "connections": [
-      { "provider": "taskandtool", "strength": "suggested", "why": "Email your team their morning tasks and new submissions" }
+      { "provider": "taskandtool", "strength": "suggested", "why": "Email your team their morning tasks and new submissions" },
+      { "provider": "twilio", "strength": "suggested", "why": "A business number: calls ring your phone, missed calls get a text" },
+      { "provider": "stripe", "strength": "suggested", "why": "Send invoices your customers pay online" }
     ]
   },
   "ready": { "service": "web" },

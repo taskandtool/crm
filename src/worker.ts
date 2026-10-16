@@ -7,8 +7,7 @@
 // never from here.
 import type { ExecutionContext } from "hono";
 import app from "./app";
-import { fromPool } from "./data/pg";
-import { openPool } from "./db/pool";
+import { fromPool, openPool } from "./data/pg";
 import type { Runtime } from "./runtime";
 
 type Bindings = { DATABASE_URL?: string } & Record<string, unknown>;

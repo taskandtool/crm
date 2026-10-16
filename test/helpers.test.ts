@@ -134,7 +134,7 @@ test("small text helpers", () => {
 });
 
 test("one sentence for the tables a project lacks", () => {
-  const none = { submissions: false, forms: false, payments: false, quotes: false, invoices: false };
+  const none = { submissions: false, forms: false, payments: false, quotes: false, invoices: false, communications: false };
   assert.match(missingSentence(none)!, /no form submissions or payments yet/);
   assert.match(missingSentence({ ...none, submissions: true, forms: true })!, /no payments yet/);
   assert.equal(missingSentence({ ...none, submissions: true, payments: true }), null);

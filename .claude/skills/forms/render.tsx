@@ -9,10 +9,16 @@
 // Usually reached through embedForm (routes.tsx), which loads the row and
 // makes the stamp.
 import type { Child } from "hono/jsx";
-import { DRAFT_FIELD, isAnswer, STEP_FIELD, type Field, type Form, type Errors, type Input } from "./fields";
+import { DRAFT_FIELD, isAnswer, phoneField, STEP_FIELD, TEXT_CONSENT_FIELD, type Field, type Form, type Errors, type Input } from "./fields";
 import { SpamFields } from "../data/spam";
 import { REFERRER_FIELD, UTM_FIELD } from "./origin";
 import { formatMoney } from "../payments/money";
+
+/** Words with their https links clickable: the texting box's terms and privacy links. */
+export function LinkedText({ text }: { text: string }) {
+  const parts = text.split(/(https:\/\/[^\s]+[^\s.,;)])/);
+  return <>{parts.map((p, i) => (i % 2 ? <a href={p} target="_blank" rel="noopener" class="underline">{p.replace(/^https:\/\//, "")}</a> : p))}</>;
+}
 
 const control =
   "w-full rounded-control border border-line-strong bg-canvas px-3 py-2 text-copy text-ink aria-[invalid=true]:border-ink aria-[invalid=true]:border-2";
@@ -37,13 +43,18 @@ export function FormView(props: {
   fields?: Field[];
   /** A form with steps: which one this is. */
   step?: StepPlace;
+  /** Where the form routes are mounted ("" or "/q"). */
+  prefix?: string;
+  /** The texting box's words, under the phone field, when this form follows up and the app can text. */
+  textConsent?: string | null;
 }) {
-  const { form, stamp, page, origin, values = {}, errors = {}, step } = props;
+  const { form, stamp, page, origin, values = {}, errors = {}, step, textConsent } = props;
+  const phone = textConsent ? phoneField(props.fields ?? form.fields) : undefined;
   const fields = (props.fields ?? form.fields).filter(isAnswer);
   const failed = fields.filter((f) => errors[f.name]);
   const last = !step || step.index === step.count - 1;
   return (
-    <form method="post" action={props.action ?? `/forms/${form.key}`} class="grid max-w-xl gap-6">
+    <form method="post" action={props.action ?? `${props.prefix ?? ""}/forms/${form.key}`} class="grid max-w-xl gap-6">
       {step && step.count > 1 ? <StepHeading step={step} /> : null}
       {failed.length ? (
         <div role="alert" class="rounded-card border border-line-strong bg-panel p-4">
@@ -58,7 +69,15 @@ export function FormView(props: {
         </div>
       ) : null}
       {fields.map((f) => (
-        <FieldView form={form} field={f} value={values[f.name]} error={errors[f.name]} values={values} />
+        <>
+          <FieldView form={form} field={f} value={values[f.name]} error={errors[f.name]} values={values} />
+          {phone && f.name === phone.name ? (
+            <label class="-mt-3 flex items-start gap-2">
+              <input type="checkbox" name={TEXT_CONSENT_FIELD} value="yes" class="mt-1" checked={values[TEXT_CONSENT_FIELD] === "yes"} />
+              <span class="text-label"><LinkedText text={textConsent ?? ""} /></span>
+            </label>
+          ) : null}
+        </>
       ))}
       {step?.key ? (
         <>

@@ -200,7 +200,8 @@ test("stages: add, rename, kind, move, archive (refused while in use or last ope
 test("Home, with none of the other apps' tables", async (t) => {
   if (skip) return t.skip(skip);
   const p = await present(db);
-  assert.deepEqual(p, { submissions: false, forms: false, payments: false, quotes: false, invoices: false });
+  // The phone skill's tables are always set up (src/db/setup.ts), with or without Twilio.
+  assert.deepEqual(p, { submissions: false, forms: false, payments: false, quotes: false, invoices: false, communications: true });
   const h = await home(db, { timeZone: "UTC", currency: "USD", invoiceCurrency: "usd", user: ME });
   assert.deepEqual([h.leads, h.owed, h.newLeads, h.events, h.closing], [{ current: 0, previous: 0 }, null, [], [], []]);
   assert.match(missingSentence(p)!, /no form submissions or payments/);

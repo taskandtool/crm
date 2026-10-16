@@ -12,6 +12,7 @@ import { eventsBetween, type Event } from "./events";
 import { listLeads, type Lead } from "./leads";
 import { listTasks, taskCounts, type Task } from "./tasks";
 import { present } from "./tables";
+import { callWeek, mainNumber, missedCalls, type Communication } from "../phone/store";
 
 /** How many each list shows. */
 export const HOME_LIST = 5;
@@ -28,6 +29,8 @@ export type Home = {
   events: Event[];
   tasks: Task[];
   closing: Deal[];
+  /** Calls missed and not yet called or texted back, and the week's calls; null until there is a business number (the phone skill). */
+  phone: { missed: (Communication & { contact_name: string | null })[]; week: { answered: number; missed: number } } | null;
 };
 
 export async function home(db: Db, opts: { timeZone: string; currency: string; invoiceCurrency: string | null; user: string; now?: Date }): Promise<Home> {
@@ -51,8 +54,12 @@ export async function home(db: Db, opts: { timeZone: string; currency: string; i
     listTasks(db, opts.user, HOME_LIST, today),
     closingBy(db, monthEnd, HOME_LIST),
   ]);
+  const number = p.communications ? await mainNumber(db) : null;
+  const phone = number
+    ? await Promise.all([missedCalls(db, HOME_LIST), callWeek(db, new Date(day(addDays(today, -6)).start))]).then(([missed, week]) => ({ missed, week }))
+    : null;
   return {
     today, leads: leads[0], due, open: deals.open, won: deals.won, owed: owed && opts.invoiceCurrency ? { ...owed.open, currency: opts.invoiceCurrency } : null,
-    newLeads, events, tasks: tasks.slice(0, HOME_LIST), closing,
+    newLeads, events, tasks: tasks.slice(0, HOME_LIST), closing, phone,
   };
 }

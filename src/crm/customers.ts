@@ -34,6 +34,8 @@ export type Customer = Keyed & {
   other_emails: string[];
   /** On a record merged into another: that one's id. */
   merged_into: string | null;
+  /** Don't text (the phone skill's customers.texts_off): as if they had said STOP. */
+  texts_off?: boolean;
   created_by: string | null;
   updated_by: string | null;
   created_at: Date;

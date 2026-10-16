@@ -400,8 +400,7 @@ export async function syncCalendars(db: Db, gw: Gateway, now = new Date()): Prom
 
 // `npx tsx src/booking/sync.ts`: one run; exits 1 with the errors so the job's run history shows them.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { default: pg } = await import("pg");
-  const { fromPool } = await import("../data/pg");
+  const { fromPool, openPool } = await import("../data/pg");
   const { fail, machineEnv, misused } = await import("../data/cli.mjs");
   const CMD = "npx tsx src/booking/sync.ts";
   const args = process.argv.slice(2);
@@ -414,7 +413,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const env = machineEnv();
   const missing = ["PHOENIX_URL", "MACHINE_TOKEN", "DATABASE_URL"].filter((k) => !env[k]);
   if (missing.length) fail(`calendar sync: ${missing.join(", ")} not set, here or in ~/.env`, `run it on the machine as a scheduled job: ${CMD}`);
-  const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 2 });
+  const pool = openPool(env.DATABASE_URL!, 2);
   try {
     const r = await syncCalendars(fromPool(pool), (slug, path, init) => gatewayFetch(env, slug, path, init));
     console.log(`calendar sync: pushed ${r.pushed} booking${r.pushed === 1 ? "" : "s"}, pulled ${r.pulled} calendar${r.pulled === 1 ? "" : "s"}${r.errors.length ? `, ${r.errors.length} failed` : ""}`);

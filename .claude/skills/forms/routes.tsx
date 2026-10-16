@@ -24,13 +24,13 @@ import { envOf } from "../data/env";
 import { afterResponse, sendEmail } from "../data/send";
 import { HONEYPOT, MIN_FILL_MS, STAMP, makeStamp, verdict } from "../data/spam";
 import { newToken, tokenHash, TOKEN_SHAPE } from "../data/token";
-import { DRAFT_FIELD, FORM_KEY, STEP_FIELD, sitePath, stepsOf, validate, type Answer, type Errors, type Field, type Form, type Input, type Step, type Submission } from "./fields";
+import { DRAFT_FIELD, FORM_KEY, STEP_FIELD, TEXT_CONSENT_FIELD, sitePath, stepsOf, validate, type Answer, type Errors, type Field, type Form, type Input, type Step, type Submission } from "./fields";
 import type { FormSteps, StepContext } from "./steps";
 import { cameFrom, originFields, readOrigin, REFERRER_FIELD, UTM_FIELD, type Origin } from "./origin";
 import { FormView, StepFrame } from "./render";
 import { priceOf, withLines, type Price } from "./price";
 import { formatMoney } from "../payments/money";
-import { draftByKey, finishDraft, finishStep, insertSubmission, loadForm, recordNotified, rewindDraft, saveStep, startDraft, submissionById, type Draft } from "./store";
+import { draftByKey, finishDraft, finishStep, insertSubmission, keepTextConsent, loadForm, recordNotified, rewindDraft, saveStep, startDraft, submissionById, type Draft } from "./store";
 
 /** Wraps a body in the app's own page and its content width, so a form with errors looks like the rest of the site. */
 export type PageRenderer = (c: Context, title: string, body: Child) => string | Promise<string>;
@@ -53,6 +53,14 @@ export type FormRoutesOptions = {
    * The booking skill confirms a form's booking here (confirm.ts).
    */
   onComplete?: (c: Context, submissionId: string) => void | Promise<void>;
+  /** Where these routes are mounted, when not at the site's root: the CRM serves them under its public "/q". */
+  prefix?: string;
+  /**
+   * Whether this app can text the people a form follows up on (the phone
+   * skill's: a number approved for texting). Yes: a form with "follow up"
+   * on shows its texting box under the phone field, with these words.
+   */
+  textConsent?: (c: Context) => string | null | Promise<string | null>;
 };
 
 
@@ -61,6 +69,11 @@ export const MAX_BODY = 32 * 1024;
 
 export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
   const app = new Hono();
+  const P = (opts.prefix ?? "").replace(/\/+$/, "");
+  /** The texting box's words for this form here, or null when it has none. */
+  const consentOf = async (c: Context, form: Form) => (form.follow_up && opts.textConsent ? await opts.textConsent(c) : null);
+  /** They ticked it: keep the words they agreed to. */
+  const ticked = async (c: Context, form: Form, input: Input) => (one(input[TEXT_CONSENT_FIELD]) === "yes" ? await consentOf(c, form) : null);
 
   app.post("/forms/:key", async (c) => {
     const key = c.req.param("key");
@@ -78,7 +91,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     const db = getDb(c);
     const form = await loadForm(db, key);
     if (!form || !form.active) return c.notFound();
-    const thanks = () => c.redirect(form.redirect_to ?? `/forms/${form.key}/thanks`, 303);
+    const thanks = () => c.redirect(form.redirect_to ?? `${P}/forms/${form.key}/thanks`, 303);
 
     // A later step of a form with steps carries the visitor's key, which only
     // a first step that passed the spam check could have got.
@@ -100,12 +113,14 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
       // The stamp they were served goes back unchanged, so fixing one answer
       // quickly is not mistaken for a bot; where they came from goes back too.
       const carried = { utm: one(input[UTM_FIELD]), ref: one(input[REFERRER_FIELD]) };
-      const body = <FormView form={form} stamp={stamp} page={page ?? undefined} origin={carried} values={r.values} errors={r.errors} />;
+      const body = <FormView form={form} stamp={stamp} page={page ?? undefined} origin={carried} values={r.values} errors={r.errors} prefix={P} textConsent={await consentOf(c, form)} />;
       return c.html(await opts.page(c, form.title, body), 422);
     }
 
     const data = { ...withLines(form.fields, r.submission.data), ...origin };
     const id = await insertSubmission(db, { ...r.submission, data, form_key: form.key, source: opts.source, page, status: v === "fast" ? "spam" : "new" });
+    const agreed = await ticked(c, form, input);
+    if (agreed) await keepTextConsent(db, "submission", id, agreed);
     if (v === "ok") {
       keepPhotos(c, form.fields, r.submission.data);
       notifyOwner(c, form, id, r.submission, page, origin);
@@ -141,8 +156,8 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
 
   // ---- forms with steps ------------------------------------------------------
 
-  const thanksPath = (form: Form) => form.redirect_to ?? `/forms/${form.key}/thanks`;
-  const nextPath = (form: Form, key: string) => `/forms/${form.key}/next?k=${encodeURIComponent(key)}`;
+  const thanksPath = (form: Form) => form.redirect_to ?? `${P}/forms/${form.key}/thanks`;
+  const nextPath = (form: Form, key: string) => `${P}/forms/${form.key}/next?k=${encodeURIComponent(key)}`;
   /** The questions are all answered once the draft is past the last page of them. */
   const questionsDone = (steps: Step[], step: number) => steps.slice(step).every((st) => st.kind !== "fields");
 
@@ -177,7 +192,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
       console.error(`forms: ${form.key} submission ${submission.id}: ${(e as Error).message}`);
     }
     return {
-      form, field: st.field, submission, action: `/forms/${form.key}`, price,
+      form, field: st.field, submission, action: `${P}/forms/${form.key}`, price,
       hidden: <><input type="hidden" name={DRAFT_FIELD} value={key} /><input type="hidden" name={STEP_FIELD} value={String(at)} /></>,
       next: origin + (at + 1 < steps.length ? nextPath(form, key) : thanksPath(form)),
       self: origin + nextPath(form, key),
@@ -211,7 +226,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     const where = { index: draft.step, count: steps.length, label: st.label, key };
     const notice = shown.notice ? <p role="status" class="rounded-card border border-line-strong bg-panel p-4">{shown.notice}</p> : null;
     if (st.kind === "fields") {
-      const body = <>{notice}<FormView form={form} fields={st.fields} step={where} values={shown.values} errors={shown.errors} /></>;
+      const body = <>{notice}<FormView form={form} fields={st.fields} step={where} values={shown.values} errors={shown.errors} prefix={P} textConsent={await consentOf(c, form)} /></>;
       return c.html(await opts.page(c, form.title, body), status as 200);
     }
     const run = opts.steps?.[st.kind];
@@ -228,7 +243,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
   }
 
   async function gone(c: Context, form: Form) {
-    const body = <div><h1 class="text-title font-semibold">Start the form again</h1><p class="mt-4">This form could not be found where you left it. <a href={`/forms/${form.key}/start`}>Start again</a>.</p></div>;
+    const body = <div><h1 class="text-title font-semibold">Start the form again</h1><p class="mt-4">This form could not be found where you left it. <a href={`${P}/forms/${form.key}/start`}>Start again</a>.</p></div>;
     return c.html(await opts.page(c, form.title, body), 404);
   }
 
@@ -248,12 +263,14 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
       if (!r.ok) {
         const carried = { utm: one(input[UTM_FIELD]), ref: one(input[REFERRER_FIELD]) };
         const where = { index: 0, count: steps.length, label: st.label };
-        const body = <FormView form={form} fields={st.fields} step={where} stamp={one(input[STAMP])} page={page ?? undefined} origin={carried} values={r.values} errors={r.errors} />;
+        const body = <FormView form={form} fields={st.fields} step={where} stamp={one(input[STAMP])} page={page ?? undefined} origin={carried} values={r.values} errors={r.errors} prefix={P} textConsent={await consentOf(c, form)} />;
         return c.html(await opts.page(c, form.title, body), 422);
       }
       key = newToken();
       const data = { ...withLines(st.fields, r.submission.data), ...origin };
       draft = await startDraft(db, { ...r.submission, data, form_key: form.key, key_hash: await tokenHash(key), source: opts.source, page, spam: v === "fast" });
+      const agreed = await ticked(c, form, input);
+      if (agreed) await keepTextConsent(db, "draft", draft.id, agreed);
       if (v === "ok") keepPhotos(c, st.fields, r.submission.data);
     } else {
       const found = TOKEN_SHAPE.test(posted) ? await draftByKey(db, form.key, await tokenHash(posted)) : null;
@@ -273,6 +290,8 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
         if (!r.ok) return showStep(c, db, form, steps, draft, key, { errors: r.errors, values: r.values }, 422);
         const data = withLines(st.fields, r.submission.data);
         if (!(await saveStep(db, draft.id, draft.step, { ...r.submission, data }))) return c.redirect(nextPath(form, key), 303);
+        const agreed = await ticked(c, form, input);
+        if (agreed) await keepTextConsent(db, "draft", draft.id, agreed);
         if (!draft.spam) keepPhotos(c, st.fields, r.submission.data);
         draft = { ...draft, step: draft.step + 1 };
       } else {
@@ -327,7 +346,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     if (!FORM_KEY.test(formKey)) return c.notFound();
     const form = await loadForm(getDb(c), formKey);
     if (!form || !form.active || !stepsOf(form.fields).length) return c.notFound();
-    return c.html(await opts.page(c, form.title, await firstPage(c, form)));
+    return c.html(await opts.page(c, form.title, await firstPage(c, form, { prefix: P, textConsent: await consentOf(c, form) })));
   });
 
   app.get("/forms/:key/thanks", async (c) => {
@@ -357,12 +376,12 @@ export async function embedForm(c: Context, db: Db, key: string) {
 }
 
 /** A form's first page, freshly stamped, saying where the visitor came from. */
-async function firstPage(c: Context, form: Form) {
+async function firstPage(c: Context, form: Form, o: { prefix?: string; textConsent?: string | null } = {}) {
   const steps = stepsOf(form.fields);
   const first = steps[0]?.kind === "fields" ? steps[0] : null;
   const step = steps.length > 1 && first ? { index: 0, count: steps.length, label: first.label } : undefined;
   return (
-    <FormView form={form} fields={first?.fields} step={step} stamp={await makeStamp(form.key)} page={c.req.path} origin={originFields(c)} />
+    <FormView form={form} fields={first?.fields} step={step} stamp={await makeStamp(form.key)} page={c.req.path} origin={originFields(c)} prefix={o.prefix} textConsent={o.textConsent} />
   );
 }
 

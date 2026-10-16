@@ -38,12 +38,11 @@ An app without `scripts/forms.mjs` gets one when it takes its first form,
 so the AI never writes SQL against `forms`. `scripts/forms.ts`:
 
 ```ts
-import pg from "pg";
 import { formsCli } from "../src/forms/cli";
 import { machineEnv } from "../src/data/cli.mjs";
-import { fromPool } from "../src/data/pg";
+import { fromPool, openPool } from "../src/data/pg";
 
-const pool = new pg.Pool({ connectionString: machineEnv().DATABASE_URL, max: 2 });
+const pool = openPool(machineEnv().DATABASE_URL, 2);
 try {
   await formsCli(process.argv.slice(2), { withDb: (fn) => fn(fromPool(pool)), source: "<app slug>", timeZone: "America/Denver" });
 } finally {

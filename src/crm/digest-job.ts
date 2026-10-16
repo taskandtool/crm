@@ -7,11 +7,10 @@
 // Schedule it every hour: before the hour it does nothing, after it each
 // person with tasks due gets one email that day. One run; exits 1 when
 // a send failed, so the job's run history shows why.
-import pg from "pg";
 import { cfg, invoicesCfg } from "../config";
 import { emailSend } from "../booking/notify";
 import { checkFlags, fail, flag, has, machineEnv, misused, parseArgs } from "../data/cli.mjs";
-import { fromPool } from "../data/pg";
+import { fromPool, openPool } from "../data/pg";
 import { DEFAULT_HOUR, sendDigests } from "./digest";
 
 const CMD = "npx tsx src/crm/digest-job.ts";
@@ -43,7 +42,7 @@ if (has(a, "hour")) {
 const env = machineEnv();
 if (!env.DATABASE_URL) fail("task emails: DATABASE_URL is not set, so there is no database to read", `run it on the machine as a scheduled job: ${CMD}`);
 
-const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 2 });
+const pool = openPool(env.DATABASE_URL, 2);
 try {
   const r = await sendDigests(fromPool(pool), emailSend(env), { timeZone: cfg.time_zone, hour, word: invoicesCfg?.word });
   const parts = [`${r.sent} sent`];

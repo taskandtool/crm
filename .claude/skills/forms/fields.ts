@@ -70,7 +70,14 @@ export interface Form {
   owner?: string | null;
   /** The stage its deal lands in (the app's stage key); null for the first open one. */
   deal_stage?: string | null;
+  /** It follows up on its own (the phone skill's automatic texts): by text where it can, by email where it can't. */
+  follow_up?: boolean;
 }
+
+/** The field a form's texting box goes under: the one named phone, else the first tel. */
+export const phoneField = (fields: Field[]): Field | undefined => fields.find((f) => f.name === "phone") ?? fields.find((f) => f.type === "tel");
+/** The texting box's name in a post. */
+export const TEXT_CONSENT_FIELD = "_text_consent";
 
 /** What a browser posts: one string per name, or several for a checkbox group. */
 export type Input = Record<string, string | string[]>;

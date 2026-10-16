@@ -7,9 +7,8 @@
 // Schedule it every 15 minutes (the platform's floor), so an hour's
 // reminder goes 45 to 60 minutes before. One run; exits 1 when a send
 // failed, so the job's run history shows why.
-import pg from "pg";
 import { checkFlags, fail, flag, flags, has, machineEnv, misused, parseArgs } from "../data/cli.mjs";
-import { fromPool } from "../data/pg";
+import { fromPool, openPool } from "../data/pg";
 import { emailSend } from "./notify";
 import { releaseLapsedHolds } from "./book";
 import { DEFAULT_BEFORE, sendReminders } from "./reminders";
@@ -49,7 +48,7 @@ if (has(a, "before")) {
 const env = machineEnv();
 if (!env.DATABASE_URL) fail("booking reminders: DATABASE_URL is not set, so there is no database to read", `run it on the machine as a scheduled job: ${CMD}`);
 
-const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 2 });
+const pool = openPool(env.DATABASE_URL, 2);
 try {
   const db = fromPool(pool);
   // Times held for a payment that never came are freed first, so nobody is reminded of them.

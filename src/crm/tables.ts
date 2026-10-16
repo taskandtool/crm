@@ -7,7 +7,7 @@
 // table found here is the one the next query reads.
 import type { Db } from "../data/db";
 
-export type Present = { submissions: boolean; forms: boolean; payments: boolean; quotes: boolean; invoices: boolean };
+export type Present = { submissions: boolean; forms: boolean; payments: boolean; quotes: boolean; invoices: boolean; communications: boolean };
 
 export async function present(db: Db): Promise<Present> {
   const [r] = await db.sql<Present>`
@@ -15,7 +15,8 @@ export async function present(db: Db): Promise<Present> {
            to_regclass('forms') is not null as forms,
            to_regclass('payments') is not null as payments,
            to_regclass('quotes') is not null as quotes,
-           to_regclass('invoices') is not null as invoices`;
+           to_regclass('invoices') is not null as invoices,
+           to_regclass('communications') is not null as communications`;
   return r;
 }
 

@@ -33,6 +33,8 @@ import { CustomerEvents, type Choices } from "./events";
 import { CustomerMoney, type Owed } from "./money";
 import type { Quote } from "../invoices/quotes";
 import type { Invoice } from "../invoices/invoices";
+import type { Card } from "../invoices/cards";
+import type { Recurring } from "../invoices/recurring";
 import { ownerSuggestions, personName } from "../crm/people";
 
 /** How many Activity entries show before "Show older". */
@@ -56,17 +58,21 @@ export function CustomerPage(p: {
   tasks: { open: Task[]; done: Task[] };
   today: string;
   /** Quotes and invoices, when they are on; null when off. */
-  money: { quotes: Quote[]; invoices: Invoice[]; owed: Owed[] } | null;
+  money: { quotes: Quote[]; invoices: Invoice[]; owed: Owed[]; recurring: Recurring[]; cards: Card[] } | null;
   /** Other records that may be the same person: same name, or same phone. */
   duplicates: Customer[];
   flash: { code?: string | null; n?: string | null };
+  /** Their texts and calls on the business number (the phone skill's ContactTexts), once there is one. */
+  texts?: Child;
+  /** Their thread in Messages, where Text opens: once the business number can text and they have a phone. */
+  textHref?: string | null;
 }) {
   const c = p.customer;
   const self = `/customers/${c.id}`;
   // A status another app wrote, or one archived since, still shows and stays selectable.
   const stages = p.stages.some((s) => s.key === c.stage) ? p.stages : [...p.stages, { key: c.stage, label: c.stage, position: 999, kind: "open" as const, archived: true }];
   const missing = missingSentence(p.present);
-  const money = p.money && (p.money.quotes.length || p.money.invoices.length) ? p.money : null;
+  const money = p.money && (p.money.quotes.length || p.money.invoices.length || p.money.recurring.length || p.money.cards.length) ? p.money : null;
   return (
     <Layout
       title={c.name}
@@ -80,6 +86,7 @@ export function CustomerPage(p: {
       actions={
         <>
           {c.phone ? <a href={telHref(c.phone)} class={buttonClass}>Call</a> : null}
+          {p.textHref ? <a href={p.textHref} class={buttonClass}>Text</a> : null}
           {c.email ? <a href={`mailto:${c.email}`} class={buttonClass} title={c.email}>Email</a> : null}
           <MoreMenu items={[
             invoicesCfg ? <a href={listUrl("/invoices/quotes/new", { email: c.email, name: c.name, phone: c.phone, address: c.address })} class={menuItemClass}>New {invoicesCfg.word.toLowerCase()}</a> : null,
@@ -116,6 +123,7 @@ export function CustomerPage(p: {
           </Section>
         </div>
         <div class="flex min-w-0 flex-col gap-4">
+          {p.texts}
           <Section title="Details">
             <div class="mb-3"><SaveOnChange action={`${self}/stage`} current={c.stage} options={stageOptions(stages)} label="Status" returnTo={self} /></div>
             <Details c={c} owners={p.owners} />

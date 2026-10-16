@@ -615,7 +615,11 @@ export type FormDeals = {
   owners: (c: Context) => Promise<string[]>;
 };
 
-export function formEditor(getDb: GetDb, opts: { base: string; css: string; timeZone: string; source: string; submissions: string; nav?: NavItem[]; Frame?: Frame; deals?: FormDeals }) {
+export function formEditor(getDb: GetDb, opts: {
+  base: string; css: string; timeZone: string; source: string; submissions: string; nav?: NavItem[]; Frame?: Frame; deals?: FormDeals;
+  /** This app follows up on its own (the phone skill): offer "Follow up automatically", with where its texts are set up. */
+  followUp?: { settings: string };
+}) {
   /** The stages and owners a form's deals choose from, where this app has deals. */
   const dealChoices = async (c: Context) => (opts.deals ? { stages: await opts.deals.stages(c), owners: await opts.deals.owners(c) } : undefined);
   const base = opts.base.replace(/\/+$/, "");
@@ -727,7 +731,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
     const found = await formRow(getDb(c), c.req.param("key"));
     if (!found) return c.notFound();
     const team = await teamOf(envOf(c));
-    return framed(c, base, editorHead(found.form), <Editor base={base} form={found.form} raw={found.raw} version={found.version} team={team} deals={await dealChoices(c)} />);
+    return framed(c, base, editorHead(found.form), <Editor base={base} form={found.form} raw={found.raw} version={found.version} team={team} deals={await dealChoices(c)} followUp={opts.followUp} />);
   });
 
   app.post("/form/:key", async (c) => {
@@ -759,6 +763,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
       // Whose its leads are, and where its deals land: only where the app has deals, and only with leads.
       owner: opts.deals && draft.leads ? draft.owner || null : null,
       deal_stage: opts.deals && draft.leads && draft.deals ? draft.deal_stage || null : null,
+      follow_up: opts.followUp ? draft.follow_up : found.form.follow_up,
     };
     const dealsNow = await dealChoices(c);
     const again = (status: 409 | 422, note?: string, version = draft.version) =>
@@ -766,7 +771,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
           c,
           base,
           editorHead(found.form),
-          <Editor base={base} form={form} raw={draft.fields} version={version} problems={problems} formProblems={formProblems} note={note} team={team} deals={dealsNow} />, status);
+          <Editor base={base} form={form} raw={draft.fields} version={version} problems={problems} formProblems={formProblems} note={note} team={team} deals={dealsNow} followUp={opts.followUp} />, status);
     if (Object.keys(problems).length || Object.keys(formProblems).length) return again(422);
 
     // Saved only over the version the editor opened, so two people editing at
@@ -775,7 +780,7 @@ export function formEditor(getDb: GetDb, opts: { base: string; css: string; time
       update forms
       set title = ${form.title}, fields = ${JSON.stringify(fields)}::jsonb, notify_emails = ${form.notify_emails}::citext[],
           redirect_to = ${form.redirect_to}, success_message = ${form.success_message}, submit_label = ${form.submit_label},
-          active = ${form.active}, leads = ${form.leads}, deals = ${form.deals}, owner = ${form.owner}, deal_stage = ${form.deal_stage}, updated_by = ${c.get("user")}, updated_at = now()
+          active = ${form.active}, leads = ${form.leads}, deals = ${form.deals}, owner = ${form.owner}, deal_stage = ${form.deal_stage}, follow_up = ${!!form.follow_up}, updated_by = ${c.get("user")}, updated_at = now()
       where key = ${form.key} and updated_at::text = ${draft.version}
       returning key`;
     if (!saved.length) {
@@ -882,8 +887,8 @@ async function allForms(db: Db) {
 async function formRow(db: Db, key: string) {
   const [row] = await db.sql`
     select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads, deals, owner::text as owner, deal_stage,
-           updated_at::text as version
-    from forms where key = ${key}`;
+           to_jsonb(f)->>'follow_up' = 'true' as follow_up, updated_at::text as version
+    from forms f where key = ${key}`;
   return row ? { form: toForm(row), raw: (Array.isArray(row.fields) ? row.fields : []) as Record<string, unknown>[], version: row.version as string } : null;
 }
 
@@ -914,6 +919,7 @@ type Draft = {
   deals: boolean;
   owner: string;
   deal_stage: string;
+  follow_up: boolean;
   fields: Record<string, unknown>[];
 };
 
@@ -988,6 +994,7 @@ function readEditor(body: Record<string, unknown>): Draft {
     deals: s("becomes") === "deal",
     owner: s("owner").slice(0, 200),
     deal_stage: s("deal_stage").slice(0, 40),
+    follow_up: s("follow_up") === "1",
     fields,
   };
 }
@@ -1023,8 +1030,10 @@ function Editor(props: {
   team?: Person[] | null;
   /** This app makes deals: offer "a deal, created automatically", its stage, and whose its leads and deals are. */
   deals?: { stages: { value: string; label: string }[]; owners: string[] };
+  /** This app follows up on its own: offer the switch, linking to where its texts are set up. */
+  followUp?: { settings: string };
 }) {
-  const { base, form, raw, version, problems = {}, formProblems = {}, note, team } = props;
+  const { base, form, raw, version, problems = {}, formProblems = {}, note, team, followUp } = props;
   const becomes = !form.leads ? "contact" : form.deals ? "deal" : "lead";
   const text = (v: unknown) => (typeof v === "string" ? v : "");
   return (
@@ -1108,6 +1117,18 @@ function Editor(props: {
               </div>
             ) : null}
           </fieldset>
+          {followUp ? (
+            <label class="flex items-start gap-2 sm:col-span-2">
+              <input type="checkbox" name="follow_up" value="1" checked={!!form.follow_up} class="mt-1 size-4" />
+              <span>
+                <span class="font-medium">Follow up automatically</span>
+                <span class="block font-normal text-ink-3">
+                  A thank-you right away, or, on a form with a booking step, the next open times when someone stops before booking. By text where your
+                  number can text, with a box under the phone field to agree; by email where it can't. <a href={followUp.settings} class="font-semibold text-accent no-underline hover:underline">See what it sends</a>
+                </span>
+              </span>
+            </label>
+          ) : null}
         </div>
       </Section>
       <Section title="Questions">

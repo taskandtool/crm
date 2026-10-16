@@ -11,11 +11,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { invoicesCfg, seeds } from "../config";
 import type { Db } from "../data/db";
-import { fromPool } from "../data/pg";
+import { fromPool, openPool } from "../data/pg";
 import type { DbState, Runtime } from "../runtime";
 import { printPdf } from "../pdf";
 import { production } from "../proposals/serving";
-import { openPool } from "./pool";
 import { setup } from "./setup";
 
 // A Task & Tool machine has ~/.tasktool; off it, ~/.env is not ours to read.

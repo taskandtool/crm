@@ -9,6 +9,7 @@
 
 # Built and vendored output: npm install recreates both.
 static/crm.css
+static/q/
 static/vendor/
 node_modules/
 

@@ -10,9 +10,8 @@ import type { CustomField } from "../src/config-schema";
 import { readFields, type FieldRead } from "../src/crm/fields";
 import { clean } from "../src/crm/text";
 import type { Db } from "../src/data/db";
-import { fromPool } from "../src/data/pg";
+import { fromPool, openPool } from "../src/data/pg";
 import { databaseUrl } from "../src/db/client";
-import { openPool } from "../src/db/pool";
 import { setupOnce } from "../src/db/setup";
 import type { Customer } from "../src/crm/customers";
 import { findCustomer, sentTo } from "../src/crm/customers";
@@ -111,7 +110,7 @@ export function fmtCustomer(c: Customer, stageLabel?: string): string {
 }
 
 /** What quotes.mjs and invoices.mjs need from this CRM: its database, settings and customers. */
-export function cliSettings(script: "quotes" | "invoices"): InvoicesCli {
+export function cliSettings(script: "quotes" | "invoices" | "recurring"): InvoicesCli {
   const iv = invoicesCfg;
   return {
     withDb: (fn) => withDb((db) => fn(db)),

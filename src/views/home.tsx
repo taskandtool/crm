@@ -13,6 +13,7 @@ import type { Home } from "../crm/home";
 import { sourceText } from "../crm/leads";
 import { personName } from "../crm/people";
 import { formatWholeMoney } from "../crm/text";
+import { prettyPhone } from "../phone/store";
 import { Layout } from "./layout";
 import { TaskItem } from "./tasks";
 import { Avatar, MESSAGES, dueDayText, timeZone } from "./ui";
@@ -116,6 +117,20 @@ export function HomePage({ user, h, flash }: { user: string; h: Home; flash: { c
               <li class={row}><TaskItem task={t} today={h.today} returnTo="/" showCustomer /></li>
             ))}
           </Panel>
+          {h.phone ? (
+            // Until each is called or texted back, as Jobber's receptionist marks "Needs action".
+            <Panel title="Missed calls" href="/messages?view=all" link="Messages" n={h.phone.missed.length}
+              empty={`No missed calls. This week: ${h.phone.week.answered} answered, ${h.phone.week.missed} missed.`}>
+              {h.phone.missed.map((m) => (
+                <li class={row + " flex items-center gap-3"}>
+                  <div class="min-w-0 flex-1">
+                    <a href={`/messages/${m.remote_key}`} class="block truncate font-medium text-ink no-underline hover:underline">{m.contact_name ?? prettyPhone(m.remote_e164)}</a>
+                    <p class="truncate text-label text-ink-3">{m.voicemail_sid ? "Left a voicemail" : "No voicemail"} · <When at={m.created_at} timeZone={timeZone} /></p>
+                  </div>
+                </li>
+              ))}
+            </Panel>
+          ) : null}
         </div>
         <div class="flex min-w-0 flex-col gap-6">
           {eventsCfg ? (

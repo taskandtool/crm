@@ -44,7 +44,7 @@ import { CustomerPage } from "./views/customer";
 import { CustomersPage, customerSpec, filterParams, NewCustomerPage, Results } from "./views/customers";
 import { HomePage } from "./views/home";
 import { NotificationsPage, UnreadCount } from "./views/notifications";
-import { Layout, SCHEDULE_TABS, SETTINGS_BACK, WaitingView, type Section as NavSection } from "./views/layout";
+import { Layout, MessagesLink, SCHEDULE_TABS, SETTINGS_BACK, WaitingView, type Section as NavSection } from "./views/layout";
 import { SettingsPage } from "./views/settings";
 import { SearchPage, SearchPeek } from "./views/search";
 import { search } from "./crm/search";
@@ -63,7 +63,7 @@ import { stripeFrom } from "./payments/stripe";
 import { proposalAdmin, proposalPanel } from "./proposals/admin";
 import { linkBase, readyHere } from "./proposals/link";
 import { proposalPages } from "./proposals/public";
-import { afterAccepted, onAcceptSentence, proposalDocument, type AnswerDeps } from "./proposals/sign";
+import { afterAccepted, afterDeclined, onAcceptSentence, proposalDocument, type AnswerDeps } from "./proposals/sign";
 import { ensureProposal, markEmailed, newLink, sampleWarning, storePage, type ProposalOpts } from "./proposals/store";
 import { afterResponse } from "./data/send";
 import type { Db } from "./data/db";
@@ -77,8 +77,21 @@ import { todayIn as todayInZone } from "./reports/sql";
 import { stripeWebhook } from "./payments/webhook";
 import { quotesFor } from "./invoices/quotes";
 import { invoicesFor, owed } from "./invoices/invoices";
+import { cardEvents, cardsFor } from "./invoices/cards";
+import { recurringList } from "./invoices/recurring";
 import { loadTeam, ownerSuggestions } from "./crm/people";
 import { CUSTOMER_EVENTS, EventPage, eventParams, EventResults, EventsPage, eventSpec, NewEventPage, statusLabel, type Choices } from "./views/events";
+import { phoneHooks } from "./phone/hooks";
+import { messagesRoutes, phoneSettings, ContactTexts } from "./phone/admin";
+import { onBooked as textBooked, onSubmitted } from "./phone/follow";
+import { bookingKey, followShort } from "./phone/send";
+import { canText, contactCommunications, mainNumber, unreadThreads } from "./phone/store";
+import { consentWords } from "./phone/flows";
+import { unsubscribeRoutes } from "./phone/unsubscribe";
+import { callBackTask, nameNeeded, phoneCtx, teamBase, textName } from "./crm/texting";
+import { formRoutes } from "./forms/routes";
+import { bookingStep } from "./booking/form-step";
+import { bookingPages, PlainPage } from "./booking/public";
 
 type C = Context<AppEnv>;
 
@@ -112,26 +125,32 @@ app.get("/healthz", (c) => {
 // in with nothing but the signature, which payments/webhook.ts checks over the
 // raw body before anything else. Stripe reaches dev through the machine's
 // inbound URL (`python3 ~/tools/taskandtool.py inbound-url /hooks/stripe`).
+/**
+ * The database for a public route (Stripe's and Twilio's hooks, a customer's
+ * page): dev's one handle, or a pool per request in production. 503 while
+ * there is none: a webhook delivers again until the database is up.
+ */
+const publicDb: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const opened = c.env.runtime.open();
+  if (!opened.db) return c.text("waiting for the database", 503);
+  c.set("db", opened.db);
+  try {
+    await next();
+  } finally {
+    if (opened.close) closeAfter(c, opened.close);
+  }
+};
+
 if (invoicesCfg) {
   // POST only: any other method falls through to the team gate and its 404.
-  app.on("POST", "/hooks/stripe", async (c, next) => {
-    const opened = c.env.runtime.open();
-    // 503: Stripe delivers again until the database is up.
-    if (!opened.db) return c.text("waiting for the database", 503);
-    c.set("db", opened.db);
-    try {
-      await next();
-    } finally {
-      if (opened.close) closeAfter(c, opened.close);
-    }
-  });
+  app.on("POST", "/hooks/stripe", publicDb);
   // A form that ends in payment is complete once it is paid, and the booking
   // it made is confirmed then, by whichever app on the project gets there
   // first with a sender (booking/confirm.ts); a failed send is a 500, so
   // Stripe delivers again.
   app.route("/", stripeWebhook((c) => (c as unknown as C).var.db, {
-    // Stripe's invoice events: the only thing that moves an invoice past open.
-    more: [invoiceEvents],
+    // Stripe's invoice events, the only thing that moves an invoice past open; and the cards customers save.
+    more: [invoiceEvents, cardEvents],
     afterPaid: async (c, paymentId) => {
       const db = (c as unknown as C).var.db;
       const id = await completePaidSubmission(db, paymentId);
@@ -139,6 +158,8 @@ if (invoicesCfg) {
       const book = cfg.booking_page ?? null;
       const sent = await confirmFormBooking(db, id, emailSender(envOf(c)), { domain: book ? new URL(book).host : "localhost", manageBase: book });
       if (sent.status === "failed") throw new Error(`booking confirmation for submission ${id}: ${sent.error}`);
+      // Before the answer: the request's database closes once it is sent (production).
+      await phoneOf(c).then((ctx) => onSubmitted(ctx, id)).catch((err) => console.error("phone:", err));
     },
   }));
 }
@@ -159,6 +180,69 @@ const answerDeps = (c: Context): AnswerDeps => ({
 });
 /** Where a proposal's link points: production (Task & Tool says where, on the machine), or this host in production. */
 const linkBaseOf = (c: Context) => linkBase(c, (c as unknown as C).env.runtime.production);
+
+// ---- the phone: Twilio's webhooks and a customer's pages -----------------------
+// Ahead of the team gate. Twilio's calls and texts come through Task &
+// Tool's inbound route (phone/hooks.ts checks each number's secret). A
+// text's link opens a form or the booking pages: the Website's, when there
+// is one (booking_page); otherwise these, under the CRM's public /q.
+
+const phoneOf = (c: Context) => phoneCtx(c, (c as unknown as C).var.db, (c as unknown as C).env.runtime.production);
+/** The texting box's words, when the business number can text: with the terms and privacy pages its registration names. */
+const consentHere = (about: "request" | "booking") => async (c: Context) => {
+  const n = await canText((c as unknown as C).var.db).catch(() => null);
+  return n ? consentWords(textName(), about, n.registration.input ?? {}) : null;
+};
+
+app.use("/hooks/twilio/*", publicDb);
+app.route("/", phoneHooks((c) => (c as unknown as C).var.db, {
+  ctx: phoneOf,
+  onLead: (c, l) => callBackTask((c as unknown as C).var.db, l, null),
+  threadLink: async (c, key) => {
+    const base = await teamBase(c, (c as unknown as C).env.runtime.production);
+    return base ? `${base}/messages${key ? `/${key}` : ""}` : null;
+  },
+}));
+
+// /q opens to customers through proposals, so these pages need quotes and invoices on (crm/texting.ts links).
+if (!cfg.booking_page && invoicesCfg) {
+  for (const p of ["/q/forms/*", "/q/book", "/q/book/*", "/q/t/*", "/q/unsubscribe"]) app.use(p, publicDb);
+  const db = (c: Context) => (c as unknown as C).var.db;
+  app.get("/q/t/:code", async (c) => {
+    const to = await followShort(db(c), c.req.param("code"));
+    return to && to.startsWith("/") && !to.startsWith("//") ? c.redirect(to, 302) : c.notFound();
+  });
+  // A follow-up email's unsubscribe link.
+  app.route("/q", unsubscribeRoutes(db, { business: textName(), page: (_c, title, body) => String(<PlainPage title={title} css="/q/crm.css">{body}</PlainPage>) }));
+  app.route("/q", formRoutes(db, {
+    source: "crm", prefix: "/q", notify: false,
+    page: (_c, title, body) => <PlainPage title={title} css="/q/crm.css">{body}</PlainPage>,
+    steps: eventsCfg ? { booking: bookingStep(db, { source: "crm" }) } : undefined,
+    textConsent: consentHere("request"),
+    // The booking is confirmed (and its email sent) first; then its text: Booked, or the thank-you.
+    onComplete: async (c, id) => {
+      const sent = await confirmFormBooking(db(c), id, emailSender(envOf(c)), { domain: inviteDomain, manageBase: `${new URL(c.req.url).origin}/q/book` });
+      if (sent.status === "failed") console.error(`booking confirmation for submission ${id}: ${sent.error}`);
+      await phoneOf(c).then((ctx) => onSubmitted(ctx, id)).catch((err) => console.error("phone:", err));
+    },
+  }));
+  if (eventsCfg) {
+    app.route("/q/book", bookingPages(db, {
+      // Customers can open only /q on production, so the styles are a copy there.
+      base: "/q/book", domain: inviteDomain, css: "/q/crm.css", source: "crm",
+      onBooked: async (c, e) => {
+        afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain: inviteDomain }));
+        // Before the answer: the request's database closes once it is sent (production).
+        if (e.event === "booked") await phoneOf(c).then((ctx) => textBooked(ctx, e)).catch((err) => console.error("phone:", err));
+      },
+      textConsent: consentHere("booking"),
+      prefill: async (c, key) => {
+        const k = await bookingKey(db(c), key);
+        return k ? { name: k.name, email: k.email, phone: k.phone, leadId: k.lead_id } : null;
+      },
+    }));
+  }
+}
 
 if (invoicesCfg) {
   // Public: the token in the link is the customer's key, and the page says nothing without one.
@@ -335,14 +419,17 @@ app.post("/customers", async (c) => {
  */
 async function moneyFor(db: Db, c: Customer) {
   const emails = [c.email, ...(c.other_emails ?? [])].filter((e): e is string => !!e);
-  const each = await Promise.all(emails.map((email) => Promise.all([quotesFor(db, { email }), invoicesFor(db, { email }), owed(db, email)])));
+  const each = await Promise.all(emails.map((email) => Promise.all([quotesFor(db, { email }), invoicesFor(db, { email }), owed(db, email), recurringList(db, { email }), cardsFor(db, email)])));
   const newest = <T extends { created_at: Date }>(a: T, b: T) => b.created_at.getTime() - a.created_at.getTime();
   const owing = new Map<string, { currency: string; cents: string; count: number }>();
   for (const o of each.flatMap((e) => e[2])) {
     const cur = owing.get(o.currency);
     owing.set(o.currency, cur ? { currency: o.currency, cents: (BigInt(cur.cents) + BigInt(o.cents)).toString(), count: cur.count + o.count } : { ...o });
   }
-  return { quotes: each.flatMap((e) => e[0]).sort(newest), invoices: each.flatMap((e) => e[1]).sort(newest), owed: [...owing.values()] };
+  return {
+    quotes: each.flatMap((e) => e[0]).sort(newest), invoices: each.flatMap((e) => e[1]).sort(newest), owed: [...owing.values()],
+    recurring: each.flatMap((e) => e[3]), cards: each.flatMap((e) => e[4]),
+  };
 }
 
 app.get("/customers/:id", async (c) => {
@@ -360,11 +447,28 @@ app.get("/customers/:id", async (c) => {
   ]);
   const duplicates = customer.archived_at ? [] : await possibleDuplicates(db, customer);
   const owners = [...new Set([c.var.user, ...f.owners])];
+  // Their texts and calls, once the business has a number (the phone skill). Don't text is on the row getCustomer read.
+  const number = await mainNumber(db).catch(() => null);
+  const comms = number ? await contactCommunications(db, customer.id) : [];
+  const off = !!customer.texts_off;
+  const key = customer.phone ? phoneKey(customer.phone) : null;
+  const texting = number?.texting === "approved";
   return c.html(
     <CustomerPage user={c.var.user} customer={customer} leads={leads} stages={stages} notes={notes} events={events} choices={choices} history={history.items} present={history.present} owners={owners}
       deals={deals} dealStages={dealStages} tasks={tasks} today={today()}
-      money={money} duplicates={duplicates} flash={flashOf(c)} />,
+      money={money} duplicates={duplicates} flash={flashOf(c)}
+      texts={number && (comms.length || key) ? <ContactTexts rows={comms} phone={customer.phone} messagesBase="/messages" timeZone={cfg.time_zone} canText={texting} off={off} offAction={`/customers/${customer.id}/texts-off`} /> : null}
+      textHref={texting && key && !off ? `/messages/${key}` : null} />,
   );
+});
+
+// Don't text: as if they had said STOP (the phone skill's optedOut reads it).
+app.post("/customers/:id/texts-off", async (c) => {
+  const id = idParam(c.req.param("id"));
+  if (!id) return c.notFound();
+  const off = str((await c.req.parseBody()).texts_off) === "1";
+  const [done] = await c.var.db.sql`update customers set texts_off = ${off}, updated_by = ${c.var.user}::citext, updated_at = now() where id = ${id}::bigint returning id`;
+  return done ? back(c, `/customers/${id}`, "saved") : c.notFound();
 });
 
 app.post("/customers/:id", async (c) => {
@@ -651,7 +755,11 @@ if (eventsCfg) {
       base: "/schedule",
       manageBase: cfg.booking_page,
       // Booked, moved or cancelled here tells an online booker, through the owner's sender (none: nothing is sent).
-      onBooked: (c, e) => afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain: inviteDomain })),
+      onBooked: async (c, e) => {
+        afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain: inviteDomain }));
+        // Before the answer: the request's database closes once it is sent (production).
+        if (e.event === "booked") await phoneOf(c).then((ctx) => textBooked(ctx, e)).catch((err) => console.error("phone:", err));
+      },
       returnTo: (b) => ({ href: `/events/${b.id}`, label: one }),
       afterStatus: (c, b) => touchFor(dbOf(c), b.id, (c as unknown as C).var.user),
       scheduleActions: <a href="/events/new" class={primaryClass}>New {one.toLowerCase()}</a>,
@@ -691,6 +799,8 @@ app.route(
 app.route(
   "/forms",
   formEditor(dbOf, { base: "/forms", css: "/crm.css", timeZone: cfg.time_zone, source: "crm", submissions: "/forms/submissions", nav: FORM_TABS, Frame: frameIn("settings"),
+    // A form can follow up on its own: the phone skill's automatic texts, by email without texting.
+    followUp: { settings: "/phone" },
     // A form can make each submission a deal automatically: in the stage it picks, owned by the person it names.
     deals: {
       stages: async (c) => (await listStages(dbOf(c), "deals")).filter((s) => s.kind === "open" && !s.archived).map((s) => ({ value: s.key, label: s.label })),
@@ -699,15 +809,40 @@ app.route(
   }),
 );
 
+// ---- phone and texts ------------------------------------------------------------
+// The phone skill's pages: Settings, Phone and texts (the number, its calls,
+// the texting registration, the automatic texts and their pictures), and
+// Messages (every number's thread). Without Twilio the setup page says how
+// to connect it, and Messages stays out of the sidebar (views/layout.tsx).
+
+const PHONE = {
+  base: "/phone", messages: "/messages", settings: "/phone", css: "/crm.css", timeZone: cfg.time_zone, ctx: phoneOf,
+  contactHref: (id: string) => `/customers/${id}`,
+  formHref: (key: string) => `/forms/form/${key}#follow_up`,
+  onLead: (c: Context, l: { customerId: string; title: string }) => callBackTask(dbOf(c), l, (c as unknown as C).var.user),
+  nameNeeded,
+};
+app.route("/phone", phoneSettings(dbOf, { ...PHONE, Frame: frameIn("settings") }));
+app.route("/messages", messagesRoutes(dbOf, { ...PHONE, Frame: frameIn("messages") }));
+
+/** The sidebar's Messages, once there is a business number: its link and unread count. */
+app.get("/nav/messages", async (c) => {
+  // One request for the link and its count: nothing at all until the business has a number.
+  const n = await mainNumber(c.var.db).catch(() => null);
+  if (!n) return c.html(<span></span>);
+  return c.html(<MessagesLink on={c.req.query("on") === "1"} unread={await unreadThreads(c.var.db, c.var.user).catch(() => 0)} />);
+});
+
 // ---- quotes and invoices ------------------------------------------------------
 // The invoices skill's pages in the CRM's frame. A quote leaves through the
 // owner's own sender, with a PDF where this runtime can print one (dev); an
 // invoice through the owner's Stripe account, which emails it.
 
-/** The Invoices section's tabs: the invoices skill's invoices and the payments skill's payments. Quotes are a section of their own, as Jobber's. */
+/** The Invoices section's tabs: the invoices skill's invoices, the payments skill's payments, and recurring invoices. Quotes are a section of their own, as Jobber's. */
 const INVOICE_TABS = [
   { href: "/invoices", label: "Invoices" },
   { href: "/invoices/payments", label: "Payments" },
+  { href: "/invoices/recurring", label: "Recurring" },
 ];
 
 if (invoicesCfg) {
@@ -772,6 +907,12 @@ if (invoicesCfg) {
       afterDecide: async (c, qt) => {
         await winFromQuotes(dbOf(c), (c as unknown as C).var.user);
         if (qt.status === "accepted") await afterAccepted(dbOf(c), qt, (c as unknown as C).var.user, answerDeps(c));
+        if (qt.status === "declined") await afterDeclined(dbOf(c), qt, (c as unknown as C).var.user);
+      },
+      // A recurring invoice's Bill to opens the customer's record.
+      customerHref: async (c, email) => {
+        const found = await findMatch(dbOf(c), email, null);
+        return found ? `/customers/${found.id}` : null;
       },
       nav: INVOICE_TABS,
       quoteNav: [],

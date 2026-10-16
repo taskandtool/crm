@@ -26,6 +26,9 @@ alter table forms add column if not exists deals boolean not null default false;
 -- open one when empty or gone).
 alter table forms add column if not exists owner citext;
 alter table forms add column if not exists deal_stage text;
+-- A form that follows up on its own (the phone skill's flows 2 and 3): by
+-- text where it can, by email where it can't. Off by default.
+alter table forms add column if not exists follow_up boolean not null default false;
 
 
 create table if not exists submissions (
@@ -88,3 +91,12 @@ create table if not exists submission_drafts (
 create unique index if not exists submission_drafts_key on submission_drafts (key_hash);
 create index if not exists submission_drafts_recent on submission_drafts (form_key, updated_at desc, id desc);
 create index if not exists submission_drafts_submission on submission_drafts (submission_id);
+-- A text's link back to a draft carries a second key (the phone skill's
+-- draftLink), so the page the visitor still has open keeps working.
+alter table submission_drafts add column if not exists text_key_hash text;
+create index if not exists submission_drafts_text_key on submission_drafts (text_key_hash) where text_key_hash is not null;
+-- What a person agreed to: the words of the texting box they ticked, and when.
+alter table submission_drafts add column if not exists text_consent text;
+alter table submission_drafts add column if not exists text_consent_at timestamptz;
+alter table submissions add column if not exists text_consent text;
+alter table submissions add column if not exists text_consent_at timestamptz;

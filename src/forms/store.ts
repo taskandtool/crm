@@ -9,8 +9,9 @@ import type { Charge } from "./price";
 /** The form with this key, or null. A broken field in the row is left out, never rendered half-made. */
 export async function loadForm(db: Db, key: string): Promise<Form | null> {
   const [row] = await db.sql`
-    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads, deals, owner::text as owner, deal_stage
-    from forms where key = ${key}`;
+    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads, deals, owner::text as owner, deal_stage,
+           to_jsonb(f)->>'follow_up' = 'true' as follow_up
+    from forms f where key = ${key}`;
   return row ? toForm(row) : null;
 }
 
@@ -28,6 +29,7 @@ export function toForm(row: Record<string, any>): Form {
     deals: row.leads !== false && row.deals === true,
     owner: row.owner ?? null,
     deal_stage: row.deal_stage ?? null,
+    follow_up: row.follow_up === true || row.follow_up === "true",
   };
 }
 
@@ -128,9 +130,18 @@ export async function startDraft(
   return toDraft(row);
 }
 
+/** The draft a key opens: the visitor's own, or the second key a text carried back to it (the phone skill's draftLink). */
 export async function draftByKey(db: Db, formKey: string, keyHash: string): Promise<Draft | null> {
-  const [row] = await db.sql`select * from submission_drafts where key_hash = ${keyHash} and form_key = ${formKey}`;
+  const [row] = await db.sql`
+    select * from submission_drafts where (key_hash = ${keyHash} or text_key_hash = ${keyHash}) and form_key = ${formKey}
+    order by (key_hash = ${keyHash}) desc limit 1`;
   return row ? toDraft(row) : null;
+}
+
+/** They ticked the texting box: its words and when, on the draft or the submission. */
+export async function keepTextConsent(db: Db, where: "draft" | "submission", id: string | number, words: string): Promise<void> {
+  if (where === "draft") await db.sql`update submission_drafts set text_consent = ${words}, text_consent_at = now() where id = ${id}::bigint`;
+  else await db.sql`update submissions set text_consent = ${words}, text_consent_at = now() where id = ${id}::bigint`;
 }
 
 /**
@@ -165,9 +176,9 @@ export async function finishDraft(db: Db, id: string, complete: boolean): Promis
   const [, made, now] = await db.transaction([
     q`select id from submission_drafts where id = ${id}::bigint for update`,
     q`with made as (
-        insert into submissions (form_key, name, email, phone, data, source, page, status, completed_at)
+        insert into submissions (form_key, name, email, phone, data, source, page, status, completed_at, text_consent, text_consent_at)
         select form_key, name, email, phone, data, source, page, case when spam then 'spam' else 'new' end,
-               case when ${complete} then now() end
+               case when ${complete} then now() end, text_consent, text_consent_at
         from submission_drafts where id = ${id}::bigint and submission_id is null
         returning id)
       update submission_drafts set submission_id = (select id from made), updated_at = now()

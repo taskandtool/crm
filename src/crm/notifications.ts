@@ -2,7 +2,8 @@
 // Jobber's activity feed (docs/plans/crm-contacts-leads-deals.md).
 // A booker's own move or cancel (the booking skill's booking_changes), a
 // proposal the customer signed or declined at its link, and money paid
-// through Stripe. News, not work: no Done. Each person's notifications_seen
+// through Stripe, and a text, voicemail or missed call to the business
+// number (the phone skill). News, not work: no Done. Each person's notifications_seen
 // row says when they last opened the bell, which clears its count as
 // HubSpot's does; unread is anything newer. Tables the project does not have
 // are skipped (tables.ts).
@@ -26,7 +27,9 @@ export type ChangeNotice = Base & {
 /** A quote the customer answered at its link themselves: signed (accepted) or declined. One the team marked is not news. */
 export type QuoteNotice = Base & { kind: "quote"; answer: "accepted" | "declined"; number: string; total_cents: string; currency: string };
 export type PaymentNotice = Base & { kind: "payment"; amount_cents: string; currency: string; description: string | null; livemode: boolean | null };
-export type Notice = ChangeNotice | QuoteNotice | PaymentNotice;
+/** A text, a voicemail or a missed call to the business number; `remote_key` opens its thread in Messages. */
+export type PhoneNotice = Base & { kind: "phone"; what: "text" | "voicemail" | "missed"; remote_key: string; body: string | null };
+export type Notice = ChangeNotice | QuoteNotice | PaymentNotice | PhoneNotice;
 
 /** The newest notifications across every kind the project has. */
 export async function notices(db: Db, limit = NOTICE_LIMIT): Promise<Notice[]> {
@@ -58,6 +61,16 @@ export async function notices(db: Db, limit = NOTICE_LIMIT): Promise<Notice[]> {
       -- What a customer paid, not a payment the team recorded by hand (it has a payment record).
       where pm.status in ('paid', 'refunded', 'partially_refunded') and pm.stripe_payment_record_id is null
       order by coalesce(pm.paid_at, pm.created_at) desc, pm.id desc
+      limit ${limit}`);
+  }
+  if (p.communications) {
+    jobs.push(db.sql<PhoneNotice>`
+      select 'phone' as kind, m.id::text as id, m.created_at as at, coalesce(c.name, m.remote_e164) as name, c.email::text as email,
+             case when m.kind = 'text' then 'text' when m.voicemail_sid is not null then 'voicemail' else 'missed' end as what,
+             m.remote_key, m.body
+      from communications m left join customers c on c.id = m.contact_id
+      where m.direction = 'in' and (m.kind = 'text' or (m.kind = 'call' and m.answered_by is null and m.status <> 'ringing'))
+      order by m.created_at desc, m.id desc
       limit ${limit}`);
   }
   const all = (await Promise.all(jobs)).flat();

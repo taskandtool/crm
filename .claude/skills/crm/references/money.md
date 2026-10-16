@@ -15,8 +15,8 @@ says how the three link.
 
 ## Quotes and invoices
 
-Under Invoices: the tabs Quotes, Invoices and Payments, and a Tax rates
-page. `invoices.quote_word` names a quote everywhere: Quote,
+Under Invoices: the tabs Invoices, Payments and Recurring (Quotes is a
+section of its own), and a Tax rates page. `invoices.quote_word` names a quote everywhere: Quote,
 Proposal or Estimate.
 
 **A quote is a proposal page**: by default a plain quote (a plain head, its
@@ -65,8 +65,17 @@ hosts the page the customer pays on. Paid, void and uncollectible arrive
 from Stripe's webhook; "Record payment" is for cash, a check or a transfer, all of it or part
 (`invoices.mjs record-payment`). A quote can make
 several ("Invoice the rest"). A customer's page shows what was quoted, what
-they owe now and what was paid; an event's page shows its quote and
-invoice.
+they owe now and what was paid, their recurring invoices and saved card; an
+event's page shows its quote and invoice.
+
+**Cards and recurring invoices.** A card is saved when the customer pays an
+invoice on Stripe's page; Send then offers "Charge Visa 4242"
+(`invoices.mjs send <id> --charge`). A recurring invoice
+(`node scripts/recurring.mjs add <who> --name "Maintenance plan" --line "Care|300" --first 2026-11-01 --mode charge`)
+makes an ordinary invoice on each date: a draft with a task, emailed, or
+charged. On a quote, `--quote <id>` (or "Add a recurring invoice" on its
+page) makes it "Then, recurring": the proposal shows it beside the total,
+signing starts it, a decline ends it.
 
 Set it up once, in this order:
 
@@ -86,5 +95,11 @@ Set it up once, in this order:
    set the webhook's signing secret as `STRIPE_WEBHOOK_SECRET`. Stripe
    reaches the CRM at that URL, never at production's address. After the
    secret is set, `python3 ~/tools/taskandtool.py restart`.
+5. Recurring invoices need the time zone (lever) and one daily job, if
+   `python3 ~/tools/taskandtool.py list-jobs` does not show it, at the UTC
+   hour that is 06:00 in `time_zone`:
+   `python3 ~/tools/taskandtool.py schedule-job "Recurring invoices" --when "0 <h> * * *" --command "npx tsx src/crm/recurring-job.ts" --team-only`.
+   Charging needs the three Stripe settings and card events in the
+   `payments` skill's `references/setup.md`.
 
 The `invoices` skill has the rules, sending among them; `src/invoices/` is its code.

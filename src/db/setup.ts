@@ -1,7 +1,8 @@
 // Bringing the database up to what this CRM needs: the two extensions every
 // project database has (made here too, for a Postgres off Task & Tool), the
-// forms, booking and customers skills' tables, schema.sql, and the payments
-// and invoices skills' tables when quotes and invoices are on, through
+// forms, booking and customers skills' tables, schema.sql, the phone
+// skill's, and the payments and invoices skills' tables when quotes and
+// invoices are on, through
 // applySchema (additive only, safe to run by every app at any version,
 // behind the lock every app shares), and the configured statuses and deal
 // stages on the very first run. Machine only: the service runs it at start
@@ -28,6 +29,7 @@ export const FORMS_SCHEMA_FILE = fileURLToPath(new URL("../forms/schema.sql", im
 export const PAYMENTS_SCHEMA_FILE = fileURLToPath(new URL("../payments/schema.sql", import.meta.url));
 export const INVOICES_SCHEMA_FILE = fileURLToPath(new URL("../invoices/schema.sql", import.meta.url));
 export const PROPOSALS_SCHEMA_FILE = fileURLToPath(new URL("../proposals/schema.sql", import.meta.url));
+export const PHONE_SCHEMA_FILE = fileURLToPath(new URL("../phone/schema.sql", import.meta.url));
 
 export async function setup(db: Db, seeds: Seeds, opts: SetupOpts = { invoices: true, forms: true }): Promise<{ seeded: number }> {
   // On Neon the app's login may not create extensions; they are there
@@ -45,6 +47,8 @@ export async function setup(db: Db, seeds: Seeds, opts: SetupOpts = { invoices: 
   await applySchema(db, readFileSync(BOOKING_SCHEMA_FILE, "utf8"));
   await applySchema(db, readFileSync(CUSTOMERS_SCHEMA_FILE, "utf8"));
   await applySchema(db, readFileSync(SCHEMA_FILE, "utf8"));
+  // The business number's texts and calls (the phone skill), after the customers it adds a column to.
+  await applySchema(db, readFileSync(PHONE_SCHEMA_FILE, "utf8"));
   await moveVisits(db);
   // Invoices record their payments in the payments skill's table.
   if (opts.invoices !== false) {
@@ -71,6 +75,7 @@ export function setupKey(opts: SetupOpts): string {
     ["booking", BOOKING_SCHEMA_FILE],
     ["customers", CUSTOMERS_SCHEMA_FILE],
     ["crm", SCHEMA_FILE],
+    ["phone", PHONE_SCHEMA_FILE],
     ["payments", opts.invoices !== false && PAYMENTS_SCHEMA_FILE],
     ["invoices", opts.invoices !== false && INVOICES_SCHEMA_FILE],
     ["proposals", opts.invoices !== false && PROPOSALS_SCHEMA_FILE],

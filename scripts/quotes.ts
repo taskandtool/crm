@@ -11,7 +11,7 @@ import { quoteById } from "../src/invoices/quotes";
 import { linkReady } from "../src/proposals/link";
 import { production } from "../src/proposals/serving";
 import { COMPONENTS, PICKABLE } from "../src/proposals/components";
-import { afterAccepted, onAcceptSentence, proposalDocument, type AnswerDeps } from "../src/proposals/sign";
+import { afterAccepted, afterDeclined, onAcceptSentence, proposalDocument, type AnswerDeps } from "../src/proposals/sign";
 import { chosenKeys, ensureProposal, markEmailed, newLink, proposalOf, sampleWarning, saveProposal, storePage, type ProposalOpts } from "../src/proposals/store";
 import { printPdf } from "../src/pdf";
 import { cliSettings, done, fail, flag, has, misused, out } from "./lib";
@@ -49,6 +49,7 @@ await quotesCli(process.argv.slice(2), {
   afterDecide: async (db, qt, by) => {
     const won = (await winFromQuotes(db, by)).map((d) => `deal #${d.id} ${d.title} won`);
     const after = qt.status === "accepted" ? (await afterAccepted(db, qt, by, deps)).lines : [];
+    if (qt.status === "declined") await afterDeclined(db, qt, by);
     return [...won, ...after];
   },
   proposal: {
