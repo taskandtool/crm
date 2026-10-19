@@ -30,12 +30,12 @@ import { envOf } from "../data/env";
 import { emailsCustomers, sendEmail, type Email, type Sent } from "../data/send";
 import { formatMoney, toMinor } from "../payments/money";
 import { stripeConnected, stripeFrom, type Stripe } from "../payments/stripe";
-import { addDays, invoiceHtml, isDay, quoteHtml, quoteMessage, sendQuote, taxSummary, todayIn } from "./document";
+import { invoiceHtml, isDay, quoteHtml, quoteMessage, sendQuote, taxSummary, todayIn } from "./document";
 import { createTaxRate, percentText, setTaxRateActive, taxRates, type TaxRate } from "../payments/tax";
 import { amountInput, type Errors, type SavedLine } from "./lines";
 import { CustomerFields, formLines, LineItems, linesOf } from "./form";
 import {
-  copyQuote, createQuote, decideQuote, expireQuote, isEditable, markSent, QUOTE_STATUS_LABELS, quoteById, quotesPage, saveQuote, SHOWN_QUOTE_STATUSES, shownStatus,
+  cannotSend, copyQuote, createQuote, decideQuote, expireQuote, isEditable, markSent, QUOTE_STATUS_LABELS, quoteById, quotesPage, saveQuote, SHOWN_QUOTE_STATUSES, shownStatus,
   type Quote, type QuoteRow, type ShownQuoteStatus,
 } from "./quotes";
 import {
@@ -44,6 +44,7 @@ import {
 } from "./invoices";
 import { cardName, defaultCard } from "./cards";
 import { RECURRING_MESSAGES, recurringRoutes } from "./recurring-admin";
+import { shortDay } from "./recurring";
 import { chargeInvoice, emailPaymentPage, markUncollectible, paidSoFar, PAYMENT_METHODS, recordPayment, sendInvoice, voidInvoice } from "./stripe";
 
 type Ctx = Context<{ Variables: TeamVars }>;
@@ -222,6 +223,7 @@ const MESSAGES: FlashMessages = {
   expired: "Marked expired.",
   copied: "A new draft, copied from the quote.",
   "not-now": "Not from its current status. Nothing changed.",
+  "past-valid": "Not sent: its valid-until date has passed. Change or clear it, then send.",
   "invoice-created": "Invoice drafted. Check it, then send it with Stripe.",
   "invoice-sent": "Sent. Stripe emailed the invoice from your Stripe account.",
   "invoice-charged": "Charged. It turns paid here when Stripe confirms, usually within seconds.",
@@ -357,7 +359,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const currency = (qy("currency") || opts.currency || "usd").toLowerCase();
     const values: FormValues = {
       email: qy("email"), name: qy("name"), phone: qy("phone"), address: qy("address"), currency,
-      valid_until: addDays(todayIn(opts.timeZone), 30), notes: "", terms: opts.terms ?? "", days_until_due: "", visit_id: qy("event"), deal_id: qy("deal"),
+      valid_until: "", notes: "", terms: opts.terms ?? "", days_until_due: "", visit_id: qy("event"), deal_id: qy("deal"),
       lines: qy("line") ? [{ description: qy("line"), quantity: "1", unit: qy("unit"), tax_rate_id: "" }] : [],
     };
     return editor(c, { title: `New ${w}`, action: qbase, values, errors: {}, current: qbase });
@@ -402,7 +404,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
           <More items={[
             open ? <a href={`${self}/edit`} class={menuItem}>Edit</a> : null,
             <a href={`${self}/document`} class={menuItem} target="_blank">Preview</a>,
-            qt.status === "sent" ? <a href={`${self}/send`} class={menuItem}>Send again</a> : null,
+            qt.status === "sent" || qt.status === "expired" ? <a href={`${self}/send`} class={menuItem}>Send again</a> : null,
             // Their answer, by reply or on the phone.
             open ? (opts.proposal
               ? <a href={`${self}/accept`} class={menuItem}>Mark accepted</a>
@@ -499,7 +501,8 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const qt = await load(c);
     if (!qt) return c.notFound();
     const self = `${qbase}/${qt.id}`;
-    if (qt.status !== "draft" && qt.status !== "sent") return c.redirect(self, 302);
+    const no = cannotSend(qt, todayIn(opts.timeZone));
+    if (no) return back(c, self, no === "past" ? "past-valid" : "not-now");
     const rates = await taxRates(getDb(c));
     const noLink = opts.proposal ? await opts.proposal.linkReady(c, qt) : "";
     const withLink = noLink === null;
@@ -561,7 +564,8 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const qt = await load(c);
     if (!qt) return c.notFound();
     const self = `${qbase}/${qt.id}`;
-    if (qt.status !== "draft" && qt.status !== "sent") return back(c, self, "not-now");
+    const no = cannotSend(qt, todayIn(opts.timeZone));
+    if (no) return back(c, self, no === "past" ? "past-valid" : "not-now");
     const how = str((await c.req.parseBody()).how);
     const proposal = opts.proposal;
     const withLink = !!proposal && (await proposal.linkReady(c, qt)) === null;
@@ -866,6 +870,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
                 { label: "Paid by", value: inv.sent_at && inv.collect === "charge" ? "Their card on file" : null },
                 { label: "Paid", value: inv.paid_at ? <When at={inv.paid_at} timeZone={opts.timeZone} /> : null },
                 { label: "Quote", value: quote ? <a href={`${qbase}/${quote.id}`}>Quote {quote.number}</a> : null },
+                { label: "Recurring", value: inv.recurring_id ? <a href={`${base}/recurring/${inv.recurring_id}`}>{inv.period_on ? `The one for ${shortDay(inv.period_on)}` : "Open it"}</a> : null },
                 ...(linked.more ?? []),
               ]} />
             </Section>
@@ -1111,7 +1116,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       : !method ? "Choose how it was paid."
       : !isDay(v.on) || v.on > today ? "Enter the day it was paid, today or before." : null;
     if (problem) return paymentPage(c, inv, v, problem, 422);
-    const r = await recordPayment(getDb(c), stripeOf(c), inv.id, { amountCents: cents!, method: method!, paidOn: v.on, reference: v.reference || null, key: v.key, today }, c.get("user"));
+    const r = await recordPayment(getDb(c), stripeOf(c), inv.id, { amountCents: cents!, method: method!, paidOn: v.on, reference: v.reference || null, key: v.key, timeZone: opts.timeZone }, c.get("user"));
     // Stripe refused it: the form comes back with a new key, so a corrected amount is a new request to Stripe.
     if (!r.ok) return paymentPage(c, inv, r.reason === "stripe" ? { ...v, key: crypto.randomUUID() } : v, r.message, r.reason === "stripe" ? 502 : 422);
     return back(c, self, r.remaining === 0 ? "payment-recorded-all" : "payment-recorded");

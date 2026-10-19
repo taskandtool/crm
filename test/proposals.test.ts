@@ -185,6 +185,8 @@ test("a proposal end to end: built, linked, opened, changed under them, signed; 
   assert.equal(invoices.length, 1);
   const dep = (await invoiceById(db, invoices[0].id))!;
   assert.deepEqual([dep.status, dep.lines[0].description, dep.total_cents], ["draft", `Deposit (50%) for ${qt.number}`, "120000"]);
+  assert.equal((await db.sql`select title from follow_ups where title like 'Check and send the deposit%'`)[0]?.title,
+    `Check and send the deposit invoice (50%) for $1,200.00 for Ann Lee (${qt.number}): they signed, and it is a draft`, "signed online, so a task says the draft waits");
   assert.match(mail.at(-1)!.subject, /^You signed quote Q-\d{4} with Acme Test Co$/);
   assert.match(mail.at(-1)!.text, new RegExp(`Your copy, with what happens next: ${HOST}/q/${token}`));
 
@@ -198,9 +200,11 @@ test("a proposal end to end: built, linked, opened, changed under them, signed; 
   assert.deepEqual((await db.sql`select key from quote_components where quote_id = ${id}::bigint order by key`).map((r) => r.key), ["about", "reviews"]);
 });
 
-test("then, recurring: a weekly plan waits on the proposal, shown beside the total; signing starts it and makes today's; a no ends another", async (t) => {
+test("then, recurring: a weekly plan waits on the proposal, shown beside the total; signing starts it, makes today's and makes the lead a customer; a no ends another", async (t) => {
   if (skip) return t.skip(skip);
-  const { deal } = await customerWithDeal("Eve Park", "eve@example.com");
+  // A lead with no deal: the yes alone makes them a customer.
+  const [eve] = await db.sql`insert into customers (name, email, stage) values ('Eve Park', 'eve@example.com', 'lead') returning id::text as id`;
+  const deal = "";
   const id = await newQuote("eve@example.com", "Eve Park", deal, "500.00");
   let html = await (await get(`/invoices/quotes/${id}`)).text();
   assert.match(html, new RegExp(`href="/invoices/recurring/new\\?quote=${id}"`));
@@ -227,6 +231,7 @@ test("then, recurring: a weekly plan waits on the proposal, shown beside the tot
 
   const [after] = await db.sql`select status, made, to_char(next_on, 'YYYY-MM-DD') as next_on from recurring_invoices where id = ${rec.id}::bigint`;
   assert.deepEqual([after.status, after.made], ["active", 1]);
+  assert.equal((await db.sql`select stage from customers where id = ${eve.id}::bigint`)[0].stage, "customer");
   assert.equal(after.next_on, new Date(Date.parse(today + "T00:00:00Z") + 7 * 86_400_000).toISOString().slice(0, 10));
   const [inv] = await db.sql`select status, quote_id, to_char(period_on, 'YYYY-MM-DD') as period_on from invoices where recurring_id = ${rec.id}::bigint`;
   assert.deepEqual([inv.status, inv.quote_id, inv.period_on], ["draft", null, today], "today's is made at once, and not listed on the proposal");
@@ -299,7 +304,7 @@ test("declined at the link: the quote declined, its deal lost with their reason;
   assert.equal((await get("/invoices/quotes", NOBODY)).status, 404, "the rest stays the team's");
 });
 
-test("the morning: a proposal three days from expiring unsigned gets a follow-up task, once; one opened since yesterday is in its maker's email", async (t) => {
+test("the morning: a proposal unsigned three days after it went, or three from expiring, gets a follow-up task, once; one opened since yesterday is in its maker's email", async (t) => {
   if (skip) return t.skip(skip);
   const { sendDigests } = await import("../src/crm/digest");
   const { todayIn } = await import("../src/invoices/document");
@@ -313,6 +318,7 @@ test("the morning: a proposal three days from expiring unsigned gets a follow-up
   await sendDigests(db, send, { timeZone: "UTC", hour: 0, word: "Quote" });
   const tasks = await db.sql`select title, owner::text as owner, to_char(due_on, 'YYYY-MM-DD') as due from follow_ups where title like 'Follow up with Di Moe%'`;
   assert.equal(tasks.length, 1);
+  assert.match(tasks[0].title, /not signed yet, open until /);
   assert.equal(tasks[0].owner, "pat@team.example");
   assert.equal(tasks[0].due, today);
   const mine = sent.find((m) => m.to === "pat@team.example")!;
@@ -322,6 +328,19 @@ test("the morning: a proposal three days from expiring unsigned gets a follow-up
   await db.sql`delete from follow_up_digests`;
   await sendDigests(db, send, { timeZone: "UTC", hour: 0, word: "Quote" });
   assert.equal((await db.sql`select count(*)::int as n from follow_ups where title like 'Follow up with Di Moe%'`)[0].n, 1);
+
+  // With no valid-until date: three days after it went.
+  const { deal: d2 } = await customerWithDeal("Ed Noe", "ed@example.com");
+  const other = await newQuote("ed@example.com", "Ed Noe", d2);
+  await post(`/invoices/quotes/${other}/send`, { how: "link" });
+  await db.sql`update quotes set valid_until = null where id = ${other}::bigint`;
+  await db.sql`delete from follow_up_digests`;
+  await sendDigests(db, send, { timeZone: "UTC", hour: 0, word: "Quote" });
+  assert.equal((await db.sql`select count(*)::int as n from follow_ups where title like 'Follow up with Ed Noe%'`)[0].n, 0, "not the day it went");
+  await db.sql`update quotes set sent_at = now() - interval '3 days' where id = ${other}::bigint`;
+  await db.sql`delete from follow_up_digests`;
+  await sendDigests(db, send, { timeZone: "UTC", hour: 0, word: "Quote" });
+  assert.equal((await db.sql`select title from follow_ups where title like 'Follow up with Ed Noe%'`)[0]?.title, `Follow up with Ed Noe on quote Q-${other.padStart(4, "0")}: not signed yet`);
 });
 
 test("in production the edge's header says whether /q is open; a visitor's own header is the edge's to drop", async () => {

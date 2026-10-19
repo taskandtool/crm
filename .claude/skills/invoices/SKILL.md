@@ -30,7 +30,10 @@ Version: 0.5.0 (taskandtool/skills)
 - **Statuses only move forward.** Quotes: draft, sent, then accepted,
   declined or expired, set by a person or by the customer at its link
   (`decided_by` is `ONLINE`'s "signed online" or "declined online"); a sent
-  one the customer opened shows as Viewed (`viewed_at`). Invoices: a draft is ours; once
+  one the customer opened shows as Viewed (`viewed_at`). A quote has no
+  valid-until date unless one is set, and is never sent past it
+  (`cannotSend`); an expired one is sent again once its date is moved or
+  cleared. Invoices: a draft is ours; once
   sent it is Stripe's, and open, paid, void and uncollectible arrive only
   from the verified webhook (`webhook.ts`). Void and uncollectible ask
   Stripe and wait for its event.

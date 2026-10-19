@@ -102,6 +102,16 @@ test("periods count from the first date: the 28th through a leap February, weeks
   assert.equal(scheduleText({ unit: "year", every: 1, first_on: "2026-11-22" }), "every year on November 22");
 });
 
+test("the run's today is the business's: either side of local midnight in Auckland and Honolulu, and the night Denver's clocks go back", () => {
+  assert.equal(todayIn("Pacific/Auckland", new Date("2026-10-15T10:30:00Z")), "2026-10-15");
+  assert.equal(todayIn("Pacific/Auckland", new Date("2026-10-15T11:30:00Z")), "2026-10-16");
+  assert.equal(todayIn("Pacific/Honolulu", new Date("2026-10-15T09:30:00Z")), "2026-10-14");
+  assert.equal(todayIn("Pacific/Honolulu", new Date("2026-10-15T10:30:00Z")), "2026-10-15");
+  assert.equal(todayIn("America/Denver", new Date("2026-11-01T05:30:00Z")), "2026-10-31");
+  assert.equal(todayIn("America/Denver", new Date("2026-11-01T06:30:00Z")), "2026-11-01");
+  assert.equal(todayIn("America/Denver", new Date("2026-11-02T06:30:00Z")), "2026-11-01", "an hour later after the change");
+});
+
 test("a month's first date is the 1st to the 28th; a week's any day; ends on a date or after a count", async (t) => {
   await withDb(t, async (s) => {
     const bad = await createRecurring(s.db, plan({ first_on: "2026-11-30" }), BY, "crm");
@@ -182,6 +192,8 @@ test("charge: no card emails it; a card is charged by name; a declined card leav
     assert.equal(pay.params.payment_method, "pm_visa");
     assert.equal([...card.invoices.values()][0].collection, "charge_automatically");
     assert.equal((await defaultCard(s.db, "ann@example.com", false))!.last4, "4242");
+    const [dec1] = await s.db.sql<{ status: string }>`select status from invoices where period_on = '2026-12-01'`;
+    assert.equal(dec1.status, "open", "Stripe answers paid: no longer a draft here, paid when the webhook says so");
 
     const tasks: string[] = [];
     const declined = fakeStripe({ cards: [{ id: "pm_visa", brand: "visa", last4: "4242" }], decline: "card_declined" });
@@ -218,6 +230,15 @@ test("pause and resume skip the missed dates; schedule fixed once an invoice is 
     assert.ok(!moved.ok && moved.errors.first_on);
     const pricier = await saveRecurring(s.db, r.id, plan({ lines: [{ description: "Monthly maintenance", quantity: "1", unit: "350" }] }), BY);
     assert.ok(pricier.ok && pricier.value.total_cents === "35000");
+
+    // Paused before its first invoice: the resume skips the missed dates, and an edit afterwards keeps that.
+    const early = await made(s, { email: "bo@example.com", ends: "after", ends_after: "3" });
+    await pauseRecurring(s.db, early.id, BY);
+    await resumeRecurring(s.db, early.id, BY, "2027-01-10");
+    const renamed = await saveRecurring(s.db, early.id, plan({ email: "bo@example.com", title: "Care plan", ends: "after", ends_after: "3" }), BY);
+    assert.ok(renamed.ok && renamed.value.next_on === "2027-02-01", "an edit does not bring back the skipped dates");
+    assert.match(describe(renamed.value), /for 3 invoices \(the last on Apr 1, 2027\)/, "the last counts on from the next date, not the first");
+    assert.equal((await runRecurring(s.db, deps("2027-01-10", stripe))).made, 0);
   });
 });
 
@@ -227,6 +248,10 @@ test("make now: the next period as a draft, whatever its date", async (t) => {
     const inv = await makeNow(s.db, r.id, deps("2026-10-15", fakeStripe().stripe));
     assert.ok(inv && inv.status === "draft" && inv.period_on === "2026-11-01");
     assert.equal((await recurringById(s.db, r.id))!.next_on, "2026-12-01");
+
+    const once = await made(s, { email: "bo@example.com", ends: "after", ends_after: "1" });
+    await makeNow(s.db, once.id, deps("2026-10-15", fakeStripe().stripe));
+    assert.equal((await recurringById(s.db, once.id))!.status, "ended", "its last invoice made: ended at once, not at the next run");
   });
 });
 
@@ -258,6 +283,8 @@ test("card events: the first card is the default; removing it falls to the next;
     assert.equal((await defaultCard(s.db, "ann@example.com", false))!.last4, "2222");
     await cardEvents.apply(s.db, ev("evt_4", "payment_method.detached", { id: "pm_b", type: "card", customer: null }));
     assert.deepEqual((await cardsFor(s.db, "ann@example.com")).map((c) => [c.last4, c.isDefault]), [["1111", true]]);
+    await cardEvents.apply(s.db, ev("evt_2", "payment_method.attached", pm("pm_b", "2222")));
+    assert.deepEqual((await cardsFor(s.db, "ann@example.com")).map((c) => c.last4), ["1111"], "a removed card stays removed when its attach comes again");
   });
 });
 
@@ -299,8 +326,8 @@ test("the pages: make one, read what happens, a charged invoice from Send, a car
     assert.match(res.headers.get("location")!, /saved=invoice-charged$/);
     assert.equal(f.calls.find((c) => c.path.endsWith("/pay"))!.params.payment_method, "pm_visa");
 
-    res = await post("/invoices/cards/pm_mc/default", { back: `/invoices/recurring/${id}` });
-    assert.match(res.headers.get("location")!, /saved=card-default$/);
+    res = await post("/invoices/cards/pm_mc/default", { back: "/customers/4" });
+    assert.match(res.headers.get("location")!, /^\/customers\/4\?saved=card-default$/, "back to the customer's page it was pressed on");
     assert.equal((await defaultCard(s.db, "ann@example.com", false))!.last4, "5555");
     html = await (await get(`/invoices/recurring/${id}`)).text();
     assert.match(html, /charged to Mastercard 5555/);

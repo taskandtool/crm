@@ -4,6 +4,7 @@
 import type { Child } from "hono/jsx";
 import type { FlashMessages } from "../admin/flash";
 import { BOOKING_MESSAGES } from "../booking/admin";
+import { RECURRING_MESSAGES } from "../invoices/recurring-admin";
 import { buttonClass, controlClass, fieldClass, primaryClass, quietClass, type StatusOption } from "../admin/status";
 import { cfg, dealsCfg, eventsCfg, vocab } from "../config";
 import type { CustomField } from "../config-schema";
@@ -310,6 +311,8 @@ const eventWord = (eventsCfg ?? { one: "Event" }).one;
 export const MESSAGES: FlashMessages = {
   // What the booking skill's routes (an event's buttons, Reschedule) come back with, in this CRM's word.
   ...BOOKING_MESSAGES,
+  // The card buttons on a customer's page (the invoices skill's) come back to it.
+  ...RECURRING_MESSAGES,
   rescheduled: `${eventWord} moved. They have been told the new time.`,
   cancelled: `${eventWord} cancelled.`,
   unchanged: { error: `Nothing changed. A cancelled ${eventWord.toLowerCase()} stays cancelled, and one is marked completed or no-show only once it has started.` },

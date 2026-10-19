@@ -300,8 +300,8 @@ export async function invoiceTotals(db: Db, opts: { today: string; timeZone: str
       (select count(*)::int from owed) as open_count,
       (select coalesce(sum(total_cents), 0)::text from owed where due_date < ${opts.today}::date) as due_cents,
       (select count(*)::int from owed where due_date < ${opts.today}::date) as due_count,
-      -- Every payment on an invoice this month, online or by hand, part or all.
-      (select coalesce(sum(coalesce(p.total_cents, p.amount_cents)), 0)::text from payments p
+      -- Every payment on an invoice this month, online or by hand, part or all, less what was refunded.
+      (select coalesce(sum(coalesce(p.total_cents, p.amount_cents) - p.refunded_cents), 0)::text from payments p
         where p.ref_type = 'invoice' and p.status in ('paid', 'refunded', 'partially_refunded') and p.livemode is true and p.currency = ${opts.currency}
           and p.paid_at >= (date_trunc('month', ${opts.today}::date)::timestamp at time zone ${opts.timeZone})) as paid_cents`;
   return {

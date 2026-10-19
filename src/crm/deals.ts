@@ -192,6 +192,12 @@ const customerWins = (dealId: string, user: string): Query => q`
   where c.id = (select d.customer_id from deals d join deal_stages s on s.key = d.stage where d.id = ${dealId}::bigint and s.kind = 'won')
     and exists (select 1 from pipeline_stages s where s.key = c.stage and s.kind = 'open')`;
 
+/** A yes to a quote makes its customer a customer, as a won deal does (Jobber's lead to client). */
+export const customerWon = (customerId: string, user: string): Query => q`
+  update customers c set stage = w.key, updated_at = now(), updated_by = ${user}
+  from (select key from pipeline_stages where not archived and kind = 'won' order by position, key limit 1) w
+  where c.id = ${customerId}::bigint and exists (select 1 from pipeline_stages s where s.key = c.stage and s.kind = 'open')`;
+
 /**
  * Every open deal with a quote accepted since the deal last moved goes to the
  * first won stage, and its customer with it. Safe to run any time and any

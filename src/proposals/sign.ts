@@ -19,12 +19,12 @@ import { formatMoney } from "../payments/money";
 import { taxRates } from "../payments/tax";
 import { addTask } from "../crm/tasks";
 import { findMatch } from "../crm/customers";
-import { setDealStage, winFromQuotes } from "../crm/deals";
+import { customerWon, setDealStage, winFromQuotes } from "../crm/deals";
 import { todayIn } from "../invoices/document";
 import { invoiceFromQuote, invoicesFor } from "../invoices/invoices";
 import { isEditable, ONLINE, quoteById, type Quote } from "../invoices/quotes";
 import { sendInvoice } from "../invoices/stripe";
-import { describe, endForQuote, recurringList, startFromQuote } from "../invoices/recurring";
+import { describe, endForQuote, recurringList, startFromQuote, type Made } from "../invoices/recurring";
 import { recurringTask } from "../crm/recurring";
 import { tokenHash } from "../data/token";
 import { fillPage } from "./page";
@@ -52,21 +52,33 @@ async function taskFor(db: Db, qt: Quote, title: string, deps: AnswerDeps): Prom
 }
 
 /**
- * "After they sign", for an accepted quote: the first invoice it names,
- * made once (a repeat finds it and makes nothing), and sent through Stripe
- * when that was chosen; then its recurring invoice starts, if it has one. A
- * Stripe failure leaves the draft and a task naming the error.
+ * "After they sign", for an accepted quote: a lead becomes a customer; the
+ * first invoice it names, made once (a repeat finds it and makes nothing),
+ * and sent through Stripe when that was chosen; then its recurring invoice
+ * starts, if it has one. A Stripe failure leaves the draft and a task naming
+ * the error, as does a draft made at an online signing.
  */
 export async function afterAccepted(db: Db, qt: Quote, by: string, deps: AnswerDeps): Promise<Accepted> {
   if (qt.status !== "accepted") return { lines: [] };
+  const customer = await findMatch(db, qt.email, qt.phone);
+  if (customer) await db.transaction([customerWon(customer.id, by)]);
   const first = await firstInvoice(db, qt, by, deps);
   const started = await startFromQuote(db, qt.id, {
     today: todayIn(deps.opts.timeZone), timeZone: deps.opts.timeZone, stripe: deps.stripe, task: recurringTask(db), by,
   });
   const recurring = started.map(({ recurring: r, first: made }) =>
-    `started ${r.title}: ${describe(r)}${made ? ` Its first invoice is ${made.outcome === "failed" ? `a draft (${made.message})` : made.outcome === "charged" ? "charged" : made.outcome === "draft" ? "a draft" : "sent"}.` : ""}`);
+    `started ${r.title}: ${describe(r)}${made ? ` ${FIRST[made.outcome](made.message)}` : ""}`);
   return { lines: [...first.lines, ...recurring] };
 }
+
+// What became of a recurring invoice's first invoice, made at the yes.
+const FIRST: Record<Made["outcome"], (why?: string) => string> = {
+  draft: () => "Its first invoice is a draft to check and send.",
+  sent: () => "Its first invoice is emailed to pay.",
+  charged: () => "Its first invoice is charged to their card.",
+  emailed: () => "Its first invoice is emailed to pay: no card is on file yet.",
+  failed: (why) => `Its first invoice did not go through (${why}); there is a task for it.`,
+};
 
 /** The customer said no: the recurring invoice waiting on the quote never starts. */
 export const afterDeclined = (db: Db, qt: Quote, by: string) => endForQuote(db, qt.id, by);
@@ -84,7 +96,11 @@ async function firstInvoice(db: Db, qt: Quote, by: string, deps: AnswerDeps): Pr
   }
   const inv = made.value;
   const what = `${p.deposit_percent ? `deposit invoice (${p.deposit_percent}%)` : "invoice"} for ${formatMoney(inv.total_cents, inv.currency)}`;
-  if (p.first_invoice === "draft") return { lines: [`drafted the ${what}, to review and send`] };
+  if (p.first_invoice === "draft") {
+    // Signed online, nobody is looking: a task says it waits.
+    if (by === ONLINE.accepted) await taskFor(db, qt, `Check and send the ${what} for ${qt.name ?? qt.email} (${qt.number}): they signed, and it is a draft`, deps);
+    return { lines: [`drafted the ${what}, to review and send`] };
+  }
   let stripe: Stripe;
   try {
     stripe = deps.stripe();

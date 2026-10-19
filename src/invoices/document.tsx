@@ -12,7 +12,7 @@ import { formatMoney } from "../payments/money";
 import { percentText, type TaxRate } from "../payments/tax";
 import type { SavedLine } from "./lines";
 import type { Invoice } from "./invoices";
-import { markSent, type Quote } from "./quotes";
+import { cannotSend, markSent, PAST_VALID, type Quote } from "./quotes";
 
 /**
  * The business's name, and its zone: the quote's date is the day it is there.
@@ -286,7 +286,8 @@ export type SendQuote = {
  * sending.
  */
 export async function sendQuote(db: Db, qt: Quote & { lines: SavedLine[] }, rates: TaxRate[], o: DocOptions, how: SendQuote): Promise<{ sent: Sent; pdf: boolean; printError: string | null }> {
-  if (qt.status !== "draft" && qt.status !== "sent") return { sent: { status: "none", why: `the quote is ${qt.status}` }, pdf: false, printError: null };
+  const why = cannotSend(qt, todayIn(o.timeZone ?? "UTC"));
+  if (why) return { sent: { status: "none", why: why === "past" ? PAST_VALID : `it is ${qt.status}` }, pdf: false, printError: null };
   const msg = quoteMessage(qt, rates, o, how.link);
   let pdf: Uint8Array | null = null;
   let printError: string | null = null;

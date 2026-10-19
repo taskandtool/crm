@@ -20,19 +20,19 @@ import { createHash } from "node:crypto";
 import { formatMoney, toMinor } from "../payments/money";
 import { stripeFrom } from "../payments/stripe";
 import { createTaxRate, percentText, taxRates, type TaxRate } from "../payments/tax";
-import { addDays, isDay, quoteMessage, sendQuote, todayIn } from "./document";
+import { isDay, quoteMessage, sendQuote, todayIn } from "./document";
 import {
   createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, owed, saveInvoice, INVOICE_STATUSES,
   type Invoice, type InvoiceFields, type InvoiceStatus,
 } from "./invoices";
 import { amountInput, type LineInput, type SavedLine } from "./lines";
 import {
-  createQuote, decideQuote, expireQuote, markSent, quoteById, quotesFor, quotesPage, saveQuote, shownStatus, QUOTE_STATUSES,
+  cannotSend, createQuote, decideQuote, expireQuote, markSent, PAST_VALID, quoteById, quotesFor, quotesPage, saveQuote, shownStatus, QUOTE_STATUSES,
   type Quote, type QuoteFields, type QuoteStatus,
 } from "./quotes";
 import { cardName, chargeCard, defaultCard } from "./cards";
 import {
-  createRecurring, describe, endRecurring, invoicesOf, makeNow, MODES, pauseRecurring, periodLabel, previewRecurring, recurringById, recurringList, resumeRecurring,
+  createRecurring, describe, endRecurring, invoicesOf, makeNow, MODES, pastText, pauseRecurring, periodLabel, previewRecurring, recurringById, recurringList, resumeRecurring,
   saveRecurring, shortDay, type Recurring, type RecurringFields,
 } from "./recurring";
 import { chargeInvoice, emailPaymentPage, markUncollectible, paidSoFar, PAYMENT_METHODS, recordPayment, sendInvoice, voidInvoice } from "./stripe";
@@ -254,8 +254,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
           };
         } else {
           const p = await personOf(db, cli, rest[0], at);
-          const valid = addDays(todayIn(cli.timeZone), 30);
-          f = { ...p, currency: cli.currency, valid_until: valid, terms: cli.terms ?? null, lines: [] };
+          f = { ...p, currency: cli.currency, valid_until: null, terms: cli.terms ?? null, lines: [] };
         }
         const set = (k: keyof QuoteFields, flagName: string) => {
           if (has(a, flagName)) f[k] = flag(a, flagName) ?? "";
@@ -272,7 +271,9 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
 
       case "send": {
         const qt = await quoteOr(db, rest[0]);
-        if (qt.status !== "draft" && qt.status !== "sent") fail(`${at}: ${word} ${qt.number} is ${qt.status}; only a draft or sent ${word} is sent`, `node scripts/quotes.mjs show ${qt.id}`);
+        const why = cannotSend(qt, todayIn(cli.timeZone));
+        if (why === "answered") fail(`${at}: ${word} ${qt.number} is ${qt.status}; it is not sent again`, `node scripts/quotes.mjs show ${qt.id}`);
+        if (why) fail(`${at}: ${word} ${qt.number} is not sent: ${PAST_VALID}`, `node scripts/quotes.mjs edit ${qt.id} --valid-until <a later date, or "" for none>`);
         const rates = await taxRates(db);
         const noLink = cli.proposal ? await cli.proposal.ready(db, qt) : "";
         const withLink = noLink === null;
@@ -333,7 +334,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         const does = cmd === "accept" && cli.proposal ? await cli.proposal.onAccept(db, qt) : null;
         if (does && !has(a, "confirm") && (qt.status === "draft" || qt.status === "sent" || qt.status === "expired")) {
           if (json) return out(true, { accept: qt.id, does }, String);
-          return done(at, `${word} ${qt.number} accepted would also do this: ${does}`, { waits: `node scripts/quotes.mjs accept ${qt.id}` });
+          return done(at, `${word} ${qt.number}: ${does}`, { waits: `node scripts/quotes.mjs accept ${qt.id}` });
         }
         const r = cmd === "mark-sent" ? await markSent(db, id, by)
           : cmd === "expire" ? await expireQuote(db, id, by)
@@ -400,7 +401,8 @@ export async function invoicesCli(argv: string[], cli: InvoicesCli): Promise<voi
   send <id> | void <id> | uncollectible <id>
   send <id> --charge                   charged to the card they saved, not emailed to pay
   charge <id>                          an open invoice, charged now to their card (again, after a refusal)
-  email-page <id>                      Stripe emails them an open invoice's payment page (a refused or unconfirmed charge)
+  email-page <id>                      emails them an open invoice's payment page (a refused or unconfirmed charge):
+                                       Stripe's email, or the owner's sender for a charged one
   record-payment <id> [--amount 120.50] [--method ${PAYMENT_METHODS.map((m) => `"${m}"`).join("|")}] [--on YYYY-MM-DD] [--reference r]
                                        paid another way, all that is owed (the default) or part
                                        prints exactly what would happen; does nothing
@@ -569,7 +571,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         }
         // The same payment asked twice is recorded once: the key is what it is. A second like it on the same day needs its own --reference.
         const key = createHash("sha256").update([inv.id, cents, method, on, reference ?? ""].join("|")).digest("hex").slice(0, 40);
-        const r = await recordPayment(db, stripeOr(cli.env, at), inv.id, { amountCents: cents!, method, paidOn: on, reference, key, today }, by);
+        const r = await recordPayment(db, stripeOr(cli.env, at), inv.id, { amountCents: cents!, method, paidOn: on, reference, key, timeZone: cli.timeZone }, by);
         if (!r.ok) fail(`${at}: ${r.message}`, `node scripts/invoices.mjs show ${inv.id}`);
         if (json) return out(true, { recorded: cents, remaining: r.remaining ?? null }, String);
         return done(at, `recorded ${money(cents!, inv.currency)} on invoice #${inv.id}`, {
@@ -775,6 +777,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         if (has(a, "currency")) f.currency = flag(a, "currency");
         if (has(a, "line")) f.lines = lineFlags(a, rates, "recurring");
         const quote = quoteId ? (await quoteById(db, quoteId)) ?? fail(`${at}: no quote ${quoteId}`, "node scripts/quotes.mjs list") : null;
+        if (quote?.status === "declined") fail(`${at}: quote #${quote.id} was declined, so nothing would start at its yes; leave out --quote to start it on its own`, `node scripts/quotes.mjs show ${quote.id}`);
         const pending = quote && ["draft", "sent", "expired"].includes(quote.status) ? { quoteId: quote.id } : undefined;
         if (!has(a, "confirm")) {
           // A dry run: checked, then shown in words; nothing saved.
@@ -784,7 +787,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
           const words = describe(preview.value, null);
           if (json) return out(true, { would: words }, String);
           return done(at, `${shown ? "would save" : "would add"} ${preview.value.title} for ${preview.value.name ?? preview.value.email}`, {
-            lines: [words, pending ? `it starts when quote #${quote!.id} is accepted` : ""].filter(Boolean),
+            lines: [words, pending ? `it starts when quote #${quote!.id} is accepted` : pastText(preview.value, todayIn(cli.timeZone))].filter(Boolean),
             waits: `node scripts/recurring.mjs ${argv.filter((x) => x !== "--json").join(" ")}`,
           });
         }

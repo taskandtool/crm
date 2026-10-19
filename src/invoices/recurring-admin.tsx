@@ -15,7 +15,7 @@ import { idParam, localPath, str } from "../admin/query";
 import { controlClass, fieldClass, primaryClass, Select, StatusBadge, type StatusOption } from "../admin/status";
 import type { GetDb } from "../data/db";
 import { formatMoney } from "../payments/money";
-import type { Stripe } from "../payments/stripe";
+import { StripeError, type Stripe } from "../payments/stripe";
 import { taxRates, type TaxRate } from "../payments/tax";
 import { cardName, cardsFor, removeCard, syncCards, useCard, type Card } from "./cards";
 import { addDays, todayIn } from "./document";
@@ -24,7 +24,7 @@ import { INVOICE_STATUS_LABELS, type Invoice } from "./invoices";
 import type { Errors, SavedLine } from "./lines";
 import { quoteById } from "./quotes";
 import {
-  createRecurring, describe, endRecurring, invoicesOf, lastRun, makeNow, MODE_LABELS, MODES, pauseRecurring, periodLabel, recurringById, recurringList,
+  createRecurring, describe, endRecurring, invoicesOf, lastRun, makeNow, MODE_LABELS, MODES, pastText, pauseRecurring, periodLabel, recurringById, recurringList,
   RECURRING_STATUS_LABELS, resumeRecurring, saveRecurring, scheduleText, shortDay, UNITS, type Recurring, type RecurringFields,
 } from "./recurring";
 
@@ -62,12 +62,13 @@ export const RECURRING_MESSAGES: Record<string, string> = {
   "recurring-paused": "Paused. Nothing is made until you resume it.",
   "recurring-resumed": "Resumed from the next date to come.",
   "recurring-ended": "Ended. The invoices it made stay.",
-  "recurring-made": "This period's invoice is made as a draft: check it and send it.",
+  "recurring-made": "The next invoice is made as a draft: check it and send it.",
   "recurring-none": "Nothing to make: it has ended or is not active.",
   "card-default": "That card is the one charged now.",
   "card-removed": "Card removed from their Stripe customer.",
   "cards-refreshed": "Cards read from Stripe.",
   "card-not-now": "That card is no longer on file.",
+  "cards-stripe": "Stripe refused that, so nothing changed. Check Stripe for cards to see what is on file now.",
 };
 
 type RV = {
@@ -169,7 +170,7 @@ function RecurringForm({ action, v, errors, rates, cancel, submit, taxPage, time
           {err("mode")}
         </fieldset>
         <div class="mt-4 grid gap-3 sm:grid-cols-2">
-          <label class={fieldClass}>A draft is made (days before)<input name="days_ahead" value={v.days_ahead || "3"} inputmode="numeric" maxlength={2} class={controlClass} />{err("days_ahead")}</label>
+          <label class={fieldClass}>For a draft: made (days before)<input name="days_ahead" value={v.days_ahead || "3"} inputmode="numeric" maxlength={2} class={controlClass} />{err("days_ahead")}</label>
           <label class={fieldClass}>Payment due in (days)<input name="days_until_due" value={v.days_until_due} inputmode="numeric" maxlength={3} class={controlClass} />{err("days_until_due")}</label>
           <label class={fieldClass + " sm:col-span-2"}>Message to the customer<textarea name="notes" rows={2} maxlength={5000} class={controlClass}>{v.notes}</textarea>{err("notes")}</label>
           <label class={fieldClass}>Note for the team, on its task<input name="note_for_team" value={v.note_for_team} maxlength={1000} placeholder="Add 12% of ad spend" class={controlClass} />{err("note_for_team")}</label>
@@ -186,11 +187,11 @@ function RecurringForm({ action, v, errors, rates, cancel, submit, taxPage, time
 
 /** A customer's saved cards, with which is charged and the buttons to change that; for their page in the app. */
 export function CardsOnFile({ cards, base, back, email }: { cards: Card[]; base: string; back: string; email: string }) {
-  const post = (path: string, label: string, cls = "text-label text-ink-2 underline") => (
-    <form method="post" action={`${base}/cards/${path}`} class="inline">
+  const post = (path: string, label: string, ask?: string) => (
+    <form method="post" action={`${base}/cards/${path}`} class="inline" onsubmit={ask ? `return confirm(${JSON.stringify(ask)})` : undefined}>
       <input type="hidden" name="back" value={back} />
       <input type="hidden" name="email" value={email} />
-      <button class={cls}>{label}</button>
+      <button class="text-label text-ink-2 underline">{label}</button>
     </form>
   );
   return (
@@ -209,7 +210,7 @@ export function CardsOnFile({ cards, base, back, email }: { cards: Card[]; base:
               </span>
               <span class="flex items-center gap-3">
                 {card.isDefault ? null : post(`${card.id}/default`, "Use for automatic charges")}
-                {post(`${card.id}/remove`, "Remove")}
+                {post(`${card.id}/remove`, "Remove", `Remove ${cardName(card)} from their Stripe customer? It cannot be added back; they save it again by paying on Stripe's page.`)}
               </span>
             </li>
           ))}
@@ -309,6 +310,9 @@ export function recurringRoutes(app: Hono<{ Variables: TeamVars }>, h: Recurring
     const quote = idParam(v.quote_id) ? await quoteById(h.getDb(c), v.quote_id) : null;
     // A quote still waiting for its answer: this starts at its yes. One already accepted: now.
     const pending = quote && ["draft", "sent", "expired"].includes(quote.status) ? { quoteId: quote.id } : undefined;
+    if (quote?.status === "declined") {
+      return editor(c, { title: "New recurring invoice", action: base, v: { ...v, quote_id: "" }, errors: { status: `${h.word} ${quote.number} was declined, so nothing starts at its yes. Save again to start this one on its own.` }, cancel: base, fixed: false }, 422);
+    }
     const r = await createRecurring(h.getDb(c), fields(v), c.get("user"), h.source, { pending });
     if (!r.ok) return editor(c, { title: "New recurring invoice", action: base, v, errors: r.errors, cancel: quote ? `${h.base}/quotes/${quote.id}` : base, fixed: false }, 422);
     if (quote?.status === "accepted") await h.getDb(c).sql`update recurring_invoices set quote_id = ${quote.id}::bigint where id = ${r.value.id}::bigint`;
@@ -339,7 +343,7 @@ export function recurringRoutes(app: Hono<{ Variables: TeamVars }>, h: Recurring
       actions: (
         <>
           {h.More({ items: [
-            r.status === "active" ? post("make-now", "Make this period's invoice now") : null,
+            r.status === "active" ? post("make-now", `Make the next invoice now (${shortDay(r.next_on)})`) : null,
             r.status === "active" ? post("pause", "Pause") : null,
             r.status === "paused" ? post("resume", "Resume") : null,
             live ? <a href={`${self}/end`} class={h.menuItem}>End</a> : null,
@@ -353,11 +357,12 @@ export function recurringRoutes(app: Hono<{ Variables: TeamVars }>, h: Recurring
           <Section title="What happens">
             <p class="max-w-prose">{describe(r, r.mode === "charge" && card ? cardName(card) : null)}</p>
             <p class="mt-2 text-ink-2">
-              {r.status === "active" ? <>Next invoice: {r.mode === "draft" ? `a draft on ${shortDay(addDays(r.next_on, -r.days_ahead))}, for ` : ""}{periodLabel(r.unit, r.next_on)} ({shortDay(r.next_on)}).</>
+              {r.status === "active" ? <>Next invoice: {r.mode === "draft" ? `a draft on ${shortDay(addDays(r.next_on, -r.days_ahead))}, for ` : ""}{periodLabel(r.unit, r.next_on)}{r.unit === "week" ? "" : ` (${shortDay(r.next_on)})`}.</>
                 : r.status === "pending" ? <>Starts when {quote ? <a href={`${h.base}/quotes/${quote.id}`}>{h.word} {quote.number}</a> : "its quote"} is accepted.</>
                 : r.status === "paused" ? "Paused: nothing is made until it is resumed, from the next date to come."
                 : "Ended: no more invoices."}
             </p>
+            {r.status === "active" && pastText(r, today()) ? <p role="alert" class={"mt-3 " + alertClass}>{pastText(r, today())}</p> : null}
             {r.mode === "charge" && !card ? <p class="mt-2 text-label text-ink-3">No card on file yet, so each invoice is emailed to pay until one is. Paying on Stripe's page saves their card.</p> : null}
           </Section>
           <Section title="Line items">{h.Lines({ qt: r, rates })}</Section>
@@ -446,19 +451,32 @@ export function recurringRoutes(app: Hono<{ Variables: TeamVars }>, h: Recurring
 
   // ---- a customer's cards -----------------------------------------------------
 
-  const backTo = (b: Record<string, unknown>) => localPath(str(b.back), h.base, base);
+  // Back to the page it was pressed on: the customer's page is the app's, not under base.
+  const backTo = (b: Record<string, unknown>) => localPath(str(b.back), "", base);
   app.post("/cards/refresh", async (c) => {
     const b = await c.req.parseBody();
     const db = h.getDb(c);
     const rows = await db.sql<{ stripe_customer_id: string; livemode: boolean }>`
       select stripe_customer_id, livemode from stripe_customers where email = ${str(b.email)}::citext`;
-    for (const r of rows) await syncCards(db, h.stripeOf(c), r.stripe_customer_id, r.livemode);
+    try {
+      for (const r of rows) await syncCards(db, h.stripeOf(c), r.stripe_customer_id, r.livemode);
+    } catch (e) {
+      if (e instanceof StripeError) return h.back(c, backTo(b), "cards-stripe");
+      throw e;
+    }
     return h.back(c, backTo(b), "cards-refreshed");
   });
   app.post("/cards/:pm{pm_[A-Za-z0-9_]+}/:act{default|remove}", async (c) => {
     const b = await c.req.parseBody();
     const pm = c.req.param("pm");
-    const ok = c.req.param("act") === "default" ? await useCard(h.getDb(c), h.stripeOf(c), pm) : await removeCard(h.getDb(c), h.stripeOf(c), pm);
+    let ok: boolean;
+    try {
+      ok = c.req.param("act") === "default" ? await useCard(h.getDb(c), h.stripeOf(c), pm) : await removeCard(h.getDb(c), h.stripeOf(c), pm);
+    } catch (e) {
+      // Already removed in Stripe, or Stripe unreachable: nothing changed here.
+      if (e instanceof StripeError) return h.back(c, backTo(b), "cards-stripe");
+      throw e;
+    }
     return h.back(c, backTo(b), ok ? (c.req.param("act") === "default" ? "card-default" : "card-removed") : "card-not-now");
   });
 }

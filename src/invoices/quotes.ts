@@ -5,6 +5,7 @@
 //   draft -> sent -> accepted | declined | expired
 //   draft -> accepted | declined | expired      (a yes on the phone before it went out)
 //   expired -> accepted | declined               (a late yes still counts)
+//   expired -> sent                              (sent again, once its valid-until date is moved or cleared)
 //
 // It is edited until it is accepted or declined, sent or not: the customer's
 // link always shows the current one. Once decided it never changes: copy it
@@ -226,8 +227,17 @@ async function move(db: Db, id: string, to: QuoteStatus, from: QuoteStatus[], by
   return now ? { ok: false, reason: "status", status: now.status } : { ok: false, reason: "not_found" };
 }
 
-/** Sent (again): a draft or an already sent quote. sent_at is the latest send. */
-export const markSent = (db: Db, id: string, by: string) => move(db, id, "sent", ["draft", "sent"], by);
+/** Sent (again): a draft, a sent or an expired quote. sent_at is the latest send. */
+export const markSent = (db: Db, id: string, by: string) => move(db, id, "sent", ["draft", "sent", "expired"], by);
+
+/** Why a quote cannot be sent today, or null: once answered it never is, and never past its valid-until date. */
+export function cannotSend(qt: Pick<Quote, "status" | "valid_until">, today: string): "answered" | "past" | null {
+  if (qt.status === "accepted" || qt.status === "declined") return "answered";
+  return qt.valid_until && qt.valid_until < today ? "past" : null;
+}
+
+/** cannotSend's reason, in words. */
+export const PAST_VALID = "its valid-until date has passed: change or clear it, then send";
 
 /**
  * The customer's answer: recorded by a person (or the AI on the owner's word),

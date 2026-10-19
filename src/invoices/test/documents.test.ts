@@ -7,7 +7,7 @@ import { applySchema } from "../../data/migrate";
 import { scratch, why, type Scratch } from "../../data/test/scratch";
 import { createTaxRate, percentToBp, setTaxRateActive, taxRates } from "../../payments/tax";
 import { readLines } from "../lines";
-import { copyQuote, createQuote, decideQuote, expireQuote, markSent, quoteById, quotesFor, saveQuote, shownStatus } from "../quotes";
+import { cannotSend, copyQuote, createQuote, decideQuote, expireQuote, markSent, quoteById, quotesFor, saveQuote, shownStatus } from "../quotes";
 import { createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoiceTotals, owed, saveInvoice } from "../invoices";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -167,12 +167,20 @@ test("quote statuses only move forward", (t) =>
     const c = await mk();
     assert.ok((await expireQuote(s.db, c, BY)).ok);
     assert.ok((await decideQuote(s.db, c, "accepted", BY)).ok); // a late yes still counts
+    const d = await mk();
+    assert.ok((await expireQuote(s.db, d, BY)).ok);
+    assert.equal((await markSent(s.db, d, BY)).ok, true, "an expired one is sent again, once its date allows");
     assert.deepEqual(await markSent(s.db, "424242", BY), { ok: false, reason: "not_found" });
 
     assert.equal(shownStatus({ status: "sent", valid_until: "2026-10-01" }, "2026-10-05"), "expired");
     assert.equal(shownStatus({ status: "accepted", valid_until: "2026-10-01" }, "2026-10-05"), "accepted");
     assert.equal(shownStatus({ status: "sent", valid_until: null }, "2026-10-05"), "sent");
-    assert.deepEqual((await quotesFor(s.db, { email: "ANN@example.com" })).map((q) => q.id), [c, b, a]);
+    // Sent only before its valid-until date is past, or with none; never once answered.
+    assert.equal(cannotSend({ status: "draft", valid_until: "2026-10-04" }, "2026-10-05"), "past");
+    assert.equal(cannotSend({ status: "expired", valid_until: "2026-10-05" }, "2026-10-05"), null);
+    assert.equal(cannotSend({ status: "sent", valid_until: null }, "2026-10-05"), null);
+    assert.equal(cannotSend({ status: "accepted", valid_until: null }, "2026-10-05"), "answered");
+    assert.deepEqual((await quotesFor(s.db, { email: "ANN@example.com" })).map((q) => q.id), [d, c, b, a]);
   }));
 
 test("numbers are unique and follow the id", (t) =>
@@ -240,7 +248,7 @@ test("a draft invoice is edited until it goes to Stripe", (t) =>
     assert.deepEqual(Object.keys(bad.errors).sort(), ["currency", "days_until_due", "email", "lines"]);
   }));
 
-test("totals: outstanding, past due and paid this month, live money in one currency", (t) =>
+test("totals: outstanding, past due and paid this month less refunds, live money in one currency", (t) =>
   withDb(t, async (s) => {
     const mk = async (currency: string, unit: string) => {
       const r = await createInvoice(s.db, { ...ann, currency, lines: [{ description: "x", unit }] }, BY, "crm");
@@ -262,10 +270,12 @@ test("totals: outstanding, past due and paid this month, live money in one curre
     await pay(paidNow, 2500, "2026-10-01T05:30:00Z");
     await pay(paidBefore, 6000, "2026-10-01T04:30:00Z");
     await pay(late, 3000, "2026-10-05T15:00:00Z");
+    // $5 of one refunded: money kept, not money taken.
+    await s.db.sql`update payments set status = 'partially_refunded', refunded_cents = 500 where ref_id = ${paidNow}`;
     assert.deepEqual(await invoiceTotals(s.db, { today: "2026-10-11", timeZone: "America/Chicago", currency: "usd" }), {
       open: { cents: "11000", count: 2 },
       due: { cents: "7000", count: 1 },
-      paid: { cents: "5500" },
+      paid: { cents: "5000" },
     });
   }));
 

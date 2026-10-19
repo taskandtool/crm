@@ -123,7 +123,7 @@ test("send with Stripe: customer, tax rate, invoice, items, finalize, send; the 
     assert.ok(r.invoice.sent_at);
     const posts = f.calls.filter((c) => c.method === "POST");
     assert.deepEqual(posts.map((c) => c.path), ["/v1/customers", "/v1/tax_rates", "/v1/invoices", "/v1/invoiceitems", "/v1/invoices/in_1/finalize", "/v1/invoices/in_1/send"]);
-    for (const c of posts) assert.ok(c.key?.includes(inv.match_key) || c.key?.startsWith("taxrate-"), `${c.path} keyed by the invoice`);
+    for (const c of posts) assert.ok(c.key?.includes(inv.match_key) || c.key?.startsWith("taxrate-") || c.key === "customer-false-ann@example.com", `${c.path} keyed by the invoice`);
     const made = posts.find((c) => c.path === "/v1/invoices")!.params!;
     assert.equal(made.collection_method, "send_invoice");
     assert.equal(made.days_until_due, 30);
@@ -166,7 +166,7 @@ test("an empty or non-draft invoice is not sent; a payment by hand, all or part,
     assert.equal((await sendInvoice(s.db, f.stripe, zero.id, BY)).ok, false);
     assert.equal(f.calls.length, 0);
     const inv = await draft(s);
-    const pay = (amountCents: number, key: string) => recordPayment(s.db, f.stripe, inv.id, { amountCents, method: "Check", paidOn: "2026-10-01", reference: "101", key, today: "2026-10-15" }, BY);
+    const pay = (amountCents: number, key: string) => recordPayment(s.db, f.stripe, inv.id, { amountCents, method: "Check", paidOn: "2026-10-01", reference: "101", key, timeZone: "Pacific/Auckland" }, BY);
     assert.equal((await pay(4000, "key-one-aaaa")).ok, false, "never sent");
     await sendInvoice(s.db, f.stripe, inv.id, BY);
     // Part of the $110.00: Stripe has a record attached to the invoice, the row is paid, the rest still owed.
@@ -183,11 +183,11 @@ test("an empty or non-draft invoice is not sent; a payment by hand, all or part,
     const over = await pay(7001, "key-two-bbbb");
     assert.equal(over.ok, false);
     assert.match(!over.ok ? over.message : "", /more than the \$70\.00 still owed/);
-    // Paid on an earlier day: stamped midday that day. Paid today: stamped now, not a made-up time.
+    // Paid on an earlier day: stamped midday that day in the business's zone (Auckland, UTC+13). Paid today: stamped now, not a made-up time.
     const [early] = await s.db.sql`select paid_at from payments where match_key = 'key-one-aaaa'`;
-    assert.equal(early.paid_at.toISOString(), "2026-10-01T12:00:00.000Z");
+    assert.equal(early.paid_at.toISOString(), "2026-09-30T23:00:00.000Z");
     const today = new Date().toISOString().slice(0, 10);
-    assert.ok((await recordPayment(s.db, f.stripe, inv.id, { amountCents: 1000, method: "Cash", paidOn: today, reference: null, key: "key-today-dd", today }, BY)).ok);
+    assert.ok((await recordPayment(s.db, f.stripe, inv.id, { amountCents: 1000, method: "Cash", paidOn: today, reference: null, key: "key-today-dd", timeZone: "UTC" }, BY)).ok);
     const [now] = await s.db.sql`select paid_at from payments where match_key = 'key-today-dd'`;
     assert.ok(Math.abs(now.paid_at.getTime() - Date.now()) < 60_000, "stamped when it was recorded");
     const rest = await pay(6000, "key-three-cc");

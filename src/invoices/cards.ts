@@ -72,13 +72,16 @@ const pickDefault = (customer: string, stripeDefault: string | null) => q`
   where s.stripe_customer_id = ${customer}`;
 
 // Only our customers' cards: an event for anyone else on the account changes nothing.
-const upsert = (pm: StripeCard, customer: string) => q`
+// From Stripe's list, the card is on file now; from an event (redelivered, or after its
+// detach), a removed card stays removed: Stripe never attaches a detached card again.
+const upsert = (pm: StripeCard, customer: string, listed = false) => q`
   insert into stripe_cards (stripe_payment_method_id, stripe_customer_id, livemode, brand, last4, exp_month, exp_year)
   select ${pm.id}, ${customer}, ${pm.livemode ?? false}, ${pm.card?.brand ?? null}, ${pm.card?.last4 ?? null},
          ${pm.card?.exp_month ?? null}::int, ${pm.card?.exp_year ?? null}::int
   where exists (select 1 from stripe_customers where stripe_customer_id = ${customer})
   on conflict (stripe_payment_method_id) do update set stripe_customer_id = excluded.stripe_customer_id, brand = excluded.brand,
-    last4 = excluded.last4, exp_month = excluded.exp_month, exp_year = excluded.exp_year, detached_at = null`;
+    last4 = excluded.last4, exp_month = excluded.exp_month, exp_year = excluded.exp_year,
+    detached_at = case when ${listed}::boolean then null else stripe_cards.detached_at end`;
 
 const CARD_EVENTS = new Set(["payment_method.attached", "payment_method.detached", "customer.updated"]);
 
@@ -134,7 +137,7 @@ export async function syncCards(db: Db, stripe: Stripe, customer: string, livemo
   ]);
   const ids = list.data.map((p) => p.id);
   await db.transaction([
-    ...list.data.map((p) => upsert({ ...p, livemode }, customer)),
+    ...list.data.map((p) => upsert({ ...p, livemode }, customer, true)),
     q`update stripe_cards set detached_at = now()
       where stripe_customer_id = ${customer} and detached_at is null and not (stripe_payment_method_id = any(${ids}::text[]))`,
     pickDefault(customer, typeof cus.invoice_settings?.default_payment_method === "string" ? cus.invoice_settings.default_payment_method : null),

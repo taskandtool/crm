@@ -116,10 +116,30 @@ const invoiceOf = (who: string, unit: Unit, day: string) =>
   unit === "week" ? `${who}'s invoice for ${periodLabel(unit, day)}` : `${who}'s ${periodLabel(unit, day)} invoice`;
 
 /** "until Oct 1, 2027", "for 12 invoices (the last on Oct 1, 2027)", or "". */
-export function endsText(r: Pick<Recurring, "unit" | "every" | "first_on" | "ends_on" | "ends_after">): string {
-  if (r.ends_after) return `for ${r.ends_after} ${r.ends_after === 1 ? "invoice" : "invoices"} (the last on ${shortDay(periodOn(r.first_on, r.unit, r.every, r.ends_after - 1))})`;
+export function endsText(r: Pick<Recurring, "unit" | "every" | "first_on" | "ends_on" | "ends_after"> & Partial<Pick<Recurring, "next_n" | "made">>): string {
+  // The last counts on from the next period: one skipped (a resume, a late yes) is not an invoice.
+  const left = (r.ends_after ?? 0) - (r.made ?? 0), next = r.next_n ?? 0;
+  const last = left > 0 ? next + left - 1 : Math.max(next - 1, 0);
+  if (r.ends_after) return `for ${r.ends_after} ${r.ends_after === 1 ? "invoice" : "invoices"} (the last on ${shortDay(periodOn(r.first_on, r.unit, r.every, last))})`;
   if (r.ends_on) return `until ${shortDay(r.ends_on)}`;
   return "";
+}
+
+/**
+ * Dates already more than LATE_DAYS past, which the next run makes as drafts
+ * with a task each: "3 invoices for past dates, from Jan 1, 2026, are made at
+ * the next run as drafts, each with a task to check and send it.", or "".
+ */
+export function pastText(r: Pick<Recurring, "unit" | "every" | "first_on" | "next_n" | "made" | "ends_on" | "ends_after">, today: string): string {
+  let n = r.next_n, count = 0;
+  const left = r.ends_after ? r.ends_after - r.made : Infinity;
+  while (count < left && count < 1000) {
+    const day = periodOn(r.first_on, r.unit, r.every, n);
+    if (daysBetween(day, today) <= LATE_DAYS || (r.ends_on && day > r.ends_on)) break;
+    count++, n++;
+  }
+  if (!count) return "";
+  return `${count === 1 ? "1 invoice for a past date" : `${count} invoices for past dates`}, from ${shortDay(periodOn(r.first_on, r.unit, r.every, r.next_n))}, ${count === 1 ? "is" : "are"} made at the next run as drafts, each with a task to check and send it.${r.made ? "" : " A later first date skips them."}`;
 }
 
 /** How each one is collected, in words, with the card when there is one. */
@@ -288,7 +308,8 @@ export async function saveRecurring(db: Db, id: string, f: RecurringFields, by: 
   const out = await db.transaction([
     q`update recurring_invoices set email = ${h.email}, name = ${h.name}, phone = ${h.phone}, address = ${h.address}, title = ${v.title},
         currency = ${h.currency}, unit = ${v.unit}, every = ${v.every}, first_on = ${v.first_on}::date,
-        next_on = case when made = 0 then ${v.first_on}::date else next_on end, next_n = case when made = 0 then 0 else next_n end,
+        next_on = case when made = 0 and (unit, every, first_on) <> (${v.unit}, ${v.every}::int, ${v.first_on}::date) then ${v.first_on}::date else next_on end,
+        next_n = case when made = 0 and (unit, every, first_on) <> (${v.unit}, ${v.every}::int, ${v.first_on}::date) then 0 else next_n end,
         ends_on = ${v.ends_on}::date, ends_after = ${v.ends_after}::int, mode = ${v.mode}, days_ahead = ${v.days_ahead},
         days_until_due = ${v.days_until_due}, notes = ${h.notes}, note_for_team = ${v.note_for_team}, owner = ${v.owner},
         updated_by = ${by}, updated_at = now()
@@ -353,8 +374,14 @@ export async function pauseRecurring(db: Db, id: string, by: string): Promise<bo
 
 /** Resume from the next date to come; the dates missed while paused are never made. */
 export async function resumeRecurring(db: Db, id: string, by: string, today: string): Promise<boolean> {
-  const rows = await db.sql`update recurring_invoices set status = 'active', updated_by = ${by}, updated_at = now() where id = ${id}::bigint and status = 'paused' returning id`;
-  if (rows.length) await skipPast(db, id, today);
+  const r = await recurringById(db, id);
+  if (!r || r.status !== "paused") return false;
+  let n = r.next_n;
+  while (periodOn(r.first_on, r.unit, r.every, n) < today) n++;
+  // Active and past the missed dates at once, so a run in between cannot make them.
+  const rows = await db.sql`update recurring_invoices set status = 'active', next_n = ${n}, next_on = ${periodOn(r.first_on, r.unit, r.every, n)}::date,
+      updated_by = ${by}, updated_at = now()
+    where id = ${id}::bigint and status = 'paused' and next_n = ${r.next_n} returning id`;
   return rows.length > 0;
 }
 
@@ -529,6 +556,7 @@ export async function runRecurring(db: Db, deps: RunDeps): Promise<RunResult> {
 /** "Make this period's invoice now": the next period's invoice as a draft, whatever its date, for a person to look at and send. */
 export async function makeNow(db: Db, id: string, deps: RunDeps): Promise<Invoice | null> {
   const [m] = await makeAndAct(db, id, deps, { force: true, act: false });
+  await db.transaction([endFinished()]);
   return m?.invoice ?? null;
 }
 
@@ -552,7 +580,7 @@ export async function startFromQuote(db: Db, quoteId: string, deps: RunDeps): Pr
   return out;
 }
 
-/** The quote was declined or expired: its pending recurring invoice never starts. */
+/** The quote was declined: its pending recurring invoice never starts (an expired one can still be sent again and signed). */
 export async function endForQuote(db: Db, quoteId: string, by: string): Promise<void> {
   await db.sql`update recurring_invoices set status = 'ended', updated_by = ${by}, updated_at = now() where quote_id = ${quoteId}::bigint and status = 'pending'`;
 }

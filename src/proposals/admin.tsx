@@ -20,7 +20,7 @@ import { COMPONENTS, PICKABLE } from "./components";
 import { fillPage } from "./page";
 import { signedState } from "./sign";
 import type { Base } from "./link";
-import { describe, recurringList } from "../invoices/recurring";
+import { describe, RECURRING_STATUS_LABELS, recurringList } from "../invoices/recurring";
 import { afterSign, chosenKeys, ensureProposal, mintLink, opensOf, proposalOf, saveProposal, storePage, type ProposalOpts } from "./store";
 
 type Ctx = Context<{ Variables: TeamVars }>;
@@ -124,6 +124,13 @@ export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, 
             : "None: a plain quote, its price and sign-off",
         },
         { label: "When they sign", value: after ? after.replace(/^When they sign: /, "").replace(/^./, (x) => x.toUpperCase()) : null },
+        // Once its yes started it, the recurring invoice is a link away (before that, "Then, recurring" below).
+        {
+          label: "Recurring",
+          value: recurring.some((r) => r.status !== "pending")
+            ? <>{recurring.filter((r) => r.status !== "pending").map((r) => <a href={`${invoicesBase}/recurring/${r.id}`} class="block">{r.title}, {RECURRING_STATUS_LABELS[r.status].toLowerCase()}</a>)}</>
+            : null,
+        },
         { label: "Link", value: p?.link_made_at ? <>Made <When at={p.link_made_at} timeZone={o.timeZone} />{p.emailed_at ? <>, emailed <When at={p.emailed_at} timeZone={o.timeZone} /></> : ", given by hand"}</> : null },
         { label: "Opened", value: opened ? <>{opened}{aside ? <span class="block text-label text-ink-3">Not counted: {aside}</span> : null}</> : null },
         { label: "Signed", value: sig ? <>{sig.name}, <When at={new Date(sig.signed_at)} timeZone={o.timeZone} /><span class="block text-label text-ink-3">{sig.email}{sig.ip ? `, from ${sig.ip}` : ""}</span></> : null },

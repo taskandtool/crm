@@ -1,13 +1,13 @@
 // An invoice in the owner's Stripe account: made, finalized and emailed by
 // Stripe, paid on Stripe's hosted page. Every call goes through
 // payments/stripe.ts (the gateway in dev, the bound key in production) with
-// an Idempotency-Key from the invoice's random match_key, so a retry never
-// makes a second invoice or a second line.
+// an Idempotency-Key from the invoice's random match_key (a customer's from
+// its email and mode), so a retry never makes a second invoice, line or customer.
 //
 //   const r = await sendInvoice(db, stripeFrom(envOf(c)), id, user, { timeZone });
 //   const r = await sendInvoice(db, stripe, id, user, { collect: "charge", timeZone });   // the card on file
 //   await emailPaymentPage(db, stripe, id);                                                // a charge that failed: they pay it themselves
-//   await recordPayment(db, stripe, id, { amountCents: 4000, method: "Check", paidOn: "2026-10-15", reference: "101", key, today }, user);
+//   await recordPayment(db, stripe, id, { amountCents: 4000, method: "Check", paidOn: "2026-10-15", reference: "101", key, timeZone }, user);
 //
 // The owner asking for it in chat (or saying yes to its preview), or a
 // team member's click, sends, voids or marks paid. Past draft, the status here changes only from the webhook
@@ -62,7 +62,7 @@ export async function sendInvoice(db: Db, stripe: Stripe, id: string, by: string
     if (!cus) {
       const made = await stripe<{ id: string }>("POST", "/v1/customers", {
         email: inv.email, name: inv.name ?? undefined, phone: inv.phone ?? undefined, metadata: { source: "taskandtool" },
-      }, { idempotencyKey: `customer-${key}` });
+      }, { idempotencyKey: `customer-${livemode}-${inv.email}` });
       await db.sql`insert into stripe_customers (email, livemode, stripe_customer_id) values (${inv.email}, ${livemode}, ${made.id}) on conflict do nothing`;
       [cus] = await db.sql<{ stripe_customer_id: string }>`
         select stripe_customer_id from stripe_customers where email = ${inv.email}::citext and livemode = ${livemode}`;
@@ -107,7 +107,7 @@ export async function sendInvoice(db: Db, stripe: Stripe, id: string, by: string
       }
       si = await stripe<StripeInvoice>("GET", `/v1/invoices/${sid}`);
       if (si.subtotal !== Number(inv.subtotal_cents)) {
-        return fail("stripe", `The invoice in Stripe comes to ${formatMoney(si.subtotal, inv.currency)} before tax, not ${formatMoney(inv.subtotal_cents, inv.currency)}. Nothing was sent; delete the draft in Stripe and send again.`);
+        return fail("stripe", `The invoice in Stripe comes to ${formatMoney(si.subtotal, inv.currency)} before tax, not ${formatMoney(inv.subtotal_cents, inv.currency)}. Nothing was sent: make the draft's lines in Stripe match this invoice, then send again.`);
       }
     }
     // A charged one keeps Stripe's own retries (auto_advance), and is paid at once below rather than whenever Stripe would.
@@ -121,7 +121,8 @@ export async function sendInvoice(db: Db, stripe: Stripe, id: string, by: string
     const taxes = Array.isArray(si.total_taxes) ? si.total_taxes.reduce((n, t) => n + (t.amount ?? 0), 0) : null;
     const [row] = await db.sql`
       update invoices set
-        status = case when status = 'draft' and ${si.status} = 'open' then 'open' else status end,
+        -- Charged at once, Stripe says paid: open here until its webhook records the payment.
+        status = case when status = 'draft' and ${si.status} in ('open', 'paid') then 'open' else status end,
         number = coalesce(number, ${si.number ?? null}::text),
         hosted_url = coalesce(${si.hosted_invoice_url ?? null}::text, hosted_url),
         pdf_url = coalesce(${si.invoice_pdf ?? null}::text, pdf_url),
@@ -233,8 +234,8 @@ export type RecordInput = {
   reference: string | null;
   /** Random, from the form: the same click twice records one payment. */
   key: string;
-  /** Today in the business's zone: a payment paid today is stamped now; one on an earlier day at midday that day. */
-  today: string;
+  /** The business's zone: a payment paid today is stamped now; one on an earlier day at midday that day, there. */
+  timeZone: string;
 };
 
 /**
@@ -260,7 +261,8 @@ export async function recordPayment(db: Db, stripe: Stripe, id: string, p: Recor
   if (!Number.isSafeInteger(p.amountCents) || p.amountCents <= 0) return fail("amount", "Enter the amount paid.");
   if (p.amountCents > balance) return fail("amount", `That is more than the ${formatMoney(balance, inv.currency)} still owed.`);
   const now = Math.floor(Date.now() / 1000);
-  const when = p.paidOn >= p.today ? now : Math.min(Math.floor(Date.parse(`${p.paidOn}T12:00:00Z`) / 1000), now);
+  const [{ midday }] = await db.sql<{ midday: string }>`select extract(epoch from (${p.paidOn}::date + time '12:00') at time zone ${p.timeZone})::bigint::text as midday`;
+  const when = p.paidOn >= todayIn(p.timeZone) ? now : Math.min(Number(midday), now);
   const at = new Date(when * 1000);
   // "Check · 1042": how, then their reference.
   const what = [p.method, p.reference].filter(Boolean).join(" · ");

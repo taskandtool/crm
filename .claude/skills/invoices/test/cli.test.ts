@@ -145,6 +145,17 @@ test("recurring refuses a schedule it cannot read before opening the database; a
     r = run("recurring", [...args, "--confirm"], s.url);
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /^recurring add: added #1/);
+
+    // A first date long past: the preview says those dates come as drafts, each with a task.
+    r = run("recurring", ["add", "bo@example.com", "--name", "Care", "--line", "Care|50", "--first", "2020-01-01", "--times", "3"], s.url);
+    assert.match(r.stdout, /3 invoices for past dates, from Jan 1, 2020, are made at the next run as drafts/);
+
+    // A declined quote starts nothing at its yes: refused, not quietly started on its own.
+    assert.equal(run("quotes", ["add", "bo@example.com", "--line", "Fence|100"], s.url).status, 0);
+    assert.equal(run("quotes", ["decline", "1"], s.url).status, 0);
+    r = run("recurring", ["add", "bo@example.com", "--name", "Care", "--line", "Care|50", "--first", "2026-11-01", "--quote", "1", "--confirm"], s.url);
+    assert.equal(r.status, 1, r.stdout);
+    assert.match(r.stderr, /quote #1 was declined/);
   } finally {
     await s.drop();
   }
