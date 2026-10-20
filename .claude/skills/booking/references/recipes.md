@@ -34,14 +34,20 @@ another. Every other option is documented on `BookingAdminOptions` in
 which can cancel it too. Every app writes the tables `/book` reads, so a
 change is live on its next page load.
 
-**Connect a calendar** (in the CRM, which runs the sync). The job calls the endpoint `google-calendar` (the
-`google` connection, scope `calendar.events`) or `microsoft-calendar` (the
-`microsoft` connection, `Calendars.ReadWrite`). If `python3 ~/tools/taskandtool.py list-connections` shows
-neither, ask with
+**Connect a calendar** (in the CRM, which runs the sync). Each person who
+wants one connects their own Google (`google` connection, scopes
+`calendar.events` and `calendar.calendarlist.readonly`) or Microsoft
+(`microsoft`, `Calendars.ReadWrite` and `Calendars.ReadWrite.Shared`); the
+app holds each under its own slug (`google-calendar`, `google-calendar-7c2e1a`).
+One account a team shares calendars with is enough too. If
+`python3 ~/tools/taskandtool.py list-connections` shows none, ask with
 `python3 ~/tools/taskandtool.py request-connection google --why "read busy times and add bookings to your calendar"`
 (or `microsoft`), give the owner the review link,
 and stop until it is granted; a Google owner also enables the Calendar API
-on their Google Cloud project. Add the calendar on the person's page under
-Team (`primary` is the main calendar), schedule the sync job (`references/calendar-sync.md`), run it
-once by hand (`npx tsx src/booking/sync.ts`) and check that page's Calendars
-for a sync time and no error.
+on their Google Cloud project. Schedule the sync job
+(`references/calendar-sync.md`) and run it once by hand
+(`npx tsx src/booking/sync.ts`): it gives each connected account to the
+person on Team whose email it is. For anyone else, the owner opens that
+person's page under Team on the team address, presses Show available
+calendars and attaches one. Then check their Calendars for a sync time and
+no error. A person with no calendar is scheduled from their hours alone.

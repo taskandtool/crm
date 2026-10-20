@@ -422,3 +422,49 @@ test("the team books for someone: carried details, a time, the confirmation sent
   }
 });
 
+
+test("a person's Calendars: Show available calendars asks the held accounts on the machine, and Attach adds one", async (t) => {
+  const s = await scratch();
+  if (!s) return t.skip(why);
+  const realFetch = globalThis.fetch;
+  try {
+    await applySchema(s.db, schema);
+    const pat = await createPerson(s.db, { name: "Pat", email: "pat@example.com", time_zone: "UTC" }, "o@example.com", "test");
+    assert.ok(pat.ok);
+    const app = new Hono();
+    app.route("/admin/team", peopleRoutes(() => s.db, { base: "/admin/team", css: "/site.css", source: "website", sections }));
+    const page = `/admin/team/${pat.value.id}`;
+    const machine = { PHOENIX_URL: "https://phoenix.test/", MACHINE_TOKEN: "mt-1" };
+
+    // Off the machine (production's Worker) there is no gateway to ask.
+    let html = await (await app.request(page, { headers: team })).text();
+    assert.match(html, /Find their calendars from the team address/);
+    assert.doesNotMatch(html, /Show available calendars/);
+    assert.match(await (await app.request(page, { headers: team }, machine)).text(), /Show available calendars/);
+
+    // Pat connected their Google; it can also read Sam's calendar.
+    globalThis.fetch = (async (url: string) =>
+      url.endsWith("/api/machine/connections")
+        ? Response.json({ connections: [{ slug: "google-calendar", provider: "google", service: "calendar", account: "pat@example.com" }] })
+        : Response.json({
+            items: [
+              { id: "pat@example.com", summary: "pat@example.com", accessRole: "owner", primary: true },
+              { id: "sam@example.com", summary: "sam@example.com", accessRole: "reader" },
+            ],
+          })) as typeof fetch;
+    html = await (await app.request(`${page}/calendars/find`, form({}, team), machine)).text();
+    // Pat's own was given to Pat by email on the way; only Sam's is left to attach.
+    assert.match(html, /Google · pat@example\.com/);
+    assert.equal(html.match(/>Attach</g)?.length, 1);
+    assert.match(html, /Through pat@example\.com · busy times only/);
+
+    const res = await app.request(`${page}/calendars`, form({ connection: "google-calendar", external_id: "sam@example.com", name: "sam@example.com", bookings: "0" }, team));
+    assert.equal(res.headers.get("location"), `${page}?saved=calendar`);
+    html = await (await app.request(page, { headers: team })).text();
+    assert.match(html, /Google · sam@example\.com/);
+    assert.match(html, /Through pat@example\.com · Busy times only · /);
+  } finally {
+    globalThis.fetch = realFetch;
+    await s.drop();
+  }
+});

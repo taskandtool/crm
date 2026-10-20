@@ -19,8 +19,26 @@ create never makes a second event, and the pull leaves ours out by tag.
 Never read busy times from Google free/busy: it merges intervals and
 carries no ids.
 
-Calls go through the gateway with the machine token
-(`$PHOENIX_URL/api/machine/gateway/google-calendar/...`, `microsoft-calendar`).
+Each person connects their own Google or Microsoft in Task & Tool, and the
+app holds each under its own slug: the first `google-calendar`, a second
+person's `google-calendar-7c2e1a`. Each run starts by listing them
+(`listConnections`) into `calendar_accounts` and giving each one seen for the
+first time to the person whose email it is, as their main calendar
+(`linkAccounts`, `calendars.ts`); one someone removed stays removed.
+
+Show available calendars on a person's page (Team) asks every held account,
+when pressed, for the calendars it can read (Google `calendarList`,
+Microsoft `/me/calendars`; `findCalendars`) and lists each calendar once,
+with every account that reaches it. Attach stores the account (`connection`),
+the calendar's id and name, and whether that account can add events there
+(`receives_bookings`); one it can only read gives busy times and no
+bookings. So one account a team shares its calendars with covers everyone,
+and each person connecting their own works too. Free/busy access alone is
+not enough: the pull reads events. The lookup needs the gateway, so it runs
+from the team address (the machine), not production's Worker.
+
+Calls go through the gateway with the machine token, to the row's
+connection (`$PHOENIX_URL/api/machine/gateway/<connection>/...`).
 Google is `events.list` with `singleEvents=true`, paged by `nextPageToken`;
 free (transparent), cancelled and declined events are not busy. Microsoft is
 `calendarView` with `Prefer: outlook.timezone="UTC"` and the tag `$expand`ed,

@@ -120,7 +120,7 @@ test("the transaction re-checks in SQL even when the page's check was stale", (t
     const slot = (await openSlotAt(s.db, r, T("2026-03-09T11:00:00Z"), NOW))!;
     assert.ok(slot);
     // Between the page's check and the insert: a calendar sync adds a busy row.
-    const [k] = await s.db.sql`insert into calendars (resource_id, provider) values (${r.host}::bigint, 'google') returning id::text as id`;
+    const [k] = await s.db.sql`insert into calendars (resource_id, provider, connection) values (${r.host}::bigint, 'google', 'google-calendar') returning id::text as id`;
     await s.db.sql`insert into busy (calendar_id, starts_at, ends_at) values (${k.id}::bigint, '2026-03-09T11:30:00Z', '2026-03-09T12:30:00Z')`;
     const r1 = await takeSlot(s.db, r, slot, { ...who, typeId: r.id, start: slot.start });
     assert.equal(!r1.ok && r1.reason, "taken");
@@ -136,7 +136,7 @@ test("the transaction re-checks in SQL even when the page's check was stale", (t
 test("a busy row from a synced calendar blocks a slot", (t) =>
   withDb(t, async (s) => {
     const r = await person(s, "Pat");
-    const [k] = await s.db.sql`insert into calendars (resource_id, provider) values (${r.host}::bigint, 'microsoft') returning id::text as id`;
+    const [k] = await s.db.sql`insert into calendars (resource_id, provider, connection) values (${r.host}::bigint, 'microsoft', 'microsoft-calendar') returning id::text as id`;
     await s.db.sql`insert into busy (calendar_id, starts_at, ends_at) values (${k.id}::bigint, '2026-03-09T10:15:00Z', '2026-03-09T10:45:00Z')`;
     const r1 = await book(s.db, { ...who, typeId: r.id, start: T("2026-03-09T10:00:00Z") });
     assert.equal(!r1.ok && r1.reason, "taken");

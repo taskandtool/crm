@@ -18,40 +18,22 @@
 //    stay busy, even one at the same time as a booking. A failed fetch keeps
 //    the old rows and writes last_error.
 //
+// Before both, linkAccounts (calendars.ts) records the calendar connections
+// this app holds and gives each new one to the person whose email it is.
+//
 // Every call goes through the Task & Tool gateway with the machine token
-// (data/gateway.ts), to the Google connection's `google-calendar`
-// endpoint or the Microsoft connection's `microsoft-calendar`; no OAuth token
-// is ever on this machine or at the edge. Events are written
+// (data/gateway.ts), to the connection the calendar row names
+// (`google-calendar`, or `google-calendar-7c2e1a` for a second person's); no
+// OAuth token is ever on this machine or at the edge. Events are written
 // with no attendees: Google and Microsoft would email the booker from the
 // owner's account. Confirmations go through the owner's sender (notify.ts).
 import { pathToFileURL } from "node:url";
 import { q, type Db } from "../data/db";
-import { gatewayFetch } from "../data/gateway";
+import { gatewayFetch, listConnections } from "../data/gateway";
+import { call, graphNext, linkAccounts, query, type Gateway } from "./calendars";
 import { dayBounds } from "./slots";
 
-export const GOOGLE_SLUG = "google-calendar";
-export const MICROSOFT_SLUG = "microsoft-calendar";
-const GRAPH = "https://graph.microsoft.com";
 const DAY = 86_400_000;
-
-/**
- * Calls a vendor path through the gateway:
- * `(slug, path, init) => gatewayFetch(process.env, slug, path, init)`. Its
- * 60-second timeout keeps a hung call well inside the 10-minute push claim,
- * or the next run would re-claim the booking and write its event twice.
- */
-export type Gateway = (slug: string, path: string, init?: RequestInit) => Promise<Response>;
-
-/** The JSON body, or an Error saying who refused: Task & Tool (x-tasktool-refusal) or the vendor. */
-async function call(gw: Gateway, slug: string, path: string, init?: RequestInit, okStatuses: number[] = []): Promise<any> {
-  const res = await gw(slug, path, init);
-  const refusal = res.headers.get("x-tasktool-refusal");
-  if (refusal) throw new Error(`Task & Tool refused the ${slug} call: ${refusal}${refusal === "needs_reconnect" ? " (the owner must reconnect it)" : ""}`);
-  if (okStatuses.includes(res.status)) return null;
-  const text = await res.text();
-  if (!res.ok) throw new Error(`${slug} answered ${res.status}: ${text.slice(0, 300)}`);
-  return text ? JSON.parse(text) : null;
-}
 
 // ---- our events: names chosen before they exist ------------------------------------
 
@@ -78,10 +60,6 @@ const tagOfGoogleId = (id: string) => (/^[0-9a-f]+v[0-9a-f]+v[0-9a-f]+$/.test(id
 export const GOOGLE_TAG = "taskToolBooking";
 export const MICROSOFT_TAG = "String {7d3c51e2-4b8a-4f6e-9c21-5e0a8b9d3f47} Name TaskToolBooking";
 
-/** A query string with %20 for spaces: Graph's $filter and $expand want it, not "+". */
-const query = (params: Record<string, string>) =>
-  Object.entries(params).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
-
 // ---- reading busy times --------------------------------------------------------
 
 /** A busy event read from a calendar, with what identifies it as ours or not. */
@@ -97,12 +75,12 @@ const gEvents = (calendarId: string) => `/calendar/v3/calendars/${encodeURICompo
  * are not busy, as free/busy has it. An all-day event covers its dates in the
  * resource's zone.
  */
-export async function googleBusy(gw: Gateway, calendarId: string, from: Date, to: Date, zone: string): Promise<BusyEvent[]> {
+export async function googleBusy(gw: Gateway, connection: string, calendarId: string, from: Date, to: Date, zone: string): Promise<BusyEvent[]> {
   const out: BusyEvent[] = [];
   let pageToken = "";
   for (let page = 0; ; page++) {
     if (page >= 100) throw new Error("Google events: more than 100 pages");
-    const body = await call(gw, GOOGLE_SLUG, `${gEvents(calendarId)}?${query({
+    const body = await call(gw, connection, `${gEvents(calendarId)}?${query({
       singleEvents: "true", timeMin: from.toISOString(), timeMax: to.toISOString(), maxResults: "2500",
       fields: "items(id,status,transparency,start,end,attendees(self,responseStatus)),nextPageToken",
       ...(pageToken ? { pageToken } : {}),
@@ -130,7 +108,7 @@ const graphUtc = (s: string) => new Date(s.slice(0, 19) + "Z");
  * working-elsewhere and cancelled events are not busy. An all-day event
  * covers its dates in the resource's zone.
  */
-export async function microsoftBusy(gw: Gateway, calendarId: string, from: Date, to: Date, zone: string): Promise<BusyEvent[]> {
+export async function microsoftBusy(gw: Gateway, connection: string, calendarId: string, from: Date, to: Date, zone: string): Promise<BusyEvent[]> {
   const base = calendarId === "primary" ? "/v1.0/me/calendarView" : `/v1.0/me/calendars/${encodeURIComponent(calendarId)}/calendarView`;
   let path: string | null = `${base}?${query({
     startDateTime: from.toISOString(), endDateTime: to.toISOString(), $select: "id,start,end,showAs,isCancelled,isAllDay", $top: "100",
@@ -139,7 +117,7 @@ export async function microsoftBusy(gw: Gateway, calendarId: string, from: Date,
   const out: BusyEvent[] = [];
   for (let page = 0; path; page++) {
     if (page >= 100) throw new Error("Microsoft calendarView: more than 100 pages");
-    const body = await call(gw, MICROSOFT_SLUG, path, { headers: { Prefer: 'outlook.timezone="UTC"' } });
+    const body = await call(gw, connection, path, { headers: { Prefer: 'outlook.timezone="UTC"' } });
     for (const e of body?.value ?? []) {
       if (e.isCancelled || e.showAs === "free" || e.showAs === "workingElsewhere") continue;
       const tag = (e.singleValueExtendedProperties ?? []).find((p: { id?: string }) => p.id?.toLowerCase() === MICROSOFT_TAG.toLowerCase())?.value ?? null;
@@ -149,16 +127,12 @@ export async function microsoftBusy(gw: Gateway, calendarId: string, from: Date,
       if (!(span.end > span.start)) continue;
       out.push({ id: String(e.id), tag, ...span });
     }
-    const next: unknown = body?.["@odata.nextLink"];
-    if (typeof next === "string") {
-      if (!next.startsWith(GRAPH + "/")) throw new Error("Microsoft nextLink points off graph.microsoft.com");
-      path = next.slice(GRAPH.length);
-    } else path = null;
+    path = graphNext(body);
   }
   return out;
 }
 
-type CalendarRow = { id: string; resource_id: string; provider: "google" | "microsoft"; external_id: string; time_zone: string; horizon_days: number };
+type CalendarRow = { id: string; resource_id: string; provider: "google" | "microsoft"; connection: string; external_id: string; time_zone: string; horizon_days: number };
 
 /**
  * Pull one calendar into busy; on failure the old rows stay and
@@ -171,8 +145,8 @@ export async function pullCalendar(db: Db, gw: Gateway, k: CalendarRow, now: Dat
   const to = new Date(now.getTime() + (Number(k.horizon_days) + 2) * DAY);
   try {
     const fetched = k.provider === "google"
-      ? await googleBusy(gw, k.external_id, now, to, k.time_zone)
-      : await microsoftBusy(gw, k.external_id, now, to, k.time_zone);
+      ? await googleBusy(gw, k.connection, k.external_id, now, to, k.time_zone)
+      : await microsoftBusy(gw, k.connection, k.external_id, now, to, k.time_zone);
     // Bookings whose event may be in this calendar and must not count as busy:
     // confirmed ones, and any whose last change is not pushed yet.
     const own = await db.sql`
@@ -210,7 +184,7 @@ type Due = {
   /** An earlier push may have reached the calendar (it died, or failed): look for its event before creating one. */
   attempted: boolean;
 };
-type Cal = { id: string; resource_id: string; provider: "google" | "microsoft"; external_id: string; receives_bookings: boolean };
+type Cal = { id: string; resource_id: string; provider: "google" | "microsoft"; connection: string; external_id: string; receives_bookings: boolean };
 
 /** The word before a booking's place in its event details, by location kind. */
 const WHERE: Record<string, string> = { their_place: "At", our_place: "At", phone: "Call", video: "Join" };
@@ -230,6 +204,8 @@ export function eventText(b: Pick<Due, "id" | "name" | "email" | "phone" | "type
 }
 
 const msTime = (d: Date) => ({ dateTime: d.toISOString().slice(0, 19), timeZone: "UTC" });
+// The calendar's own events: a teammate's calendar shared with the account is
+// not in /me/events, so every Microsoft call names the calendar.
 const msEvents = (k: Cal) => (k.external_id === "primary" ? "/v1.0/me/events" : `/v1.0/me/calendars/${encodeURIComponent(k.external_id)}/events`);
 // "confirmed" also brings back an event the owner deleted: Google keeps a
 // deleted event's id as a cancelled event, and a move must leave it visible.
@@ -238,12 +214,12 @@ const gTimes = (b: Due) => ({ start: { dateTime: b.starts_at.toISOString() }, en
 /** Our live events for this booking in this calendar, found by tag. */
 async function findEvents(gw: Gateway, k: Cal, tag: string): Promise<string[]> {
   if (k.provider === "google") {
-    const body = await call(gw, GOOGLE_SLUG, `${gEvents(k.external_id)}?${query({ privateExtendedProperty: `${GOOGLE_TAG}=${tag}`, maxResults: "50", fields: "items(id,status)" })}`);
+    const body = await call(gw, k.connection, `${gEvents(k.external_id)}?${query({ privateExtendedProperty: `${GOOGLE_TAG}=${tag}`, maxResults: "50", fields: "items(id,status)" })}`);
     // Only ids we chose: a copy the owner made of our event is theirs.
     return (body?.items ?? []).filter((e: { id: string; status?: string }) => e.status !== "cancelled" && tagOfGoogleId(e.id) === tag).map((e: { id: string }) => e.id);
   }
-  // The filter covers every calendar in the mailbox, which is what we want: the tag names one calendar row.
-  const body = await call(gw, MICROSOFT_SLUG, `/v1.0/me/events?${query({
+  // Searched in the calendar itself: the tag names one calendar row.
+  const body = await call(gw, k.connection, `${msEvents(k)}?${query({
     $filter: `singleValueExtendedProperties/Any(ep: ep/id eq '${MICROSOFT_TAG}' and ep/value eq '${tag}')`, $select: "id", $top: "50",
   })}`);
   return (body?.value ?? []).map((e: { id: string }) => String(e.id));
@@ -255,15 +231,15 @@ async function insertEvent(gw: Gateway, k: Cal, b: Due, tag: string): Promise<st
   if (k.provider === "google") {
     const id = attemptId(tag, b.sequence);
     const event = { summary: title, description: details, ...(location ? { location } : {}), extendedProperties: { private: { [GOOGLE_TAG]: tag } }, ...gTimes(b) };
-    const made = await call(gw, GOOGLE_SLUG, gEvents(k.external_id), { method: "POST", body: JSON.stringify({ id, ...event }) }, [409]);
+    const made = await call(gw, k.connection, gEvents(k.external_id), { method: "POST", body: JSON.stringify({ id, ...event }) }, [409]);
     if (made) return String(made.id ?? id);
     // 409 "The requested identifier already exists": an earlier attempt made it
     // (or the owner deleted it, which keeps the id). Write ours over it.
-    const fixed = await call(gw, GOOGLE_SLUG, `${gEvents(k.external_id)}/${id}`, { method: "PATCH", body: JSON.stringify(event) }, [404, 410]);
+    const fixed = await call(gw, k.connection, `${gEvents(k.external_id)}/${id}`, { method: "PATCH", body: JSON.stringify(event) }, [404, 410]);
     if (!fixed) throw new Error(`Google says event ${id} exists but will not update it`);
     return id;
   }
-  const body = await call(gw, MICROSOFT_SLUG, msEvents(k), {
+  const body = await call(gw, k.connection, msEvents(k), {
     method: "POST",
     body: JSON.stringify({
       subject: title, body: { contentType: "text", content: details }, ...(location ? { location: { displayName: location } } : {}), start: msTime(b.starts_at), end: msTime(b.ends_at), showAs: "busy",
@@ -278,16 +254,16 @@ async function insertEvent(gw: Gateway, k: Cal, b: Due, tag: string): Promise<st
 async function moveEvent(gw: Gateway, k: Cal, b: Due, eventId: string): Promise<boolean> {
   const id = encodeURIComponent(eventId);
   const body = k.provider === "google"
-    ? await call(gw, GOOGLE_SLUG, `${gEvents(k.external_id)}/${id}`, { method: "PATCH", body: JSON.stringify(gTimes(b)) }, [404, 410])
-    : await call(gw, MICROSOFT_SLUG, `/v1.0/me/events/${id}`, { method: "PATCH", body: JSON.stringify({ start: msTime(b.starts_at), end: msTime(b.ends_at) }) }, [404]);
+    ? await call(gw, k.connection, `${gEvents(k.external_id)}/${id}`, { method: "PATCH", body: JSON.stringify(gTimes(b)) }, [404, 410])
+    : await call(gw, k.connection, `${msEvents(k)}/${id}`, { method: "PATCH", body: JSON.stringify({ start: msTime(b.starts_at), end: msTime(b.ends_at) }) }, [404]);
   return body !== null;
 }
 
 async function deleteEvent(gw: Gateway, k: Cal, eventId: string): Promise<void> {
   const id = encodeURIComponent(eventId);
   // Already gone (the owner deleted it) is done, not an error.
-  if (k.provider === "google") await call(gw, GOOGLE_SLUG, `${gEvents(k.external_id)}/${id}`, { method: "DELETE" }, [404, 410]);
-  else await call(gw, MICROSOFT_SLUG, `/v1.0/me/events/${id}`, { method: "DELETE" }, [404]);
+  if (k.provider === "google") await call(gw, k.connection, `${gEvents(k.external_id)}/${id}`, { method: "DELETE" }, [404, 410]);
+  else await call(gw, k.connection, `${msEvents(k)}/${id}`, { method: "DELETE" }, [404]);
 }
 
 /**
@@ -332,7 +308,7 @@ export async function pushBookings(db: Db, gw: Gateway, now = new Date(), limit 
               b.sequence, b.event_key, b.external_event_id, b.external_calendar_id::text as external_calendar_id, due.attempted`) as Due[];
   if (!due.length) return { pushed: 0, errors: [] };
   const cals = (await db.sql`
-    select id::text as id, resource_id::text as resource_id, provider, external_id, receives_bookings from calendars
+    select id::text as id, resource_id::text as resource_id, provider, connection, external_id, receives_bookings from calendars
     where resource_id = any(${[...new Set(due.map((b) => b.resource_id))]}::bigint[])
        or id = any(${due.map((b) => b.external_calendar_id).filter(Boolean)}::bigint[]) order by id`) as Cal[];
 
@@ -383,7 +359,7 @@ export async function pushBookings(db: Db, gw: Gateway, now = new Date(), limit 
 export async function syncCalendars(db: Db, gw: Gateway, now = new Date()): Promise<{ pushed: number; pulled: number; errors: string[] }> {
   const { pushed, errors } = await pushBookings(db, gw, now);
   const rows = (await db.sql`
-    select k.id::text as id, k.resource_id::text as resource_id, k.provider, k.external_id, r.time_zone,
+    select k.id::text as id, k.resource_id::text as resource_id, k.provider, k.connection, k.external_id, r.time_zone,
            -- As far ahead as the furthest type this person takes can be booked.
            coalesce((
              select max(t.horizon_days) from booking_type_hosts h join booking_types t on t.id = h.type_id
@@ -405,7 +381,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const CMD = "npx tsx src/booking/sync.ts";
   const args = process.argv.slice(2);
   if (args.includes("--help") || args.includes("-h")) {
-    console.log(`usage: ${CMD}\n\nPushes bookings to the hosts' connected calendars and pulls their busy times, once. Schedule it every 15 minutes.`);
+    console.log(`usage: ${CMD}\n\nGives each newly connected calendar to the person whose email it is, pushes bookings to the hosts' calendars and pulls their busy times, once. Schedule it every 15 minutes.`);
     process.exit(0);
   }
   if (args.length) misused(`calendar sync: it takes no arguments (given ${args.join(" ")})`, CMD);
@@ -415,10 +391,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (missing.length) fail(`calendar sync: ${missing.join(", ")} not set, here or in ~/.env`, `run it on the machine as a scheduled job: ${CMD}`);
   const pool = openPool(env.DATABASE_URL!, 2);
   try {
-    const r = await syncCalendars(fromPool(pool), (slug, path, init) => gatewayFetch(env, slug, path, init));
-    console.log(`calendar sync: pushed ${r.pushed} booking${r.pushed === 1 ? "" : "s"}, pulled ${r.pulled} calendar${r.pulled === 1 ? "" : "s"}${r.errors.length ? `, ${r.errors.length} failed` : ""}`);
+    const db = fromPool(pool);
+    const linked = await linkAccounts(db, await listConnections(env));
+    const r = await syncCalendars(db, (slug, path, init) => gatewayFetch(env, slug, path, init));
+    console.log(`calendar sync: ${linked ? `linked ${linked} new calendar${linked === 1 ? "" : "s"}, ` : ""}pushed ${r.pushed} booking${r.pushed === 1 ? "" : "s"}, pulled ${r.pulled} calendar${r.pulled === 1 ? "" : "s"}${r.errors.length ? `, ${r.errors.length} failed` : ""}`);
     for (const e of r.errors) console.error(`  ${e}`);
-    if (r.errors.length) console.error("  Try: the booking admin's Calendars page shows each calendar's last error");
+    if (r.errors.length) console.error("  Try: each person's page under Team shows their calendar's last error");
     process.exitCode = r.errors.length ? 1 : 0;
   } catch (e) {
     // the database or the gateway, never a stack trace in the job's run history

@@ -15,7 +15,7 @@ export type Saved<T = null> = { ok: true; value: T } | { ok: false; errors: Erro
 
 export type HoursWindow = { id: string; weekday: number; start: string; end: string };
 export type TimeOff = { id: string; starts_at: Date; ends_at: Date; note: string | null };
-export type Calendar = { id: string; resource_id: string; provider: "google" | "microsoft"; external_id: string; receives_bookings: boolean; last_synced_at: Date | null; last_error: string | null };
+export type Calendar = { id: string; resource_id: string; provider: "google" | "microsoft"; connection: string; account: string | null; external_id: string; name: string | null; receives_bookings: boolean; last_synced_at: Date | null; last_error: string | null };
 
 export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -279,28 +279,32 @@ export async function typesHostedBy(db: Db, resourceId: string): Promise<Booking
 
 export async function calendars(db: Db, resourceId?: string): Promise<(Calendar & { resource_name: string })[]> {
   const rows = await db.sql`
-    select k.id::text as id, k.resource_id::text as resource_id, k.provider, k.external_id, k.receives_bookings,
+    select k.id::text as id, k.resource_id::text as resource_id, k.provider, k.connection, a.account, k.external_id, k.name, k.receives_bookings,
            k.last_synced_at, k.last_error, r.name as resource_name
-    from calendars k join resources r on r.id = k.resource_id
+    from calendars k join resources r on r.id = k.resource_id left join calendar_accounts a on a.connection = k.connection
     where (${resourceId ?? null}::bigint is null or k.resource_id = ${resourceId ?? null}::bigint)
     order by r.name, k.id`;
   return rows.map((r) => ({ ...r, last_synced_at: r.last_synced_at ? asDate(r.last_synced_at) : null }) as Calendar & { resource_name: string });
 }
 
+/** What attaching a calendar sends: one option the Team page found (calendars.ts findCalendars). */
+type CalendarFields = { connection?: unknown; external_id?: unknown; name?: unknown; bookings?: unknown };
+
 /**
- * Which calendar the sync job reads for this resource. The connection itself
- * (google-calendar or microsoft-calendar) is granted to the app in Task &
- * Tool; this row only says which of its calendars belongs to whom.
+ * Give a resource a calendar, read through a connected account the app holds
+ * (calendar_accounts). `bookings` "1" when that account can add events there.
  */
-export async function addCalendar(db: Db, resourceId: string, provider: unknown, externalId: unknown, by: string): Promise<Saved> {
-  const p = provider === "google" || provider === "microsoft" ? provider : null;
-  const ext = typeof externalId === "string" && externalId.trim() ? externalId.trim().slice(0, 300) : "primary";
-  if (!p) return { ok: false, errors: { provider: "Choose Google or Microsoft." } };
+export async function addCalendar(db: Db, resourceId: string, f: CalendarFields, by: string): Promise<Saved> {
+  const connection = typeof f.connection === "string" ? f.connection : "";
+  const externalId = typeof f.external_id === "string" ? f.external_id.trim().slice(0, 300) : "";
+  const [account] = await db.sql`select provider from calendar_accounts where connection = ${connection}`;
+  if (!account || !externalId) return { ok: false, errors: { calendar: "That calendar is no longer available. Show the available calendars again." } };
+  const name = typeof f.name === "string" && f.name.trim() ? f.name.trim().slice(0, 200) : null;
   const rows = await db.sql`
-    insert into calendars (resource_id, provider, external_id, updated_by)
-    values (${resourceId}::bigint, ${p}, ${ext}, ${by})
+    insert into calendars (resource_id, provider, connection, external_id, name, receives_bookings, updated_by)
+    values (${resourceId}::bigint, ${account.provider}, ${connection}, ${externalId}, ${name}, ${f.bookings === "1"}, ${by})
     on conflict do nothing returning id`;
-  return rows.length ? { ok: true, value: null } : { ok: false, errors: { external_id: "This calendar is already added." } };
+  return rows.length ? { ok: true, value: null } : { ok: false, errors: { calendar: "This calendar is already added." } };
 }
 
 export async function removeCalendar(db: Db, resourceId: string, id: string): Promise<void> {

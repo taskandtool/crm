@@ -4,40 +4,16 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applySchema } from "../../data/migrate";
-import { scratch, why, type Scratch } from "../../data/test/scratch";
+import type { Scratch } from "../../data/test/scratch";
 import { book, cancelByToken, reschedule, rescheduleById, setStatus } from "../book";
 import { addWindow, createPerson, createType, setHosts } from "../hours";
-import { gatewayFetch } from "../../data/gateway";
-import { eventTag, GOOGLE_TAG, MICROSOFT_TAG, syncCalendars, type Gateway } from "../sync";
+import { linkAccounts } from "../calendars";
+import { eventTag, GOOGLE_TAG, MICROSOFT_TAG, syncCalendars } from "../sync";
+import { fake, held, json, team, withDb, type Call } from "./calendar-fixtures";
 
 const schema = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "schema.sql"), "utf8");
-const PHX = "https://phoenix.test";
 const T = (iso: string) => new Date(iso);
 const NOW = T("2026-03-01T00:00:00Z");
-
-type Call = { method: string; url: string; path: string; auth: string | null; prefer: string | null; body: any };
-
-/** A fake fetch: `routes` answers by "METHOD path-prefix"; every call is recorded. */
-function fake(routes: Record<string, (c: Call) => Response | Promise<Response>>) {
-  const calls: Call[] = [];
-  const f = (async (url: string, init: RequestInit = {}) => {
-    const h = new Headers(init.headers);
-    const path = url.slice(`${PHX}/api/machine/gateway`.length);
-    const c: Call = { method: init.method ?? "GET", url, path, auth: h.get("authorization"), prefer: h.get("prefer"), body: init.body ? JSON.parse(String(init.body)) : null };
-    calls.push(c);
-    const key = Object.keys(routes).find((k) => {
-      const [m, p] = k.split(" ");
-      return m === c.method && path.startsWith(p);
-    });
-    if (!key) return new Response("no route", { status: 599 });
-    return routes[key](c);
-  }) as unknown as typeof fetch;
-  const env = { PHOENIX_URL: PHX + "/", MACHINE_TOKEN: "mt-1" };
-  const gw: Gateway = (slug, path, init) => gatewayFetch(env, slug, path, init, f);
-  return { calls, gw };
-}
-const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "Content-Type": "application/json" } });
-
 const typeOf = (slug: string, horizon: string) => ({
   name: "Site visit", slug, duration_min: "60", interval_min: "60", buffer_before_min: "0", buffer_after_min: "0", min_notice_min: "0",
   horizon_days: horizon, location_kind: "our_place", location: "1 Main St",
@@ -52,22 +28,13 @@ async function setup(s: Scratch, provider: "google" | "microsoft", zone = "UTC")
   const t = await createType(s.db, typeOf("visit", "30"), "o@example.com", "test");
   assert.ok(t.ok);
   await setHosts(s.db, t.value.id, [p.value.id]);
-  const [k] = await s.db.sql`insert into calendars (resource_id, provider, external_id) values (${p.value.id}::bigint, ${provider}, ${provider === "google" ? "pat@example.com" : "primary"}) returning id::text as id`;
+  const [k] = await s.db.sql`insert into calendars (resource_id, provider, connection, external_id)
+    values (${p.value.id}::bigint, ${provider}, ${`${provider}-calendar`}, ${provider === "google" ? "pat@example.com" : "primary"}) returning id::text as id`;
   return { resource: t.value, person: p.value, calendarId: k.id as string };
 }
 
 const busyRows = async (s: Scratch) =>
   (await s.db.sql`select starts_at, ends_at from busy order by starts_at`).map((r) => [new Date(r.starts_at).toISOString(), new Date(r.ends_at).toISOString()]);
-
-async function withDb(t: { skip: (m: string) => void }, fn: (s: Scratch) => Promise<void>) {
-  const s = await scratch();
-  if (!s) return t.skip(why);
-  try {
-    await fn(s);
-  } finally {
-    await s.drop();
-  }
-}
 
 type Handler = (c: Call) => Response | Promise<Response>;
 const lastSegment = (path: string) => decodeURIComponent(path.split("?")[0].split("/").pop()!);
@@ -128,30 +95,31 @@ function googleCalendar() {
  * lookup is what is tested), the extended-property $filter on /me/events,
  * calendarView with the tag expanded, patch and delete.
  */
-function microsoftCalendar() {
+/** `calendar`: the base its paths hang off, /v1.0/me for the account's own, /v1.0/me/calendars/<id> for another. */
+function microsoftCalendar(calendar = "/v1.0/me") {
   const events = new Map<string, any>();
   let n = 0;
   const tagOf = (e: any) => e.singleValueExtendedProperties?.[0]?.value ?? null;
   const routes: Record<string, Handler> = {
-    "GET /microsoft-calendar/v1.0/me/calendarView": () =>
+    [`GET /microsoft-calendar${calendar}/calendarView`]: () =>
       json({ value: [...events.values()].map((e) => ({ ...e, singleValueExtendedProperties: e.singleValueExtendedProperties ?? [] })) }),
-    "GET /microsoft-calendar/v1.0/me/events": (c) => {
+    [`GET /microsoft-calendar${calendar}/events`]: (c) => {
       const filter = new URL(c.url).searchParams.get("$filter")!;
       const want = /ep\/value eq '([^']+)'/.exec(filter)![1];
       return json({ value: [...events.values()].filter((e) => tagOf(e) === want).map((e) => ({ id: e.id })) });
     },
-    "POST /microsoft-calendar/v1.0/me/events": (c) => {
+    [`POST /microsoft-calendar${calendar}/events`]: (c) => {
       const id = `AAMk-${++n}`;
       events.set(id, { ...c.body, id, isCancelled: false, isAllDay: false });
       return json(events.get(id));
     },
-    "PATCH /microsoft-calendar/v1.0/me/events/": (c) => {
+    [`PATCH /microsoft-calendar${calendar}/events/`]: (c) => {
       const e = events.get(lastSegment(c.path));
       if (!e) return json({ error: { code: "ErrorItemNotFound" } }, 404);
       Object.assign(e, c.body);
       return json(e);
     },
-    "DELETE /microsoft-calendar/v1.0/me/events/": (c) =>
+    [`DELETE /microsoft-calendar${calendar}/events/`]: (c) =>
       events.delete(lastSegment(c.path)) ? new Response(null, { status: 204 }) : json({ error: { code: "ErrorItemNotFound" } }, 404),
   };
   const add = (start: string, end: string) => {
@@ -448,6 +416,28 @@ test("Microsoft: a lost create response, then a rerun, makes one event; the pull
     assert.deepEqual(await busyRows(s), [["2026-03-09T10:00:00.000Z", "2026-03-09T11:00:00.000Z"]]);
   }));
 
+test("Microsoft: a teammate's shared calendar is written, moved and cleared under that calendar, not /me/events", (t) =>
+  withDb(t, async (s) => {
+    const { resource, calendarId } = await setup(s, "microsoft");
+    await s.db.sql`update calendars set external_id = 'AAMkShared' where id = ${calendarId}::bigint`;
+    const a = await book(s.db, { typeId: resource.id, start: T("2026-03-09T10:00:00Z"), name: "Ann", email: "ann@example.com", source: "website", now: NOW });
+    assert.ok(a.ok);
+    const m = microsoftCalendar("/v1.0/me/calendars/AAMkShared");
+    const { calls, gw } = fake(m.routes);
+    assert.deepEqual((await syncCalendars(s.db, gw, NOW)).errors, []);
+    assert.equal(m.ours().length, 1);
+
+    assert.ok((await rescheduleById(s.db, a.booking.id, T("2026-03-09T11:00:00Z"), "o@example.com", undefined, NOW)).ok);
+    assert.deepEqual((await syncCalendars(s.db, gw, NOW)).errors, []);
+    assert.equal(m.ours()[0].start.dateTime, "2026-03-09T11:00:00", "moved, not written again");
+    assert.equal(m.ours().length, 1);
+
+    assert.ok(await setStatus(s.db, a.booking.id, "cancelled", "o@example.com"));
+    assert.deepEqual((await syncCalendars(s.db, gw, NOW)).errors, []);
+    assert.equal(m.ours().length, 0);
+    assert.ok(calls.every((c) => !c.path.startsWith("/microsoft-calendar/v1.0/me/events")), "never the mailbox's own events");
+  }));
+
 test("Microsoft: the job dies after the create; the rerun makes no second event", (t) =>
   withDb(t, async (s) => {
     const { resource } = await setup(s, "microsoft");
@@ -553,7 +543,7 @@ test("a booking moved to another person leaves the first one's calendar and land
     for (let d = 0; d < 7; d++) await addWindow(s.db, sam.value.id, String(d), "09:00", "17:00", "o@example.com");
     const [p] = await s.db.sql`select resource_id::text as id from calendars where id = ${calendarId}::bigint`;
     await setHosts(s.db, resource.id, [p.id, sam.value.id]);
-    const [samCal] = await s.db.sql`insert into calendars (resource_id, provider, external_id) values (${sam.value.id}::bigint, 'google', 'sam@example.com') returning id::text as id`;
+    const [samCal] = await s.db.sql`insert into calendars (resource_id, provider, connection, external_id) values (${sam.value.id}::bigint, 'google', 'google-calendar', 'sam@example.com') returning id::text as id`;
     const a = await book(s.db, { typeId: resource.id, hostId: p.id, start: T("2026-03-09T10:00:00Z"), name: "Ann", email: "ann@example.com", source: "website", now: NOW });
     assert.ok(a.ok);
     const g = googleCalendar();
@@ -572,4 +562,21 @@ test("a booking moved to another person leaves the first one's calendar and land
     assert.equal(live[0].start.dateTime, "2026-03-09T11:00:00.000Z");
     const [b] = await s.db.sql`select external_calendar_id::text as k from bookings`;
     assert.equal(b.k, samCal.id);
+  }));
+
+// ---- several people's connections ----------------------------------------------
+
+test("two people's Google are read through their own connections", (t) =>
+  withDb(t, async (s) => {
+    await team(s, schema);
+    await linkAccounts(s.db, [held("google-calendar", "google", "pat@example.com"), held("google-calendar-7c2e1a", "google", "sam@example.com")]);
+    const owners = { "google-calendar": "2026-03-09T10:00:00Z", "google-calendar-7c2e1a": "2026-03-09T14:00:00Z" };
+    const { calls, gw } = fake(Object.fromEntries(Object.entries(owners).map(([slug, start]) => [
+      `GET /${slug}/calendar/v3/calendars/primary/events`,
+      () => json({ items: [{ id: slug, status: "confirmed", start: { dateTime: start }, end: { dateTime: start.replace("00:00Z", "30:00Z") } }] }),
+    ])));
+    assert.deepEqual((await syncCalendars(s.db, gw, NOW)).errors, []);
+    assert.deepEqual(calls.map((c) => c.path.split("/")[1]).sort(), ["google-calendar", "google-calendar-7c2e1a"]);
+    const busy = await s.db.sql`select r.name, b.starts_at from busy b join calendars k on k.id = b.calendar_id join resources r on r.id = k.resource_id order by r.name`;
+    assert.deepEqual(busy.map((b) => `${b.name} ${new Date(b.starts_at).toISOString()}`), ["Pat 2026-03-09T10:00:00.000Z", "Sam 2026-03-09T14:00:00.000Z"]);
   }));

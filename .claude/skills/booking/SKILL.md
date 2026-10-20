@@ -14,7 +14,7 @@ the project database reads the same rows: the Website's `/book` pages
 take bookings, the CRM sets types, hosts and hours and lists the bookings
 by email.
 
-Version: 0.8.1 (taskandtool/skills)
+Version: 0.9.0 (taskandtool/skills)
 
 ## The rules
 
@@ -108,8 +108,9 @@ bookings and payments".
 | `notify.ts` | `bookingMessage` (the words), `notifyBooking`, `emailSend`/`emailSender`, the `Send` type, `runOnBooked`, `noticeFor` (a move or cancel made away from the booking pages, to tell the booker of), `sendInvite` (your own words with the invite) |
 | `reminders.ts` | `sendReminders`: claims and sends the reminders due now |
 | `reminders-job.ts` | The reminder job's command (machine only) |
-| `sync.ts` | The calendar sync job (machine only) |
-| `test/` | Slots and DST, concurrency, sync with a fake gateway, ICS, the pages, spam, afterBook |
+| `calendars.ts` | The connected calendar accounts: `linkAccounts`, `findCalendars` (what each account can see), the gateway call |
+| `sync.ts` | The calendar sync job (machine only): each person's connected calendar, then push and pull |
+| `test/` | Slots and DST, concurrency, sync and finding calendars with a fake gateway, ICS, the pages, spam, afterBook |
 
 ## Read next
 

@@ -91,21 +91,36 @@ create table if not exists time_off (
 );
 create index if not exists time_off_resource_end on time_off (resource_id, ends_at);
 
--- A calendar the owner connected for a resource. external_id is the
--- provider's calendar id (primary means the account's main calendar).
--- receives_bookings: the sync job writes bookings into the first such one.
+-- The calendar connections this app holds, as last listed from Task & Tool
+-- (the sync job, or Show available calendars; calendars.ts linkAccounts): one
+-- per account someone connected, under the name this app calls it
+-- (google-calendar, google-calendar-7c2e1a).
+create table if not exists calendar_accounts (
+  connection text primary key,
+  provider text not null check (provider in ('google', 'microsoft')),
+  account text
+);
+
+-- A calendar of a resource's, read and written through one of those
+-- connections. external_id is the provider's calendar id (primary means the
+-- connected account's main calendar; a teammate's calendar shared with the
+-- account has its own id), and name what the Team page shows for it.
+-- receives_bookings: the account can add events there, and the sync job
+-- writes bookings into the first such one.
 create table if not exists calendars (
   id bigserial primary key,
   resource_id bigint not null references resources (id) on delete cascade,
   provider text not null check (provider in ('google', 'microsoft')),
+  connection text not null,
   external_id text not null default 'primary',
+  name text,
   receives_bookings boolean not null default true,
   last_synced_at timestamptz,
   last_error text,
   updated_by citext,
   created_at timestamptz not null default now()
 );
-create unique index if not exists calendars_resource_provider_external on calendars (resource_id, provider, external_id);
+create unique index if not exists calendars_resource_connection_external on calendars (resource_id, connection, external_id);
 
 -- Busy times copied from a calendar by the sync job; it replaces a
 -- calendar's rows on every run. Pages read only this, never the calendar.

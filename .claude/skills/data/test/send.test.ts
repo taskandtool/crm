@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hono } from "hono";
 import { envOf, envVar, keyName } from "../env";
-import { gatewayFetch } from "../gateway";
+import { gatewayFetch, listConnections } from "../gateway";
 import { sendEmail, senderOf, teamOf } from "../send";
 import { emailSender } from "../../booking/notify";
 
@@ -56,6 +56,26 @@ test("the gateway call carries the machine token to the slug's path; off the mac
   assert.equal(r.calls[0].headers.get("content-type"), "application/json");
   await assert.rejects(gatewayFetch({}, "stripe", "/v1/x", {}, r.f), /only from the app's machine/);
   await assert.rejects(gatewayFetch({ PHOENIX_URL: "https://tt", MACHINE_TOKEN: "m" }, "../admin", "/x", {}, r.f), /not a connection slug/);
+});
+
+test("listConnections reads what this app holds, the endpoints only, and says when Task & Tool refuses", async () => {
+  const env = { PHOENIX_URL: "https://tt.example/", MACHINE_TOKEN: "mt" };
+  const held = [
+    { slug: "google-calendar", provider: "google", service: "calendar", account: "me@agency.example", status: "active" },
+    { slug: "google-calendar-7c2e1a", provider: "google", service: "calendar", account: "bob@agency.example", status: "active" },
+    { env_name: "OPENAI_API_KEY", kind: "secret", provider: "openai-api", status: "active" },
+  ];
+  const urls: string[] = [];
+  const f = (async (url: string, init: RequestInit) => {
+    urls.push(`${url} ${new Headers(init.headers).get("authorization")}`);
+    return Response.json({ ok: true, connections: held });
+  }) as unknown as typeof fetch;
+
+  assert.deepEqual(await listConnections(env, f), held.slice(0, 2));
+  assert.deepEqual(urls, ["https://tt.example/api/machine/connections Bearer mt"]);
+  const refused = (async () => new Response("{}", { status: 401 })) as unknown as typeof fetch;
+  await assert.rejects(listConnections(env, refused), /answered 401/);
+  await assert.rejects(listConnections({}, f), /only from the app's machine/);
 });
 
 // ── sending ──────────────────────────────────────────────────────────────────

@@ -32,6 +32,9 @@ import { decimals } from "../payments/money";
 import { addDays, dayBounds, durationText, formatShortDate, formatSlot, formatTime, localDate, weekdayOf, zoneName } from "./slots";
 import { chip, chipOn, DayAndTimes, upcoming } from "./public";
 import { noticeFor, runOnBooked, type BookingNotice } from "./notify";
+import { findCalendars, linkAccounts, type CalendarSearch } from "./calendars";
+import { envOf, setting } from "../data/env";
+import { gatewayFetch, listConnections } from "../data/gateway";
 
 export type BookingAdminOptions = {
   base: string;
@@ -599,6 +602,36 @@ function Input(p: {
   );
 }
 
+const PROVIDERS = { google: "Google", microsoft: "Microsoft" } as const;
+
+/** What Show available calendars turned up: each calendar once, with an Attach for every account that reaches it. */
+function FoundCalendars(p: { self: string; found: CalendarSearch }) {
+  return (
+    <div class="flex flex-col gap-3">
+      {p.found.calendars.length ? (
+        <ul class="flex flex-col gap-3">
+          {p.found.calendars.map((f) => (
+            <li>
+              <span class="block break-all font-semibold">{f.name}</span>
+              {f.options.map((o) => (
+                <form method="post" action={`${p.self}/calendars`} class="mt-1 flex items-center justify-between gap-2">
+                  <input type="hidden" name="connection" value={o.connection} />
+                  <input type="hidden" name="external_id" value={o.externalId} />
+                  <input type="hidden" name="name" value={f.name} />
+                  <input type="hidden" name="bookings" value={o.canEdit ? "1" : "0"} />
+                  <span class={`min-w-0 break-all ${smallText} text-ink-2`}>Through {o.account ?? o.connection} · {o.canEdit ? "can add bookings" : "busy times only"}</span>
+                  <button class={buttonClass}>Attach</button>
+                </form>
+              ))}
+            </li>
+          ))}
+        </ul>
+      ) : <p class={`${smallText} text-ink-3`}>No calendars to add. Connect Google or Microsoft to this app in Task &amp; Tool, on the app's Connections tab, or ask a teammate to share their calendar with a connected account.</p>}
+      {p.found.errors.map((e) => <p class={`${smallText} text-ink-2`}>Could not list {e}</p>)}
+    </div>
+  );
+}
+
 /** A choice from a short list; a value set some other way (by the AI, an import) stays offered. */
 function Choice(p: { label: string; name: string; value: string; options: [string, string][]; errors?: Errors; hint?: string; class?: string }) {
   const err = p.errors?.[p.name];
@@ -958,9 +991,13 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
     ), Object.keys(errors).length ? 422 : 200);
   };
 
-  async function editPage(c: Team, r: Resource, problems: { details?: { values: Record<string, unknown>; errors: Errors }; hours?: Errors; timeOff?: Errors; calendar?: Errors } = {}) {
+  /** `found`: what Show available calendars turned up, on the page it was asked from. */
+  async function editPage(c: Team, r: Resource, problems: { details?: { values: Record<string, unknown>; errors: Errors }; hours?: Errors; timeOff?: Errors; calendar?: Errors } = {}, found?: CalendarSearch) {
     const d = getDb(c);
     const [hours, off, takes, cals] = await Promise.all([weeklyHours(d, r.id), timeOffList(d, r.id), typesHostedBy(d, r.id), calendarsOn ? calendars(d, r.id) : []]);
+    const attached = (o: { connection: string; externalId: string }) => cals.some((k) => k.connection === o.connection && k.external_id === o.externalId);
+    // The lookup goes through the gateway, which only the app's machine has.
+    const onMachine = setting(envOf(c), "PHOENIX_URL") !== undefined;
     const self = `${base}/${r.id}`;
     const failed = Object.values(problems).some(Boolean);
     const today = localDate(new Date(), r.time_zone);
@@ -1040,8 +1077,9 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
                     {cals.map((k) => (
                       <li class="flex items-start justify-between gap-2">
                         <span class="min-w-0">
-                          <span class="block break-all">{k.provider === "google" ? "Google" : "Microsoft"} · {k.external_id}</span>
+                          <span class="block break-all">{PROVIDERS[k.provider]} · {k.name ?? k.account ?? k.connection}</span>
                           <span class={`block ${smallText} text-ink-3`}>
+                            {k.name && k.account ? `Through ${k.account} · ` : ""}{k.receives_bookings ? "" : "Busy times only · "}
                             {k.last_error ? <span class="font-semibold text-ink">Sync failed: {k.last_error}</span> : k.last_synced_at ? <>Synced <When at={k.last_synced_at} timeZone={r.time_zone} /></> : "Not synced yet"}
                           </span>
                         </span>
@@ -1050,11 +1088,12 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
                     ))}
                   </ul>
                 ) : <p class={`mb-4 ${smallText} text-ink-3`}>Busy times in their calendar close those times here, and new bookings go into it.</p>}
-                <form method="post" action={`${self}/calendars`} class="flex flex-col gap-3">
-                  <Choice label="Calendar" name="provider" value="google" options={[["google", "Google"], ["microsoft", "Microsoft"]]} errors={problems.calendar} />
-                  <Input label="Which one" name="external_id" value="primary" errors={problems.calendar} hint="primary is their main calendar." />
-                  <div><button class={buttonClass}>Add calendar</button></div>
-                </form>
+                <FieldError id="calendar-error" text={problems.calendar?.calendar} />
+                {found ? (
+                  <FoundCalendars self={self} found={{ ...found, calendars: found.calendars.filter((f) => !f.options.some(attached)) }} />
+                ) : onMachine ? (
+                  <form method="post" action={`${self}/calendars/find`}><button class={buttonClass}>Show available calendars</button></form>
+                ) : <p class={`${smallText} text-ink-3`}>Find their calendars from the team address, where the app runs on its machine.</p>}
               </Section>
             ) : null}
           </div>
@@ -1137,11 +1176,24 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
 
   if (!calendarsOn) return app;
 
+  app.post("/:id/calendars/find", async (c) => {
+    const r = await load(c);
+    if (!r) return c.notFound();
+    const d = getDb(c);
+    const env = envOf(c);
+    try {
+      // Fresh from Task & Tool first, so an account connected a minute ago is asked too.
+      await linkAccounts(d, await listConnections(env));
+      return editPage(c, r, {}, await findCalendars(d, (slug, path, init) => gatewayFetch(env, slug, path, init)));
+    } catch (e) {
+      return editPage(c, r, {}, { calendars: [], errors: [`the connected accounts: ${(e as Error).message}`] });
+    }
+  });
+
   app.post("/:id/calendars", async (c) => {
     const r = await load(c);
     if (!r) return c.notFound();
-    const body = await c.req.parseBody();
-    const saved = await addCalendar(getDb(c), r.id, body.provider, body.external_id, c.get("user"));
+    const saved = await addCalendar(getDb(c), r.id, await c.req.parseBody(), c.get("user"));
     return saved.ok ? c.redirect(back(r, "calendar"), 303) : editPage(c, r, { calendar: saved.errors });
   });
 
