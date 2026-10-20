@@ -14,8 +14,9 @@ Version: 0.1.1 (taskandtool/skills)
 
 ## Copy, by script
 
-The app's own check runs the script: `npm run check:copy` (website) or
-`python3 scripts/check.py` (marketing). For any other text:
+The app's own check runs the script: `npm run check:copy` (the Website),
+`npm run check` (the CRM's proposal words) or `python3 scripts/check.py`
+(Marketing). For any other text:
 
 ```
 node .claude/skills/tropes/tropes.mjs [--kind page|post|ad] [--json] <file|->

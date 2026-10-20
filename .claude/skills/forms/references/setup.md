@@ -95,29 +95,5 @@ when the connection's endpoint slug is not the vendor's name.
 | production (the Worker) | the key bound to the Worker (`python3 ~/tools/taskandtool.py request-connection resend --why "send form emails" --delivery edge`) |
 | dev (this machine) | nothing more: the gateway adds the key, which never reaches the machine |
 
-A bound key's env name is the connection's `env_name` in
-`python3 ~/tools/taskandtool.py list-connections` (`<SLUG>_API_KEY`, so `RESEND_API_KEY` for slug
-`resend`); check it there rather than assuming. `sendEmail` returns
-`{ status: "sent" | "none" | "failed" }` and never throws; a failure is
-logged and the submission is already saved.
-
-## A `leads` table
-
-A Website without this skill keeps its contact form in a `leads` table. When
-the project has one, copy its rows once, from the machine, with the SQL
-below, then write only to
-`submissions` with form key `contact`. Never drop `leads`: it is the owner's
-data.
-
-```sql
-insert into submissions (form_key, name, email, phone, data, source, page, created_at)
-select 'contact', l.name, lower(trim(l.email)), l.phone,
-       case when l.message is null then '{}'::jsonb else jsonb_build_object('message', l.message) end,
-       l.source, l.page, l.created_at
-from leads l
-where not exists (select 1 from submissions s
-                  where s.form_key = 'contact' and s.email = lower(trim(l.email)) and s.created_at = l.created_at);
-```
-
-`CONTACT_FORM` in `store.ts` is the same name, email, phone and message form,
-seeded as the `contact` row.
+The bound key's env name, and what `sendEmail` returns: the `data` skill's
+Email.

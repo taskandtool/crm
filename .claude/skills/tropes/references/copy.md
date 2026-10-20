@@ -1,6 +1,6 @@
 # Copy tells
 
-Structures outlast word lists: the vocabulary moves with each model generation (re-check it every six months), the shapes do not. `tropes.mjs` finds the ones a pattern can (the id beside a trope is the rule it prints; the phrase tables are `refused-phrase`); the rest need an ear.
+Structures outlast word lists: the vocabulary moves with each model generation, the shapes do not. `tropes.mjs` finds the ones a pattern can (the id beside a trope is the rule it prints; the phrase tables are `refused-phrase`); the rest need an ear.
 
 ## Vocabulary
 

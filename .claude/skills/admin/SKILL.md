@@ -15,30 +15,33 @@ Version: 0.3.1 (taskandtool/skills)
 Private views sit under one prefix (`/admin`, `/reports`) and are private by
 default, with two locks:
 
-1. **Task & Tool decides who reaches the path.** Dev is team only;
-   production is too until a person makes it public. Declare the prefix
-   when you build it: `python3 ~/tools/taskandtool.py add-private-path /admin`
-   (the `serving` skill). A declared path keeps asking for a Task & Tool
-   sign-in once the site is public. Never link it from public pages.
+1. **Task & Tool decides who reaches the path:** only people placed on
+   the app, in dev and in production until a person makes it public.
+   Declare the prefix when you build it: `python3 ~/tools/taskandtool.py
+   add-private-path /admin` (the `serving` skill). A declared path keeps
+   asking for a Task & Tool sign-in once the site is public. Never link it
+   from public pages.
 2. **The app checks who arrived.** Mount the views on one sub-app with
    `admin.use("*", teamOnly())` (`guard.ts`): 404 without the
    `X-TaskTool-User` header the edge sets from a verified sign-in, and
-   `c.get("user")` names who acted. Never build a team login.
+   `c.get("user")` names who acted, for `updated_by`. Never build a team
+   login.
 
-- **Other audiences, when the owner asks.** The business's own clients can
-  be people with the client role in Task & Tool: they arrive with the same
-  `X-TaskTool-User`, and the app decides what each may see (rows scoped to
-  that person). The business's customers who are not in Task & Tool need the
-  app's own accounts (Better Auth or similar, sessions, password resets, every
-  query scoped to the signed-in customer). That is a separate, careful piece
-  of work: say so, and never let it replace `teamOnly` on the team's views.
+- **`teamOnly` admits everyone placed on the app**, a person with the
+  client role in Task & Tool included: the header carries their email and
+  nothing marks them as a client. On an app the owner places clients on,
+  the app decides by email what each may see. The business's customers who
+  are not in Task & Tool need the app's own accounts (Better Auth or
+  similar, every query scoped to the signed-in customer): a separate,
+  careful piece of work. Say so, and never let it replace `teamOnly` on the
+  team's views.
 - **Mutations are POSTs.** `teamOnly` refuses a cross-site one (Origin, else
-  Sec-Fetch-Site), which stands in for a CSRF token. Record who acted:
-  `updated_by = ${c.get("user")}` (and `updated_at = now()`) on every change.
+  Sec-Fetch-Site), which stands in for a CSRF token.
 - **One `/admin`, a section per skill.** Each skill's views mount under it
   (`/admin/submissions`, `/admin/schedule`) on one guarded sub-app, all passing the
   same `nav`; `/admin` itself redirects to the list the owner reads most.
-- Running locally, off the platform: set `ADMIN_DEV_USER=you@example.com`.
+- Running locally, off the platform: set `ADMIN_DEV_USER=you@example.com`
+  (honoured only for a request from this computer).
 
 ## Lists
 

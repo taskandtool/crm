@@ -1,6 +1,6 @@
 ---
 name: phone
-description: "A business number on the owner's Twilio: calls that ring their phone, missed-call texts, voicemail, Messages, the US texting registration, and six automatic texts in our words. Use for a phone number, texting a customer, missed calls, voicemail, or what a text says. Not for email."
+description: "A business number on the owner's Twilio: calls that ring their phone, missed-call texts, voicemail, Messages, the US texting registration and six automatic texts. Use for a phone number, texting a customer, missed calls, voicemail, why a text did not go, or changing what a text says."
 ---
 
 # Phone
@@ -8,7 +8,7 @@ description: "A business number on the owner's Twilio: calls that ring their pho
 One number, or a few with labels, on the **owner's own Twilio account**
 (Twilio's "direct customer" path: they are the business of record and pay
 Twilio). `twilio.ts` is the only file that knows Twilio; everything else
-talks to its `Provider`.
+talks to its `Provider`. From chat: `node scripts/phone.mjs` (`--help`).
 
 Version: 0.2.0 (taskandtool/skills)
 
@@ -17,82 +17,71 @@ Version: 0.2.0 (taskandtool/skills)
 - **Twilio is a connection, asked for with `--delivery edge`**:
   `python3 ~/tools/taskandtool.py request-connection twilio --why "A business number: calls ring your phone, missed calls get a text" --auth api_key --delivery edge`.
   The missed-call text goes from the call's own webhook, which production's
-  Worker answers, so the key must reach the edge. An API key (SK…:secret)
-  is enough; the Auth Token is never needed.
-- **Webhooks come through the inbound route** (`inbound-url /hooks/twilio`),
-  never a public path. Calls and texts carry the number's own secret as
-  basic-auth credentials (checked from `X-Forwarded-Authorization`); every
-  later hook must name a call or text already kept on that number.
-- **Press 1 is not optional.** A cell's own voicemail answers an unanswered
+  Worker answers, so the key must reach the edge. The key is the Account
+  SID and Auth Token, or a Main API key (SK…:secret, made in Twilio's
+  Console as type Main). A Standard API key fails: it cannot read the
+  account (`/Accounts.json`), which saving the connection and `twilio.ts`
+  both do.
+- **Twilio's webhooks come through the inbound route**
+  (`inbound-url /hooks/twilio`), never a public path; each number's hook
+  addresses carry its own secret, which `hooks.ts` checks.
+- **Press 1 to answer stays.** A cell's own voicemail answers an unanswered
   call and Twilio counts it as picked up; only a press of 1 is answered.
 - **Texting waits for registration.** US carriers block business texts
-  from an unregistered number (Twilio 30034, 30032). The owner registers
-  in Twilio's Console (the only path Twilio documents for a business
-  registering itself), pasting our words from the setup page;
-  `registration.ts` only reads it back. Never create a brand or campaign
-  by API. Until `texting = 'approved'` nothing is texted and the flows say
-  so; calls work from day one. Reviewers open a public form to check the
-  texting box against the words, so the box shows once there is a number,
-  before approval (`forms/consent.ts`), and the words name that form. The
-  samples and the links and phone-number answers are made from the texts
-  as they are, so a link the owner wants goes in before registering.
-- **The business's name and its privacy and terms pages are set once**
-  (`data/business.ts`): in the CRM's Settings, Business, or
-  `node scripts/business.mjs set`. Texts, the texting box, the
-  registration's words and quotes all read them. Never keep a copy.
-- **Automatic texts keep their rules** (`send.ts`): a ticked box, or they
-  called or texted first (enough for the replies, confirmations and
-  reminders; the nudge to finish booking and the review request need the
-  box); never after STOP, Don't text, a STOP in their own words ("stop
-  texting me", "wrong number") or Twilio's 21610; never to a landline (Twilio
-  Lookup, once a number); nothing from 8pm to 8am in the business's zone,
-  except the missed-call text and a confirmation or thank-you minutes after
-  their own action; at most three a number a day, confirmations and
-  reminders apart; the STOP line on the first text, and again after 30
-  quiet days; each send claimed once in `text_sends`. Flows 2, 3 and 6 go
-  by email where a text can't; 3's and 6's carry the address and an
-  unsubscribe link (`data/unsubscribe.tsx`). A person may text any number
-  that hasn't opted out.
+  from an unregistered number (Twilio 30034, 30032), so nothing is texted
+  until `texting = 'approved'`; calls work from day one. The owner
+  registers in Twilio's Console, pasting the words the setup page gives
+  (`phone.mjs registration`): never create a brand or campaign by API,
+  which Twilio documents only for software vendors registering others. The
+  registration's samples, and its answers on links and phone numbers, are
+  taken from the texts as they are, so a link the owner wants goes into the
+  words before registering. The texting box shows on forms from the day
+  there is a number, because reviewers check it on a live form.
+- **The business's name and its privacy and terms pages** are one row
+  (`data/business.ts`; Settings, Business, or `node scripts/business.mjs set`)
+  that texts, the texting box and the registration's words all read: set
+  them before registering.
+- **Automatic texts keep the rules in `send.ts`'s header**: a ticked box,
+  or they called or texted first (the nudge to finish booking and the
+  review request need the box); never after a STOP, in any words, or to a
+  contact marked Don't text; never to a landline; nothing from 8pm to 8am in the business's zone but an answer
+  to what they just did; three a number a day, the booking's confirmation
+  and reminder apart. Where a text can't go, flows 2, 3 and 6 go by email.
+  A send that didn't go says why in `text_sends.why`. A person may text any
+  number that hasn't opted out or been marked Don't text (`phone.mjs send`).
 - **Only the CRM texts.** Another app's form or booking page (the
   Website's) writes its submission or booking and nothing else; the CRM's
-  job finds it within 15 minutes (`scan`, the hour before at most).
-- **The missed-call text goes when the call ends**, never during the
-  greeting: one text to every caller at any hour (no versions: edit the
-  words to add a link or hours), nothing for a caller gone within six
-  seconds.
-- **Our words are defaults, in `flows.ts`: one text per situation, and
-  none carries a link.** A link the owner wants (booking, reviews) goes in
-  the words as they type it; a missing fill-in drops its sentence, so
-  change the words rather than asking for a variant. Change one with
-  `node scripts/phone.mjs set <key> --words "…" --variant <v>`: it checks the
-  length (one text is 160 plain characters), refuses emoji and any fill-in
-  the flow can't fill (`flow <key>` lists them). `--reset`
-  brings ours back. Never write a text that sells: every automatic text is
+  15-minute job finds what came in the hour before. Connecting Twilio, or
+  turning a flow on, texts nobody about the past.
+- **The missed-call text goes once the call ends**, at any hour, to every
+  caller but one gone within six seconds.
+- **Our words are defaults** (`flows.ts`): one text per situation, none
+  with a link. A link the owner wants (booking, reviews) goes into the
+  words as they type it. Change the words with
+  `phone.mjs set <key> --words "…" --variant <v>` (`flow <key>` lists the
+  variants and fill-ins; a missing fill-in drops its sentence): it refuses
+  emoji and fill-ins the flow can't fill and says when the words run past
+  one 160-character text. `--reset` brings ours back. The owner can do the
+  same on each flow's page in Settings, Phone and texts.
+- **Never write a text that sells:** every automatic text is
   informational, which is what the consent covers.
 - **A review request goes to everyone.** No "how did we do?" filter in
   front of the owner's review link: Google and the FTC forbid it.
-- **Connecting Twilio texts nobody about the past.** The flows look only at
-  what happens after texting starts.
 
 ## Files
 
 | File | What |
 |---|---|
-| `schema.sql` | `phone_numbers`, `communications` (texts and calls, one table), `text_flows`, `text_sends`, `phone_lines`; `customers.texts_off` |
-| `twilio.ts` | The Twilio caller (bound key or gateway), the `Provider`, `twilioConnected`, TwiML |
+| `schema.sql` | `phone_numbers`, `communications` (texts and calls, one table), `text_flows`, `text_sends`, `messages_seen`, `phone_lines`; `customers.texts_off` |
+| `twilio.ts` | `twilioFrom` (bound key or gateway), the `Provider`, `twilioConnected`, TwiML |
 | `store.ts` | Numbers, texts and calls, whose number, threads, read state, opt-outs |
 | `flows.ts` | The six flows' definitions, our words, `fill`, `checkWords`, `segments`, quiet hours, the owner's changes |
-| `send.ts` | `sendText`, the claims (`schedule`, `deliver`), an email's link back to its form |
+| `send.ts` | `sendText`, the claims (`schedule`, `deliver`), `mayText`, an email's link back to its form |
 | `follow.ts` | What starts each flow (`onMissedCall`, `onSubmitted`, `onBooked`, `scan`) and what each says (`render`) |
 | `hooks.ts` | `phoneHooks`: Twilio's webhooks for calls, voicemail, texts, status; booking by a reply of 1, 2 or 3 |
-| `setup.ts` | `inboundUrl`, `buy`, `adopt`, `point`, `callOut` |
+| `setup.ts` | `inboundUrl`, `buy`, `adopt`, `point`, `unhook`, `callOut` |
 | `registration.ts` | `check`: reads the 10DLC or toll-free registration back from Twilio; `steps` for the page, with the words to paste; `optInPage`, the form reviewers open |
 | `admin.tsx` | `phoneSettings` (the setup page, each flow's picture), `messagesRoutes` (Messages), `ContactTexts` |
 | `job.ts` | `phoneJob`: the scan and the hourly registration check, for the app's job every 15 minutes |
-| `cli.ts` | `phoneCli`: the AI's command (status, flows, set, registration, threads, send) |
+| `cli.ts` | `phoneCli`: what the app's `scripts/phone.mjs` runs |
 | `test/` | The words' lengths, quiet hours, the call path with press 1, STOP, each flow, booking by reply |
-
-The flows, their words and why each says what it says:
-`docs/plans/crm-calls-and-texts.md` and `crm-calls-and-texts-messages.md`
-in the platform repo. The owner can change any text's words on its flow's
-page in Settings, Phone and texts, as `phone.mjs set` does.

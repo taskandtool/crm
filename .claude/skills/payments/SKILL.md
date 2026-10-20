@@ -1,6 +1,6 @@
 ---
 name: payments
-description: "Takes money through the owner's own Stripe: Checkout for an order, a deposit or a paid booking, status from the verified webhook, refunds and tax rates. Use when a form or booking takes payment, for the Stripe key or webhook, or a refund. Not for quotes and invoices (the CRM's invoices skill) or Task & Tool billing."
+description: "Takes money through the owner's own Stripe: Checkout for an order, a deposit or a paid booking, status from the verified webhook, refunds and tax rates. Use when a form or booking takes payment, for the Stripe key or webhook, or a refund. Not for quotes and invoices (invoices) or Task & Tool billing."
 ---
 
 # Payments
@@ -21,9 +21,9 @@ Version: 0.4.5 (taskandtool/skills)
   type, the invoice), never from the page. Money is minor units with a
   lowercase currency, through `money.ts`; never `* 100`, never two
   currencies added.
-- **You never move money on your own.** A charge, a refund or a
-  cancellation of a paid payment needs the owner's go-ahead in chat for
-  that exact amount and payment. Never call the admin refund route yourself.
+- **Moving money needs the owner's go-ahead** in chat for that amount and
+  payment: a charge or a refund. A refund asked for in chat:
+  `references/recipes.md`.
 - **Test rows are not revenue.** `livemode = false` is test mode; reports
   and the CRM leave it out.
 - **Changing `webhook.ts` or `checkout.ts`** keeps their guarantees (the
@@ -43,21 +43,22 @@ booking (when)                    booking   bookings
 payment (money)                   payments  payments
 ```
 
-- An order is never a new table: up to three rows, each in the table that
-  owns it, linked from the later row to the earlier, with the person's
-  email on each. "My orders" is a form's submissions. No skill writes another's
-  table; showing them together is a read (forms `linked.ts`).
+- An order is up to three rows, each in the table that owns it, linked
+  from the later row to the earlier, with the person's email on each, so it
+  needs no table of its own. "My orders" is a form's submissions. Each
+  skill writes only its own table; showing them together is a read (forms
+  `linked.ts`).
 - Three ways to ask for money, all rows in `payments`:
   - **Pay now** on our page (an order, a paid booking, a deposit): a form's
     `payment` step (`form-step.tsx`), which opens Checkout with the form's
     lines and tax rate.
   - **Pay later** from an email (an invoice, a deposit when a proposal is
-    signed): a Stripe invoice, the CRM's invoices skill.
+    signed): a Stripe invoice, the invoices skill.
   - **A standing link** (a bio, a flyer): a one-page form with a `payment`
     step, at `/forms/<key>/start`; each click opens a fresh Checkout.
-  Never make Stripe Payment Links: their payments name nothing here. A link
-  the owner made in Stripe can sit on a page; tell the owner its payments
-  will not show beside a form.
+- **Not Stripe Payment Links:** their payments name nothing here. One the
+  owner already made can sit on a page; tell them its payments will not
+  show beside a form.
 - **Every app that takes payments has its own webhook.** The Website and
   the CRM never know of each other, so each mounts `stripeWebhook` and gets
   its own Stripe endpoint and its own `STRIPE_WEBHOOK_SECRET`. An event both

@@ -8,7 +8,7 @@ app, or when the webhook is registered or moved.
 A restricted key only (`rk_…`); a full secret key (`sk_…`) is refused. A
 test-mode key first. The owner makes it in Stripe, Developers, API keys, as
 "Providing this key to a third-party application" (Task & Tool is the third
-party; never "an AI agent"), named for Task & Tool, with these permissions
+party, not "an AI agent"), named for Task & Tool, with these permissions
 and nothing else:
 
 | Resource | Access | Why |
@@ -40,7 +40,7 @@ another slug: `stripeFrom(envOf(c), fetch, "stripe-eu")`.
    `app.route("/", stripeWebhook(getDb, { afterPaid }))`, where `afterPaid`
    completes a form that ends in payment (forms' `completePaidSubmission`)
    and confirms its booking (booking's `confirm.ts` header has the lines),
-   with `more: [invoiceEvents]` where the invoices skill is carried. It
+   with `more: [invoiceEvents, cardEvents]` where the invoices skill is carried. It
    answers POST `/hooks/stripe` and reads `STRIPE_WEBHOOK_SECRET`. In a
    team-only app, mount it before the team gate: Stripe has no sign-in, only
    the signature.
@@ -80,6 +80,6 @@ these on in Stripe:
 
 Stripe's "card payment failed" and "confirm your payment" emails are for
 subscriptions, and Stripe will not email the page of an invoice it charges.
-A refused charge here makes a task, and `invoices.mjs email-page <id>`
-emails the customer the invoice's payment page through the owner's own
-sender (Resend or Postmark); with none, it prints the link to pass on.
+After a refused charge, `invoices.mjs email-page <id>` emails the customer
+the invoice's payment page through the owner's own sender (Resend or
+Postmark); with none, it prints the link to pass on.

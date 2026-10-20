@@ -39,8 +39,8 @@ Version: 0.2.3 (taskandtool/skills)
 - **A table may not exist yet** (no bookings, no payments):
   `projectTables(db)` checks `information_schema`, and the section says so
   in a sentence instead of failing the page.
-- **Identifiers are never parameters or input.** A query over another table
-  is a new entry in `SOURCES` (`sql.ts`): table and column names are string
+- **Table and column names never come from input.** A query over another
+  table is a new entry in `SOURCES` (`sql.ts`): its names are string
   literals there, values are always `$n`. Composed statements run with
   `run(db, query)`.
 
@@ -106,10 +106,8 @@ hand-over is a deliverable (`work` skill), and a deliverable is a file:
 | `test/` | copy with the files and keep green |
 
 Copy `client.js` with `charts.tsx` (the charts test reads `client.js`
-from beside it). `ops.tsx` imports `seo-report.tsx`, which
-imports `seo.ts`, so keep those even without Google. `print.ts` is machine
-only: leave it and `test/seo.test.ts` out of an app that deploys `src/` to
-Cloudflare until a PDF is wanted.
+from beside it). `ops.tsx` imports `seo-report.tsx`, which imports `seo.ts`,
+so keep those even without Google.
 
 ## More, when the request needs it
 

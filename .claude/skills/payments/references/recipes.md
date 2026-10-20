@@ -30,7 +30,8 @@ page, which shows the deposit's status from `payments`.
 
 ## Payment status in SQL
 
-Read, never copy; sum per currency.
+Read status from `payments` rather than keeping a copy of it; sum per
+currency.
 
 ```sql
 -- the deposit for one booking: paid, refunded, or nothing yet
@@ -47,15 +48,16 @@ group by currency;
 
 `total_cents` is what was paid with tax and fees; `amount_cents` is the
 subtotal the webhook checks. One booking's payments in the private list:
-`/admin/payments?ref_type=booking&ref_id=42`.
+its base with `?ref_type=booking&ref_id=42`.
 
 ## A refund asked for in chat
 
 A team member refunds on the private payments page, which confirms the
 amount on its own page and keys the call so a double submit is one refund;
 the row turns refunded when `charge.refunded` arrives. When the owner asks
-you instead, say exactly what will happen ("refund $50.00 of payment 42 to
-ann@example.com") and wait for their yes; then `POST /v1/refunds` with
+you and names the payment and amount, that is the yes; otherwise say
+exactly what will happen ("refund $50.00 of payment 42 to ann@example.com")
+and wait for it. Then `POST /v1/refunds` with
 `payment_intent`, `amount` and an Idempotency-Key built as `admin.tsx`
 builds it (`refund-<intent>-<refunded so far>-<amount>`).
 

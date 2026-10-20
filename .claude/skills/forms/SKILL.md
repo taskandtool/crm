@@ -22,18 +22,18 @@ Version: 0.8.0 (taskandtool/skills)
 - **The person goes in the columns**: name the fields `name`, `email` and
   `phone`, or the CRM cannot match them. Every other answer is in `data`;
   one named `address`, `company` or a CRM custom field's key fills it on
-  their customer. A submission saves its person as a customer as it comes in
-  (`saveSubmitter`, through the customers skill), and again if it is marked
-  not spam, and makes them a lead. Save a newsletter sign-up or a job
-  application with `"leads": false`: the person is saved, no lead.
+  their customer. Each submission saves its person and a lead as it comes
+  in, or when the team marks it not spam (`saveSubmitter`, the customers
+  skill). A newsletter sign-up or a job application is saved with
+  `"leads": false`: the person, no lead.
 - **One definition** (`fields.ts`) drives the page, the server's
   validation and the editor; the browser's `required` is a convenience.
 - **A page with a form is rendered per request**, never pre-rendered: it
   needs the owner's latest definition, a fresh spam stamp and the visit's
   UTM. A pre-rendered page is a static file, served in place of the Worker.
-- **Spam** is a honeypot and a 3-second minimum on the server
-  (`data/spam.tsx`), nothing to set up. A bot is
-  thanked and dropped; a post too fast is kept as spam and nobody is told.
+- **Spam** is a honeypot and a 3-second minimum (`data/spam.tsx`), nothing
+  to set up. A bot is thanked and dropped; a post too fast is kept as spam
+  and nobody is told.
 - **No IP addresses**: store only what the visitor typed, the page, and
   where they came from (`data._utm`, the referrer's host in `data._referrer`).
 - **Marketing needs a `consent` field**, unticked; `data._consent` keeps
@@ -43,8 +43,8 @@ Version: 0.8.0 (taskandtool/skills)
   number and a name: pass `textConsent: (c) => textingBox(getDb(c),
   "request")` (`consent.ts`). What was ticked is kept word for word in
   `text_consent`. Never write the box's words yourself.
-- **A photo field stores `/_files/<id>`**; open one at
-  `localhost:<port>/_files/<id>`.
+- **A photo field stores `/_files/<id>`.** The app's addresses serve it; in
+  dev, `devFiles()` does, at `localhost:<port>/_files/<id>`.
 - **A form's `notify_emails` hear of each submission** (`team: true`
   mail, `data/send.ts`), through Task & Tool email or the owner's Resend or
   Postmark; the submission's `notified` says who it reached or why not.
@@ -84,12 +84,12 @@ field type with its settings.
 | `fields.ts` | `Field`, `Form`, `validate`, `checkFields` (step order too), `stepsOf` |
 | `routes.tsx` | `formRoutes(getDb, { source, page, steps? })`: POST `/forms/:key`, `/forms/:key/next` (a step), `/forms/:key/start` (a page of its own), `/forms/:key/thanks`; `embedForm` |
 | `render.tsx` | `FormView`: one step of a form, accessible, answers put back |
-| `store.ts` | `loadForm`, `seedForm`, `insertSubmission`, drafts, `CONTACT_FORM` |
+| `store.ts` | `loadForm`, `seedForm`, `insertSubmission`, `saveSubmitter`, drafts, `completePaidSubmission`, `CONTACT_FORM` (the name, email, phone and message form, seeded as `contact`) |
 | `steps.ts` | the contract a booking or payment step implements |
 | `price.ts`, `linked.ts` | what a submission costs; its booking and payment, for showing |
 | `admin.tsx` | `formsAdmin(getDb, { base, css, timeZone, nav?, Frame?, links? })`: the submissions list (Open, Archived, Spam) with each one's booking, payment and the person's notes, so it needs the `booking`, `payments` and `customers` skills' code beside it; `formEditor(getDb, { base, css, timeZone, source, submissions })`: the forms, the editor, CSV, not finished, for an app that lets the team set forms up (the CRM) |
 | `files.ts` | `devFiles()`: `/_files` on the dev server (`src/server.ts`) |
 | `consent.ts` | `textingBox`, `consentWords`: the texting box's words, from the business (`data/business.ts`) |
 | `origin.ts`, `cart.js`, `cli.ts` | where the visitor came from; the cart; `formsCli` for `scripts/forms.mjs` |
-| `test/` | validation, rendering, steps, items, routes and admin on a scratch database |
+| `test/` | validation, rendering, steps, items, the cart, photos, the command, and the routes and admin on a scratch database |
 | `references/setup.md` | when an app takes its first form, wires steps, or sets up the owner's email |

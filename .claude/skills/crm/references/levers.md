@@ -44,10 +44,13 @@ Everything a business wants changed is one of these.
      once it has one, so the email for a booking the team makes carries a
      link to manage it there.
    - `invoices`: `{ "currency": "USD", "terms": "...", "days_until_due":
-     14 }`: the currency, a new quote's standing terms, a new invoice's
-     days to pay. `false` leaves quotes and invoices out.
+     14, "quote_word": "Estimate" }`: the currency, a new quote's standing
+     terms, a new invoice's days to pay (30 when unset), and what a quote
+     is called everywhere (`Quote`, `Proposal` or `Estimate`). `false`
+     leaves quotes and invoices out.
    - `business`: one line about the business. It ships as `to fill`;
-     writing the real line retires the "Shape the CRM" suggestion.
+     writing the real line retires the "Set up the CRM for my business"
+     suggestion.
 
    After a change: `npm run check` (dev restarts on save).
 
@@ -69,7 +72,7 @@ Everything a business wants changed is one of these.
 3. **A custom field needs no migration.** Add it to `fields`:
    `{ "key": "truck", "label": "Truck", "type": "select", "options": ["Truck 1", "Truck 2"] }`
    (types `text`, `number`, `date`, `select`, `phone`, `email`; keys are
-   `snake_case` and never a built-in column name). Values live in
+   `snake_case`, and `npm run check` refuses a built-in column's name). Values live in
    `customers.fields` (jsonb) and show on the customer page, in the CSV,
    in the import (header matched by key or label) and in the scripts
    (`--field truck="Truck 2"`). A form answer named with a field's key
@@ -80,26 +83,21 @@ Everything a business wants changed is one of these.
    customer, and the list cannot filter by one (for "everyone at the North
    location", use a tag or lever 4).
 
-4. **`schema.sql`, for a real column** (indexed, filtered, joined on). It is
-   applied by `applySchema` (`src/data/migrate.ts`) at every start and every
-   deploy, so each line is safe to run again; a column on a table that is
-   already there is its own line:
+4. **`schema.sql`, for a real column** (indexed, filtered, joined on),
+   by the `data` skill's table rules. It runs at every start, dev's
+   included, on the database production shares:
 
    ```sql
    alter table customers add column if not exists region text;
    create index if not exists customers_region on customers (region);
    ```
 
-   A new column gets its own `alter table ... add column if not exists`
-   line (a `create table if not exists` skips a table that is already
-   there). Never drop, rename or change a type; `applySchema` refuses a
-   file that does, before running any of it. Name an index after its table. Then
-   add it to `src/crm/customers.ts` and the views, `npm run check`
+   Then add it to `src/crm/customers.ts` and the views, `npm run check`
    and `npm test`.
 
 ## Deals and tasks
 
-The rules the code keeps, so the AI never redoes them by hand:
+The code keeps these; never redo them by hand:
 
 - A deal belongs to one customer, who may have many over the years. Moving
   one to a won stage moves its customer from an open status to the first
@@ -113,13 +111,15 @@ The rules the code keeps, so the AI never redoes them by hand:
   "Nothing planned" (the Contacts filter, `tasks.mjs list --none`) is
   everyone with an open status or an open deal and no open task or
   scheduled event.
-- The morning email lists each person's tasks due, through the
-  owner's connected sender, once a day. Schedule it once a sender is set
-  up: `python3 ~/tools/taskandtool.py schedule-job "Task emails"
-  --when "0 * * * *" --command "npx tsx src/crm/digest-job.ts"` (hourly; it
-  sends at 7:00 in the business's zone, `--hour` to change). An owner
-  written as an email gets one, and so does a team member (Schedule's
-  Team) written by name.
+- The morning email lists each person's tasks due, once a day, through
+  the app's email sender (Task & Tool email will do: it goes only to the
+  team). The same job makes the follow-up task for an unsigned proposal.
+  Schedule it once, if `python3 ~/tools/taskandtool.py list-jobs` does not
+  show it: `python3 ~/tools/taskandtool.py schedule-job "Task emails"
+  --when "0 * * * *" --command "npx tsx src/crm/digest-job.ts" --team-only`
+  (hourly; it sends at 7:00 in the business's zone, `--hour` to change).
+  An owner written as an email gets one, and so does a team member
+  (Settings, Team) written by name.
 - Two records of one person: `customers.mjs merge <keep> <other>` shows
   a preview; add `--confirm` after the owner says yes. The kept record
   also goes by the other's email, so their history follows. A merge cannot

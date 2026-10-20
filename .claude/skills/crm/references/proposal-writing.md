@@ -4,10 +4,11 @@ Read when writing or changing the words in a proposal component, or when the
 owner says one sounds generic, salesy or not like them.
 
 The facts a component may state are in `public/` and `brand/`; nothing else
-is a source. The voice is `brand/voice.md`: write so the owner would say it
-across a kitchen table, and keep their own phrasing wherever it is clear.
+is a source. The voice is `brand/voice.md`: write it as the owner would
+say it to a customer face to face, and keep their own phrasing wherever it
+is clear.
 
-- **Each component says one thing a homeowner wants to know** (who you are,
+- **Each component says one thing the customer wants to know** (who you are,
   how the job goes, what it costs), in its first line.
 - **Specific beats general:** a real number, place, step or name from the
   notes, and the words customers use in their reviews. "Six roofs in one
@@ -16,8 +17,12 @@ across a kitchen table, and keep their own phrasing wherever it is clear.
   never a slogan or a label above a label.
 - **Others' words stay exactly as written:** reviews in the reviews
   component, verbatim, credited as the source gives them, never a heading.
-- **Nothing is invented,** and nothing missing is mentioned: what no source
-  gives is left out of the page and out of the reply.
+- **Nothing is invented.** A figure, a bio or a rating goes in only where a
+  source states it; a job with no stated result still has its photograph,
+  its place and what was done. Where two sources disagree, use the
+  business's newest own page.
+- **The reply says what went in,** not what is missing, what conflicted or
+  what the owner could add.
 
 `npm run check` runs the `tropes` skill on every component's words, with the
 fix for each finding (`.claude/skills/tropes/SKILL.md` lists the tells).

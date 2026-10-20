@@ -8,16 +8,15 @@ Read `crm.config.json`, the closest of `examples/` (a two-van HVAC shop, a
 dental practice, a restaurant with events, a plumber with three locations
 and eight trucks, a counselor who mostly wants a record), and what the
 project already knows: the owner's words, a Company Brain's notes, the
-Website's forms (`select key, title from forms`). Ask only what you cannot
+Website's forms (`node scripts/forms.mjs list`). Ask only what you cannot
 infer. Then:
 
 1. Write the config (every key in `references/levers.md`), the business line included.
 2. The defaults are already rows, so make the live statuses and deal
-   stages match with `scripts/stages.mjs` (`--statuses` for a customer's;
-   rename, add, set kind, archive with `--move-to`). Rename in place
-   rather than archive and re-add. A rename keeps the key (`new` labelled
-   `Enquiry`); that is fine, since nobody sees a key and every script
-   takes the label too.
+   stages match with `node scripts/stages.mjs` (`--statuses` for a
+   customer's; rename, add, kind, archive with `--move-to`). Rename in
+   place rather than archive and re-add: the key stays (`new` labelled
+   `Enquiry`), and every script takes the label too.
 3. The proposals, from the business's own website (ask for it when no note
    names it): `node scripts/proposal-read.mjs <url>` and the `brand` skill
    fill the brand record, then write each component from it and set its font
@@ -54,11 +53,6 @@ Headers match built-in names and custom fields, not `owner_label`: a
 created at the moment of the import, so give the file a `--source` (or
 `--tag`) that a "new customers" count can leave out.
 
-Rows match existing customers and each other by email, then phone (a
-row with neither matches, by name, a customer who also has neither). A
-match only gains: empty fields are filled and tags added. `--overwrite`
-replaces values, status included. Anyone left without a last contact gets the
-time of their latest submission, booking or payment, by email. The import
-is one transaction. `node
-scripts/export.mjs --out customers.csv` is the reverse, and its headers
-import back as they are.
+How rows match and what a match gains: `node scripts/import.mjs --help`.
+`node scripts/export.mjs --out customers.csv` is the reverse, and its
+headers import back as they are.

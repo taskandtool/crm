@@ -1,6 +1,6 @@
 ---
 name: data
-description: "The project's one shared database: table rules (email links people, schemas safe to run again), the Db handle, settings, connection calls, email and spam checks. Use before creating or changing a table or copying another skill's code. Not for getting a database (the `database` skill)."
+description: "What every skill's code builds on: the project's shared tables and their rules, the Db handle, settings, connection calls, email, spam checks, the business's name and address, unsubscribes. Use before creating or changing a table or copying another skill's code. Not for DATABASE_URL, drivers or extensions (the `database` skill)."
 ---
 
 # Data
@@ -13,18 +13,15 @@ Version: 0.5.0 (taskandtool/skills)
 
 ## The rules
 
-- **One database per project, one set of tables, each by its plain name.**
-  Every app reads, writes and alters every table, so name a new table for
-  what it holds (`quotes`, `report_snapshots`),
-  never for the app that made it.
-- **Look before you build.** Before creating anything, list what is there:
-  `select table_name from information_schema.tables where table_schema = 'public'`.
-  A table another app made is the one to use: add a column to it rather than
-  making a second one.
+- **One set of tables for the project, each by its plain name.** Every app
+  reads, writes and alters every table, so name a new one for what it holds
+  (`quotes`, `report_snapshots`), never for the app that made it. Look
+  first: `select table_name from information_schema.tables where
+  table_schema = 'public'`. A table another app made is the one to use: add
+  a column to it rather than making a second one.
 - **A person is an email.** Every table that names a person has
-  `email citext`. Store it through `normalizeEmail` (`email.ts`). Nothing else
-  links people across apps: no people table, no foreign keys between
-  skills' tables.
+  `email citext`, stored through `normalizeEmail` (`email.ts`). That is how
+  every app finds the same person; there is no people table.
 - **A `schema.sql` runs every time the app starts**, so each statement
   must be safe to run again: `create table if not exists`, `create index if
   not exists`. A table already there is skipped, so a column added to one
@@ -54,7 +51,7 @@ Each app makes its handle from the driver it already uses:
 
 - **The Neon HTTP driver** (the Website): `fromNeon(envVar(c,
   "DATABASE_URL"))` from `neon.ts`, the same in dev and production.
-- **`pg`** (the Board, the CRM): `fromPool(pool)` from `pg.ts`. In dev, the
+- **`pg`** (the CRM): `fromPool(openPool(url))` from `pg.ts`. In dev, the
   server's one pool. In production, a pool per request on
   `env.DATABASE_URL`, closed in `ctx.waitUntil`, deployed with
   `--flag nodejs_compat` (the `deploy` skill).
@@ -67,10 +64,11 @@ Each app makes its handle from the driver it already uses:
   node-server's `{ incoming, outgoing }`, so that reads nothing.
 - **A connection** (`gateway.ts`):
   `gatewayFetch(env, slug, path, init)`. The gateway adds the key, and it
-  serves dev only. Production calls the vendor directly, with the key the
-  owner bound to the production Worker (`delivery="edge"`).
-  That key's env name is the connection's `env_name` in `python3 ~/tools/taskandtool.py list-connections`
-  (`<SLUG>_API_KEY`); read it there rather than assuming it.
+  answers only the machine (dev). Production calls the vendor directly, with
+  the key the owner bound to the production Worker (`delivery="edge"`).
+  That key's env name is the connection's `env_name` in `python3
+  ~/tools/taskandtool.py list-connections` (usually `<SLUG>_API_KEY`); read
+  it there rather than assuming it.
   `listConnections(env)` (machine only) is that list for code: a slug per
   granted endpoint, with its `service` and `account`. Two people's Google on
   one app are `google-calendar` and `google-calendar-7c2e1a`, so code that
@@ -79,15 +77,19 @@ Each app makes its handle from the driver it already uses:
   (the owner's, to anyone; `NOTIFY_FROM` and `NOTIFY_VIA`), else Task & Tool
   email (ours, free, nothing to set). Task & Tool email sends only mail
   marked `team: true`, and only to people who can open this app in Task &
-  Tool; to email anyone else, connect Resend or Postmark. It never throws. Run it with
+  Tool; to email anyone else, connect Resend or Postmark. `emailsCustomers(env)`
+  says whether a customer's email can go out. It never throws: it returns
+  `{ status: "sent" | "none" | "failed" }` with the reason. Run it with
   `afterResponse(c, …)` so the visitor does not wait and the Worker does not
   stop before it is sent.
-- **Spam** (`spam.tsx`): every public form carries `<SpamFields>` and is
-  checked with `verdict`.
+- **Spam** (`spam.tsx`): every public form carries `<SpamFields
+  stamp={await makeStamp(scope)} />` and is checked with `verdict`: `drop`
+  (a bot: thank it and save nothing), `fast` (save it marked spam), or `ok`.
 - **The business** (`business.ts`): its name, its privacy and terms
-  pages and its postal address, one row for the project. Read it with `businessOf(db)` wherever a
-  page, text, email or quote names the business; never keep a copy in an
-  app's config. The CRM's Settings, Business edits it.
+  pages and its postal address, one row for the project. Read it with
+  `businessOf(db)` wherever a page, text, email or quote names the business;
+  never keep a copy in an app's config. The CRM's Settings, Business edits
+  it.
 - **Unsubscribing** (`unsubscribe.tsx`): a commercial follow-up email
   carries `unsubscribeLink`, the app mounts `unsubscribeRoutes` where its
   customers' pages are, and `emailOptedOut` is checked before each send.
@@ -114,10 +116,12 @@ keeping the rules above and its tests passing. Then:
 
 A machine-only file (`cli.mjs`, a skill's `cli.ts`, booking's `sync.ts` and
 `reminders-job.ts`, reports' `print.ts`, forms' `files.ts`) runs only on the machine and may
-import Node built-ins. Nothing the production Worker imports may reach it;
-the app's `npm run check:code` fails if it does. A `.ts` file imports `cli.mjs`
-by its full name (`../data/cli.mjs`), and the app's `tsconfig.json` needs
-`"allowJs": true`.
+import Node built-ins. Nothing the production Worker imports may reach it.
+The Website's `npm run check:code` fails if something does; the CRM's `npm
+run check` allows Node built-ins only in the files listed in `nodeOnly`
+(`scripts/check.mjs`), so a new machine-only file goes on that list. A
+`.ts` file imports `cli.mjs` by its full name (`../data/cli.mjs`), and the
+app's `tsconfig.json` needs `"allowJs": true`.
 
 ## When the database is not there
 
@@ -129,16 +133,16 @@ No `DATABASE_URL` means the app has no database yet: ask the owner with
 | File | What it is |
 |---|---|
 | `db.ts` | `Db`, `GetDb`, `q` |
-| `neon.ts`, `pg.ts` | the two handles: Neon HTTP (edge and machine), node-postgres (the machine, and production deployed with `nodejs_compat`) |
+| `neon.ts`, `pg.ts` | the two handles: `fromNeon` (Neon HTTP, edge and machine); `openPool`, `fromPool` (node-postgres: the machine, and production deployed with `nodejs_compat`) |
 | `migrate.ts` | `applySchema` |
 | `email.ts` | `normalizeEmail` |
 | `env.ts` | `envVar`, `envOf`, `setting`, `keyName` |
 | `gateway.ts` | `gatewayFetch`, `listConnections` (machine only at run time) |
-| `send.ts` | `sendEmail`, `afterResponse` |
+| `send.ts` | `sendEmail`, `emailsCustomers`, `teamOf` (who Task & Tool email reaches), `afterResponse` |
 | `spam.tsx` | `SpamFields`, `makeStamp`, `verdict` |
 | `schema.sql` | `business`, `email_optouts`, `unsubscribe_keys` |
 | `business.ts` | `businessOf`, `saveBusiness`, `checkBusiness` |
 | `unsubscribe.tsx` | `unsubscribeLink`, `unsubscribe`, `emailOptedOut`, `unsubscribeRoutes` |
 | `token.ts` | `newToken`, `tokenHash`: a key a visitor holds, stored as its hash |
 | `cli.mjs` | what every script shares: arguments, usage, `done`, `fail`, `misused`, `machineEnv` (machine only) |
-| `test/` | applying a schema, the handles, settings, sending, spam |
+| `test/` | statements and transactions, applying a schema, settings, the gateway, sending, spam, the script helpers |

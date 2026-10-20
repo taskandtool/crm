@@ -50,7 +50,7 @@ node scripts/stages.mjs list                    # deal stages (--statuses: a cus
 node scripts/forms.mjs submissions --form order # a form's submissions with their booking and payment; list, show, save
 node scripts/business.mjs show                  # the business's name, privacy and terms pages and address, as texts, quotes and forms print them; set --name
 node scripts/phone.mjs status                   # the business number, texting, each automatic text on or off; flows, set, threads, send
-node scripts/quotes.mjs proposal 7 --components about,reviews,team   # the components it has
+node scripts/quotes.mjs proposal 7 --components about,reviews,team   # ticks exactly these; no flag: what it has
 node scripts/quotes.mjs send 7                  # prints the email; --confirm sends it with its link
 node scripts/proposal-read.mjs https://theirsite.com   # their site (homepage, menu, gallery, reviews, about, team) and their Google listing when connected
 node scripts/proposal-font.mjs "Caladea" --for display   # the business's font into the proposal page
@@ -58,21 +58,21 @@ node scripts/proposal-preview.mjs              # the proposal on a made-up quote
 node scripts/proposal-photo.mjs raw/site/<host>/images/<file> --crop 0,0,25,0   # a photo into brand/images/ at page size, a logo in a corner cut off
 node scripts/invoices.mjs send 3                # one invoice: what Stripe will do; --confirm does it; --charge: their saved card
 node scripts/recurring.mjs list                 # recurring invoices; add <who> ... --first --every --mode, pause, resume, end
-node scripts/import.mjs file.csv --dry-run      # a list in; always the dry run first
+node scripts/import.mjs file.csv --dry-run      # a list in; the dry run first
 node scripts/export.mjs --out customers.csv     # the list out
 ```
 
 ## Where things are
 
 - `crm.config.json` is the first lever (words, statuses, deals, fields, zone, events, booking, invoices); every key is in the crm skill's `references/levers.md`. `examples/` holds five worked configs to read, not a switch.
-- `schema.sql` is the CRM's own tables (statuses are `pipeline_stages`, tasks are `follow_ups`) and its columns on the booking skill's `bookings`, applied at every start and deploy. `customers` and `customer_notes` are the customers skill's (`src/customers/schema.sql`).
+- `schema.sql` is the CRM's own tables (statuses are `pipeline_stages`, tasks are `follow_ups`) and its columns on the booking skill's `bookings`. `customers`, `customer_notes`, `customer_fields` and `leads` are the customers skill's (`src/customers/schema.sql`). `src/db/setup.ts` applies these and the other skills' schemas at every start (dev's included) and deploy.
 - `src/crm/` is every query and rule, named (the customer-match SQL is `sql.ts`); routes, scripts and tests all go through it.
 - `src/app.tsx` is the Hono app: the team-only gate, the routes.
   `src/views/` are the pages. `src/server.ts` is dev's entry (Node, with
   `src/db/client.ts`); `src/worker.ts` is production's (Cloudflare).
   `src/runtime.ts` is all that differs between them.
 - `src/<skill>/` (`booking`, `customers`, `forms`, `invoices`, `payments`,
-  `reports`, `data`, `admin`) are copies of the business skills' code.
+  `phone`, `reports`, `data`, `admin`) are copies of the business skills' code.
 - `src/proposals/` is a quote as the customer's page: its components
   (`components/<name>.tsx`, designed, their words written from the brand
   record, registered in `components/index.ts`), the page, the link at
@@ -96,28 +96,36 @@ node scripts/export.mjs --out customers.csv     # the list out
 - To look from the machine:
   `curl -H 'X-TaskTool-User: you@example.com' localhost:3000/`.
 - `npm run check` before showing work (config and examples valid, the
-  refuse list, the typecheck). `npm test` for the
-  tests.
-- `npm run deploy` publishes to production (schema, build, deploy), after
-  the crm skill's checks.
+  refuse list, the proposal components' words through `tropes`, the
+  typecheck). `npm test` for the tests.
+- `npm run deploy` publishes to production, after `npm run check` and
+  `npm test` pass and you have looked at the change in dev.
+- Dev and production share one database. Code and config wait for a
+  deploy; data and the schema do not: dev applies `schema.sql` when it
+  restarts, so production's current code must keep working with it.
 - Commit at milestones.
 
 ## Rules
 
 - The project's tables follow the `data` skill. The customer's words live
   in `crm.config.json`, never in a table name.
-- A customer or a deal is archived, never deleted; an event is cancelled;
+- A customer, a lead or a deal is archived, never deleted; an event is cancelled;
   a task is done. A merge waits for the owner's yes.
-- Other apps' rows are written only through the skills' code in `src/<skill>/` and `src/crm/events.ts` (the CRM's events are rows in `bookings`); a submission's status and a confirmed refund are the only other changes.
-- Identity comes from the platform: `X-TaskTool-User`, or 404; only
-  `/healthz`, Stripe's signed `/hooks/stripe` and a proposal's link
-  (`/q/<token>`, the token is the customer's key) answer without it. The
-  CRM builds no login.
-- Production stays team only; it is the business's customer list. Only
-  `/q` opens to customers, by a person in Task & Tool.
-- A proposal's page runs no script and loads nothing. A component's words
-  come from the brand record, never invented. A signed one never changes.
-- Colours and sizes are tokens in `styles/theme.css`. Markup never carries
-  a hex value or a Tailwind default colour; `npm run check` refuses both.
-  No em dashes in interface copy.
+- Another skill's tables change through its code in `src/<skill>/` (or
+  `src/crm/`, which calls it), not through SQL of your own.
+- Identity comes from the platform: `X-TaskTool-User`, or 404. The CRM
+  builds no login. Only `/healthz`, the signed webhooks (`/hooks/stripe`,
+  `/hooks/twilio/*`) and `/q` answer without it: a proposal's link
+  (`/q/<token>`, the token is the customer's key) and, while no
+  `booking_page` is set, the form, booking and unsubscribe pages the
+  follow-up emails link to.
+- Every change is a POST (the gate checks its origin) and records who
+  made it.
+- Production stays team only: it is the business's customer list. If the
+  owner asks to make it public, say what that would expose (names, phones,
+  notes) and suggest a form on the Website. Only `/q` opens to customers,
+  by a person in Task & Tool (the crm skill's `references/money.md`).
+- Colours and sizes are tokens in `styles/theme.css` (`DESIGN.md`);
+  `npm run check` refuses a hex value or a Tailwind default colour in
+  markup, and an em dash in interface copy.
 - Real data only: never invent customers, notes or history.
