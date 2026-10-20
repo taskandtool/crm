@@ -42,7 +42,6 @@
   },
   "booking": true,
   "invoices": {
-    "name": "to fill",
     "currency": "USD",
     "terms": "Quotes are valid for 30 days. Payment due within 14 days of the work.",
     "days_until_due": 14

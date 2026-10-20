@@ -17,6 +17,7 @@ import type { Customer } from "../src/crm/customers";
 import { findCustomer, sentTo } from "../src/crm/customers";
 import type { InvoicesCli } from "../src/invoices/cli";
 import { printPdf } from "../src/pdf";
+import { loadBusiness } from "../src/crm/business";
 
 export { done, fail, flag, flags, has, limitOf, misused, noMore, out, parseArgs, plain, usage } from "../src/data/cli.mjs";
 
@@ -39,6 +40,7 @@ export async function withDb<T>(fn: (db: Db, pool: pg.Pool) => Promise<T>, opts:
   try {
     try {
       await setupOnce(db, seeds, { invoices: !!invoicesCfg }, opts.force);
+      await loadBusiness(db);
     } catch (e) {
       const err = e as Error & { code?: string };
       return fail(`${at}: ${unreachable(err) ? `cannot reach the database (${err.code})` : `the database could not be set up: ${err.message}`}`, "node scripts/migrate.mjs");
@@ -114,7 +116,6 @@ export function cliSettings(script: "quotes" | "invoices" | "recurring"): Invoic
   const iv = invoicesCfg;
   return {
     withDb: (fn) => withDb((db) => fn(db)),
-    business: iv?.name ?? "",
     currency: iv?.currency ?? "usd",
     timeZone: cfg.time_zone,
     terms: iv?.terms ?? null,
@@ -128,6 +129,6 @@ export function cliSettings(script: "quotes" | "invoices" | "recurring"): Invoic
       const c = await findCustomer(db, ref);
       return c ? { email: c.email, name: c.name, phone: c.phone, address: c.address } : null;
     },
-    off: iv ? null : `${script} are off: crm.config.json has "invoices": false. Turn them on with { "name": "<the business name>", "currency": "USD" }.`,
+    off: iv ? null : `${script} are off: crm.config.json has "invoices": false. Turn them on with { "currency": "USD" }.`,
   };
 }

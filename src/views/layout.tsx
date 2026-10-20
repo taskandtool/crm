@@ -4,6 +4,7 @@
 import type { Child } from "hono/jsx";
 import { SectionTabs } from "../admin/layout";
 import { dealsCfg, eventsCfg, invoicesCfg, showBooking, vocab } from "../config";
+import { business } from "../crm/business";
 import { Icon } from "./icons";
 import { UnreadBadge } from "../phone/admin";
 import { inputClass } from "../admin/status";
@@ -19,8 +20,8 @@ const creates = [
   ...(invoicesCfg ? [{ href: "/invoices/quotes/new", label: "Quote" }, { href: "/invoices/new", label: "Invoice" }] : []),
 ];
 
-/** The sidebar's name: the business on its quotes once it has one, else what this is. */
-const brand = invoicesCfg?.name && !/to fill/i.test(invoicesCfg.name) ? invoicesCfg.name : "CRM";
+/** The sidebar's name: the business's once it has one (Settings, Business), else what this is. */
+const brand = () => business().name ?? "CRM";
 
 export type Section = "home" | "messages" | "notifications" | "leads" | "tasks" | "deals" | "customers" | "schedule" | "quotes" | "invoices" | "settings" | "search";
 
@@ -42,6 +43,7 @@ export const SCHEDULE_TABS = eventsCfg
  * Settings. Only the parts this CRM has.
  */
 export const SETTINGS = [
+  { href: "/business", label: "Business", about: "Your business's name, its privacy and terms pages, and its address. Every text, quote and form uses them." },
   { href: "/forms", label: "Forms", about: "The forms on your website and what each asks. Each submission is a lead, or a deal straight away." },
   { href: "/stages", label: "Stages and statuses", about: `The ${dealsCfg.one.toLowerCase()} pipeline's stages, and each ${vocab.one.toLowerCase()}'s status.` },
   ...(eventsCfg && showBooking ? [{ href: "/services", label: "Services", about: "What customers book online: how long, where, the price, who takes it, and whether a booking is a deal straight away." }] : []),
@@ -136,14 +138,14 @@ export function Layout(props: {
             class="-ml-1.5 inline-flex size-9 items-center justify-center rounded-control text-ink-2 hover:bg-panel hover:text-ink">
             <Icon name="menu" />
           </a>
-          <span class="min-w-0 flex-1 truncate font-semibold">{brand}</span>
+          <span class="min-w-0 flex-1 truncate font-semibold">{brand()}</span>
           <Bell on={section === "notifications"} />
         </header>
         {/* The sidebar: fixed from lg up; below, a drawer over the page. */}
         <aside id="nav" aria-label="Menu"
           class="peer fixed inset-y-0 left-0 z-40 hidden w-72 flex-col overflow-y-auto bg-canvas px-3 pb-3 shadow-lift target:flex lg:flex lg:w-60 lg:shadow-none [.nav-open_&]:flex">
           <div class="flex items-center justify-between gap-2 px-2 pt-4 pb-3">
-            <span class="min-w-0 flex-1 truncate text-heading font-semibold">{brand}</span>
+            <span class="min-w-0 flex-1 truncate text-heading font-semibold">{brand()}</span>
             <span class="hidden lg:contents"><Bell on={section === "notifications"} /></span>
             <a href="#" data-nav-close aria-label="Close the menu" class="inline-flex size-9 items-center justify-center rounded-control text-ink-2 hover:bg-panel hover:text-ink lg:hidden">
               <Icon name="close" />

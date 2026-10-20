@@ -6,7 +6,7 @@
 // charges or changes anything: each of those is a POST from a page that says
 // exactly what will happen.
 //
-//   app.route("/invoices", invoicesAdmin(getDb, { base: "/invoices", css: "/site.css", source: "crm", timeZone, business: "Acme" }));
+//   app.route("/invoices", invoicesAdmin(getDb, { base: "/invoices", css: "/site.css", source: "crm", timeZone }));
 //
 // `send` and `print` are how a quote leaves: `send` defaults to the owner's
 // connected sender (data/send.ts); `print` makes the PDF and exists only on
@@ -25,6 +25,7 @@ import { sectionPages, type Frame, type NavItem } from "../admin/layout";
 import { DataTable, EmptyState, NoMatches, SearchBar, SetupNeeded, TableRows, When, type TableSpec } from "../admin/list";
 import { idParam, isPartial, listUrl, str } from "../admin/query";
 import { buttonClass, controlClass, fieldClass, primaryClass, StatusBadge, type StatusOption } from "../admin/status";
+import { businessOf } from "../data/business";
 import type { GetDb } from "../data/db";
 import { envOf } from "../data/env";
 import { emailsCustomers, sendEmail, type Email, type Sent } from "../data/send";
@@ -87,8 +88,6 @@ export type InvoicesAdminOptions = {
   source: string;
   /** The business's zone: "today" for valid-until dates. */
   timeZone: string;
-  /** The business's name, at the top of every quote and in its email; "" leaves it off. */
-  business: string;
   /** A new quote's currency; default usd. */
   currency?: string;
   /** Standing terms a new quote starts with ("Payment due within 14 days of the work."). */
@@ -268,7 +267,8 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     { href: `${base}/recurring`, label: "Recurring" },
   ];
   const stripeOf = opts.stripe ?? ((c: Ctx) => stripeFrom(envOf(c)));
-  const doc = { business: opts.business, timeZone: opts.timeZone, word: opts.word };
+  // The business's name, at the top of every quote and in its email: the project's, as set now (data/business.ts).
+  const docOf = async (c: Ctx) => ({ business: (await businessOf(getDb(c))).name ?? "", timeZone: opts.timeZone, word: opts.word });
   const send = opts.send ?? ((c: Ctx, mail: Email) => sendEmail(envOf(c), mail));
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
@@ -493,7 +493,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   app.get("/quotes/:id/document", async (c) => {
     const qt = await load(c);
     if (!qt) return c.notFound();
-    return c.html(opts.proposal ? await opts.proposal.document(c, qt) : quoteHtml(qt, await taxRates(getDb(c)), doc));
+    return c.html(opts.proposal ? await opts.proposal.document(c, qt) : quoteHtml(qt, await taxRates(getDb(c)), await docOf(c)));
   });
 
   // What will go to whom. Sending is the POST below; this page never sends.
@@ -506,7 +506,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const rates = await taxRates(getDb(c));
     const noLink = opts.proposal ? await opts.proposal.linkReady(c, qt) : "";
     const withLink = noLink === null;
-    const msg = quoteMessage(qt, rates, doc, withLink ? "(the link, made when you send)" : null);
+    const msg = quoteMessage(qt, rates, await docOf(c), withLink ? "(the link, made when you send)" : null);
     const problem = c.req.query("problem");
     const canEmail = emailReady(c);
     const warning = opts.proposal ? await opts.proposal.warning(c, qt) : null;
@@ -596,7 +596,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 
     const made = withLink ? await proposal!.mintLink(c, qt) : null;
     const link = made?.url ?? null;
-    const r = await sendQuote(getDb(c), qt, await taxRates(getDb(c)), doc, {
+    const r = await sendQuote(getDb(c), qt, await taxRates(getDb(c)), await docOf(c), {
       link,
       html: proposal && !link ? await proposal.document(c, qt) : undefined,
       send: (mail) => send(c, mail),
@@ -771,7 +771,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   app.get("/:id{[0-9]+}/document", async (c) => {
     const inv = await loadInvoice(c);
     if (!inv) return c.notFound();
-    return c.html(invoiceHtml(inv, await taxRates(getDb(c)), doc));
+    return c.html(invoiceHtml(inv, await taxRates(getDb(c)), await docOf(c)));
   });
 
   app.get("/:id{[0-9]+}", async (c) => {
@@ -933,7 +933,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       say: (i) => i.collect === "charge"
         ? `${i.email} is emailed from your own address this invoice's payment page, where they can pay with any card or confirm the charge their bank asked about. Stripe does not email the page of an invoice it charges.`
         : `Stripe emails ${i.email} this invoice's payment page, where they can pay with any card.`,
-      run: (c, i) => emailPaymentPage(getDb(c), stripeOf(c), i.id, { send: (mail) => send(c, mail), business: opts.business, replyTo: c.get("user") }),
+      run: async (c, i) => emailPaymentPage(getDb(c), stripeOf(c), i.id, { send: (mail) => send(c, mail), business: (await docOf(c)).business, replyTo: c.get("user") }),
     },
     {
       path: "void", title: "Void", button: "Void the invoice", done: "asked-void",

@@ -35,7 +35,6 @@
   },
   "booking": true,
   "invoices": {
-    "name": "Acme Test Co",
     "currency": "USD",
     "terms": "Payment due within 30 days."
   }

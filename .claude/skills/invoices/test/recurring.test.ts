@@ -292,7 +292,7 @@ test("the pages: make one, read what happens, a charged invoice from Send, a car
   await withDb(t, async (s) => {
     const f = fakeStripe({ cards: [{ id: "pm_visa", brand: "visa", last4: "4242" }, { id: "pm_mc", brand: "mastercard", last4: "5555" }] });
     const app = new Hono();
-    app.route("/invoices", invoicesAdmin(() => s.db, { base: "/invoices", css: "/site.css", source: "crm", timeZone: "America/Denver", business: "Acme", stripe: () => f.stripe }));
+    app.route("/invoices", invoicesAdmin(() => s.db, { base: "/invoices", css: "/site.css", source: "crm", timeZone: "America/Denver", stripe: () => f.stripe }));
     const HOST = "https://crm.example";
     const headers = { "x-tasktool-user": BY, origin: HOST, host: "crm.example" };
     const get = (p: string) => app.request(HOST + p, { headers });

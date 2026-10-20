@@ -93,5 +93,5 @@ revenue work as for any payment.
 | `webhook.ts` | `invoiceEvents` for the payments webhook |
 | `form.tsx` | The form parts every document shares: customer, line items |
 | `recurring-admin.tsx` | The Recurring tab and a recurring invoice's page (mounted by `invoicesAdmin`); `CardsOnFile` and `RecurringLines` for a customer's page |
-| `admin.tsx` | `invoicesAdmin(getDb, { base, css, source, timeZone, business, word?, proposal?, Frame?, send?, print?, stripe?, links?, afterDecide?, afterSend?, customerHref? })`: the team's pages, opening on what is outstanding, past due and paid this month. `proposal` (`ProposalHooks`) makes a quote the app's own page at a link |
+| `admin.tsx` | `invoicesAdmin(getDb, { base, css, source, timeZone, word?, proposal?, Frame?, send?, print?, stripe?, links?, afterDecide?, afterSend?, customerHref? })`: the team's pages, opening on what is outstanding, past due and paid this month. `proposal` (`ProposalHooks`) makes a quote the app's own page at a link |
 | `test/` | Against a scratch database, Stripe faked, events out of order |

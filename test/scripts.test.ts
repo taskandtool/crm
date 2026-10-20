@@ -31,7 +31,7 @@ for (const script of scripts) {
 const READ: Record<string, string[]> = {
   "customers.mjs": ["list"], "events.mjs": ["list"], "stages.mjs": ["list"], "forms.mjs": ["list"],
   "quotes.mjs": ["list"], "invoices.mjs": ["list"], "recurring.mjs": ["list"], "import.mjs": ["file.csv"], "export.mjs": [], "migrate.mjs": [],
-  "deals.mjs": ["list"], "tasks.mjs": ["list"], "leads.mjs": ["list"], "proposal-font.mjs": ["Caladea"], "proposal-photo.mjs": ["photo.jpg"], "proposal-read.mjs": ["https://example.com"], "proposal-preview.mjs": [], "phone.mjs": ["status"],
+  "deals.mjs": ["list"], "tasks.mjs": ["list"], "leads.mjs": ["list"], "proposal-font.mjs": ["Caladea"], "proposal-photo.mjs": ["photo.jpg"], "proposal-read.mjs": ["https://example.com"], "proposal-preview.mjs": [], "phone.mjs": ["status"], "business.mjs": ["show"],
 };
 test("every script is in the bad-input table", () => assert.deepEqual(Object.keys(READ).sort(), [...scripts].sort()));
 
@@ -157,6 +157,36 @@ test("deals.mjs, tasks.mjs and customers merge, end to end", { skip: !process.en
     assert.match(r.stdout, /^stages add: added site-visit \(Site visit\)/);
   } finally {
     await root.query(`drop database ${name} with (force)`);
+    await root.end();
+  }
+});
+
+test("business.mjs sets the name and pages once, says so, and refuses a page that isn't https", { skip: !process.env.TEST_DATABASE_URL && "TEST_DATABASE_URL is not set" }, async () => {
+  const pg = (await import("pg")).default;
+  const admin = process.env.TEST_DATABASE_URL!;
+  const name = "crm_business_script_" + Date.now().toString(36);
+  const root = new pg.Client({ connectionString: admin });
+  await root.connect();
+  await root.query(`create database ${name}`);
+  const url = new URL(admin);
+  url.pathname = "/" + name;
+  const sh = (...args: string[]) => run("business.mjs", args, { DATABASE_URL: url.toString(), CRM_USER: "ann@team.example" });
+  try {
+    let r = sh("show");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /^business show: no name yet\n  name: not set/);
+    r = sh("set", "--name", "Acme Plumbing", "--privacy", "https://acme.example/privacy");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /^business set: saved: Acme Plumbing\n  name: Acme Plumbing\n  privacy page: https:\/\/acme\.example\/privacy\n  terms page: none\n/);
+    r = sh("set", "--name", "Acme Plumbing");
+    assert.match(r.stdout, /^business set: already as given; left alone/);
+    r = sh("set", "--address", "  12 Main St,\n Austin, TX 78701 ");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /\n  address: 12 Main St, Austin, TX 78701\n/, "kept on one line");
+    refused(sh("set", "--terms", "acme.example/terms"), 1, "business set with a page that isn't https");
+    refused(sh("set"), 2, "business set with nothing to change");
+  } finally {
+    await root.query(`drop database if exists ${name} with (force)`);
     await root.end();
   }
 });

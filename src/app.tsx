@@ -84,11 +84,13 @@ import { CUSTOMER_EVENTS, EventPage, eventParams, EventResults, EventsPage, even
 import { phoneHooks } from "./phone/hooks";
 import { messagesRoutes, phoneSettings, ContactTexts } from "./phone/admin";
 import { onBooked as textBooked, onSubmitted } from "./phone/follow";
-import { bookingKey, followShort } from "./phone/send";
-import { canText, contactCommunications, mainNumber, unreadThreads } from "./phone/store";
-import { consentWords } from "./phone/flows";
-import { unsubscribeRoutes } from "./phone/unsubscribe";
-import { callBackTask, nameNeeded, phoneCtx, teamBase, textName } from "./crm/texting";
+import { contactCommunications, mainNumber, unreadThreads } from "./phone/store";
+import { unsubscribeRoutes } from "./data/unsubscribe";
+import { saveBusiness } from "./data/business";
+import { business, loadBusiness } from "./crm/business";
+import { BusinessPage } from "./views/business";
+import { callBackTask, phoneCtx, teamBase } from "./crm/texting";
+import { textingBox } from "./forms/consent";
 import { formRoutes } from "./forms/routes";
 import { bookingStep } from "./booking/form-step";
 import { bookingPages, PlainPage } from "./booking/public";
@@ -135,6 +137,8 @@ const publicDb: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (!opened.db) return c.text("waiting for the database", 503);
   c.set("db", opened.db);
   try {
+    // A customer's page (a quote's, the unsubscribe page) names the business.
+    await loadBusiness(opened.db);
     await next();
   } finally {
     if (opened.close) closeAfter(c, opened.close);
@@ -169,7 +173,9 @@ if (invoicesCfg) {
 // Stripe and the sender as this runtime has them, the PDF where it prints.
 
 const PROPOSAL_OPTS: ProposalOpts = {
-  business: invoicesCfg?.name ?? "", word: invoicesCfg?.word ?? "Quote", timeZone: cfg.time_zone,
+  // The business's name as this request loaded it (Settings, Business).
+  get business() { return business().name ?? ""; },
+  word: invoicesCfg?.word ?? "Quote", timeZone: cfg.time_zone,
 };
 const answerDeps = (c: Context): AnswerDeps => ({
   opts: PROPOSAL_OPTS,
@@ -183,16 +189,14 @@ const linkBaseOf = (c: Context) => linkBase(c, (c as unknown as C).env.runtime.p
 
 // ---- the phone: Twilio's webhooks and a customer's pages -----------------------
 // Ahead of the team gate. Twilio's calls and texts come through Task &
-// Tool's inbound route (phone/hooks.ts checks each number's secret). A
-// text's link opens a form or the booking pages: the Website's, when there
-// is one (booking_page); otherwise these, under the CRM's public /q.
+// Tool's inbound route (phone/hooks.ts checks each number's secret). An
+// email's link back to a form, and its unsubscribe link, open the
+// Website's pages when there is one (booking_page); otherwise these, under
+// the CRM's public /q.
 
 const phoneOf = (c: Context) => phoneCtx(c, (c as unknown as C).var.db, (c as unknown as C).env.runtime.production);
-/** The texting box's words, when the business number can text: with the terms and privacy pages its registration names. */
-const consentHere = (about: "request" | "booking") => async (c: Context) => {
-  const n = await canText((c as unknown as C).var.db).catch(() => null);
-  return n ? consentWords(textName(), about, n.registration.input ?? {}) : null;
-};
+/** The texting box's words, once the business has a number and a name (forms/consent.ts). */
+const consentHere = (about: "request" | "booking") => (c: Context) => textingBox((c as unknown as C).var.db, about);
 
 app.use("/hooks/twilio/*", publicDb);
 app.route("/", phoneHooks((c) => (c as unknown as C).var.db, {
@@ -206,14 +210,10 @@ app.route("/", phoneHooks((c) => (c as unknown as C).var.db, {
 
 // /q opens to customers through proposals, so these pages need quotes and invoices on (crm/texting.ts links).
 if (!cfg.booking_page && invoicesCfg) {
-  for (const p of ["/q/forms/*", "/q/book", "/q/book/*", "/q/t/*", "/q/unsubscribe"]) app.use(p, publicDb);
+  for (const p of ["/q/forms/*", "/q/book", "/q/book/*", "/q/unsubscribe"]) app.use(p, publicDb);
   const db = (c: Context) => (c as unknown as C).var.db;
-  app.get("/q/t/:code", async (c) => {
-    const to = await followShort(db(c), c.req.param("code"));
-    return to && to.startsWith("/") && !to.startsWith("//") ? c.redirect(to, 302) : c.notFound();
-  });
   // A follow-up email's unsubscribe link.
-  app.route("/q", unsubscribeRoutes(db, { business: textName(), page: (_c, title, body) => String(<PlainPage title={title} css="/q/crm.css">{body}</PlainPage>) }));
+  app.route("/q", unsubscribeRoutes(db, { page: (_c, title, body) => String(<PlainPage title={title} css="/q/crm.css">{body}</PlainPage>) }));
   app.route("/q", formRoutes(db, {
     source: "crm", prefix: "/q", notify: false,
     page: (_c, title, body) => <PlainPage title={title} css="/q/crm.css">{body}</PlainPage>,
@@ -236,10 +236,6 @@ if (!cfg.booking_page && invoicesCfg) {
         if (e.event === "booked") await phoneOf(c).then((ctx) => textBooked(ctx, e)).catch((err) => console.error("phone:", err));
       },
       textConsent: consentHere("booking"),
-      prefill: async (c, key) => {
-        const k = await bookingKey(db(c), key);
-        return k ? { name: k.name, email: k.email, phone: k.phone, leadId: k.lead_id } : null;
-      },
     }));
   }
 }
@@ -266,6 +262,7 @@ app.use("*", async (c, next) => {
   c.set("db", opened.db);
   try {
     await loadTeam(opened.db);
+    await loadBusiness(opened.db);
     // Leads a form or a service makes deals straight away are deals by the time a page shows (not for its small htmx asks).
     if (c.req.method === "GET" && !isPartial(c)) await autoDeals(opened.db).catch((e) => console.error("automatic deals:", e));
     await next();
@@ -820,7 +817,7 @@ const PHONE = {
   contactHref: (id: string) => `/customers/${id}`,
   formHref: (key: string) => `/forms/form/${key}#follow_up`,
   onLead: (c: Context, l: { customerId: string; title: string }) => callBackTask(dbOf(c), l, (c as unknown as C).var.user),
-  nameNeeded,
+  businessHref: "/business",
 };
 app.route("/phone", phoneSettings(dbOf, { ...PHONE, Frame: frameIn("settings") }));
 app.route("/messages", messagesRoutes(dbOf, { ...PHONE, Frame: frameIn("messages") }));
@@ -869,7 +866,6 @@ if (invoicesCfg) {
       css: "/crm.css",
       source: "crm",
       timeZone: cfg.time_zone,
-      business: invoicesCfg.name,
       currency: invoicesCfg.currency,
       terms: invoicesCfg.terms,
       word: invoicesCfg.word,
@@ -1322,6 +1318,18 @@ app.get("/search", async (c) => {
 });
 
 // Both lists on one page: /stages/deals/... and /stages/customers/...
+
+// Settings, Business: the name, pages and address every text, quote and form uses (the data skill's business row).
+
+app.get("/business", (c) => c.html(<BusinessPage user={c.var.user} business={business()} flash={flashOf(c).code} />));
+
+app.post("/business", async (c) => {
+  const body = await c.req.parseBody();
+  const values = { name: str(body.name), privacy_url: str(body.privacy_url), terms_url: str(body.terms_url), address: str(body.address) };
+  const r = await saveBusiness(c.var.db, { name: values.name, privacyUrl: values.privacy_url, termsUrl: values.terms_url, address: values.address }, c.var.user);
+  if (!r.ok) return c.html(<BusinessPage user={c.var.user} business={business()} values={values} error={r} />, 422);
+  return back(c, "/business", "saved");
+});
 
 app.get("/stages", async (c) => {
   const [deals, statuses] = await Promise.all([stagesWithCounts(c.var.db, "deals"), stagesWithCounts(c.var.db, "customers")]);

@@ -56,9 +56,9 @@ export type FormRoutesOptions = {
   /** Where these routes are mounted, when not at the site's root: the CRM serves them under its public "/q". */
   prefix?: string;
   /**
-   * Whether this app can text the people a form follows up on (the phone
-   * skill's: a number approved for texting). Yes: a form with "follow up"
-   * on shows its texting box under the phone field, with these words.
+   * The texting box's words (`textingBox`, consent.ts): a form with
+   * "Follow up automatically" on shows the box under its phone field. Null
+   * leaves it off.
    */
   textConsent?: (c: Context) => string | null | Promise<string | null>;
 };

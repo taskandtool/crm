@@ -7,16 +7,17 @@ import { tokenHash } from "../../data/token";
 import { createPerson, createType, setHosts, addWindow } from "../../booking/hours";
 import { checkWords, EMAILS, fill, flowOf, FLOWS, isQuiet, MEASURE, notQuiet, segments, setEnabled, setWords, STOP_LINE, WORDS, flowSettings } from "../flows";
 import { phoneHooks, keyword } from "../hooks";
-import { check, steps } from "../registration";
+import { check, optInPage, steps } from "../registration";
 import { onBooked, onSubmitted, scan } from "../follow";
 import { fillEmail, sendText, type PhoneCtx } from "../send";
 import { addNumber, optedOut, record, setHooks, thread, toE164 } from "../store";
 import { TwilioError, type Hooks, type Provider } from "../twilio";
 import { unhook } from "../setup";
-import { unsubscribeRoutes } from "../unsubscribe";
-import { emailOptedOut, unsubscribeLink } from "../send";
+import { emailOptedOut, unsubscribeLink, unsubscribeRoutes } from "../../data/unsubscribe";
+import { saveBusiness } from "../../data/business";
+import { textingBox } from "../../forms/consent";
 
-const schemas = ["../../booking/schema.sql", "../../forms/schema.sql", "../../customers/schema.sql", "../schema.sql"].map((p) => readFileSync(new URL(p, import.meta.url), "utf8"));
+const schemas = ["../../data/schema.sql", "../../booking/schema.sql", "../../forms/schema.sql", "../../customers/schema.sql", "../schema.sql"].map((p) => readFileSync(new URL(p, import.meta.url), "utf8"));
 
 /** A Twilio that keeps what it was asked to send. */
 function fakeTwilio() {
@@ -93,7 +94,7 @@ test("every default text fits one text with long real values, the STOP line too 
 
 test("a missing fill-in drops its sentence, a missing name its greeting's name", () => {
   assert.equal(fill("Hi {first_name}, it's {business}.", { business: "Acme" }), "Hi, it's Acme.");
-  assert.equal(fill("Hi {first_name}, you're booked. To change it: {manage_link}", { first_name: "Ann" }), "Hi Ann, you're booked.");
+  assert.equal(fill("Hi {first_name}, you're nearly done. Pick up here: {form_link}", { first_name: "Ann" }), "Hi Ann, you're nearly done.");
   assert.equal(fill("Looking forward! {host} from {business}.", { business: "Acme" }), "Looking forward! Acme.");
 });
 
@@ -110,8 +111,10 @@ test("words are straightened, emoji refused, unknown fill-ins named", () => {
   const bad = checkWords("Hi {name}");
   assert.ok(!bad.ok && /\{name\} isn't filled in here/.test(bad.why));
   // A fill-in the flow never knows is refused, not left to vanish from every text.
-  const elsewhere = checkWords("Thanks! Review us: {review_link}", flowOf("missed_call").fills);
-  assert.ok(!elsewhere.ok && /\{review_link\} isn't filled in here\. This text can use \{first_name\}, \{business\}, \{booking_link\}/.test(elsewhere.why));
+  const elsewhere = checkWords("Thanks! See you {when}", flowOf("missed_call").fills);
+  assert.ok(!elsewhere.ok && /\{when\} isn't filled in here\. This text can use \{first_name\}, \{business\}\./.test(elsewhere.why));
+  // A link is typed in the words as it is: no text carries one of ours.
+  assert.ok(FLOWS.every((f) => Object.values(WORDS[f.key]).every((w) => !/_link\}|https?:/.test(w))));
 });
 
 test("quiet hours are 8pm to 8am in the business's zone, and end at 8am", () => {
@@ -185,7 +188,7 @@ test("pressing 1 answers the call; the call is kept as answered, with no text", 
     assert.equal(tw.texts.length, 0);
   }));
 
-test("a missed call gets one text at any hour, with a booking link only when the owner's words add one", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+test("a missed call gets one text at any hour, and a link the owner types goes as it is", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
   withDb(async (s) => {
     const { post, tw } = await setup(s);
     const { person } = await service(s);
@@ -193,12 +196,12 @@ test("a missed call gets one text at any hour, with a booking link only when the
     const today = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "America/Chicago" }).format(new Date()));
     await s.db.sql`delete from availability where resource_id = ${person.id}::bigint`;
     await addWindow(s.db, person.id, String((today + 3) % 7), "09:00", "17:00", "o@x.com");
-    const w = await setWords(s.db, "missed_call", "one", "Hi, it's {business}. Sorry we missed you! Book a time here: {booking_link}", "o@x.com");
+    const w = await setWords(s.db, "missed_call", "one", "Hi, it's {business}. Sorry we missed you! Book a time here: https://acme.example/book", "o@x.com");
     assert.ok(w.ok);
     await post("/hooks/twilio/voice", { CallSid: "CA1", From: "+15125550111", To: "+15125550100", Direction: "inbound" });
     await post("/hooks/twilio/dialed", { CallSid: "CA1", DialCallStatus: "no-answer" });
     await post("/hooks/twilio/status", { CallSid: "CA1", CallStatus: "completed" });
-    assert.match(tw.texts[0].body, /^Hi, it's Acme Plumbing\. Sorry we missed you! Book a time here: https:\/\/acme\.example\/t\/\w{8}/);
+    assert.match(tw.texts[0].body, /^Hi, it's Acme Plumbing\. Sorry we missed you! Book a time here: https:\/\/acme\.example\/book Reply STOP/);
   }));
 
 test("a cell's own voicemail answering is a missed call (not bridged), and gets the missed-call text once", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
@@ -246,20 +249,37 @@ test("the registration is read from Twilio as the owner makes it in the Console,
       if (path === "/v1/Services/MG1/Compliance/Usa2p") return { compliance: [{ sid: "QE1", campaign_status: campaign, errors: [] }] };
       return {};
     }) as Provider["call"];
-    let r = await check(s.db, tw.provider, n, { privacyUrl: "https://acme.example/privacy" });
+    let r = await check(s.db, tw.provider, n);
     assert.equal(r.texting, "pending");
     assert.deepEqual(r.reg.service, { sid: "MG1", name: "Acme texts" });
     // The one change: the service sends texts to the number's webhook, which is ours.
     assert.deepEqual(asked.filter((a) => a.startsWith("POST")), ["POST messaging /v1/Services/MG1"]);
-    const rows = steps({ ...n, registration: r.reg }, "Acme Plumbing");
+    const business = { name: "Acme Plumbing", privacyUrl: "https://acme.example/privacy", termsUrl: null, address: null };
+    const rows = steps({ ...n, registration: r.reg }, business, "https://acme.example/forms/quote", await flowSettings(s.db));
     assert.deepEqual(rows.map((x) => x.state), ["done", "done", "waiting"]);
     const paste = rows[2].paste!;
     assert.match(paste.find((p) => p.field === "Sample message 1")!.words, /^Hi Christopher, it's Acme Plumbing\. Sorry we missed your call!/);
-    assert.match(paste.find((p) => p.field.startsWith("How do end-users consent"))!.words, /Privacy: https:\/\/acme\.example\/privacy/);
+    // What reviewers read is the box customers see, on the page they can open.
+    const flow = paste.find((p) => p.field.startsWith("How do end-users consent"))!.words;
+    assert.match(flow, /for example https:\/\/acme\.example\/forms\/quote/);
+    await saveBusiness(s.db, business, "o@x.com");
+    assert.ok(flow.includes(`'${await textingBox(s.db, "request")}'`));
+    assert.equal(paste.find((p) => p.field.startsWith("Opt-in page"))!.words, "https://acme.example/forms/quote");
+    // Our texts carry no link and no number, so the campaign says so, and its three samples agree.
+    const said = (rows: ReturnType<typeof steps>, field: string) => rows[2].paste!.find((p) => p.field === field)?.words;
+    assert.equal(said(rows, "Messages will include embedded links"), "No");
+    assert.equal(said(rows, "Messages will include phone numbers"), "No");
+    assert.equal(said(rows, "Sample message 4"), undefined);
+    // An owner's review link: the answer turns Yes, and a sample shows it (Twilio 30889).
+    await setEnabled(s.db, "after_visit", true, "o@x.com");
+    await setWords(s.db, "after_visit", "one", "Hi {first_name}, thanks from {business}! A review helps: https://g.page/r/acme/review", "o@x.com");
+    const linked = steps({ ...n, registration: r.reg }, business, null, await flowSettings(s.db));
+    assert.equal(said(linked, "Messages will include embedded links"), "Yes");
+    assert.match(said(linked, "Sample message 4")!, /https:\/\/g\.page\/r\/acme\/review/);
+    assert.equal(said(linked, "Messages will include phone numbers"), "No");
     campaign = "VERIFIED";
     r = await check(s.db, tw.provider, { ...n, registration: r.reg });
     assert.equal(r.texting, "approved");
-    assert.equal(r.reg.input?.privacyUrl, "https://acme.example/privacy", "the pages are kept across checks");
   }));
 
 test("a toll-free number is verified, read by its number, with the date a turned-down one can be fixed by", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
@@ -272,7 +292,7 @@ test("a toll-free number is verified, read by its number, with the date a turned
         : {}) as Provider["call"];
     const r = await check(s.db, tw.provider, n);
     assert.equal(r.texting, "failed");
-    const [row] = steps({ ...n, registration: r.reg }, "Acme Plumbing");
+    const [row] = steps({ ...n, registration: r.reg }, { name: "Acme Plumbing", privacyUrl: null, termsUrl: null, address: null }, null, await flowSettings(s.db));
     assert.deepEqual(row.errors, ["Opt-in image not accessible"]);
     assert.match(row.says, /before 2026-10-23/);
   }));
@@ -448,7 +468,7 @@ test("a flow switched off sends nothing, and changed words are what goes", { ski
     assert.equal((await flowSettings(s.db)).thanks.changed, true);
   }));
 
-test("a booking's confirmation carries its manage link, short, on the customer's site", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+test("a booking's confirmation says to reply to change it: the manage link is its email's", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
   withDb(async (s) => {
     const { ctx, tw } = await setup(s);
     const { person, type } = await service(s);
@@ -456,10 +476,8 @@ test("a booking's confirmation carries its manage link, short, on the customer's
       insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, phone, location_kind, status, text_consent)
       values (${type.id}::bigint, ${person.id}::bigint, '2026-10-22T15:00:00Z', '2026-10-22T16:00:00Z', 'Natalie Ruiz', 'nat@example.com', '512-555-0123', 'their_place', 'confirmed', 'Text me')
       returning id::text as id, phone, email::text as email`;
-    await onBooked(ctx, { event: "booked", booking: b, manageUrl: `https://acme.example/book/manage/${"k".repeat(43)}` });
-    assert.match(tw.texts[0].body, /^Hi Natalie, you're booked with Acme Plumbing for Thu, Oct 22 at 10:00am\. To change it: https:\/\/acme\.example\/t\/\w{8}/);
-    const [short] = await s.db.sql<{ url: string }>`select url from short_links`;
-    assert.equal(short.url, `/book/manage/${"k".repeat(43)}`);
+    await onBooked(ctx, { event: "booked", booking: b });
+    assert.match(tw.texts[0].body, /^Hi Natalie, you're booked with Acme Plumbing for Thu, Oct 22 at 10:00am\. Reply here if you need to change it\./);
   }));
 
 test("turning After the visit on texts nobody about a visit done before it was on", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
@@ -564,7 +582,7 @@ test("the booking confirmation goes past the three a day and at 11pm; the review
       insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, phone, location_kind, status, text_consent)
       values (${type.id}::bigint, ${person.id}::bigint, '2026-10-22T15:00:00Z', '2026-10-22T16:00:00Z', 'Natalie Ruiz', 'nat@example.com', '512-555-0123', 'their_place', 'confirmed', 'Text me')
       returning id::text as id, phone, email::text as email`;
-    await onBooked(ctx, { event: "booked", booking: b, manageUrl: null });
+    await onBooked(ctx, { event: "booked", booking: b });
     assert.equal(tw.texts.length, 1, "the confirmation goes at once, cap or no cap, night or no night");
     // A caller who only rang the business (no box) gets no review request by text.
     await record(s.db, { phoneNumberId: null, local: "+15125550100", remote: "+15125550144", kind: "call", direction: "in", status: "no-answer", providerId: "CAx" });
@@ -582,11 +600,59 @@ test("the booking confirmation goes past the three a day and at 11pm; the review
 test("an unsubscribe link stops the follow-up emails to that address, at a press, not an open", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
   withDb(async (s) => {
     await setup(s);
-    const link = await unsubscribeLink(s.db, { base: "https://acme.example", prefix: "" }, "nat@example.com");
+    await saveBusiness(s.db, { name: "Acme Plumbing" }, "o@x.com");
+    const link = await unsubscribeLink(s.db, "https://acme.example", "nat@example.com");
     const k = new URL(link).searchParams.get("k")!;
-    const app = unsubscribeRoutes(() => s.db, { business: "Acme Plumbing", page: (_c, _t, body) => String(body) });
+    const app = unsubscribeRoutes(() => s.db, { page: (_c, _t, body) => String(body) });
     assert.match(await (await app.request(`/unsubscribe?k=${k}`)).text(), /Stop these emails from Acme Plumbing\?/);
     assert.equal(await emailOptedOut(s.db, "nat@example.com"), false, "opening the link changes nothing");
     assert.match(await (await app.request(`/unsubscribe?k=${k}`, { method: "POST" })).text(), /won(&#39;|')t get these emails/);
     assert.equal(await emailOptedOut(s.db, "NAT@example.com"), true);
+  }));
+
+test("a form or a booking on the Website gets its text from the CRM's scan within the hour; an older one gets nothing", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withDb(async (s) => {
+    const { ctx, tw, setNow } = await setup(s);
+    const { person, type } = await service(s);
+    await s.db.sql`insert into forms (key, title, fields, follow_up) values ('quote', 'Quote', '[{"name":"phone","label":"Phone","type":"tel"}]', true)`;
+    setNow(new Date("2026-10-20T15:00:00Z"));
+    // The Website wrote these rows and nothing else: no text_sends of its own.
+    await s.db.sql`insert into submissions (form_key, name, phone, source, text_consent, completed_at) values
+      ('quote', 'Natalie', '512-555-0123', 'website', 'Text me', '2026-10-20T14:50:00Z'),
+      ('quote', 'Old', '512-555-0124', 'website', 'Text me', '2026-10-20T13:00:00Z')`;
+    await s.db.sql`
+      insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, phone, location_kind, status, text_consent, created_at)
+      values (${type.id}::bigint, ${person.id}::bigint, '2026-10-22T15:00:00Z', '2026-10-22T16:00:00Z', 'Rae Kim', null, '512-555-0125', 'their_place', 'confirmed', 'Text me', '2026-10-20T14:55:00Z')`;
+    const r = await scan(ctx);
+    assert.equal(r.scheduled, 2);
+    assert.deepEqual(tw.texts.map((t) => t.to).sort(), ["+15125550123", "+15125550125"]);
+    assert.match(tw.texts.find((t) => t.to === "+15125550125")!.body, /^Hi Rae, you're booked with Acme Plumbing/);
+    await scan(ctx);
+    assert.equal(tw.texts.length, 2, "each once");
+  }));
+
+test("the texting box shows once there's a number and a name, before texting is approved, and names the pages", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withDb(async (s) => {
+    await setup(s, { texting: false });
+    assert.equal(await textingBox(s.db, "request"), null, "no name: no box, never one that says 'us'");
+    const bad = await saveBusiness(s.db, { privacyUrl: "acme.example/privacy" }, "o@x.com");
+    assert.ok(!bad.ok && bad.field === "privacyUrl");
+    await saveBusiness(s.db, { name: "  Acme   Plumbing ", privacyUrl: "https://acme.example/privacy" }, "o@x.com");
+    await saveBusiness(s.db, { termsUrl: "https://acme.example/terms" }, "o@x.com");
+    assert.equal(await textingBox(s.db, "booking"),
+      "Text me about this booking from Acme Plumbing. Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out. Terms: https://acme.example/terms Privacy: https://acme.example/privacy");
+    await s.db.sql`delete from phone_numbers`;
+    assert.equal(await textingBox(s.db, "request"), null, "no number: no box");
+  }));
+
+test("the registration names the page a customer last ticked the box on, else a form's own page", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withDb(async (s) => {
+    await setup(s);
+    const links = { base: "https://acme.example", prefix: "" as const };
+    await s.db.sql`insert into forms (key, title, fields, follow_up) values ('quote', 'Quote', '[{"name":"phone","label":"Phone","type":"tel"}]', true)`;
+    assert.equal(await optInPage(s.db, links), "https://acme.example/forms/quote/start");
+    await s.db.sql`insert into submissions (form_key, name, phone, source, page) values ('quote', 'Natalie', '512-555-0123', 'website', '/contact')`;
+    assert.equal(await optInPage(s.db, links), "https://acme.example/contact");
+    assert.equal(await optInPage(s.db, { base: "https://crm.example", prefix: "/q" }), "https://crm.example/q/forms/quote/start", "the Website's page is not on the CRM's site");
+    assert.equal(await optInPage(s.db, null), null, "no page customers can open: none to name");
   }));

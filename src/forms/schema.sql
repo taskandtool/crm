@@ -91,7 +91,7 @@ create table if not exists submission_drafts (
 create unique index if not exists submission_drafts_key on submission_drafts (key_hash);
 create index if not exists submission_drafts_recent on submission_drafts (form_key, updated_at desc, id desc);
 create index if not exists submission_drafts_submission on submission_drafts (submission_id);
--- A text's link back to a draft carries a second key (the phone skill's
+-- An email's link back to a draft carries a second key (the phone skill's
 -- draftLink), so the page the visitor still has open keeps working.
 alter table submission_drafts add column if not exists text_key_hash text;
 create index if not exists submission_drafts_text_key on submission_drafts (text_key_hash) where text_key_hash is not null;

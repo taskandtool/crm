@@ -345,10 +345,7 @@ export function phoneHooks(getDb: GetDb, opts: HookOpts) {
       textConsent: "Replied to a text to book",
     });
     if (r.ok) {
-      // The booking pages are at <prefix>/book, as every link a text carries (send.ts bookingLink).
-      const links = await ctx.links();
-      const manage = links ? `${links.base}${links.prefix}/book/manage/${r.token}` : null;
-      await onBooked(ctx, { event: "booked", booking: r.booking, manageUrl: manage });
+      await onBooked(ctx, { event: "booked", booking: r.booking });
       return true;
     }
     if (r.reason !== "taken" || offered.step >= 3) return false;

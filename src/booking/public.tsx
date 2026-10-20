@@ -36,9 +36,6 @@ import { addDays, byLocalDate, durationText, formatDate, formatSlot, formatTime,
 /** What the public pages report to onBooked and afterBook: always with the manage link, absolute. */
 export type BookingEvent = BookingNotice & { manageUrl: string };
 
-/** A link's `?k=` key, when it is one's shape (data/token.ts). */
-const keyParam = (v: string | undefined | null) => (v && /^[A-Za-z0-9_-]{43}$/.test(v) ? v : null);
-
 /** What a type's page says about where, before anyone books. */
 const typeWhere = (t: BookingType) =>
   ({ their_place: "At your address", our_place: t.location ? `At ${t.location}` : "At our place", phone: "By phone: we call you", video: t.location ? "Video call: the link comes with your confirmation" : "Video call: we send you the link" })[
@@ -66,12 +63,10 @@ export type PublicOptions = {
   /** How many days ahead to list, at most. */
   days?: number;
   /**
-   * The texting box's words, when this app can text the people who book (the
-   * phone skill's: a number approved for texting): shown under the phone field.
+   * The texting box's words (the forms skill's `textingBox`), shown under
+   * the phone field once the business has a number: null leaves it off.
    */
   textConsent?: (c: Context) => string | null | Promise<string | null>;
-  /** Who a link's `?k=` is for (the phone skill's bookingKey): their details filled in, the booking joined to their lead. */
-  prefill?: (c: Context, key: string) => Promise<{ name?: string | null; email?: string | null; phone?: string | null; leadId?: string | null } | null>;
 };
 
 const control =
@@ -391,7 +386,6 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     const chosen = keys.includes(c.req.query("date") ?? "") ? c.req.query("date")! : keys[0];
     const self = `${base}/${t.slug}`;
     const tzq = c.req.query("tz");
-    const k = keyParam(c.req.query("k"));
     return page(c, t.name, (
       <>
         <p class="mb-2 text-label"><a href={base}>Everything we offer</a></p>
@@ -402,9 +396,9 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
         {hosts.length > 1 ? (
           <nav aria-label="With" class="mb-4 flex flex-wrap items-center gap-2 text-label">
             <span class="text-ink-2">With</span>
-            <a href={listUrl(self, { tz: tzq, k })} aria-current={host ? undefined : "true"} class={host ? chip : chipOn}>Anyone free</a>
+            <a href={listUrl(self, { tz: tzq })} aria-current={host ? undefined : "true"} class={host ? chip : chipOn}>Anyone free</a>
             {hosts.map((h) => (
-              <a href={listUrl(self, { host: h.id, tz: tzq, k })} aria-current={host?.id === h.id ? "true" : undefined} class={host?.id === h.id ? chipOn : chip}>
+              <a href={listUrl(self, { host: h.id, tz: tzq })} aria-current={host?.id === h.id ? "true" : undefined} class={host?.id === h.id ? chipOn : chip}>
                 {h.name}
               </a>
             ))}
@@ -413,11 +407,11 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
         <ZoneNote zone={zone} business={business} switchHref={zone !== business ? listUrl(self, { tz: business, date: chosen, host: host?.id }) : null} />
         {keys.length ? (
           <>
-            <DayAndTimes days={keys} chosen={chosen} href={(d) => listUrl(self, { date: d, tz: tzq, host: host?.id, k })}>
+            <DayAndTimes days={keys} chosen={chosen} href={(d) => listUrl(self, { date: d, tz: tzq, host: host?.id })}>
               <ul class="grid grid-cols-2 gap-2">
                 {(days.get(chosen) ?? []).map((s) => (
                   <li>
-                    <a class={chip + " w-full"} href={listUrl(`${self}/confirm`, { start: s.start.toISOString(), tz: zone, host: host?.id, k })}>
+                    <a class={chip + " w-full"} href={listUrl(`${self}/confirm`, { start: s.start.toISOString(), tz: zone, host: host?.id })}>
                       {formatTime(s.start, zone)}
                     </a>
                   </li>
@@ -441,7 +435,6 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
   ) {
     const end = new Date(start.getTime() + t.duration_min * 60_000);
     const consent = opts.textConsent ? await opts.textConsent(c) : null;
-    const k = keyParam(values.k);
     return page(c, `Confirm: ${t.name}`, (
       <>
         <h1 class="mb-4 text-title font-semibold">Confirm your time</h1>
@@ -455,7 +448,6 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
           <input type="hidden" name="start" value={start.toISOString()} />
           <input type="hidden" name="tz" value={zone} />
           {host ? <input type="hidden" name="host" value={host.id} /> : null}
-          {k ? <input type="hidden" name="k" value={k} /> : null}
           <Field label="Your name" name="name" value={values.name} error={errors.name} required autocomplete="name" />
           <Field label="Email" name="email" type="email" value={values.email} error={errors.email} required autocomplete="email" />
           {t.location_kind === "their_place" ? (
@@ -488,10 +480,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     const start = new Date(c.req.query("start") ?? "");
     if (Number.isNaN(start.getTime())) return c.redirect(`${base}/${t.slug}`, 303);
     const zone = viewerZone(c, host?.time_zone ?? hosts[0]?.time_zone ?? "UTC");
-    const k = keyParam(c.req.query("k"));
-    const who = k && opts.prefill ? await opts.prefill(c, k).catch(() => null) : null;
-    const filled: Record<string, string> = who ? { name: who.name ?? "", email: who.email ?? "", phone: who.phone ?? "", k: k ?? "" } : {};
-    return confirmForm(c, t, host, start, zone, await makeStamp(spamScope(t)), filled);
+    return confirmForm(c, t, host, start, zone, await makeStamp(spamScope(t)));
   });
 
   app.post("/:slug", async (c) => {
@@ -505,7 +494,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     const start = new Date(s("start"));
     const back = `${base}/${t.slug}`;
     if (Number.isNaN(start.getTime())) return c.redirect(back, 303);
-    const values = { name: s("name"), email: s("email"), phone: s("phone"), address: s("address"), notes: s("notes"), k: s("k"), text_consent: s("text_consent") };
+    const values = { name: s("name"), email: s("email"), phone: s("phone"), address: s("address"), notes: s("notes"), text_consent: s("text_consent") };
     // A bot is sent back to the day's times, as if nothing happened. A person
     // whose browser filled the form in under the minimum time confirms again.
     const v = await verdict(spamScope(t), { honeypot: body[HONEYPOT] ?? "", stamp: body[STAMP] });
@@ -513,13 +502,11 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     if (v === "fast") return confirmForm(c, t, host, start, zone, await makeStamp(spamScope(t)), values, {}, "Please check your details and press Book it again.");
     const notes = values.notes.trim().slice(0, 2000);
 
-    const k = keyParam(values.k);
-    const who = k && opts.prefill ? await opts.prefill(c, k).catch(() => null) : null;
     const agreed = values.text_consent === "yes" && values.phone && opts.textConsent ? await opts.textConsent(c) : null;
     const result = await book(getDb(c), {
       typeId: t.id, hostId: host?.id ?? null, start, name: values.name, email: values.email, phone: values.phone || null,
       address: values.address || null, bookerTimeZone: zone, answers: notes ? { notes } : {}, source: opts.source,
-      leadId: who?.leadId ?? null, textConsent: agreed,
+      textConsent: agreed,
     });
     if (!result.ok && result.reason === "invalid") return confirmForm(c, t, host, start, zone, s(STAMP), values, result.errors);
     if (!result.ok) return c.redirect(listUrl(back, { date: localDate(start, zone), tz: zone, host: host?.id, taken: "1" }), 303);

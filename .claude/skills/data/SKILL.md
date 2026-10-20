@@ -9,7 +9,7 @@ Every app in a project shares one Postgres database, so a CRM installed
 later finds the Website's form submissions, bookings and payments already
 there.
 
-Version: 0.3.0 (taskandtool/skills)
+Version: 0.4.0 (taskandtool/skills)
 
 ## The rules
 
@@ -93,6 +93,13 @@ Each app makes its handle from the driver it already uses:
   stop before it is sent.
 - **Spam** (`spam.tsx`): every public form carries `<SpamFields>` and is
   checked with `verdict`.
+- **The business** (`business.ts`): its name, its privacy and terms
+  pages and its postal address, one row for the project. Read it with `businessOf(db)` wherever a
+  page, text, email or quote names the business; never keep a copy in an
+  app's config. The CRM's Settings, Business edits it.
+- **Unsubscribing** (`unsubscribe.tsx`): a commercial follow-up email
+  carries `unsubscribeLink`, the app mounts `unsubscribeRoutes` where its
+  customers' pages are, and `emailOptedOut` is checked before each send.
 
 ## Installing a skill's code into this app
 
@@ -102,7 +109,8 @@ skills repo) and the tests that cover them (`data/test/scratch.ts` for any
 database test). The copy is this app's code: change it as the app needs,
 keeping the rules above and its tests passing. Then:
 
-1. Run its `schema.sql` with `applySchema` from the app's setup or start
+1. Run this skill's `schema.sql` first, then the skill's own, with
+   `applySchema` from the app's setup or start
    script (machine only, never per request):
    `await applySchema(db, readFileSync("src/booking/schema.sql", "utf8"))`.
 2. Add the dependency the handle needs if the app lacks it
@@ -137,6 +145,9 @@ No `DATABASE_URL` means the app has no database yet: ask the owner with
 | `gateway.ts` | `gatewayFetch` (machine only at run time) |
 | `send.ts` | `sendEmail`, `afterResponse` |
 | `spam.tsx` | `SpamFields`, `makeStamp`, `verdict` |
+| `schema.sql` | `business`, `email_optouts`, `unsubscribe_keys` |
+| `business.ts` | `businessOf`, `saveBusiness`, `checkBusiness` |
+| `unsubscribe.tsx` | `unsubscribeLink`, `unsubscribe`, `emailOptedOut`, `unsubscribeRoutes` |
 | `token.ts` | `newToken`, `tokenHash`: a key a visitor holds, stored as its hash |
 | `cli.mjs` | what every script shares: arguments, usage, `done`, `fail`, `misused`, `machineEnv` (machine only) |
 | `test/` | the additive check, the handles, settings, sending, spam |

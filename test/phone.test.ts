@@ -2,7 +2,7 @@
 // scratch schema: Settings, Phone and texts without Twilio (the Connect
 // panel and the flows' pictures), the switches, Messages and its sidebar
 // link once there is a number, a thread and its reply, the contact page's
-// texts and Don't text, the bell, a short link. Skipped without TEST_DATABASE_URL.
+// texts and Don't text, the bell, Settings, Business. Skipped without TEST_DATABASE_URL.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import app from "../src/app";
@@ -107,13 +107,22 @@ test("the contact page shows their texts and calls, and Don't text opts them out
   await post(`/customers/${c.id}/texts-off`, { texts_off: "0" });
 });
 
-test("a short link on the CRM's /q opens the path it stands for, once its code is known", async (t) => {
+test("Settings, Business: one name and its pages, shown where they go; the texting box and the sidebar use it", async (t) => {
   if (skip) return t.skip(skip);
-  await db.sql`insert into short_links (code, url, expires_at) values ('abcdEFGH', '/q/book/furnace?k=x', now() + interval '1 day')`;
-  const r = await app.request(HOST + "/q/t/abcdEFGH", { headers: { host: "crm.example" } }, { runtime });
-  assert.equal(r.status, 302);
-  assert.equal(r.headers.get("location"), "/q/book/furnace?k=x");
-  assert.equal((await app.request(HOST + "/q/t/nope1234", { headers: { host: "crm.example" } }, { runtime })).status, 404);
+  assert.match(await (await get("/settings")).text(), /href="\/business"[\s\S]*Business/);
+  let page = await (await get("/business")).text();
+  assert.match(page, /Until it(&#39;|')s set, texts say/);
+  const bad = await post("/business", { name: "Acme Plumbing", privacy_url: "acme.example/privacy", terms_url: "" });
+  assert.equal(bad.status, 422);
+  assert.match(await bad.text(), /A page(&#39;|')s address starts with https:\/\//);
+  const ok = await post("/business", { name: "Acme Plumbing", privacy_url: "https://acme.example/privacy", terms_url: "", address: "12 Main St, Austin, TX 78701" });
+  assert.equal(ok.status, 303);
+  page = await (await get(ok.headers.get("location")!)).text();
+  assert.match(page, /Saved\. Texts, quotes and the texting box use it from now on\./);
+  assert.match(page, /Hi, it(&#39;|')s Acme Plumbing\. Sorry we missed your call!/);
+  assert.match(page, /Text me about this request from Acme Plumbing\. [^<]*Privacy: https:\/\/acme\.example\/privacy/);
+  assert.match(page, /<span class="min-w-0 flex-1 truncate font-semibold">Acme Plumbing<\/span>/, "the sidebar names the business");
+  assert.match(page, /The end of a follow-up email[\s\S]*Acme Plumbing, 12 Main St, Austin, TX 78701/);
 });
 
 test("Twilio's webhooks need the number's secret", async (t) => {

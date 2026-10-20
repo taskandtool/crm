@@ -11,15 +11,9 @@ export type EventsConfig = { one: string; many: string; fields: CustomField[]; c
 export type DealsConfig = { one: string; many: string; stages: StageConfig[]; currency?: string; lost_reasons?: string[] };
 /** Tasks: whether a deal made from a lead gets a "Call back" due that day. On unless false. */
 export type TasksConfig = { new_lead?: boolean };
-/** Quotes and invoices: the name printed on them, their currency, standing terms, days to pay, and what a quote is called. */
-export type InvoicesConfig = { name: string; currency?: string; terms?: string; days_until_due?: number; quote_word?: "Quote" | "Proposal" | "Estimate" };
+/** Quotes and invoices: their currency, standing terms, days to pay, and what a quote is called (the name on them is Settings, Business). */
+export type InvoicesConfig = { currency?: string; terms?: string; days_until_due?: number; quote_word?: "Quote" | "Proposal" | "Estimate" };
 export const QUOTE_WORDS = ["Quote", "Proposal", "Estimate"] as const;
-/**
- * The business number's texts (the phone skill): the name they sign with, the
- * review link the after-visit text carries, and the postal address the
- * follow-up emails end with (CAN-SPAM asks it of a commercial email).
- */
-export type PhoneConfig = { name?: string; review_link?: string; address?: string };
 export type Config = {
   business: string;
   vocabulary: { one: string; many: string };
@@ -39,8 +33,6 @@ export type Config = {
   booking_page?: string;
   /** Quotes and invoices (the invoices skill); false leaves them out. */
   invoices?: InvoicesConfig | false;
-  /** The business number's texts: their name (else invoices.name) and the review link. */
-  phone?: PhoneConfig;
 };
 
 export const KEY = /^[a-z0-9][a-z0-9_-]{0,39}$/;
@@ -90,23 +82,13 @@ export function validate(raw: unknown): string[] {
   if (typeof c.time_zone !== "string" || !validTimeZone(c.time_zone)) out.push(`time_zone must be an IANA zone name such as "America/Chicago" or "UTC" (got ${JSON.stringify(c.time_zone)})`);
 
   if (c.booking !== undefined && typeof c.booking !== "boolean") out.push("booking must be true or false");
-  if (c.phone !== undefined) {
-    const p = c.phone as Partial<PhoneConfig> | null;
-    if (!p || typeof p !== "object" || Array.isArray(p)) out.push('phone is { "name"?, "review_link"?, "address"? }');
-    else {
-      if (p.name !== undefined && !(typeof p.name === "string" && p.name.trim() && p.name.length <= 40)) out.push('phone.name is the name texts sign with, up to 40 characters, e.g. "Acme Plumbing"');
-      if (p.review_link !== undefined && !(typeof p.review_link === "string" && /^https:\/\/\S+$/.test(p.review_link))) out.push('phone.review_link is the page customers leave a review on, starting https:// (a Google Business profile\'s "Ask for reviews" link)');
-      if (p.address !== undefined && !(typeof p.address === "string" && p.address.trim() && p.address.length <= 200)) out.push('phone.address is the business\'s postal address for its emails, up to 200 characters, e.g. "12 Main St, Austin, TX 78701"');
-    }
-  }
   if (c.booking_page !== undefined && !(typeof c.booking_page === "string" && /^https:\/\/[^\s/]+(\/\S*)?$/.test(c.booking_page))) {
     out.push('booking_page must be the Website\'s booking address, like "https://acme.com/book"');
   }
   if (c.invoices !== undefined && c.invoices !== false) {
     const iv = c.invoices as Partial<InvoicesConfig> | null;
-    if (!iv || typeof iv !== "object" || Array.isArray(iv)) out.push('invoices must be false or an object, e.g. { "name": "Acme Plumbing", "currency": "USD" }');
+    if (!iv || typeof iv !== "object" || Array.isArray(iv)) out.push('invoices must be false or an object, e.g. { "currency": "USD" }');
     else {
-      if (typeof iv.name !== "string" || !iv.name.trim()) out.push('invoices.name is the business name printed on quotes, e.g. "Acme Plumbing" (or "to fill")');
       if (iv.currency !== undefined && !validCurrency(iv.currency)) out.push(`invoices.currency must be a currency code such as "USD" (got ${JSON.stringify(iv.currency)})`);
       if (iv.terms !== undefined && (typeof iv.terms !== "string" || iv.terms.length > 2000)) out.push("invoices.terms must be text of up to 2000 characters");
       if (iv.days_until_due !== undefined && !(Number.isInteger(iv.days_until_due) && iv.days_until_due >= 0 && iv.days_until_due <= 365)) out.push("invoices.days_until_due must be a whole number of days, 0 to 365");

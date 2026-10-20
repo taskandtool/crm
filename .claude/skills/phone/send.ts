@@ -2,8 +2,8 @@
 // and rules. Every automatic text is a `text_sends` row, claimed before it
 // goes so two runs never send it twice; what it says is worked out when it
 // goes (`deliver`), from what it is about, so a text that waited for 8am
-// says what is true at 8am. Edge-safe: the Website's form and booking
-// routes call it as the CRM's do.
+// says what is true at 8am. Edge-safe: the CRM's production Worker sends
+// the missed-call text and its own pages' texts; the job sends the rest.
 //
 // The rules (docs/plans/crm-calls-and-texts.md, "The rules every flow keeps"):
 // - consent: a ticked box, or they called or texted first
@@ -21,13 +21,14 @@
 import type { Db } from "../data/db";
 import { setting, type Env } from "../data/env";
 import { emailsCustomers, sendEmail } from "../data/send";
-import { newToken, tokenHash, TOKEN_SHAPE } from "../data/token";
+import { newToken, tokenHash } from "../data/token";
+import { emailOptedOut, unsubscribeLink } from "../data/unsubscribe";
 import { phoneKey } from "../customers/customer";
 import { EMAILS, fill, flowOf, flowSettings, isQuiet, notQuiet, STOP_LINE, type Fill, type FlowKey, type FlowSettings } from "./flows";
 import { canText, mainNumber, OPTED_OUT, optedOut, reachedUs, record, textedBefore, toE164, type Communication, type PhoneNumber } from "./store";
 import { TwilioError, type Provider, type SentText } from "./twilio";
 
-/** Where a customer's links go: the Website's address, or the CRM's /q. Null while customers can't open them. */
+/** Where a customer's pages are (an email's link back to their form, its unsubscribe link): the Website's address, or the CRM's /q. Null while customers can't open them. */
 export type Links = { base: string; prefix: "" | "/q" };
 
 export type PhoneCtx = {
@@ -36,16 +37,15 @@ export type PhoneCtx = {
   env: Env;
   /** The owner's Twilio here, or null (not connected, or not reachable from this runtime). */
   provider: Provider | null;
+  /** The business's name (data/business.ts), or "us" until it is set. */
   business: string;
-  /** No business name given yet, so `business` is a stand-in ("us"): the flow pages say so. */
+  /** No business name set yet, so `business` is the stand-in "us": the pages say so. */
   unnamed?: boolean;
   /** The business's time zone: quiet hours and "tomorrow". */
   zone: string;
-  /** Where its links go, asked only when a text needs one (finding out can take a request); null while customers can't open them. */
+  /** Where customers' pages are, asked only when an email needs one (finding out can take a request). */
   links: () => Promise<Links | null>;
-  /** The business's review link (a Google Business profile's), for the after-visit text. */
-  reviewLink?: string | null;
-  /** The business's postal address, for the follow-up emails CAN-SPAM counts as commercial. */
+  /** The business's postal address (data/business.ts), for the follow-up emails CAN-SPAM counts as commercial. */
   address?: string | null;
   /** The status callback for texts (hooks.ts), when this runtime knows it. */
   statusUrl?: string | null;
@@ -101,12 +101,12 @@ export type SubjectType = "call" | "submission" | "draft" | "booking";
 /** A text a flow will send, once: the row is unique per flow, step and subject. */
 export async function schedule(
   db: Db,
-  s: { flow: FlowKey; step?: number; subjectType: SubjectType; subjectId: string; phone?: string | null; email?: string | null; dueAt?: Date; link?: string | null },
+  s: { flow: FlowKey; step?: number; subjectType: SubjectType; subjectId: string; phone?: string | null; email?: string | null; dueAt?: Date },
 ): Promise<string | null> {
   const key = s.phone ? phoneKey(s.phone) : null;
   const [r] = await db.sql<{ id: string }>`
-    insert into text_sends (flow, step, subject_type, subject_id, remote_key, email, due_at, link)
-    values (${s.flow}, ${s.step ?? 1}, ${s.subjectType}, ${s.subjectId}, ${key}, ${s.email ?? null}::citext, ${(s.dueAt ?? new Date()).toISOString()}::timestamptz, ${s.link ?? null})
+    insert into text_sends (flow, step, subject_type, subject_id, remote_key, email, due_at)
+    values (${s.flow}, ${s.step ?? 1}, ${s.subjectType}, ${s.subjectId}, ${key}, ${s.email ?? null}::citext, ${(s.dueAt ?? new Date()).toISOString()}::timestamptz)
     on conflict (flow, step, subject_type, subject_id) do nothing
     returning id::text as id`;
   return r?.id ?? null;
@@ -221,29 +221,8 @@ const COMMERCIAL = new Set<FlowKey>(["unbooked", "after_visit"]);
 /** The end of a commercial follow-up email: who sent it, where they are, and how to stop these. */
 async function emailFooter(ctx: PhoneCtx, email: string): Promise<string> {
   const links = await ctx.links();
-  const stop = links ? `Unsubscribe: ${await unsubscribeLink(ctx.db, links, email)}` : 'Don\'t want these emails? Reply "unsubscribe" and we\'ll stop.';
+  const stop = links ? `Unsubscribe: ${await unsubscribeLink(ctx.db, `${links.base}${links.prefix}`, email)}` : 'Don\'t want these emails? Reply "unsubscribe" and we\'ll stop.';
   return `\n\n--\n${[ctx.business, ctx.address].filter(Boolean).join(", ")}\n${stop}`;
-}
-
-/** An unsubscribe link for one address, on the customer's site; the key's hash is kept, the key only in the email. */
-export async function unsubscribeLink(db: Db, links: Links, email: string): Promise<string> {
-  const key = newToken();
-  await db.sql`insert into unsubscribe_keys (hash, email) values (${await tokenHash(key)}, ${email}::citext)`;
-  return `${links.base}${links.prefix}/unsubscribe?k=${key}`;
-}
-
-/** Unsubscribe the address a link's key was made for: the address, or null for a key we never made. */
-export async function unsubscribe(db: Db, key: string): Promise<string | null> {
-  if (!TOKEN_SHAPE.test(key)) return null;
-  const [r] = await db.sql<{ email: string }>`select email::text as email from unsubscribe_keys where hash = ${await tokenHash(key)}`;
-  if (!r) return null;
-  await db.sql`insert into email_optouts (email) values (${r.email}::citext) on conflict do nothing`;
-  return r.email;
-}
-
-export async function emailOptedOut(db: Db, email: string): Promise<boolean> {
-  const [r] = await db.sql<{ yes: boolean }>`select exists (select 1 from email_optouts where email = ${email}::citext) as yes`;
-  return r.yes;
 }
 
 /** An email's words keep their lines; a missing fill-in drops its line. */
@@ -307,46 +286,11 @@ export async function mayText(db: Db, phone: string | null, ticked: boolean, o: 
   return key ? reachedUs(db, key) : false;
 }
 
-// ---- links a text carries ----------------------------------------------------------
+// ---- the link an email carries ----------------------------------------------------
 
-const CODE = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-/** A short link on the customer's site for a long one there, so a text stays one text. */
-export async function shortLink(db: Db, links: Links, path: string, days = 30): Promise<string> {
-  const bytes = crypto.getRandomValues(new Uint8Array(8));
-  const code = [...bytes].map((b) => CODE[b % CODE.length]).join("");
-  await db.sql`insert into short_links (code, url, expires_at) values (${code}, ${path}, now() + make_interval(days => ${days}))`;
-  return `${links.base}${links.prefix}/t/${code}`;
-}
-
-/** Follow a short link: the path it stands for, counted; null once it has lapsed. */
-export async function followShort(db: Db, code: string): Promise<string | null> {
-  if (!/^[A-Za-z0-9]{8}$/.test(code)) return null;
-  const [r] = await db.sql<{ url: string }>`
-    update short_links set clicks = clicks + 1 where code = ${code} and expires_at > now() returning url`;
-  return r?.url ?? null;
-}
-
-/** The booking page for a service, with their details filled in from a key only the link holds. */
-export async function bookingLink(db: Db, links: Links, slug: string, who: { name?: string | null; email?: string | null; phone?: string | null; leadId?: string | null }): Promise<string> {
-  const key = newToken();
-  await db.sql`
-    insert into link_keys (hash, kind, ref, data, expires_at)
-    values (${await tokenHash(key)}, 'booking', ${slug}, ${JSON.stringify({ name: who.name ?? null, email: who.email ?? null, phone: who.phone ?? null, lead_id: who.leadId ?? null })}::jsonb, now() + interval '30 days')`;
-  return shortLink(db, links, `${links.prefix}/book/${slug}?k=${key}`);
-}
-
-/** What a booking link's key fills in, or null. */
-export async function bookingKey(db: Db, key: string): Promise<{ slug: string; name: string | null; email: string | null; phone: string | null; lead_id: string | null } | null> {
-  if (!TOKEN_SHAPE.test(key)) return null;
-  const [r] = await db.sql<{ ref: string; data: Record<string, string | null> }>`
-    select ref, data from link_keys where hash = ${await tokenHash(key)} and kind = 'booking' and expires_at > now()`;
-  return r ? { slug: r.ref, name: r.data.name ?? null, email: r.data.email ?? null, phone: r.data.phone ?? null, lead_id: r.data.lead_id ?? null } : null;
-}
-
-/** A draft's link back, at the step they stopped on: a second key, so the page they have open keeps working. */
+/** A draft's link back, at the step they stopped on, for its emails: a second key, so the page they have open keeps working. */
 export async function draftLink(db: Db, links: Links, draftId: string, formKey: string): Promise<string> {
   const key = newToken();
   await db.sql`update submission_drafts set text_key_hash = ${await tokenHash(key)} where id = ${draftId}::bigint`;
-  return shortLink(db, links, `${links.prefix}/forms/${formKey}/next?k=${key}`);
+  return `${links.base}${links.prefix}/forms/${formKey}/next?k=${key}`;
 }

@@ -10,10 +10,11 @@ import type { Email, Sent } from "../../data/send";
 import { invoicesAdmin } from "../admin";
 import { createTaxRate } from "../../payments/tax";
 import { quoteById } from "../quotes";
+import { saveBusiness } from "../../data/business";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // The payments schema first: lines carry its tax_rates.
-const schema = [join(here, "..", "..", "payments", "schema.sql"), join(here, "..", "schema.sql")].map((f) => readFileSync(f, "utf8")).join(";\n");
+const schema = [join(here, "..", "..", "data", "schema.sql"), join(here, "..", "..", "payments", "schema.sql"), join(here, "..", "schema.sql")].map((f) => readFileSync(f, "utf8")).join(";\n");
 const HOST = "https://crm.example";
 const team = { "x-tasktool-user": "pat@team.example", origin: HOST, host: "crm.example" };
 const post = (path: string, data: Record<string, string | string[]>) => {
@@ -28,6 +29,7 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
   if (!s) return t.skip(why);
   try {
     await applySchema(s.db, schema);
+    await saveBusiness(s.db, { name: "Acme Fencing" }, "o@x.com");
     const rate = await createTaxRate(s.db, { name: "Sales tax", percent: "10" }, "owner@example.com");
     assert.ok(rate.ok);
     const mail: Email[] = [];
@@ -36,7 +38,7 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     const went: string[] = [];
     const app = new Hono();
     app.route("/invoices", invoicesAdmin(() => s.db, {
-      base: "/invoices", css: "/site.css", source: "crm", timeZone: "America/Denver", business: "Acme Fencing",
+      base: "/invoices", css: "/site.css", source: "crm", timeZone: "America/Denver",
       afterDecide: async (_c, qt) => void decided.push(`${qt.status} ${qt.deal_id}`),
       afterSend: async (_c, doc) => void went.push(`${doc.kind} ${doc.email}`),
       send: async (_c, m) => (mail.push(m), answer),
@@ -196,7 +198,7 @@ test("before Stripe and email are connected: the pages say what to ask for, hold
     await applySchema(s.db, schema);
     const app = new Hono();
     // No `stripe` and no `send`: the owner's own, which this runtime does not have.
-    app.route("/invoices", invoicesAdmin(() => s.db, { base: "/invoices", css: "/site.css", source: "crm", timeZone: "America/Denver", business: "Acme Fencing" }));
+    app.route("/invoices", invoicesAdmin(() => s.db, { base: "/invoices", css: "/site.css", source: "crm", timeZone: "America/Denver" }));
 
     assert.match(await (await app.request(...get("/invoices"))).text(), /Connect Stripe to send invoices[\s\S]*Connect my Stripe account so I can send invoices\./);
     assert.match(await (await app.request(...get("/invoices/quotes"))).text(), /Connect your email to send quotes/);
@@ -232,7 +234,7 @@ test("with the app's page (proposal): the email carries a link and no PDF, Copy 
     let n = 0;
     const app = new Hono();
     app.route("/invoices", invoicesAdmin(() => s.db, {
-      base: "/invoices", css: "/site.css", source: "crm", timeZone: "UTC", business: "Acme", word: "Proposal",
+      base: "/invoices", css: "/site.css", source: "crm", timeZone: "UTC", word: "Proposal",
       send: async (_c, m) => (mail.push(m), { status: "sent", via: "fake" }),
       print: async () => new TextEncoder().encode("%PDF"),
       proposal: {

@@ -11,7 +11,9 @@
 // flows as they would be; Messages is the app's to leave out of its nav.
 import { Hono, type Context } from "hono";
 import type { Child } from "hono/jsx";
+import { businessOf, type Business } from "../data/business";
 import type { GetDb } from "../data/db";
+import { textingBox } from "../forms/consent";
 import { Section } from "../admin/detail";
 import { alertClass, withFlash, type FlashMessages } from "../admin/flash";
 import { teamOnly, type TeamVars } from "../admin/guard";
@@ -21,7 +23,7 @@ import { buttonClass, fieldClass, inputClass, linkClass, primaryClass, quietClas
 import { phoneKey, saveLead, savePerson } from "../customers/customer";
 import { fill, FILL_SAYS, FLOWS, flowOf, flowSettings, isFlowKey, resetWords, setEnabled, setWords, WORDS, EMAILS, type Fill, type FillKey, type Flow, type FlowKey, type FlowSettings, type Step as FlowStep } from "./flows";
 import { exampleFill, flowCounts } from "./follow";
-import { check, steps as registrationSteps, type Step as RegStep } from "./registration";
+import { check, optInPage, steps as registrationSteps, type Step as RegStep } from "./registration";
 import { fillEmail, sendText, type PhoneCtx } from "./send";
 import { adopt, buy, callOut, point, unhook } from "./setup";
 import {
@@ -51,15 +53,14 @@ export type PhoneAdminOptions = {
   defaultRingTo?: (c: Team) => Promise<string | null> | string | null;
   /** A lead made from Messages (Create lead): the app adds its Call back task. */
   onLead?: (c: Team, l: { customerId: string; leadId: string; title: string }) => void | Promise<void>;
-  /** The business's name isn't set yet: the setup page asks for it first, since every text starts with it. */
-  nameNeeded?: () => boolean;
+  /** Where the business's name and its privacy and terms pages are set (data/business.ts): the app's Business settings. */
+  businessHref: string;
 };
 
 const MESSAGES: FlashMessages = {
   bought: "Your number is ready. Calls to it ring the phone below.",
   calls: "Saved.",
   "test-call": "Calling your phone now.",
-  registration: "Saved. The texting box and the words to paste name these pages now.",
   checked: "Checked with Twilio.",
   flow: "Saved.",
   words: "Saved. This is what goes from now on.",
@@ -94,10 +95,12 @@ export function phoneSettings(getDb: GetDb, opts: PhoneAdminOptions) {
     const connected = ctx.provider ? await twilioConnected(ctx.env) : false;
     const [settings, all, counts] = await Promise.all([flowSettings(db), numbers(db), flowCounts(db)]);
     const main = all[0] ?? null;
-    const name = opts.nameNeeded?.() ? (
-      <SetupNeeded title="Give your texts the business's name" ask="Set the business name my texts and quotes use: ">
-        Every text starts "Hi, it's" and the name, so customers know who it is. Until it's set, they say "it's us".
-      </SetupNeeded>
+    const name = ctx.unnamed ? (
+      <section class="rounded-card border border-line bg-surface p-4 shadow-card">
+        <h2 class="mb-1 text-base/7 font-semibold text-ink">Give your texts the business's name</h2>
+        <p class="max-w-prose text-ink-2">Every text names the business, so customers know who it is. Until it's set, they say "it's us", and the texting box stays off your forms.</p>
+        <a href={opts.businessHref} class={primaryClass + " mt-3 inline-block no-underline"}>Set the name</a>
+      </section>
     ) : null;
     if (connected === false || !ctx.provider) {
       return (
@@ -184,7 +187,7 @@ export function phoneSettings(getDb: GetDb, opts: PhoneAdminOptions) {
           </Section>
         ) : null}
 
-        {main ? <Registration base={base} n={main} business={ctx.business} /> : null}
+        {main ? <Registration base={base} n={main} settings={settings} business={await businessOf(db)} optIn={await optInPage(db, await ctx.links())} box={await textingBox(db, "request")} businessHref={opts.businessHref} /> : null}
 
         <section>
           <h2 class="mb-1 text-base/7 font-semibold text-ink">{main ? "5. Automatic texts" : "Automatic texts"}</h2>
@@ -270,20 +273,6 @@ export function phoneSettings(getDb: GetDb, opts: PhoneAdminOptions) {
     return back(c, "removed");
   });
 
-  // The owner's privacy and terms pages: kept for the texting box and the words to paste.
-  app.post("/registration", async (c) => {
-    const db = getDb(c);
-    const ctx = await opts.ctx(c);
-    const n = await mainNumber(db);
-    if (!n || !ctx.provider) return back(c, "no-number");
-    const f = await c.req.parseBody();
-    const url = (v: unknown) => String(v ?? "").trim().slice(0, 300);
-    const pages = { privacyUrl: url(f.privacy_url) || null, termsUrl: url(f.terms_url) || null };
-    if ([pages.privacyUrl, pages.termsUrl].some((u) => u && !/^https:\/\/\S+\.\S+/.test(u))) return problem(c, "Each page's address starts with https://.");
-    const r = await check(db, ctx.provider, n, pages);
-    return r.reg.last_error ? problem(c, r.reg.last_error) : back(c, "registration", "#texting");
-  });
-
   app.post("/registration/check", async (c) => {
     const db = getDb(c);
     const ctx = await opts.ctx(c);
@@ -333,7 +322,7 @@ export function phoneSettings(getDb: GetDb, opts: PhoneAdminOptions) {
     const s = settings[key];
     const texting = !!ctx.provider && main?.texting === "approved";
     return framed(c, base, { title: flow.name, back: { href: base, label: "Phone and texts" }, sub: flow.summary }, (
-      <FlowPicture flow={flow} s={s} example={example} unnamed={!!ctx.unnamed} count={counts[key]} texting={texting} hasNumber={!!main} forms={forms} formHref={opts.formHref} action={`${base}/flows/${key}`} refused={refused} />
+      <FlowPicture flow={flow} s={s} example={example} nameHref={ctx.unnamed ? opts.businessHref : null} count={counts[key]} texting={texting} hasNumber={!!main} forms={forms} formHref={opts.formHref} action={`${base}/flows/${key}`} refused={refused} />
     ), refused ? 422 : 200);
   }
 
@@ -396,33 +385,38 @@ function NumberSearch({ base, area, offered, owned, label }: { base: string; are
  * Twilio documents for a business registering itself): each step's state as
  * Twilio has it, where it is in the Console, and our words to paste.
  */
-function Registration({ base, n, business }: { base: string; n: PhoneNumber; business: string }) {
-  const rows = registrationSteps(n, business);
+function Registration({ base, n, settings, business, optIn, box, businessHref }: { base: string; n: PhoneNumber; settings: Record<FlowKey, FlowSettings>; business: Business; optIn: string | null; box: string | null; businessHref: string }) {
+  const rows = registrationSteps(n, business, optIn, settings);
   const next = rows.find((r) => r.state !== "done");
-  const pages = n.registration.input ?? {};
+  const set = <a href={businessHref} class={linkClass}>Settings, Business</a>;
   return (
     <section id="texting" class="rounded-card border border-line bg-surface p-4 shadow-card">
       <h2 class="mb-1 text-base/7 font-semibold text-ink">4. Texting</h2>
       <p class={smallText + " mb-3 max-w-prose text-ink-2"}>
         {n.texting === "approved" ? "Your number can text." : <>US carriers block business texts until the number is registered. Calls work now. You register in Twilio's Console, at <a href="https://console.twilio.com" target="_blank" rel="noopener" class={linkClass}>console.twilio.com</a>, with the words below; this page follows each step, checking every hour.</>}
       </p>
+      {n.texting !== "approved" ? (
+        <div class="mb-4 space-y-2 rounded-control bg-panel p-3">
+          <p class="font-medium">What carriers check</p>
+          <p>
+            <strong>Name:</strong> {business.name ?? <span class="font-semibold">not set yet</span>}.{" "}
+            <strong>Privacy page:</strong> {business.privacyUrl ?? <span class="font-semibold">none yet</span>}.{" "}
+            <strong>Terms page:</strong> {business.termsUrl ?? "none"}. Change them in {set}.
+          </p>
+          {box ? (
+            <>
+              <p><strong>The texting box on your forms reads:</strong> {box}</p>
+              <p>{optIn ? <>Reviewers open <a href={optIn} target="_blank" rel="noopener" class={linkClass}>{optIn}</a> to see it, so keep it public.</> : <span class="font-semibold">Customers can't open a page with the box yet. Before you register, put a form with "Follow up automatically" on where customers can open it.</span>}</p>
+            </>
+          ) : <p class="font-semibold">The texting box shows on your forms once the business has a name. Carriers turn down a registration whose box they can't see.</p>}
+        </div>
+      ) : null}
       <ol class="space-y-4">
         {rows.map((r) => <RegistrationStep r={r} open={r === next} />)}
       </ol>
       {n.registration.last_error ? <p role="alert" class="mt-3 font-semibold">{n.registration.last_error}</p> : null}
       {n.texting !== "approved" ? (
-        <div class="mt-4 space-y-4">
-          <form method="post" action={`${base}/registration/check`}><button class={buttonClass}>Check with Twilio now</button></form>
-          <details>
-            <summary class={linkClass + " cursor-pointer"}>Your privacy and terms pages</summary>
-            <form method="post" action={`${base}/registration`} class="mt-3 grid gap-4 sm:max-w-lg">
-              <p class={smallText + " text-ink-2"}>Carriers turn down registrations that don't name them. The texting box on your forms links them too.</p>
-              <label class={fieldClass}>Privacy policy page<input name="privacy_url" type="url" value={pages.privacyUrl ?? ""} class={inputClass} placeholder="https://" /></label>
-              <label class={fieldClass}>Terms page<input name="terms_url" type="url" value={pages.termsUrl ?? ""} class={inputClass} placeholder="https://" /></label>
-              <div><button class={primaryClass}>Save</button></div>
-            </form>
-          </details>
-        </div>
+        <form method="post" action={`${base}/registration/check`} class="mt-4"><button class={buttonClass}>Check with Twilio now</button></form>
       ) : null}
     </section>
   );
@@ -508,11 +502,11 @@ const STEP_LABEL: Record<FlowStep["kind"], string> = { start: "Starts", wait: "W
  * it. Drawn from the flow's own definition, so it shows what is sent.
  */
 export function FlowPicture(props: {
-  flow: Flow; s: FlowSettings; example: Fill & { sample: boolean }; unnamed: boolean; count?: { sent: number; outcome: number }; texting: boolean; hasNumber: boolean;
+  flow: Flow; s: FlowSettings; example: Fill & { sample: boolean }; nameHref: string | null; count?: { sent: number; outcome: number }; texting: boolean; hasNumber: boolean;
   forms: { key: string; title: string }[] | null; formHref?: (key: string) => string; action: string;
   refused?: { variant: string; words: string; why: string };
 }) {
-  const { flow, s, example, unnamed, count, texting, hasNumber, forms, formHref, action, refused } = props;
+  const { flow, s, example, nameHref, count, texting, hasNumber, forms, formHref, action, refused } = props;
   const words = (v: string) => fill(s.words[v] ?? WORDS[flow.key][v] ?? "", example);
   const emailOf = (v: string) => EMAILS[flow.key]?.[v];
   const channel = texting ? "text" : flow.email ? "email" : null;
@@ -533,7 +527,7 @@ export function FlowPicture(props: {
 
       <p class="text-ink-2">
         {example.sample ? `Shown with a sample name, ${example.first_name}.` : `Shown as ${example.first_name}, your newest contact, would see it.`} Each person gets their own name.
-        {unnamed ? <> Your texts say "it's us" until you <a href={action.replace(/\/flows\/[^/]+$/, "")} class={linkClass}>give them the business's name</a>.</> : null}
+        {nameHref ? <> Your texts say "it's us" until you <a href={nameHref} class={linkClass}>give them the business's name</a>.</> : null}
       </p>
 
       <ol class="relative ml-3 space-y-5 border-l border-line pl-6">

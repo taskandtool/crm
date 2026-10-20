@@ -30,8 +30,6 @@ export type Registration = {
   campaign?: { sid?: string; status?: string; errors?: string[] };
   /** `edit_until`: a turned-down verification can be fixed and sent again until then. */
   toll_free?: { sid?: string; status?: string; errors?: string[]; edit_until?: string | null };
-  /** The owner's privacy and terms pages: the texting box links them, and the registration names them. */
-  input?: { privacyUrl?: string | null; termsUrl?: string | null };
   checked_at?: string;
   /** The last call that failed, in Twilio's words. */
   last_error?: string;

@@ -53,7 +53,7 @@ export const FLOWS: Flow[] = [
     summary: "A call nobody picked up gets a text as soon as the call ends.",
     on: true,
     where: "Every call to your business number.",
-    fills: ["first_name", "business", "booking_link"],
+    fills: ["first_name", "business"],
     steps: () => [
       { kind: "start", says: "Someone calls, nobody presses 1 to answer, and they hang up (after leaving a voicemail, or not)" },
       {
@@ -73,7 +73,7 @@ export const FLOWS: Flow[] = [
     summary: "A form that doesn't book gets a thank-you right away.",
     on: true,
     where: 'Forms with "Follow up automatically" on and no booking step.',
-    fills: ["first_name", "business", "booking_link"],
+    fills: ["first_name", "business"],
     steps: () => [
       { kind: "start", says: "Someone sends the form" },
       { kind: "text", variants: [{ key: "one" }], replies: [{ when: "They reply", then: "it's in Messages for you" }] },
@@ -89,7 +89,7 @@ export const FLOWS: Flow[] = [
     summary: "Someone who leaves a form before booking gets three times to pick from.",
     on: true,
     where: 'Forms with "Follow up automatically" on and a booking step.',
-    fills: ["first_name", "business", "service", "slot1", "slot2", "slot3", "form_link"],
+    fills: ["first_name", "business", "service", "slot1", "slot2", "slot3"],
     timing: { choices: [10, 30, 60], ours: 10, says: (m) => `${minutes(m)} to ${minutes(m + 15)} later` },
     steps: (t) => [
       { kind: "start", says: "Someone fills in the form and leaves before booking" },
@@ -117,7 +117,7 @@ export const FLOWS: Flow[] = [
     summary: "Every booking gets a confirmation right away.",
     on: true,
     where: "Every booking, online or made by your team, from someone who agreed to texts.",
-    fills: ["first_name", "business", "service", "host", "time", "manage_link"],
+    fills: ["first_name", "business", "service", "host", "time"],
     steps: () => [
       { kind: "start", says: "Someone books" },
       { kind: "text", variants: [{ key: "one" }] },
@@ -148,10 +148,10 @@ export const FLOWS: Flow[] = [
   {
     key: "after_visit",
     name: "After the visit",
-    summary: "A thank-you, with your review link if you have one.",
+    summary: "A thank-you after the visit. Add your review link to the words to ask for a review.",
     on: false,
     where: "Every visit marked done. A visit nobody marks done gets nothing.",
-    fills: ["first_name", "business", "service", "host", "review_link"],
+    fills: ["first_name", "business", "service", "host"],
     timing: { choices: [60, 120, 240], ours: 120, says: (m) => `${minutes(m)} after the visit ends (8am to 8pm only)` },
     steps: (t) => [
       { kind: "start", says: "A visit is marked done" },
@@ -182,18 +182,18 @@ export const WORDS: Record<FlowKey, Record<string, string>> = {
   },
   unbooked: {
     times: "Hi {first_name}, it's {business}. Reply 1, 2 or 3 to book: 1) {slot1} 2) {slot2} 3) {slot3}, or a time that suits you.",
-    notimes: "Hi {first_name}, it's {business}. Reply with a time that works for you. Or book here: {form_link}",
-    nextday: "Hi {first_name}, just checking in from {business}. Still want to get that booked? {form_link} Or reply with a time that works.",
-    taken: "Sorry, that time just went! How about 1) {slot1} 2) {slot2} 3) {slot3}? Or pick another: {form_link}",
+    notimes: "Hi {first_name}, it's {business}. Reply with a time that works for you and we'll get you booked.",
+    nextday: "Hi {first_name}, just checking in from {business}. Still want to get that booked? Reply with a time that works.",
+    taken: "Sorry, that time just went! How about 1) {slot1} 2) {slot2} 3) {slot3}? Or reply with a time that suits you.",
   },
   booked: {
-    one: "Hi {first_name}, you're booked with {business} for {time}. To change it: {manage_link}",
+    one: "Hi {first_name}, you're booked with {business} for {time}. Reply here if you need to change it.",
   },
   reminder: {
     one: "Hi {first_name}, looking forward to seeing you {when}! {host} from {business}. Reply here if anything changes.",
   },
   after_visit: {
-    one: "Hi {first_name}, it's {business}. Thanks for having us today! If you have a minute, you can leave a review here: {review_link}",
+    one: "Hi {first_name}, it's {business}. Thanks for having us today! Reply here if there's anything else we can do.",
   },
 };
 
@@ -218,7 +218,7 @@ export const EMAILS: Partial<Record<FlowKey, Record<string, { subject: string; t
   after_visit: {
     one: {
       subject: "Thanks from {business}",
-      text: "Hi {first_name},\n\nThanks for having us today. If you have a minute, you can leave a review here: {review_link}\n\nReply to this email if there's anything else we can do.\n\n{business}",
+      text: "Hi {first_name},\n\nThanks for having us today. Reply to this email if there's anything else we can do.\n\n{business}",
     },
   },
 };
@@ -244,20 +244,9 @@ export const OWNER_TEXTS = {
   replyHere: "Reply in the CRM so it comes from {business}'s number: {link}",
 };
 export const STOP_LINE = " Reply STOP to opt out.";
-/**
- * The texting box's words, as carriers want them for registration (Twilio
- * 30902): who texts, about what, how often, rates, HELP and STOP, and the
- * terms and privacy pages when the owner gave them. What a person ticked is
- * kept word for word on their submission or booking: the record of it.
- */
-export function consentWords(business: string, about: "request" | "booking", pages: { termsUrl?: string | null; privacyUrl?: string | null } = {}): string {
-  const links = [pages.termsUrl && `Terms: ${pages.termsUrl}`, pages.privacyUrl && `Privacy: ${pages.privacyUrl}`].filter(Boolean).join(" ");
-  return `Text me about this ${about} from ${business}. Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out.${links ? ` ${links}` : ""}`;
-}
-
 export const FILL_INS = [
   "first_name", "business", "time", "when", "host", "service", "slot1", "slot2", "slot3", "times_list",
-  "booking_link", "form_link", "manage_link", "review_link", "number",
+  "form_link", "number",
 ] as const;
 export type FillKey = (typeof FILL_INS)[number];
 export type Fill = Partial<Record<FillKey, string | null>>;
@@ -266,8 +255,8 @@ export type Fill = Partial<Record<FillKey, string | null>>;
 export const FILL_SAYS: Record<FillKey, string> = {
   first_name: 'their first name (left out when it isn\'t known: "Hi, it\'s...")', business: "your business's name", time: "the visit's day and time",
   when: '"tomorrow at 2pm"', host: "who they're seeing", service: "the service", slot1: "the first open time", slot2: "the second open time",
-  slot3: "the third open time", times_list: "the open times, a line each", booking_link: "a link to book online", form_link: "a link back to their form",
-  manage_link: "a link to change or cancel", review_link: "your review link", number: "your business number",
+  slot3: "the third open time", times_list: "the open times, a line each", form_link: "a link back to their form",
+  number: "your business number",
 };
 
 /**
@@ -284,11 +273,11 @@ export function fill(words: string, f: Fill, o: { line?: boolean } = {}): string
     return v ?? `\u0000${k}`;
   });
   if (s.includes("\u0000")) {
-    // Drop each sentence that still has a missing fill-in, and the "To change it:" that led into it.
+    // Drop each sentence that still has a missing fill-in, and the "Pick one here:" that led into it.
     const parts = s.split(/(?<=[.!?:])\s+/);
     s = parts.filter((part, i) => !part.includes("\u0000") && !(part.endsWith(":") && parts[i + 1]?.includes("\u0000"))).join(" ");
   }
-  // A text that ended on a dropped link ends with a full stop; an email's line keeps its colon.
+  // Words that ended on a dropped fill-in end with a full stop; an email's line keeps its colon.
   s = s.replace(/\s+/g, " ").trim();
   return o.line ? s : s.replace(/:$/, ".");
 }
@@ -320,12 +309,11 @@ export function segments(s: string): { count: number; plain: boolean } {
   return { count: len <= one ? 1 : Math.ceil(len / many), plain };
 }
 
-/** The longest real values a text is measured with: a 20-letter business, a 33-letter link. */
+/** The longest real values a text is measured with: a 20-letter business. */
 export const MEASURE: Fill = {
   first_name: "Christopher", business: "Lakeside Home Repair", time: "Wed, Sep 30 at 10:30am", when: "tomorrow at 10:30am",
   host: "Alexandra", service: "Furnace check", slot1: "Wed 10am", slot2: "Wed 1pm", slot3: "Thu 10am",
-  booking_link: "https://lakesidehome.com/t/x7Kp2Qa", form_link: "https://lakesidehome.com/t/x7Kp2Qa",
-  manage_link: "https://lakesidehome.com/t/x7Kp2Qa", review_link: "https://lakesidehome.com/t/x7Kp2Qa", number: "(555) 201-0142",
+  form_link: "https://lakesidehome.com/forms/quote/next?k=x7Kp2Qa", number: "(555) 201-0142",
 };
 
 /**

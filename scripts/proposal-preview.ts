@@ -17,7 +17,7 @@ import { formatMoney } from "../src/payments/money";
 const HELP = `usage: node scripts/proposal-preview.mjs
 
 Draws the proposal page with every component ticked, on a made-up quote
-(the business's name, three lines, a 30% deposit), into
+(a made-up business, three lines, a 30% deposit), into
 uploads/proposal-preview/page.html, and screenshots it at 1280 and 390
 pixels wide with tt-crawl shoot. Nothing is stored on a quote. Run it after
 npm run css.
@@ -30,7 +30,7 @@ plain(a, HELP, "proposal-preview");
 
 const OUT = "uploads/proposal-preview";
 const word = invoicesCfg?.word ?? "Quote";
-const business = invoicesCfg?.name || "The business";
+const business = "Lakeside Home Repair";
 const now = new Date();
 // The business's own currency, as its deals are counted in.
 const currency = dealsCfg.currency.toLowerCase();

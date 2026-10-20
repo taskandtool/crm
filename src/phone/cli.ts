@@ -5,10 +5,11 @@
 //
 //   await phoneCli(process.argv.slice(2), { withDb, ctx: (db) => phoneCtxFor(db) });
 import { done, fail, flag, has, localTime, misused, noMore, parseArgs, usage } from "../data/cli.mjs";
+import { businessOf } from "../data/business";
 import type { Db } from "../data/db";
-import { FILL_INS, FILL_SAYS, FLOWS, flowOf, flowSettings, isFlowKey, resetFlow, setEnabled, setTiming, setWords, WORDS, fill } from "./flows";
+import { FILL_SAYS, FLOWS, flowOf, flowSettings, isFlowKey, resetFlow, setEnabled, setTiming, setWords, WORDS, fill } from "./flows";
 import { exampleFill } from "./follow";
-import { check, steps } from "./registration";
+import { check, optInPage, steps } from "./registration";
 import { sendText, type PhoneCtx } from "./send";
 import { mainNumber, numbers, prettyPhone, thread, threads, toE164 } from "./store";
 import { phoneKey } from "../customers/customer";
@@ -26,11 +27,12 @@ const HELP = `phone.mjs <command> [...] [--json]      the business number, its t
   status                               Twilio, the number, the phone it rings, texting, each flow on or off
   numbers [--area 512]                 the numbers in use; with --area, ones Twilio offers to buy
                                        (the owner chooses and buys one in Settings, Phone and texts)
-  flows                                the six automatic texts: on or off, their words, timing and link
+  flows                                the six automatic texts: on or off, their words and timing
   flow <key>                           one flow's steps as its page shows them, with an example filled in
   set <key> [--on|--off] [--words "…" --variant <v>] [--timing <minutes>] [--reset]
                                        change a flow; --reset brings back our words, timing and switch.
-                                       Words keep their {fill-ins}: ${FILL_INS.map((k) => `{${k}}`).join(" ")}
+                                       Words keep their {fill-ins} (each flow's are in "flow <key>"); a link
+                                       the owner wants goes in the words as it is.
   registration [--check]               the US texting registration's steps (made in Twilio's Console); --check reads Twilio now
   threads [--unread] [--limit 20]      who texted or called, newest first
   thread <number>                      one number's texts and calls
@@ -137,7 +139,7 @@ export async function phoneCli(argv: string[], cli: PhoneCli): Promise<void> {
           const variant = flag(a, "variant") ?? (Object.keys(WORDS[key]).length === 1 ? Object.keys(WORDS[key])[0] : misused(`${at}: --words needs --variant, one of ${Object.keys(WORDS[key]).join(", ")}`, `node scripts/phone.mjs flow ${key}`));
           const r = await setWords(db, key, variant, flag(a, "words") ?? "", by);
           if (!r.ok) fail(`${at}: ${r.why}`, `node scripts/phone.mjs flow ${key}`);
-          said.push(`new "${variant}" words${r.texts > 1 ? `; it sends as ${r.texts} texts with long names and links (one text is 160 characters)` : ""}`);
+          said.push(`new "${variant}" words${r.texts > 1 ? `; it sends as ${r.texts} texts with long names (one text is 160 characters)` : ""}`);
         }
         if (has(a, "timing")) {
           const r = await setTiming(db, key, Number(flag(a, "timing")), by);
@@ -156,7 +158,7 @@ export async function phoneCli(argv: string[], cli: PhoneCli): Promise<void> {
           const r = await check(db, ctx.provider, n);
           cur = { ...n, texting: r.texting, registration: r.reg };
         }
-        const rows = steps(cur, ctx.business);
+        const rows = steps(cur, await businessOf(db), await optInPage(db, await ctx.links()), await flowSettings(db));
         return show({ texting: cur.texting, steps: rows, error: cur.registration.last_error ?? null }, () =>
           done(at, `texting ${cur.texting}`, { lines: [...rows.map((r) => `${r.label}: ${r.state}. ${r.says}${r.errors.length ? ` (${r.errors.join("; ")})` : ""}${r.where && r.state !== "done" ? ` In ${r.where}.` : ""}`), ...(cur.registration.last_error ? [`last error: ${cur.registration.last_error}`] : [])], next: cur.texting === "approved" ? "node scripts/phone.mjs flows" : "the owner registers in Twilio's Console with the words on Settings, Phone and texts, step 4 (Copy each); --check reads it back" }));
       }

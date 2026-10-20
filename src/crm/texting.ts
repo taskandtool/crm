@@ -3,12 +3,14 @@
 // makes a lead adds (its Call back task). Calls and texts are the phone
 // skill's (src/phone); this file only says what is the CRM's.
 //
-// Where links go: the Website's own address when it has the booking pages
-// (crm.config.json booking_page), else this CRM's production under /q,
-// once customers can open /q there (proposals/link.ts readyHere). Neither:
-// texts carry no link.
+// Where customers' pages are, for an email's link back to their form and
+// its unsubscribe link (texts carry none): the Website's own address when
+// it has the booking pages (crm.config.json booking_page), else this CRM's
+// production under /q, once customers can open /q there
+// (proposals/link.ts readyHere). Neither: the email says to reply instead.
 import type { Context } from "hono";
 import { cfg, invoicesCfg } from "../config";
+import { businessOf } from "../data/business";
 import type { Db } from "../data/db";
 import { envOf, type Env } from "../data/env";
 import { linkBase, linkReady, readyHere } from "../proposals/link";
@@ -18,13 +20,6 @@ import { mainNumber } from "../phone/store";
 import { twilioFrom, twilioReachable } from "../phone/twilio";
 import { todayIn } from "../reports/sql";
 import { addTask } from "./tasks";
-
-/** The business's name for texts, if crm.config.json gives one: phone.name, else the name on quotes. */
-const givenName = (): string | null => cfg.phone?.name?.trim() || invoicesCfg?.name || null;
-/** The name texts sign with, "us" when none is given. */
-export const textName = (): string => givenName() ?? "us";
-/** No name given yet: the setup page asks for one. */
-export const nameNeeded = (): boolean => !givenName();
 
 let known: { at: number; links: Links } | null = null;
 let unknownUntil = 0;
@@ -90,10 +85,10 @@ export async function jobCtx(db: Db, env: Env, production: () => Promise<Product
 }
 
 async function ctxFor(db: Db, env: Env, links: () => Promise<Links | null>): Promise<PhoneCtx> {
-  const n = await mainNumber(db).catch(() => null);
+  const [n, b] = await Promise.all([mainNumber(db).catch(() => null), businessOf(db)]);
   return {
-    db, env, provider: twilioReachable(env) ? twilioFrom(env) : null, business: textName(), unnamed: nameNeeded(), zone: cfg.time_zone,
-    links, reviewLink: cfg.phone?.review_link ?? null, address: cfg.phone?.address ?? null,
+    db, env, provider: twilioReachable(env) ? twilioFrom(env) : null, business: b.name ?? "us", unnamed: !b.name, zone: cfg.time_zone,
+    links, address: b.address,
     statusUrl: n?.hooks_url ? `${n.hooks_url}/status?n=${n.id}` : null,
   };
 }

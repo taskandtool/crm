@@ -14,10 +14,12 @@ import { COMPONENTS, PICKABLE } from "../src/proposals/components";
 import { afterAccepted, afterDeclined, onAcceptSentence, proposalDocument, type AnswerDeps } from "../src/proposals/sign";
 import { chosenKeys, ensureProposal, markEmailed, newLink, proposalOf, sampleWarning, saveProposal, storePage, type ProposalOpts } from "../src/proposals/store";
 import { printPdf } from "../src/pdf";
+import { business } from "../src/crm/business";
 import { cliSettings, done, fail, flag, has, misused, out } from "./lib";
 
 const settings = cliSettings("quotes");
-const opts: ProposalOpts = { business: invoicesCfg?.name ?? "", word: invoicesCfg?.word ?? "Quote", timeZone: cfg.time_zone };
+// The business's name as the command's database had it (lib.ts withDb loads it).
+const opts: ProposalOpts = { get business() { return business().name ?? ""; }, word: invoicesCfg?.word ?? "Quote", timeZone: cfg.time_zone };
 const deps: AnswerDeps = {
   opts,
   stripe: () => stripeFrom(settings.env),

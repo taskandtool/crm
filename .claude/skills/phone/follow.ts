@@ -1,7 +1,9 @@
 // What starts each automatic text, and what each says when it goes. The
-// starts: a missed call (hooks.ts), a submission and a booking (the apps'
-// form and booking hooks), and the job's scan for what time brings: a
-// draft left before booking, a visit coming up, a visit done (`scan`).
+// starts: a missed call (hooks.ts), a submission and a booking (the CRM's
+// own form and booking hooks), and the job's scan: the submissions and
+// bookings another app made (the Website's forms), a draft left before
+// booking, a visit coming up, a visit done (`scan`). The Website never
+// texts: it writes the rows, and the scan finds them.
 // Each start is a `schedule` (send.ts); `deliver` asks `render` here what
 // to say. Edge-safe, but `scan` and the job's sends are the CRM's.
 import type { Db } from "../data/db";
@@ -9,23 +11,14 @@ import { formatTime, localDate, addDays, wallToInstant } from "../booking/slots"
 import { bookableTypes as bookable, openSlotsFor, toType, type BookingType } from "../booking/book";
 import { stepsOf, type Field } from "../forms/fields";
 import { phoneKey } from "../customers/customer";
-import { flowOf, flowSettings, type Fill, type FillKey, type FlowSettings } from "./flows";
+import { flowOf, flowSettings, notQuiet, type Fill, type FlowSettings } from "./flows";
 import { communicationById, ownerOf } from "./store";
-import { bookingLink, deliver, draftLink, dueSends, mayText, schedule, sendById, shortLink, type Links, type PhoneCtx, type Rendered, type SendRow, type Slot } from "./send";
+import { deliver, draftLink, dueSends, mayText, schedule, sendById, type PhoneCtx, type Rendered, type SendRow, type Slot } from "./send";
 
 const firstName = (name: string | null | undefined) => {
   const n = (name ?? "").trim().split(/\s+/)[0];
   return n && !/^\+?\d/.test(n) ? n : null;
 };
-
-/** Whether a text's words (the owner's, or ours) use a fill-in, so it is only made when it is sent. */
-const uses = (s: FlowSettings, variant: string, key: FillKey) => (s.words[variant] ?? "").includes(`{${key}}`);
-
-/** The booking page, as a short link, when customers can open it and there is something to book. */
-async function bookPage(ctx: PhoneCtx): Promise<string | null> {
-  const links = await ctx.links();
-  return links && (await bookable(ctx.db)).length ? shortLink(ctx.db, links, `${links.prefix}/book`) : null;
-}
 
 /** Whether anyone is working now, by the team's hours. No hours set: never "closed". */
 export async function openNow(db: Db, now = new Date()): Promise<boolean> {
@@ -86,7 +79,6 @@ function whenText(t: Date, zone: string, now = new Date()): string {
 
 // ---- the starts ---------------------------------------------------------------
 
-/** A call nobody took: the missed-call text, now. */
 /**
  * A call nobody answered: its text, claimed now and sent once the call is
  * over (sendMissed, from the voicemail or the call's end), so it never
@@ -111,39 +103,30 @@ export async function sendMissed(ctx: PhoneCtx, callId: string): Promise<void> {
  * A form submission is complete: "Booked" for the booking its booking step
  * made (call it once that booking is confirmed: after confirmFormBooking, or
  * once paid), else "Thanks for reaching out" for a form that follows up.
- * `send: false` only schedules it, for an app that leaves sending to the
- * CRM's job (the Website).
+ * `send: false` only schedules it (the scan). Whether it scheduled one.
  */
-export async function onSubmitted(ctx: PhoneCtx, submissionId: string, o: { send?: boolean } = {}): Promise<void> {
+export async function onSubmitted(ctx: PhoneCtx, submissionId: string, o: { send?: boolean } = {}): Promise<boolean> {
   const [s] = await ctx.db.sql<{ form_key: string; phone: string | null; email: string | null }>`
     select form_key, phone, email::text as email from submissions where id = ${submissionId}::bigint`;
-  if (!s) return;
+  if (!s) return false;
   const form = await formBooking(ctx.db, s.form_key);
   if (form?.hasBooking) {
-    // Its manage link went in the confirmation email; the text says when.
     const [b] = await ctx.db.sql<{ id: string; phone: string | null; email: string | null }>`
       select id::text as id, phone, email::text as email from bookings where submission_id = ${submissionId}::bigint and status = 'confirmed' limit 1`;
-    if (b) await onBooked(ctx, { event: "booked", booking: b, manageUrl: null }, o);
-    return;
+    return b ? onBooked(ctx, { event: "booked", booking: b }, o) : false;
   }
-  if (!form?.follow_up) return;
+  if (!form?.follow_up) return false;
   const id = await schedule(ctx.db, { flow: "thanks", subjectType: "submission", subjectId: submissionId, phone: s.phone, email: s.email });
   if (id && o.send !== false) await deliverOne(ctx, id);
+  return !!id;
 }
 
-/** A booking made: "Booked", now, with the manage link it was just given. Moves and cancels are the booking emails' to say. `send` as onSubmitted's. */
-export async function onBooked(ctx: PhoneCtx, e: { event: string; booking: { id: string; phone: string | null; email: string | null }; manageUrl: string | null }, o: { send?: boolean } = {}): Promise<void> {
-  if (e.event !== "booked") return;
-  const links = e.manageUrl ? await ctx.links() : null;
-  const link = e.manageUrl && links ? await shortLinkFor(ctx.db, links, e.manageUrl) : null;
-  const id = await schedule(ctx.db, { flow: "booked", subjectType: "booking", subjectId: e.booking.id, phone: e.booking.phone, email: e.booking.email, link });
+/** A booking made: "Booked", now. Moves and cancels are the booking emails' to say (their manage link is there). `send` as onSubmitted's. */
+export async function onBooked(ctx: PhoneCtx, e: { event: string; booking: { id: string; phone: string | null; email: string | null } }, o: { send?: boolean } = {}): Promise<boolean> {
+  if (e.event !== "booked") return false;
+  const id = await schedule(ctx.db, { flow: "booked", subjectType: "booking", subjectId: e.booking.id, phone: e.booking.phone, email: e.booking.email });
   if (id && o.send !== false) await deliverOne(ctx, id);
-}
-
-/** A short link for a full URL on the links' own site; the long URL when it is on another. */
-async function shortLinkFor(db: Db, links: Links, url: string): Promise<string> {
-  const u = new URL(url);
-  return u.host === new URL(links.base).host ? shortLink(db, links, u.pathname + u.search) : url;
+  return !!id;
 }
 
 async function deliverOne(ctx: PhoneCtx, id: string): Promise<void> {
@@ -152,9 +135,10 @@ async function deliverOne(ctx: PhoneCtx, id: string): Promise<void> {
 }
 
 /**
- * What time brings, for the job every 15 minutes: drafts left before
- * booking (flow 3, and its next-morning nudge), visits coming up (5), visits
- * done (6). Each is scheduled once; then every due row goes. Only what
+ * What time brings, for the job every 15 minutes: submissions and bookings
+ * another app made in the last hour (flows 2 and 4: the Website's forms),
+ * drafts left before booking (flow 3, and its next-morning nudge), visits
+ * coming up (5), visits done (6). Each is scheduled once; then every due row goes. Only what
  * happened since texting or the flow could start is looked at: connecting
  * Twilio texts nobody about the past.
  */
@@ -169,6 +153,33 @@ export async function scan(ctx: PhoneCtx): Promise<{ scheduled: number; sent: nu
   // since it may have gone; it is marked failed so it shows, rather than sitting in "sending".
   await db.sql`update text_sends set status = 'failed', why = 'stopped partway: not tried again, as it may have gone', updated_at = now()
     where status = 'sending' and updated_at < now() - interval '10 minutes'`;
+
+  // What another app's form or booking page made, in the hour before at most: a CRM added later thanks nobody for
+  // last week. Each is one row (text_sends_once), so what the CRM's own pages already scheduled is left as it is.
+  const lastHour = (f: FlowSettings) => new Date(Math.max(now.getTime() - 3_600_000, f.enabledAt?.getTime() ?? 0)).toISOString();
+  // Found more than ten minutes after the person's own action, it is no longer an answer at night: it waits for 8am (send.ts ANSWERS).
+  const dueFor = (at: Date) => (now.getTime() - new Date(at).getTime() < 10 * 60_000 ? now : notQuiet(now, ctx.zone));
+  if (s.thanks.enabled) {
+    const subs = await db.sql<{ id: string; phone: string | null; email: string | null; completed_at: Date }>`
+      select s.id::text as id, s.phone, s.email::text as email, s.completed_at from submissions s join forms f on f.key = s.form_key
+      where to_jsonb(f)->>'follow_up' = 'true' and not f.fields @> '[{"type": "booking"}]'::jsonb
+        and s.completed_at > ${lastHour(s.thanks)}::timestamptz and s.completed_at <= ${now.toISOString()}::timestamptz and s.status <> 'spam'
+        and not exists (select 1 from text_sends t where t.flow = 'thanks' and t.subject_type = 'submission' and t.subject_id = s.id::text)
+      order by s.completed_at limit 100`;
+    for (const r of subs) {
+      if (await schedule(db, { flow: "thanks", subjectType: "submission", subjectId: r.id, phone: r.phone, email: r.email, dueAt: dueFor(r.completed_at) })) scheduled++;
+    }
+  }
+  if (s.booked.enabled) {
+    const books = await db.sql<{ id: string; phone: string | null; email: string | null; created_at: Date }>`
+      select b.id::text as id, b.phone, b.email::text as email, b.created_at from bookings b
+      where b.status = 'confirmed' and b.created_at > ${lastHour(s.booked)}::timestamptz and b.created_at <= ${now.toISOString()}::timestamptz
+        and not exists (select 1 from text_sends t where t.flow = 'booked' and t.subject_type = 'booking' and t.subject_id = b.id::text)
+      order by b.created_at limit 100`;
+    for (const b of books) {
+      if (await schedule(db, { flow: "booked", subjectType: "booking", subjectId: b.id, phone: b.phone, email: b.email, dueAt: dueFor(b.created_at) })) scheduled++;
+    }
+  }
 
   if (s.unbooked.enabled) {
     const wait = s.unbooked.timing ?? 10;
@@ -247,28 +258,19 @@ export async function render(ctx: PhoneCtx, row: SendRow, s: FlowSettings): Prom
         select 1 from text_sends where flow = 'missed_call' and remote_key = ${call.remote_key} and status in ('sent', 'sending') and updated_at > now() - interval '24 hours' and id <> ${row.id}::bigint limit 1`;
       if (recent) return { skip: "texted about a missed call in the last 24 hours" };
       const { contact } = await ownerOf(db, call.remote_key);
-      // One text to every caller, any hour; a booking link only when the owner's words ask for one.
-      const variant = "one";
-      const booking_link = uses(s, variant, "booking_link") ? await bookPage(ctx) : null;
+      // One text to every caller, any hour.
       return {
         to: { phone: call.remote_e164, email: null, name: contact?.name ?? null, contactId: contact?.id ?? null, consent: true },
-        variant, fill: { ...base, first_name: firstName(contact?.name), booking_link },
+        variant: "one", fill: { ...base, first_name: firstName(contact?.name) },
       };
     }
     case "thanks": {
       const [sub] = await db.sql<{ name: string | null; email: string | null; phone: string | null; text_consent: string | null }>`
         select name, email::text as email, phone, to_jsonb(s)->>'text_consent' as text_consent from submissions s where id = ${row.subject_id}::bigint`;
       if (!sub) return { skip: "the submission is gone" };
-      const links = uses(s, "one", "booking_link") ? await ctx.links() : null;
-      const types = links ? await bookable(db) : [];
-      // The link fills in who they are and joins the booking to the lead this submission made.
-      const [lead] = types.length === 1 ? await db.sql<{ id: string }>`select id::text as id from leads where submission_id = ${row.subject_id}::bigint and status = 'open'`.catch(() => []) : [];
-      const booking_link = types.length === 1 && links
-        ? await bookingLink(db, links, types[0].slug, { ...sub, leadId: lead?.id ?? null })
-        : types.length && links ? await shortLink(db, links, `${links.prefix}/book`) : null;
       return {
         to: { phone: sub.phone, email: sub.email, name: sub.name, contactId: null, consent: await mayText(db, sub.phone, !!sub.text_consent) },
-        variant: "one", fill: { ...base, first_name: firstName(sub.name), booking_link },
+        variant: "one", fill: { ...base, first_name: firstName(sub.name) },
       };
     }
     case "unbooked": {
@@ -293,7 +295,7 @@ export async function render(ctx: PhoneCtx, row: SendRow, s: FlowSettings): Prom
         }
       }
       const form = await formBooking(db, d.form_key);
-      // One link back to the form for all of this draft's texts: a new one would end the last one's.
+      // One link back to the form for all of this draft's emails (texts carry none): a new one would end the last one's.
       const [earlier] = await db.sql<{ link: string }>`
         select link from text_sends where flow = 'unbooked' and subject_type = 'draft' and subject_id = ${row.subject_id} and link is not null order by step limit 1`;
       const form_link = earlier?.link ?? (await ctx.links().then((l) => (l ? draftLink(db, l, d.id, d.form_key) : null)));
@@ -322,7 +324,7 @@ export async function render(ctx: PhoneCtx, row: SendRow, s: FlowSettings): Prom
       const fillIn: Fill = { ...base, first_name: firstName(b.name), service: b.type_name, host: firstName(b.host_name) };
       if (row.flow === "booked") {
         if (b.status !== "confirmed") return { skip: "the booking isn't confirmed" };
-        return { to: who, variant: "one", fill: { ...fillIn, time: visitTime(new Date(b.starts_at), zone), manage_link: row.link } };
+        return { to: who, variant: "one", fill: { ...fillIn, time: visitTime(new Date(b.starts_at), zone) } };
       }
       if (row.flow === "reminder") {
         const at = row.subject_id.split("@")[1];
@@ -332,8 +334,7 @@ export async function render(ctx: PhoneCtx, row: SendRow, s: FlowSettings): Prom
         return { to: who, variant: "one", fill: { ...fillIn, when: whenText(new Date(b.starts_at), zone, now) } };
       }
       if (b.status !== "completed") return { skip: "the visit wasn't marked done" };
-      const review_link = ctx.reviewLink ?? null;
-      return { to: who, variant: "one", fill: { ...fillIn, review_link } };
+      return { to: who, variant: "one", fill: fillIn };
     }
   }
 }
@@ -343,7 +344,7 @@ export async function exampleFill(ctx: PhoneCtx): Promise<Fill & { sample: boole
   const [c] = await ctx.db.sql<{ name: string }>`select name from customers where name ~ '^[A-Za-z]' order by created_at desc limit 1`;
   const now = new Date();
   const links = await ctx.links();
-  const link = links ? `${links.base}${links.prefix}/t/x7Kp2Q` : "https://example.com/t/x7Kp2Q";
+  const form_link = `${links ? `${links.base}${links.prefix}` : "https://example.com"}/forms/quote/next?k=x7Kp2Q`;
   const types = await bookable(ctx.db);
   const offer = types[0] ? await nextThree(ctx.db, types[0], ctx.zone, now).catch(() => []) : [];
   const tomorrow = new Date(now.getTime() + 86_400_000);
@@ -353,12 +354,12 @@ export async function exampleFill(ctx: PhoneCtx): Promise<Fill & { sample: boole
     first_name: firstName(c?.name) ?? "Natalie", business: ctx.business, service: types[0]?.name ?? "Furnace check",
     time: visitTime(tomorrow, ctx.zone), when: whenText(tomorrow, ctx.zone, now), host: firstName(host?.name) ?? "Dan",
     slot1: offer[0]?.label ?? "Tue 9am", slot2: offer[1]?.label ?? "Tue 1pm", slot3: offer[2]?.label ?? "Wed 10am",
-    booking_link: link, form_link: link, manage_link: link, review_link: ctx.reviewLink ?? link, number: null,
+    form_link, number: null,
     sample: !firstName(c?.name),
   };
 }
 
-/** The flow's own 30-day outcome, for its row: sent, and booked, replied or clicked. */
+/** The flow's own 30-day outcome, for its row: sent, and booked or replied. */
 export async function flowCounts(db: Db): Promise<Record<string, { sent: number; outcome: number }>> {
   const rows = await db.sql<{ flow: string; sent: number; booked: number; replied: number }>`
     select t.flow, count(*)::int as sent,

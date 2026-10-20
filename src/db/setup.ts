@@ -23,6 +23,7 @@ import { seedStages } from "../crm/stages";
 export type Seeds = { statuses: StageConfig[]; dealStages: StageConfig[]; fields?: CustomField[] };
 
 export const SCHEMA_FILE = fileURLToPath(new URL("../../schema.sql", import.meta.url));
+export const DATA_SCHEMA_FILE = fileURLToPath(new URL("../data/schema.sql", import.meta.url));
 export const CUSTOMERS_SCHEMA_FILE = fileURLToPath(new URL("../customers/schema.sql", import.meta.url));
 export const BOOKING_SCHEMA_FILE = fileURLToPath(new URL("../booking/schema.sql", import.meta.url));
 export const FORMS_SCHEMA_FILE = fileURLToPath(new URL("../forms/schema.sql", import.meta.url));
@@ -41,6 +42,8 @@ export async function setup(db: Db, seeds: Seeds, opts: SetupOpts = { invoices: 
       // A missing extension fails loudly in applySchema below, with its name.
     }
   }
+  // The business itself and the email opt-outs, which every app shares (the data skill).
+  await applySchema(db, readFileSync(DATA_SCHEMA_FILE, "utf8"));
   // The forms tables, so the Forms pages work before the Website has sent anything.
   if (opts.forms !== false) await applySchema(db, readFileSync(FORMS_SCHEMA_FILE, "utf8"));
   // Booking's tables first, always: the schedule's events are bookings, and schema.sql adds the CRM's columns to them.
@@ -71,6 +74,7 @@ type SetupOpts = { invoices?: boolean; forms?: boolean };
 /** The schema files setup applies for these options, hashed: what crm_setup records. */
 export function setupKey(opts: SetupOpts): string {
   const files: [string, string | false][] = [
+    ["data", DATA_SCHEMA_FILE],
     ["forms", opts.forms !== false && FORMS_SCHEMA_FILE],
     ["booking", BOOKING_SCHEMA_FILE],
     ["customers", CUSTOMERS_SCHEMA_FILE],

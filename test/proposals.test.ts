@@ -14,6 +14,7 @@ import { cfg, seeds } from "../src/config";
 import { todayIn } from "../src/invoices/document";
 import type { Db } from "../src/data/db";
 import { setup } from "../src/db/setup";
+import { saveBusiness } from "../src/data/business";
 import { invoiceById, invoicesFor } from "../src/invoices/invoices";
 import { quoteById } from "../src/invoices/quotes";
 import { markEmailed } from "../src/proposals/store";
@@ -43,6 +44,7 @@ before(async () => {
   s = r;
   db = r.db;
   await setup(db, seeds);
+  await saveBusiness(db, { name: "Acme Test Co" }, "ann@team.example");
   runtime = { open: () => ({ db }) };
   // Production is this app (its /q/ answers as proposals do); the owner's sender is Resend, faked.
   process.env.PROPOSAL_BASE_URL = HOST;

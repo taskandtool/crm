@@ -4,7 +4,7 @@
 // pass its own settings:
 //
 //   await quotesCli(process.argv.slice(2), {
-//     withDb, business: "Acme", currency: "usd", timeZone: "America/Denver", terms: null, daysUntilDue: 30,
+//     withDb, currency: "usd", timeZone: "America/Denver", terms: null, daysUntilDue: 30,
 //     source: "crm", env: machineEnv(), print: printPdf,
 //     person: (db, ref) => …,                       // <who>: the app's customers, by id, email or phone
 //     more: { help: "  bill <who> …", commands: { bill: async (db, a, rest, by) => … } },
@@ -14,6 +14,7 @@
 // it when the owner asked for that action; otherwise it shows the preview.
 import { cut } from "../admin/keyset";
 import { done, fail, flag, flags, has, limitOf, localTime, misused, noMore, out, parseArgs, usage, type Args } from "../data/cli.mjs";
+import { businessOf } from "../data/business";
 import type { Db } from "../data/db";
 import { sendEmail } from "../data/send";
 import { createHash } from "node:crypto";
@@ -45,8 +46,6 @@ export type Extra = (db: Db, a: Args, rest: string[], by: string) => Promise<voi
 export type InvoicesCli = {
   /** Opens the project's database (set up first) for the length of the command. */
   withDb: <T>(fn: (db: Db) => Promise<T>) => Promise<T>;
-  /** The name on quotes; "" leaves it off. */
-  business: string;
   currency: string;
   timeZone: string;
   terms?: string | null;
@@ -192,7 +191,8 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
   const limit = cmd === "list" ? limitOf(a, at) : 50;
   const json = has(a, "json");
   const W = cli.word ?? "Quote", word = W.toLowerCase();
-  const doc = { business: cli.business, timeZone: cli.timeZone, word: W };
+  // The name on quotes is the project's (data/business.ts), read once the database is open.
+  const doc = { business: "", timeZone: cli.timeZone, word: W };
   const local = (d: Date | string) => localTime(d, cli.timeZone);
   const fmt = (r: Quote) =>
     [`#${r.id}`, r.number, `[${shownStatus(r, todayIn(cli.timeZone))}]`, r.name ? `${r.name} <${r.email}>` : r.email, money(r.total_cents, r.currency),
@@ -203,6 +203,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
   };
 
   await cli.withDb(async (db) => {
+    doc.business = (await businessOf(db)).name ?? "";
     const by = actor(a);
     const extra = cli.more?.commands[cmd];
     if (extra) return extra(db, a, rest, by);
@@ -598,7 +599,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         }
         const stripe = stripeOr(cli.env, at);
         const r = cmd === "charge" ? await chargeInvoice(db, stripe, inv.id, by)
-          : await emailPaymentPage(db, stripe, inv.id, { send: (mail) => sendEmail(cli.env, mail), business: cli.business, replyTo: by.includes("@") ? by : null });
+          : await emailPaymentPage(db, stripe, inv.id, { send: (mail) => sendEmail(cli.env, mail), business: (await businessOf(db)).name ?? "", replyTo: by.includes("@") ? by : null });
         if (!r.ok) fail(`${at}: ${r.message}`, cmd === "charge" ? `node scripts/invoices.mjs email-page ${inv.id}` : `node scripts/invoices.mjs show ${inv.id}`);
         if (json) return out(true, { done: cmd }, String);
         return done(at, cmd === "charge" ? `charged ${cardName(card!)} for invoice #${inv.id}` : `emailed ${inv.email} the payment page`, {

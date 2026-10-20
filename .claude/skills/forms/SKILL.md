@@ -11,7 +11,7 @@ paid appointment with questions are each a form, named for what it takes
 (`order`, `intake`), and "my orders" is that form's submissions. A new
 form or a new question is a change to a row, never a migration.
 
-Version: 0.7.0 (taskandtool/skills)
+Version: 0.8.0 (taskandtool/skills)
 
 ## The rules
 
@@ -38,6 +38,11 @@ Version: 0.7.0 (taskandtool/skills)
   where they came from (`data._utm`, the referrer's host in `data._referrer`).
 - **Marketing needs a `consent` field**, unticked; `data._consent` keeps
   the exact words agreed to. A contact form is not permission to market.
+- **The texting box** shows under the phone field of a form with "Follow
+  up automatically" on, and on the booking page, once the business has a
+  number and a name: pass `textConsent: (c) => textingBox(getDb(c),
+  "request")` (`consent.ts`). What was ticked is kept word for word in
+  `text_consent`. Never write the box's words yourself.
 - **A photo field stores `/_files/<id>`**; open one at
   `localhost:<port>/_files/<id>`.
 - **A form's `notify_emails` hear of each submission** (`team: true`
@@ -84,6 +89,7 @@ field type with its settings.
 | `price.ts`, `linked.ts` | what a submission costs; its booking and payment, for showing |
 | `admin.tsx` | `formsAdmin(getDb, { base, css, timeZone, nav?, Frame?, links? })`: the submissions list (Open, Archived, Spam) with each one's booking, payment and the person's notes, so it needs the `booking`, `payments` and `customers` skills' code beside it; `formEditor(getDb, { base, css, timeZone, source, submissions })`: the forms, the editor, CSV, not finished, for an app that lets the team set forms up (the CRM) |
 | `files.ts` | `devFiles()`: `/_files` on the dev server (`src/server.ts`) |
+| `consent.ts` | `textingBox`, `consentWords`: the texting box's words, from the business (`data/business.ts`) |
 | `origin.ts`, `cart.js`, `cli.ts` | where the visitor came from; the cart; `formsCli` for `scripts/forms.mjs` |
 | `test/` | validation, rendering, steps, items, routes and admin on a scratch database |
 | `references/setup.md` | when an app takes its first form, wires steps, or sets up the owner's email |

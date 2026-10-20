@@ -302,7 +302,7 @@ test("the pages: a GET asks, the POST sends; Record payment, part of it; from a 
     const went: string[] = [];
     const app = new Hono();
     app.route("/invoices", invoicesAdmin(() => s.db, {
-      base: "/invoices", css: "/site.css", source: "crm", timeZone: "UTC", business: "Acme", stripe: () => f.stripe,
+      base: "/invoices", css: "/site.css", source: "crm", timeZone: "UTC", stripe: () => f.stripe,
       send: async () => ({ status: "none", why: "test" }),
       afterSend: async (_c, doc) => void went.push(`${doc.kind} ${doc.email}`),
     }));
@@ -356,7 +356,7 @@ test("the pages: a GET asks, the POST sends; Record payment, part of it; from a 
     // A Stripe refusal comes back on the page, as Stripe said it.
     const refusing: Stripe = async () => { throw new StripeError("This API key cannot void invoices", 403); };
     const app2 = new Hono();
-    app2.route("/invoices", invoicesAdmin(() => s.db, { base: "/invoices", css: "/x.css", source: "crm", timeZone: "UTC", business: "", stripe: () => refusing }));
+    app2.route("/invoices", invoicesAdmin(() => s.db, { base: "/invoices", css: "/x.css", source: "crm", timeZone: "UTC", stripe: () => refusing }));
     // An open invoice with nothing paid on it, so Void is asked of Stripe.
     const [{ fresh }] = await s.db.sql`insert into invoices (email, currency, status, stripe_invoice_id, sent_at, total_cents) values ('ann@example.com', 'usd', 'open', 'in_refuse', now(), 500) returning id::text as fresh`;
     res = await app2.request(HOST + `/invoices/${fresh}/void`, { method: "POST", headers });

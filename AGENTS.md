@@ -48,6 +48,7 @@ node scripts/deals.mjs add ann@example.com "New furnace" --value 6500   # a deal
 node scripts/events.mjs list                    # what is scheduled; done, no-show, cancel, update --amount
 node scripts/stages.mjs list                    # deal stages (--statuses: a customer's); rename, add, archive --move-to
 node scripts/forms.mjs submissions --form order # a form's submissions with their booking and payment; list, show, save
+node scripts/business.mjs show                  # the business's name, privacy and terms pages and address, as texts, quotes and forms print them; set --name
 node scripts/phone.mjs status                   # the business number, texting, each automatic text on or off; flows, set, threads, send
 node scripts/quotes.mjs proposal 7 --components about,reviews,team   # the components it has
 node scripts/quotes.mjs send 7                  # prints the email; --confirm sends it with its link

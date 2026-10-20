@@ -25,11 +25,10 @@ export const seeds = { statuses: cfg.statuses, dealStages: cfg.deals.stages, fie
 export const eventsCfg = cfg.events ? { ...cfg.events, currency: cfg.events.currency ?? "USD" } : null;
 /** Online booking: the Services customers book. Only with the schedule on. */
 export const showBooking = !!eventsCfg && cfg.booking !== false;
-/** Quotes and invoices, or null when the config turns them off. The name is blank until the business has given it. */
+/** Quotes and invoices, or null when the config turns them off. The name on them is the business's (Settings, Business). */
 export const invoicesCfg = cfg.invoices
   ? {
       ...cfg.invoices,
-      name: cfg.invoices.name === "to fill" ? "" : cfg.invoices.name.trim(),
       currency: (cfg.invoices.currency ?? eventsCfg?.currency ?? "USD").toLowerCase(),
       /** What a quote is called on every page, email and proposal. */
       word: cfg.invoices.quote_word ?? "Quote",

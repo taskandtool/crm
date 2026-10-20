@@ -91,8 +91,7 @@ The sidebar layout of Catalyst and Tailwind Plus, with what a CRM adds
 (HubSpot's and Pipedrive's search and Create):
 
 - **The sidebar** (240px, on the canvas), top to bottom: the business name
-  (`invoices.name` from `crm.config.json` once it is filled in, else
-  "CRM"); **search**, which finds every kind of record (contacts, leads,
+  (Settings, Business, once it is set, else "CRM"); **search**, which finds every kind of record (contacts, leads,
   deals, quotes, invoices), a few of each under the box as you type and the
   whole page on Enter, with `/` to focus it from any page; **New**, a menu
   of everything that can be made (customer, deal, task, event, quote,

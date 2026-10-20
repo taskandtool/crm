@@ -7,7 +7,6 @@ import { invoicesCli, quotesCli, recurringCli } from "../cli";
 
 const [which, ...argv] = process.argv.slice(2);
 await (which === "quotes" ? quotesCli : which === "recurring" ? recurringCli : invoicesCli)(argv, {
-  business: "Acme",
   currency: "usd",
   timeZone: "UTC",
   source: "test",

@@ -14,7 +14,7 @@ the project database reads the same rows: the Website's `/book` pages
 take bookings, the CRM sets types, hosts and hours and lists the bookings
 by email.
 
-Version: 0.8.0 (taskandtool/skills)
+Version: 0.8.1 (taskandtool/skills)
 
 ## The rules
 

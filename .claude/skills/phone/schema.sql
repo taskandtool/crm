@@ -1,7 +1,7 @@
 -- The phone skill's tables: the business's numbers, every text and call on
--- them, the automatic texts' changes and sends, and the links those texts
--- carry. Additive only (data/migrate.ts). Applied after the customers,
--- booking and forms skills' tables, whose columns it adds to.
+-- them, and the automatic texts' changes and sends. Additive only
+-- (data/migrate.ts). Applied after the data, customers, booking and forms
+-- skills' tables, whose columns it adds to.
 
 -- A number the business owns on its own Twilio account. The first is the
 -- business number; more can be added for a van or an ad, each with a label,
@@ -89,8 +89,8 @@ create table if not exists text_flows (
 -- submission, a booking). `channel` is text or email. `due_at` is when it
 -- may go (quiet hours move it); a row still `due` is waiting. `offer` is
 -- the times a "Stopped before booking" text offered (a reply of 1, 2 or 3
--- books one); `link` a short link made when it was scheduled (a booking's
--- manage link exists only then).
+-- books one); `link` the link back to their form a "Stopped before
+-- booking" email carries, made once for all of that draft's emails.
 create table if not exists text_sends (
   id               bigserial primary key,
   flow             text not null,
@@ -113,30 +113,6 @@ create unique index if not exists text_sends_once on text_sends (flow, step, sub
 create index if not exists text_sends_due on text_sends (due_at) where status = 'due';
 create index if not exists text_sends_number on text_sends (remote_key, created_at desc);
 
--- A link a text carries that knows who it is for: a booking page with their
--- name, phone and email filled in, joined to their lead. Only the hash is
--- kept; it lasts 30 days.
-create table if not exists link_keys (
-  hash             text primary key,
-  kind             text not null check (kind in ('booking')),
-  ref              text not null,
-  data             jsonb not null default '{}'::jsonb,
-  expires_at       timestamptz not null,
-  created_at       timestamptz not null default now()
-);
-
--- A short link on the business's own address, so a text stays one text:
--- /t/<code> (the Website) or /q/t/<code> (the CRM) redirects to `url`, a
--- path on the same site. The code is 8 letters and is itself the key: who
--- holds it opens what it points to, as with the long link. It lasts 30 days.
-create table if not exists short_links (
-  code             text primary key,
-  url              text not null,
-  clicks           integer not null default 0,
-  expires_at       timestamptz not null,
-  created_at       timestamptz not null default now()
-);
-
 -- When each person last had Messages open: the owner's cell is told of a
 -- new text only when nobody has for ten minutes.
 create table if not exists messages_seen (
@@ -152,19 +128,6 @@ alter table phone_numbers add column if not exists owner_replied_at timestamptz;
 
 -- When the owner last turned a flow on: what came before is never texted about.
 alter table text_flows add column if not exists enabled_at timestamptz;
-
--- The follow-up emails a person unsubscribed from (the review request and the
--- nudge to finish booking, which CAN-SPAM counts as commercial), and the keys
--- their emails' unsubscribe links carry (hashed; the key is only in the email).
-create table if not exists email_optouts (
-  email            citext primary key,
-  at               timestamptz not null default now()
-);
-create table if not exists unsubscribe_keys (
-  hash             text primary key,
-  email            citext not null,
-  created_at       timestamptz not null default now()
-);
 
 -- What kind of line a number is, asked of Twilio Lookup once (about a cent)
 -- before its first automatic text: a landline can't get one, so it gets the

@@ -19,14 +19,18 @@
 // (PENDING_REVIEW, IN_REVIEW, TWILIO_APPROVED, TWILIO_REJECTED).
 //
 // The words are ours (docs/plans/crm-calls-and-texts-messages.md, "For the
-// texting registration").
+// texting registration"). The name and the privacy and terms pages are the
+// business's, set once (data/business.ts), and the texting box on the
+// forms says the same (forms/consent.ts): reviewers check one against the
+// other on the live form the words name (`optInPage`).
+import type { Business } from "../data/business";
 import type { Db } from "../data/db";
-import { consentWords, fill, keywordReplies, WORDS, MEASURE } from "./flows";
+import { consentWords } from "../forms/consent";
+import { stepsOf, type Field } from "../forms/fields";
+import { fill, keywordReplies, MEASURE, type FlowKey, type FlowSettings } from "./flows";
+import type { Links } from "./send";
 import { saveRegistration, type PhoneNumber, type Registration } from "./store";
 import { TwilioError, type Provider } from "./twilio";
-
-/** The owner's own pages, which carriers want named and the texting box links. */
-export type RegistrationInput = { privacyUrl?: string | null; termsUrl?: string | null };
 
 export type Step = {
   key: "profile" | "brand" | "campaign" | "toll_free"; label: string; state: "done" | "waiting" | "failed" | "todo"; says: string; errors: string[];
@@ -40,14 +44,57 @@ const TOLL_FREE = /^\+18(00|33|44|55|66|77|88)\d{7}$/;
 /** A toll-free number is verified; any other US number is registered for 10DLC. */
 export const routeOf = (e164: string): "local" | "toll_free" => (TOLL_FREE.test(e164) ? "toll_free" : "local");
 
-/** The registration's words: what the business texts, how people agree, samples, and the keyword replies. */
-export function registrationWords(business: string, number: string, pages: RegistrationInput = {}) {
-  const sample = (flow: keyof typeof WORDS, v: string) => fill(WORDS[flow][v], { ...MEASURE, business });
+/**
+ * A public page with the texting box, for reviewers to open: the page on
+ * the customers' site a customer last sent a following-up form from
+ * (`submissions.page`), else a following-up form's own page
+ * (`/forms/<key>/start`), else the booking page. Null while customers
+ * can't open the pages, or none shows the box.
+ */
+export async function optInPage(db: Db, links: Links | null): Promise<string | null> {
+  if (!links) return null;
+  // A page is a path on the site that took it: the Website's ("website"), or the CRM's /q ("crm").
+  const [used] = await db.sql<{ page: string }>`
+    select s.page from submissions s join forms f on f.key = s.form_key
+    where f.active and to_jsonb(f)->>'follow_up' = 'true' and s.page like '/%' and s.status <> 'spam'
+      and s.source = ${links.prefix ? "crm" : "website"}
+    order by s.created_at desc limit 1`.catch(() => []);
+  if (used) return `${links.base}${used.page}`;
+  const forms = await db.sql<{ key: string; fields: Field[] }>`
+    select key, fields from forms f where active and to_jsonb(f)->>'follow_up' = 'true' order by id`.catch(() => []);
+  const own = forms.find((f) => stepsOf(f.fields ?? []).length);
+  if (own) return `${links.base}${links.prefix}/forms/${own.key}/start`;
+  const [t] = await db.sql`select 1 from booking_types where active limit 1`.catch(() => []);
+  return t ? `${links.base}${links.prefix}/book` : null;
+}
+
+const LINK = /\bhttps?:\/\/\S|\bwww\.\S|\b[a-z0-9-]+\.(com|net|org|co|us|io|biz|info|link|me)\b/i;
+const PHONE = /\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/;
+
+/**
+ * The registration's words: what the business texts, how people agree (at
+ * `optIn`, the page reviewers open), samples, whether texts carry links or
+ * phone numbers, and the keyword replies. The samples and those two answers
+ * are the texts as they are now (`settings`: the owner's words, on flows
+ * that are on), since carriers turn down a campaign whose answers its
+ * samples don't show (Twilio 30889): a text with a link, or a number, is
+ * one of the samples.
+ */
+export function registrationWords(business: string, number: string, pages: Pick<Business, "privacyUrl" | "termsUrl">, optIn: string | null, settings: Record<FlowKey, FlowSettings>) {
+  const filled = (words: string) => fill(words, { ...MEASURE, business });
+  const texts = (Object.entries(settings) as [FlowKey, FlowSettings][]).filter(([, s]) => s.enabled).flatMap(([, s]) => Object.values(s.words)).map(filled);
+  const withLink = texts.find((t) => LINK.test(t));
+  const withPhone = texts.find((t) => PHONE.test(t));
+  const samples = [filled(settings.missed_call.words.one), filled(settings.booked.words.one), filled(settings.reminder.words.one)];
+  // A campaign takes up to five: a text with what the three don't show joins them.
+  for (const [t, re] of [[withPhone, PHONE], [withLink, LINK]] as const) if (t && !samples.some((s) => re.test(s))) samples.push(t);
   const keywords = keywordReplies(business, number);
   return {
     description: `${business} texts customers who contact us, call us or book with us: replies to their requests, booking confirmations, reminders the day before a visit and a thank-you after it. No marketing.`,
-    messageFlow: `Customers give their number on our website forms and booking page, with a box (unticked by default, never required) that reads: '${consentWords(business, "request", pages)}' Callers who call our number get one reply to their call, and a confirmation and reminder for a visit booked on that call. Customers can also text our number first.`,
-    samples: [sample("missed_call", "one"), sample("booked", "one"), sample("reminder", "one")],
+    messageFlow: `Customers give their number on our website forms and booking page${optIn ? ` (for example ${optIn})` : ""}, with a box (unticked by default, never required) that reads: '${consentWords(business, "request", pages)}' Callers who call our number get one reply to their call, and a confirmation and reminder for a visit booked on that call. Customers can also text our number first.`,
+    samples,
+    links: !!withLink,
+    phones: !!withPhone,
     keywords,
   };
 }
@@ -56,14 +103,9 @@ const errorsOf = (r: any): string[] =>
   Array.isArray(r?.errors) && r.errors.length ? r.errors.map((e: any) => (typeof e === "string" ? e : e?.description ?? e?.message ?? JSON.stringify(e))).slice(0, 5)
   : r?.failure_reason ? [String(r.failure_reason)] : [];
 
-/**
- * Read where the registration is, as Twilio has it now, and keep it. Safe to
- * call any time. `input`: the owner's privacy and terms pages, kept for the
- * texting box and the words to paste.
- */
-export async function check(db: Db, tw: Provider, n: PhoneNumber, input?: RegistrationInput): Promise<{ texting: PhoneNumber["texting"]; reg: Registration }> {
+/** Read where the registration is, as Twilio has it now, and keep it. Safe to call any time. */
+export async function check(db: Db, tw: Provider, n: PhoneNumber): Promise<{ texting: PhoneNumber["texting"]; reg: Registration }> {
   const reg: Registration = { ...(n.registration ?? {}), route: routeOf(n.e164) };
-  if (input) reg.input = { ...reg.input, ...input };
   delete reg.last_error;
   let texting: PhoneNumber["texting"] = n.texting;
   try {
@@ -128,13 +170,14 @@ async function tollFree(tw: Provider, n: PhoneNumber, reg: Registration): Promis
 }
 
 /** The rows the setup page shows: each step's state in a sentence, where in Twilio's Console, and the words to paste. */
-export function steps(n: PhoneNumber, business: string): Step[] {
+export function steps(n: PhoneNumber, business: Business, optIn: string | null, settings: Record<FlowKey, FlowSettings>): Step[] {
   const r = n.registration ?? {};
   const err = (x?: { errors?: string[] }) => x?.errors ?? [];
-  const w = registrationWords(business, n.e164, r.input ?? {});
+  const w = registrationWords(business.name ?? "us", n.e164, business, optIn, settings);
   const pages = [
-    ...(r.input?.privacyUrl ? [{ field: "Privacy policy URL", words: r.input.privacyUrl }] : []),
-    ...(r.input?.termsUrl ? [{ field: "Terms and conditions URL", words: r.input.termsUrl }] : []),
+    ...(optIn ? [{ field: "Opt-in page (where customers tick the box)", words: optIn }] : []),
+    ...(business.privacyUrl ? [{ field: "Privacy policy URL", words: business.privacyUrl }] : []),
+    ...(business.termsUrl ? [{ field: "Terms and conditions URL", words: business.termsUrl }] : []),
   ];
   if (routeOf(n.e164) === "toll_free") {
     const s = r.toll_free?.status;
@@ -183,11 +226,10 @@ export function steps(n: PhoneNumber, business: string): Step[] {
       paste: approved ? undefined : [
         { field: "Campaign use case", words: "Mixed" },
         { field: "Campaign description", words: w.description },
-        { field: "Sample message 1", words: w.samples[0] },
-        { field: "Sample message 2", words: w.samples[1] },
-        { field: "Sample message 3", words: w.samples[2] },
+        ...w.samples.map((words, i) => ({ field: `Sample message ${i + 1}`, words })),
         { field: "How do end-users consent to receive messages?", words: w.messageFlow },
-        { field: "Messages will include embedded links / phone numbers", words: "Yes, both" },
+        { field: "Messages will include embedded links", words: w.links ? "Yes" : "No" },
+        { field: "Messages will include phone numbers", words: w.phones ? "Yes" : "No" },
         { field: "Opt-in message", words: w.keywords.start },
         { field: "Opt-out message", words: w.keywords.stop },
         { field: "Help message", words: w.keywords.help },

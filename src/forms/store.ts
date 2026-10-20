@@ -130,7 +130,7 @@ export async function startDraft(
   return toDraft(row);
 }
 
-/** The draft a key opens: the visitor's own, or the second key a text carried back to it (the phone skill's draftLink). */
+/** The draft a key opens: the visitor's own, or the second key an email carried back to it (the phone skill's draftLink). */
 export async function draftByKey(db: Db, formKey: string, keyHash: string): Promise<Draft | null> {
   const [row] = await db.sql`
     select * from submission_drafts where (key_hash = ${keyHash} or text_key_hash = ${keyHash}) and form_key = ${formKey}

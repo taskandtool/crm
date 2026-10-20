@@ -43,15 +43,21 @@ Everything a business wants changed is one of these.
    - `booking_page`: the Website's booking address (`https://acme.com/book`),
      once it has one, so the email for a booking the team makes carries a
      link to manage it there.
-   - `invoices`: `{ "name": "Acme Plumbing", "currency": "USD", "terms":
-     "...", "days_until_due": 14 }`: the business name printed on quotes,
-     the currency, a new quote's standing terms, a new invoice's days to
-     pay. `false` leaves quotes and invoices out. It ships with the name
-     `to fill`; ask for the real one before the first quote goes out.
+   - `invoices`: `{ "currency": "USD", "terms": "...", "days_until_due":
+     14 }`: the currency, a new quote's standing terms, a new invoice's
+     days to pay. `false` leaves quotes and invoices out.
    - `business`: one line about the business. It ships as `to fill`;
      writing the real line retires the "Shape the CRM" suggestion.
 
    After a change: `npm run check` (dev restarts on save).
+
+   The business's name, its privacy and terms pages and its postal
+   address are not in the file: they are one row every app shares, which
+   texts, quotes, invoices, the texting box on the forms and the follow-up
+   emails all print. Set them with
+   `node scripts/business.mjs set --name "Acme Plumbing" --privacy <url>`
+   (the owner sees them in Settings, Business); ask for the real name
+   before the first quote or text goes out.
 
 2. **Statuses and deal stages are rows**, in `pipeline_stages` and
    `deal_stages`, edited on `/stages` or with `node scripts/stages.mjs`

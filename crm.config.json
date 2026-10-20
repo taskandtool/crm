@@ -35,7 +35,6 @@
   },
   "booking": true,
   "invoices": {
-    "name": "to fill",
     "currency": "USD"
   }
 }
