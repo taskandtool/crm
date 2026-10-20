@@ -11,7 +11,7 @@ import { check, optInPage, steps } from "../registration";
 import { onBooked, onSubmitted, scan } from "../follow";
 import { fillEmail, sendText, type PhoneCtx } from "../send";
 import { addNumber, optedOut, record, setHooks, thread, toE164 } from "../store";
-import { TwilioError, type Hooks, type Provider } from "../twilio";
+import { TwilioError, twilioConnected, twilioFrom, type Hooks, type Provider } from "../twilio";
 import { unhook } from "../setup";
 import { emailOptedOut, unsubscribeLink, unsubscribeRoutes } from "../../data/unsubscribe";
 import { saveBusiness } from "../../data/business";
@@ -656,3 +656,70 @@ test("the registration names the page a customer last ticked the box on, else a 
     assert.equal(await optInPage(s.db, { base: "https://crm.example", prefix: "/q" }), "https://crm.example/q/forms/quote/start", "the Website's page is not on the CRM's site");
     assert.equal(await optInPage(s.db, null), null, "no page customers can open: none to name");
   }));
+
+// The real client, with fetch stubbed: every path names the Account SID the owner gave, and none reads Accounts.json,
+// which a Standard API key may not.
+const SID = "AC" + "0123456789abcdef".repeat(2);
+const KEY = "SK" + "fedcba9876543210".repeat(2) + ":secret";
+
+function stubFetch(answer: (url: URL) => unknown = () => ({})) {
+  const seen: { url: URL; auth: string | null }[] = [];
+  const doFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    seen.push({ url, auth: new Headers(init?.headers).get("Authorization") });
+    return new Response(JSON.stringify(answer(url)), { status: 200, headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+  return { seen, doFetch };
+}
+
+test("with the key bound (production's Worker), a text goes to the given account with the key, and nothing lists accounts", async () => {
+  const f = stubFetch(() => ({ sid: "SM1", status: "queued" }));
+  const tw = twilioFrom({ TWILIO_API_KEY: KEY, TWILIO_ACCOUNT_SID: SID }, f.doFetch);
+  assert.deepEqual(await tw.sendText({ from: "+15125550100", to: "+15125559999", body: "Hi" }), { id: "SM1", status: "queued" });
+  assert.equal(f.seen.length, 1);
+  assert.equal(f.seen[0].url.href, `https://api.twilio.com/2010-04-01/Accounts/${SID}/Messages.json`);
+  assert.equal(f.seen[0].auth, `Basic ${btoa(KEY)}`);
+});
+
+test("through the gateway (the machine), the Account SID is the connection's account in list-connections, read once", async () => {
+  const f = stubFetch((url) =>
+    url.pathname === "/api/machine/connections"
+      ? { connections: [{ slug: "twilio", provider: "twilio", service: "api", account: SID }, { kind: "secret", env_name: "X" }] }
+      : { incoming_phone_numbers: [{ sid: "PN1", phone_number: "+15125550100", friendly_name: "Main" }] },
+  );
+  const tw = twilioFrom({ PHOENIX_URL: "https://tt.example", MACHINE_TOKEN: "mt" }, f.doFetch);
+  assert.deepEqual((await tw.ownedNumbers()).map((n) => n.id), ["PN1"]);
+  await tw.ownedNumbers();
+  assert.deepEqual(f.seen.map((x) => x.url.pathname), [
+    "/api/machine/connections",
+    `/api/machine/gateway/twilio/2010-04-01/Accounts/${SID}/IncomingPhoneNumbers.json`,
+    `/api/machine/gateway/twilio/2010-04-01/Accounts/${SID}/IncomingPhoneNumbers.json`,
+  ]);
+  assert.ok(f.seen.every((x) => x.auth === "Bearer mt"));
+});
+
+test("a connection with no Account SID says to connect Twilio again, and does not count as connected", async () => {
+  const f = stubFetch();
+  await assert.rejects(twilioFrom({ TWILIO_API_KEY: KEY }, f.doFetch).sendText({ from: "+1", to: "+2", body: "x" }), /connect Twilio again, with its Account SID/);
+  assert.equal(f.seen.length, 0, "nothing reached Twilio");
+  assert.equal(await twilioConnected({ TWILIO_API_KEY: KEY }, f.doFetch), false);
+});
+
+test("owned numbers follow Twilio's next pages; the account summary leaves out what a Standard key may not read", async () => {
+  const pages: Record<string, unknown> = {
+    [`/2010-04-01/Accounts/${SID}/IncomingPhoneNumbers.json`]: {
+      incoming_phone_numbers: [{ sid: "PN1", phone_number: "+15125550100" }],
+      next_page_uri: `/2010-04-01/Accounts/${SID}/IncomingPhoneNumbers.json?Page=1&PageSize=100&PageToken=PAx`,
+    },
+  };
+  const doFetch = (async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith(`/Accounts/${SID}.json`)) return new Response(JSON.stringify({ code: 20003 }), { status: 401 });
+    if (url.pathname.endsWith("/Balance.json")) return new Response(JSON.stringify({ balance: "12.50", currency: "USD" }));
+    const body = url.searchParams.get("PageToken") ? { incoming_phone_numbers: [{ sid: "PN2", phone_number: "+15125550101" }], next_page_uri: null } : pages[url.pathname];
+    return new Response(JSON.stringify(body));
+  }) as typeof fetch;
+  const tw = twilioFrom({ TWILIO_API_KEY: KEY, TWILIO_ACCOUNT_SID: SID }, doFetch);
+  assert.deepEqual((await tw.ownedNumbers()).map((n) => n.id), ["PN1", "PN2"]);
+  assert.deepEqual(await tw.account(), { sid: SID, name: null, balance: "12.50", currency: "USD", trial: null });
+});

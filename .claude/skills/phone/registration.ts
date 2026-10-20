@@ -100,7 +100,7 @@ export function registrationWords(business: string, number: string, pages: Pick<
 }
 
 const errorsOf = (r: any): string[] =>
-  Array.isArray(r?.errors) && r.errors.length ? r.errors.map((e: any) => (typeof e === "string" ? e : e?.description ?? e?.message ?? JSON.stringify(e))).slice(0, 5)
+  Array.isArray(r?.errors) && r.errors.length ? r.errors.map((e: any) => (typeof e === "string" ? e : e?.description ?? e?.message ?? (e?.code ? `Twilio error ${e.code}` : JSON.stringify(e)))).slice(0, 5)
   : r?.failure_reason ? [String(r.failure_reason)] : [];
 
 /** Read where the registration is, as Twilio has it now, and keep it. Safe to call any time. */
@@ -149,7 +149,7 @@ async function local(tw: Provider, n: PhoneNumber, reg: Registration): Promise<P
   }
 
   if (reg.campaign?.status === "VERIFIED") return "approved";
-  if (reg.profile.status === "twilio-rejected" || reg.brand?.status === "FAILED" || reg.campaign?.status === "FAILED") return "failed";
+  if (reg.profile.status === "twilio-rejected" || reg.brand?.status === "FAILED" || reg.brand?.status === "SUSPENDED" || reg.campaign?.status === "FAILED") return "failed";
   if (reg.brand || reg.campaign || reg.profile.status === "in-review" || reg.profile.status === "pending-review") return "pending";
   return "none";
 }
@@ -213,8 +213,8 @@ export function steps(n: PhoneNumber, business: Business, optIn: string | null, 
     },
     {
       key: "brand", label: "2. Brand",
-      state: b === "APPROVED" ? "done" : b === "FAILED" ? "failed" : b ? "waiting" : "todo",
-      says: b === "APPROVED" ? "Approved." : b === "FAILED" ? "Twilio turned it down: fix what it says in the Console." : b ? "Twilio is checking your brand. Usually minutes, sometimes a week." : "Low-Volume Standard suits most small businesses (under 6,000 texts a day); Standard costs more and allows more.",
+      state: b === "APPROVED" ? "done" : b === "FAILED" || b === "SUSPENDED" ? "failed" : b ? "waiting" : "todo",
+      says: b === "APPROVED" ? "Approved." : b === "FAILED" ? "Twilio turned it down: fix what it says in the Console." : b === "SUSPENDED" ? "Twilio suspended it: see why in the Console." : b ? "Twilio is checking your brand. Usually minutes, sometimes a week." : "Low-Volume Standard suits most small businesses (under 6,000 texts a day); Standard costs more and allows more.",
       where: "Twilio Console: Messaging, Regulatory Compliance, Onboarding (Register Brand)",
       errors: err(r.brand),
     },

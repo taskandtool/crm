@@ -108,7 +108,8 @@ export function phoneSettings(getDb: GetDb, opts: PhoneAdminOptions) {
           {name}
           <SetupNeeded title="Connect Twilio for a business number" ask="Connect my Twilio account so customers can call and text my business number.">
             Customers call and text one number. It rings your phone, a missed call gets a text back, and replies land in Messages. Twilio bills you
-            directly, about $1.15 a month for the number and under a cent a text. Connect Twilio to this app in Task &amp; Tool, on the app's Connections tab.
+            directly, about $1.15 a month for the number and under a cent a text. Connect Twilio to this app in Task &amp; Tool, on the app's Connections tab,
+            with the Account SID and an API key from Twilio's Console. For a client of yours, use their own subaccount.
           </SetupNeeded>
           <FlowList base={base} settings={settings} counts={counts} texting={false} />
         </div>
@@ -124,7 +125,7 @@ export function phoneSettings(getDb: GetDb, opts: PhoneAdminOptions) {
         {name}
         <Section title="1. Twilio account">
           <p>
-            Connected{account ? <>: <strong>{account.name}</strong>{account.balance ? <>, balance {account.currency === "USD" ? "$" : ""}{Number(account.balance).toFixed(2)}{account.currency && account.currency !== "USD" ? ` ${account.currency}` : ""}</> : null}</> : "."}
+            Connected{account ? <>: <strong>{account.name ?? account.sid}</strong>{account.balance ? <>, balance {account.currency === "USD" ? "$" : ""}{Number(account.balance).toFixed(2)}{account.currency && account.currency !== "USD" ? ` ${account.currency}` : ""}</> : null}</> : "."}
             {account?.trial ? " A trial account rings and texts only the numbers you verify in Twilio." : null}
           </p>
           {account?.balance && Number(account.balance) < 5 ? <p class="mt-2 font-semibold">Your Twilio balance is low. Calls and texts stop when it runs out.</p> : null}

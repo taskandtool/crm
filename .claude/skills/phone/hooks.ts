@@ -343,13 +343,14 @@ export function phoneHooks(getDb: GetDb, opts: HookOpts) {
       // A reply has no address: the team adds it, as for a booking taken by phone.
       addressOptional: true,
       textConsent: "Replied to a text to book",
+      now: ctx.now?.(),
     });
     if (r.ok) {
       await onBooked(ctx, { event: "booked", booking: r.booking });
       return true;
     }
     if (r.reason !== "taken" || offered.step >= 3) return false;
-    const offer = await nextThree(db, type, ctx.zone);
+    const offer = await nextThree(db, type, ctx.zone, ctx.now?.());
     const sendId = await schedule(db, { flow: "unbooked", step: 3, subjectType: "draft", subjectId: d.id, phone: remote, email: d.email });
     if (!sendId || offer.length < 3) return false;
     const row = await sendById(db, sendId);

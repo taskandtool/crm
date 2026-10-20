@@ -8,13 +8,16 @@
 //
 // Where the key is, as for Stripe (payments/stripe.ts):
 // - Bound to this app (delivery `edge` or `machine`): `TWILIO_API_KEY` holds
-//   "ACxxx:auth_token" or "SKxxx:secret", and calls go straight to Twilio.
-//   This is the only way edge code reaches Twilio, so the connection is asked
-//   for with `--delivery edge`: the missed-call text goes from the call's own
-//   webhook, which production's Worker answers.
-// - Otherwise (`brokered`) through the gateway, on the machine only.
-// Twilio's paths carry the account's SID; an API key's SID is not it, so the
-// account is read once (`/2010-04-01/Accounts.json`) and kept.
+//   "SKxxx:secret" (an API key; a Standard one is enough) or
+//   "ACxxx:auth_token", with `TWILIO_ACCOUNT_SID` beside it, and calls go
+//   straight to Twilio. This is the only way edge code reaches Twilio, so the
+//   connection is asked for with `--delivery edge`: the missed-call text goes
+//   from the call's own webhook, which production's Worker answers.
+// - Otherwise through the gateway, on the machine only, the Account SID read
+//   from the connection's account in list-connections.
+// Every Twilio path names the account. The owner gives its SID when they
+// connect Twilio (an agency's client: that client's subaccount), because a
+// Standard key cannot read the Accounts resource to find it.
 //
 // Twilio has three hosts the CRM uses: api (numbers, texts, calls,
 // recordings), messaging (messaging services, campaigns, toll-free
@@ -23,7 +26,7 @@
 //
 // Edge-safe: fetch and btoa only.
 import { keyName, setting, type Env } from "../data/env";
-import { gatewayFetch } from "../data/gateway";
+import { gatewayFetch, listConnections } from "../data/gateway";
 import { prettyPhone } from "./store";
 
 export type Host = "api" | "messaging" | "trusthub" | "lookups";
@@ -103,7 +106,8 @@ export type AvailableNumber = { e164: string; pretty: string; locality: string |
 export type OwnedNumber = { id: string; e164: string; pretty: string; label: string | null };
 export type SentText = { id: string; status: string };
 export type Hooks = { voice: string; sms: string; status: string; fallback?: string | null };
-export type Account = { sid: string; name: string; balance: string | null; currency: string | null; trial: boolean };
+/** What the setup page says about the account. A Standard API key may not read the account itself, so name and trial can be unknown. */
+export type Account = { sid: string; name: string | null; balance: string | null; currency: string | null; trial: boolean | null };
 
 export type Provider = {
   account(): Promise<Account>;
@@ -122,18 +126,29 @@ export type Provider = {
 /** A recording's id as Twilio writes one (RE and 32 hex): it becomes a path on Twilio's API, so nothing else is kept or fetched. */
 export const isRecordingSid = (v: unknown): v is string => typeof v === "string" && /^RE[0-9a-f]{32}$/.test(v);
 
-/** The owner's Twilio as a Provider. The account SID is read once per caller. */
+const ACCOUNT_SID = /^AC[0-9a-f]{32}$/;
+
+/**
+ * The account every Twilio path names: `TWILIO_ACCOUNT_SID` beside a bound
+ * key, else the connection's account in Task & Tool's list (the machine,
+ * through the gateway).
+ */
+async function accountSidOf(env: Env, fetchImpl: typeof fetch): Promise<string> {
+  const bound = setting(env, keyName("twilio").replace(/_API_KEY$/, "_ACCOUNT_SID"));
+  if (bound && ACCOUNT_SID.test(bound)) return bound;
+  if (!setting(env, keyName("twilio"))) {
+    const c = (await listConnections(env, fetchImpl)).find((x) => x.slug === HOSTS.api.slug);
+    if (c?.account && ACCOUNT_SID.test(c.account)) return c.account;
+  }
+  throw new TwilioError("The Twilio connection names no Account SID. Ask the owner to connect Twilio again, with its Account SID.", 409);
+}
+
+/** The owner's Twilio as a Provider. The account SID is found once per caller. */
 export function twilioFrom(env: Env, fetchImpl: typeof fetch = fetch): Provider {
   const call = twilioCall(env, fetchImpl);
   let sid: Promise<string> | null = null;
   const accountSid = () =>
-    (sid ??= call<{ accounts: { sid: string; status: string; owner_account_sid: string }[] }>("GET", "api", "/2010-04-01/Accounts.json", { PageSize: 20 }).then((r) => {
-      // A main account's key lists its subaccounts too: the account is the one that owns itself.
-      const active = r.accounts.filter((x) => x.status === "active");
-      const a = active.find((x) => x.sid === x.owner_account_sid) ?? active[0] ?? r.accounts[0];
-      if (!a) throw new TwilioError("This Twilio key reaches no account.", 404);
-      return a.sid;
-    }).catch((e) => {
+    (sid ??= accountSidOf(env, fetchImpl).catch((e) => {
       sid = null;
       throw e;
     }));
@@ -148,11 +163,12 @@ export function twilioFrom(env: Env, fetchImpl: typeof fetch = fetch): Provider 
     call,
     async account() {
       const s = await accountSid();
+      // Each may be refused: a Standard key cannot read the account itself, and a subaccount has no balance of its own.
       const [a, bal] = await Promise.all([
-        call("GET", "api", `/2010-04-01/Accounts/${s}.json`),
+        call<{ friendly_name: string; type: string }>("GET", "api", `/2010-04-01/Accounts/${s}.json`).catch(() => null),
         call<{ balance: string; currency: string }>("GET", "api", `/2010-04-01/Accounts/${s}/Balance.json`).catch(() => null),
       ]);
-      return { sid: s, name: a.friendly_name, balance: bal?.balance ?? null, currency: bal?.currency ?? null, trial: a.type === "Trial" };
+      return { sid: s, name: a?.friendly_name ?? null, balance: bal?.balance ?? null, currency: bal?.currency ?? null, trial: a ? a.type === "Trial" : null };
     },
     async searchNumbers(q) {
       const kind = q.tollFree ? "TollFree" : "Local";
@@ -162,8 +178,14 @@ export function twilioFrom(env: Env, fetchImpl: typeof fetch = fetch): Provider 
       return (r.available_phone_numbers ?? []).map((n: any) => ({ e164: n.phone_number, pretty: prettyPhone(n.phone_number), locality: n.locality || null, region: n.region || null }));
     },
     async ownedNumbers() {
-      const r = await call("GET", "api", await acct("/IncomingPhoneNumbers.json"), { PageSize: 100 });
-      return (r.incoming_phone_numbers ?? []).map(owned);
+      // Every page: Twilio's next_page_uri is the path of the next one.
+      const all: OwnedNumber[] = [];
+      let r = await call("GET", "api", await acct("/IncomingPhoneNumbers.json"), { PageSize: 100 });
+      for (let pages = 0; ; pages++) {
+        all.push(...(r.incoming_phone_numbers ?? []).map(owned));
+        if (!r.next_page_uri || pages >= 20) return all;
+        r = await call("GET", "api", r.next_page_uri);
+      }
     },
     async buyNumber(e164, hooks, label) {
       return owned(await call("POST", "api", await acct("/IncomingPhoneNumbers.json"), { PhoneNumber: e164, FriendlyName: label, ...hookParams(hooks) }));
@@ -196,8 +218,8 @@ export function twilioFrom(env: Env, fetchImpl: typeof fetch = fetch): Provider 
 let reach: { at: number; ok: boolean } | null = null;
 
 /**
- * Whether this app reaches the owner's Twilio, asked (the account list, the
- * cheapest call) and kept five minutes, a no half a minute, so the setup
+ * Whether this app reaches the owner's Twilio, asked (one of the account's
+ * numbers, the cheapest call a Standard key may make) and kept five minutes, a no half a minute, so the setup
  * page turns over soon after the owner connects. Null when Twilio could not
  * be asked in 3 seconds: a page should neither claim it missing nor wait.
  */
@@ -207,10 +229,10 @@ export async function twilioConnected(env: Env, fetchImpl: typeof fetch = fetch)
   if (twilioReachable(env)) {
     try {
       const quick: typeof fetch = (url, init) => fetchImpl(url, { ...init, signal: AbortSignal.timeout(3000) });
-      await twilioCall(env, quick)("GET", "api", "/2010-04-01/Accounts.json", { PageSize: 1 });
+      await twilioCall(env, quick)("GET", "api", `/2010-04-01/Accounts/${await accountSidOf(env, quick)}/IncomingPhoneNumbers.json`, { PageSize: 1 });
       ok = true;
     } catch (e) {
-      if (!(e instanceof TwilioError) || (!e.refusal && e.status !== 401 && e.status !== 403 && e.status !== 404)) return null;
+      if (!(e instanceof TwilioError) || (!e.refusal && ![401, 403, 404, 409].includes(e.status))) return null;
     }
   }
   reach = { at: Date.now(), ok };

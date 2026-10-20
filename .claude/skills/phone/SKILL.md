@@ -17,11 +17,11 @@ Version: 0.2.0 (taskandtool/skills)
 - **Twilio is a connection, asked for with `--delivery edge`**:
   `python3 ~/tools/taskandtool.py request-connection twilio --why "A business number: calls ring your phone, missed calls get a text" --auth api_key --delivery edge`.
   The missed-call text goes from the call's own webhook, which production's
-  Worker answers, so the key must reach the edge. The key is the Account
-  SID and Auth Token, or a Main API key (SK…:secret, made in Twilio's
-  Console as type Main). A Standard API key fails: it cannot read the
-  account (`/Accounts.json`), which saving the connection and `twilio.ts`
-  both do.
+  Worker answers, so the key must reach the edge. The owner gives the
+  Account SID and an API key made in that account (a Standard key is
+  enough); for an agency's client, the client's own subaccount. The SID
+  arrives beside the key (`TWILIO_ACCOUNT_SID`) and as the connection's
+  account in `list-connections`; `twilio.ts` reads it there.
 - **Twilio's webhooks come through the inbound route**
   (`inbound-url /hooks/twilio`), never a public path; each number's hook
   addresses carry its own secret, which `hooks.ts` checks.
