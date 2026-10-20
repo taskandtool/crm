@@ -238,9 +238,8 @@ export async function autoDeals(db: Db): Promise<number> {
 const CLAIM_LEFT = "l.status = 'converted' and l.deal_id is null and l.updated_at < now() - interval '5 minutes'";
 const AUTO_FORMS = {
   forms_join: "left join submissions s on s.id = l.submission_id left join forms f on f.key = s.form_key",
-  // By name from the row: a forms table an older app made, without these yet, reads as off.
-  forms_deal: "or coalesce((to_jsonb(f) ->> 'deals')::boolean, false)",
-  form_stage: "to_jsonb(f) ->> 'deal_stage'",
+  forms_deal: "or coalesce(f.deals, false)",
+  form_stage: "f.deal_stage",
   claim_left: CLAIM_LEFT,
 };
 const NO_FORMS = { forms_join: "", forms_deal: "", form_stage: "null::text", claim_left: CLAIM_LEFT };

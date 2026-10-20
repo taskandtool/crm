@@ -342,8 +342,8 @@ const { sql: everyoneSql } = spliced({ sub_is: isCustomer("s"), booking_is: isCu
 /**
  * Everyone already in the project's tables who is not a customer yet, saved
  * through the customers skill's savePerson, the way the forms and booking
- * skills save each person as they arrive: what came in before they did, or
- * through an app on an older copy of them. Every submission (not spam),
+ * skills save each person as they arrive: what came in before they did.
+ * Every submission (not spam),
  * booking and payment is looked at, none left for later. Run by setup at
  * start and deploy, never per request. Returns how many it saved.
  */

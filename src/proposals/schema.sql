@@ -1,8 +1,6 @@
 -- Proposals: a quote (the invoices skill's `quotes`) as a page the customer
 -- reads at a private link and accepts by typing their name. Applied with
--- applySchema after the invoices skill's schema, every start and deploy:
--- additive only, no semicolons inside a statement, no double hyphens inside
--- a string.
+-- applySchema after the invoices skill's schema, every start and deploy.
 
 -- On a quote: the components ticked for it, by their key in
 -- src/proposals/components/index.ts. A component's design and words are its
@@ -13,15 +11,13 @@ create table if not exists quote_components (
   primary key (quote_id, key)
 );
 
--- One per quote: its title, what happens when they sign, its page as one
+-- One per quote: its title, its page as one
 -- self-contained file (re-made on every save), its link (only the SHA-256
 -- of the token is kept), when the link was last emailed, the follow-up
 -- task, and a decline's reason.
 create table if not exists quote_proposals (
   quote_id         bigint primary key,
   title            text,
-  first_invoice    text not null default 'none' check (first_invoice in ('none', 'draft', 'send')),
-  deposit_percent  integer check (deposit_percent between 1 and 100),
   page_html        text,
   page_sha256      text,
   rendered_at      timestamptz,

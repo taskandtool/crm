@@ -84,6 +84,19 @@ test("quotes and invoices, end to end short of sending", { skip: !process.env.TE
     assert.equal(r.status, 1);
     assert.equal(r.stderr, "quotes show: no quote 999\n  Try: node scripts/quotes.mjs list\n");
 
+    // On the quote before its yes: the owner's own deposit, the quote's customer only; --quote "" takes it off.
+    r = i("add", "bob@example.com", "--quote", id, "--line", "Deposit|100");
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /^invoices add: quote #\d+ is for ann@example\.com; an invoice on it is too/);
+    r = i("add", "ann@example.com", "--quote", id, "--line", "Deposit|100");
+    assert.equal(r.status, 0, r.stderr);
+    const dep = /#(\d+)/.exec(r.stdout)![1];
+    assert.match(r.stdout, new RegExp(`^invoices add: drafted #${dep} .*\\$100\\.00.*, on quote #${id}: sent to pay when they say yes\\n\\nNext: node scripts/quotes\\.mjs show ${id}\\n$`));
+    r = i("edit", dep, "--quote", "");
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal((await t.db.sql`select quote_id from invoices where id = ${dep}::bigint`)[0].quote_id, null);
+    assert.equal(i("discard", dep).status, 0);
+
     r = i("from-quote", id);
     assert.equal(r.status, 1, "a quote not accepted is refused");
     assert.match(r.stderr, /^invoices from-quote: quote #\d+ is not accepted.*\n {2}Try: node scripts\/quotes\.mjs accept/);

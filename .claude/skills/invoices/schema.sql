@@ -1,6 +1,5 @@
 -- invoices: quotes the team sends, and invoices the owner's Stripe account
--- sends and collects. Additive only (data/SKILL.md): run with applySchema from
--- setup or start.
+-- sends and collects. Run with applySchema from setup or start.
 --
 -- A document names its customer as given (email the key; name, phone and
 -- address copied in, so a quote reads as it was sent). Money is minor units of
@@ -32,17 +31,17 @@ create table if not exists quotes (
   created_by citext,
   updated_by citext,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  -- The CRM deal a quote is for, as visit_id names its appointment.
+  deal_id bigint,
+  -- When the customer first opened it, set by the app that serves its page (the CRM's proposal link).
+  viewed_at timestamptz
 );
 create unique index if not exists quotes_number on quotes (number);
 create index if not exists quotes_email on quotes (email, created_at desc);
 create index if not exists quotes_visit on quotes (visit_id);
--- The CRM deal a quote is for, as visit_id names its appointment.
-alter table quotes add column if not exists deal_id bigint;
 create index if not exists quotes_deal on quotes (deal_id) where deal_id is not null;
 create index if not exists quotes_recent on quotes (created_at desc, id desc);
--- When the customer first opened it, set by the app that serves its page (the CRM's proposal link).
-alter table quotes add column if not exists viewed_at timestamptz;
 
 -- amount_cents is quantity x unit_cents, rounded; tax_cents the tax on it
 -- (inside it when the rate is inclusive). Both are computed by the insert.
@@ -91,7 +90,14 @@ create table if not exists invoices (
   created_by citext,
   updated_by citext,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  -- How a sent invoice is collected: Stripe emails it to be paid (email), or
+  -- charges the customer's card on file (charge). Set when it is sent, so a
+  -- send that stopped part way finishes the same way.
+  collect text not null default 'email' check (collect in ('email', 'charge')),
+  -- An invoice a recurring invoice made: which one, and the period (its date) it bills. One per period.
+  recurring_id bigint,
+  period_on date
 );
 create unique index if not exists invoices_stripe on invoices (stripe_invoice_id);
 create index if not exists invoices_email on invoices (email, created_at desc);
@@ -118,16 +124,11 @@ create table if not exists stripe_customers (
   livemode boolean not null,
   stripe_customer_id text not null,
   created_at timestamptz not null default now(),
+  -- The card the CRM charges for this customer: their first saved card, or the one a person chose.
+  default_card text,
   primary key (email, livemode)
 );
 
--- How a sent invoice is collected: Stripe emails it to be paid (email), or
--- charges the customer's card on file (charge). Set when it is sent, so a
--- send that stopped part way finishes the same way.
-alter table invoices add column if not exists collect text not null default 'email' check (collect in ('email', 'charge'));
--- An invoice a recurring invoice made: which one, and the period (its date) it bills. One per period.
-alter table invoices add column if not exists recurring_id bigint;
-alter table invoices add column if not exists period_on date;
 create unique index if not exists invoices_period on invoices (recurring_id, period_on) where recurring_id is not null;
 
 -- A recurring invoice: lines that become an ordinary invoice on each date,
@@ -205,8 +206,6 @@ create table if not exists stripe_cards (
   detached_at timestamptz
 );
 create index if not exists stripe_cards_customer on stripe_cards (stripe_customer_id) where detached_at is null;
--- The card the CRM charges for this customer: their first saved card, or the one a person chose.
-alter table stripe_customers add column if not exists default_card text;
 
 comment on table quotes is 'Quotes the team sends through the owner''s own sender (invoices skill). Editable until accepted or declined. Status moves forward only.';
 comment on table invoices is 'Invoices made, sent and collected by the owner''s Stripe account (invoices skill). Past draft, status changes only from verified Stripe webhooks.';

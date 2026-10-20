@@ -399,10 +399,10 @@ test("a quote is edited until it is decided, sent or not; an invoice is never ma
     assert.equal((await quoteById(s.db, q.value.id))!.lines[0].unit_cents, 12000, "the lines it was accepted with");
   }));
 
-test("invoices from a quote: a deposit carries each rate's share, the rest bills what is left, a second click makes nothing", (t) =>
+test("invoices on a quote: the owner's own deposit goes on it before the yes, the rest bills what is left, a second click makes nothing", (t) =>
   withDb(t, async (s) => {
     const { createQuote, decideQuote } = await import("../quotes");
-    const { invoiceFromQuote, invoiceById } = await import("../invoices");
+    const { attachableDrafts, attachInvoice, createInvoice, invoiceFromQuote, invoiceById } = await import("../invoices");
     const rate = await createTaxRate(s.db, { name: "Sales tax", percent: "10", inclusive: false }, BY);
     assert.ok(rate.ok);
     const q = await createQuote(s.db, { email: "ann@example.com", currency: "usd", lines: [
@@ -410,19 +410,27 @@ test("invoices from a quote: a deposit carries each rate's share, the rest bills
       { description: "Design", quantity: "2", unit: "250.00" },
     ] }, BY, "crm");
     assert.ok(q.ok);
+
+    // A deposit the owner wrote, in their own lines: on the quote while it waits; someone else's draft never is.
+    const mk = async (email: string, lines: { description: string; unit: string; tax_rate_id?: string }[]) => {
+      const r = await createInvoice(s.db, { email, currency: "usd", lines }, BY, "crm");
+      assert.ok(r.ok);
+      return r.value.id;
+    };
+    const dep = await mk("ann@example.com", [{ description: "Deposit, fence", unit: "500.00", tax_rate_id: rate.value.id }, { description: "Deposit, design", unit: "250.00" }]);
+    const bob = await mk("bob@example.com", [{ description: "Other", unit: "10" }]);
+    assert.deepEqual((await attachableDrafts(s.db, "ann@example.com")).map((i) => i.id), [dep]);
+    assert.equal(await attachInvoice(s.db, bob, q.value.id, BY), false, "another customer's draft");
+    assert.equal(await attachInvoice(s.db, dep, q.value.id, BY), true);
+    assert.deepEqual(await attachableDrafts(s.db, "ann@example.com"), [], "on a quote now");
+    assert.equal(await attachInvoice(s.db, dep, null, BY), true, "taken off");
+    assert.equal(await attachInvoice(s.db, dep, q.value.id, BY), true, "and on again");
+    assert.equal((await invoiceById(s.db, dep))!.total_cents, "80000");
+
     await decideQuote(s.db, q.value.id, "accepted", BY);
-
-    const dep = await invoiceFromQuote(s.db, q.value.id, BY, "crm", 30, { share: { kind: "percent", percent: 50 }, seen: 0 });
-    assert.ok(dep.ok, JSON.stringify(dep));
-    const d = (await invoiceById(s.db, dep.value.id))!;
-    assert.deepEqual(d.lines.map((l) => [l.description, l.amount_cents, l.tax_cents]), [
-      [`Deposit (50%) for ${q.value.number} (Sales tax)`, "50000", "5000"],
-      [`Deposit (50%) for ${q.value.number} (no tax)`, "25000", "0"],
-    ]);
-    assert.deepEqual([d.subtotal_cents, d.tax_cents, d.total_cents], ["75000", "5000", "80000"], "half the quote's 1,600 with half its tax");
-
-    const again = await invoiceFromQuote(s.db, q.value.id, BY, "crm", 30, { share: { kind: "percent", percent: 50 }, seen: 0 });
-    assert.deepEqual(again, { ok: false, reason: "invoiced", invoiceId: dep.value.id }, "the page saw none; one exists now");
+    assert.equal(await attachInvoice(s.db, dep, null, BY), false, "once they said yes, it stays the quote's");
+    const again = await invoiceFromQuote(s.db, q.value.id, BY, "crm", 30, { share: { kind: "rest" }, seen: 0 });
+    assert.deepEqual(again, { ok: false, reason: "invoiced", invoiceId: dep }, "the page saw none; one exists");
 
     const rest = await invoiceFromQuote(s.db, q.value.id, BY, "crm", 30, { share: { kind: "rest" }, seen: 1 });
     assert.ok(rest.ok);

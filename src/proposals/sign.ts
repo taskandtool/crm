@@ -3,32 +3,31 @@
 // Signing records the typed name, the email the link went to, the time,
 // where from, and the page exactly as signed, and accepts the quote, in one
 // transaction, only if the page they read is still the current one. Then
-// its deal is won, and "After they sign" runs: the first invoice, as a
-// draft or sent through Stripe, which never holds up the signature. A
+// its deal is won, the lead becomes a customer, and what the owner attached
+// to the quote goes: each invoice sent through Stripe to pay, each recurring
+// invoice started (afterAccepted), which never holds up the signature. A
 // confirmation goes to the signer with their copy's link.
 //
-// A decline names its reason; the quote is declined and its deal lost with it.
-// Mark accepted on the team's page runs the same "After they sign"
-// (afterAccepted), so a yes by phone reaches the same invoices. "Then,
-// recurring" is a recurring invoice waiting on the quote (pending): the yes
-// starts it, and a no ends it.
+// A decline names its reason; the quote is declined, its deal lost with it,
+// its invoices discarded and its recurring invoices ended. Mark accepted on
+// the team's page runs the same afterAccepted, so a yes by phone sends the
+// same invoices.
 import { q, type Db } from "../data/db";
 import type { Email, Sent } from "../data/send";
 import type { Stripe } from "../payments/stripe";
 import { formatMoney } from "../payments/money";
-import { taxRates } from "../payments/tax";
 import { addTask } from "../crm/tasks";
 import { findMatch } from "../crm/customers";
 import { customerWon, setDealStage, winFromQuotes } from "../crm/deals";
 import { todayIn } from "../invoices/document";
-import { invoiceFromQuote, invoicesFor } from "../invoices/invoices";
+import { discardInvoice, invoicesFor } from "../invoices/invoices";
 import { isEditable, ONLINE, quoteById, type Quote } from "../invoices/quotes";
 import { sendInvoice } from "../invoices/stripe";
-import { describe, endForQuote, recurringList, startFromQuote, type Made } from "../invoices/recurring";
+import { describe, endForQuote, startFromQuote, type Made } from "../invoices/recurring";
 import { recurringTask } from "../crm/recurring";
 import { tokenHash } from "../data/token";
 import { fillPage } from "./page";
-import { afterSign, pageFor, proposalOf, storePage, type ProposalOpts } from "./store";
+import { afterSign, attachedTo, pageFor, proposalOf, storePage, type ProposalOpts } from "./store";
 
 export type AnswerDeps = {
   opts: ProposalOpts;
@@ -52,17 +51,16 @@ async function taskFor(db: Db, qt: Quote, title: string, deps: AnswerDeps): Prom
 }
 
 /**
- * "After they sign", for an accepted quote: a lead becomes a customer; the
- * first invoice it names, made once (a repeat finds it and makes nothing),
- * and sent through Stripe when that was chosen; then its recurring invoice
- * starts, if it has one. A Stripe failure leaves the draft and a task naming
- * the error, as does a draft made at an online signing.
+ * What a yes does: a lead becomes a customer, each draft invoice on the quote
+ * is sent through Stripe to pay (a repeat finds none left to send), and each
+ * recurring invoice waiting on it starts. A Stripe failure leaves the draft
+ * and a task naming the error.
  */
 export async function afterAccepted(db: Db, qt: Quote, by: string, deps: AnswerDeps): Promise<Accepted> {
   if (qt.status !== "accepted") return { lines: [] };
   const customer = await findMatch(db, qt.email, qt.phone);
   if (customer) await db.transaction([customerWon(customer.id, by)]);
-  const first = await firstInvoice(db, qt, by, deps);
+  const first = await sendAttached(db, qt, by, deps);
   const started = await startFromQuote(db, qt.id, {
     today: todayIn(deps.opts.timeZone), timeZone: deps.opts.timeZone, stripe: deps.stripe, task: recurringTask(db), by,
   });
@@ -80,42 +78,36 @@ const FIRST: Record<Made["outcome"], (why?: string) => string> = {
   failed: (why) => `Its first invoice did not go through (${why}); there is a task for it.`,
 };
 
-/** The customer said no: the recurring invoice waiting on the quote never starts. */
-export const afterDeclined = (db: Db, qt: Quote, by: string) => endForQuote(db, qt.id, by);
+/** The customer said no: the drafts on the quote are discarded, and its recurring invoices never start. */
+export async function afterDeclined(db: Db, qt: Quote, by: string): Promise<void> {
+  for (const i of (await attachedTo(db, qt.id)).invoices) if (i.status === "draft") await discardInvoice(db, i.id, by);
+  await endForQuote(db, qt.id, by);
+}
 
-async function firstInvoice(db: Db, qt: Quote, by: string, deps: AnswerDeps): Promise<Accepted> {
-  const p = await proposalOf(db, qt.id);
-  if (!p || p.first_invoice === "none") return { lines: [] };
-  const share = p.deposit_percent ? { kind: "percent" as const, percent: p.deposit_percent } : { kind: "all" as const };
-  const made = await invoiceFromQuote(db, qt.id, by, "crm", deps.daysUntilDue, { share, seen: 0 });
-  if (!made.ok) {
-    if (made.reason === "invoiced") return { lines: [] };
-    const problem = `Make the first invoice for ${qt.name ?? qt.email} (${qt.number}) by hand: it was not made (${made.reason}).`;
-    await taskFor(db, qt, problem, deps);
-    return { lines: [problem] };
+// Each draft on the quote, sent through Stripe to pay; a refusal or Stripe not connected is a task.
+async function sendAttached(db: Db, qt: Quote, by: string, deps: AnswerDeps): Promise<Accepted> {
+  const drafts = (await attachedTo(db, qt.id)).invoices.filter((i) => i.status === "draft");
+  const lines: string[] = [];
+  for (const inv of drafts) {
+    const what = `invoice for ${formatMoney(inv.total_cents, inv.currency)}`;
+    let stripe: Stripe;
+    try {
+      stripe = deps.stripe();
+    } catch {
+      const problem = `The ${what} for ${qt.name ?? qt.email} (${qt.number}) is a draft: Stripe is not connected, so it was not sent. Connect Stripe, then send it.`;
+      await taskFor(db, qt, problem, deps);
+      lines.push(problem);
+      continue;
+    }
+    const sent = await sendInvoice(db, stripe, inv.id, by, { timeZone: deps.opts.timeZone });
+    if (sent.ok) lines.push(`sent the ${what} through Stripe`);
+    else {
+      const problem = `Send the ${what} for ${qt.name ?? qt.email} (${qt.number}): Stripe said ${sent.message}`;
+      await taskFor(db, qt, problem, deps);
+      lines.push(problem);
+    }
   }
-  const inv = made.value;
-  const what = `${p.deposit_percent ? `deposit invoice (${p.deposit_percent}%)` : "invoice"} for ${formatMoney(inv.total_cents, inv.currency)}`;
-  if (p.first_invoice === "draft") {
-    // Signed online, nobody is looking: a task says it waits.
-    if (by === ONLINE.accepted) await taskFor(db, qt, `Check and send the ${what} for ${qt.name ?? qt.email} (${qt.number}): they signed, and it is a draft`, deps);
-    return { lines: [`drafted the ${what}, to review and send`] };
-  }
-  let stripe: Stripe;
-  try {
-    stripe = deps.stripe();
-  } catch {
-    const problem = `The ${what} for ${qt.name ?? qt.email} (${qt.number}) is a draft: Stripe is not connected, so it was not sent. Connect Stripe, then send it.`;
-    await taskFor(db, qt, problem, deps);
-    return { lines: [problem] };
-  }
-  const sent = await sendInvoice(db, stripe, inv.id, by, { timeZone: deps.opts.timeZone });
-  if (!sent.ok) {
-    const problem = `Send the ${what} for ${qt.name ?? qt.email} (${qt.number}): Stripe said ${sent.message}`;
-    await taskFor(db, qt, problem, deps);
-    return { lines: [problem] };
-  }
-  return { lines: [`sent the ${what} through Stripe`] };
+  return { lines };
 }
 
 /** A signed quote's page as the customer keeps it: the signature drawn in, the invoices with where they stand. */
@@ -271,8 +263,7 @@ export async function proposalDocument(db: Db, qt: Quote, opts: ProposalOpts): P
 
 /** What accepting it does, for the team, in a sentence (Mark accepted's page). */
 export async function onAcceptSentence(db: Db, qt: Quote): Promise<string | null> {
-  const [p, full, recurring] = await Promise.all([proposalOf(db, qt.id), quoteById(db, qt.id), recurringList(db, { quoteId: qt.id })]);
-  const waiting = recurring.filter((r) => r.status === "pending");
-  if (!p || !full || (p.first_invoice === "none" && !waiting.length)) return null;
-  return afterSign(p, full, await taxRates(db), undefined, waiting).team.replace(/^When they sign: /, "Accepting it does this too: ");
+  const attached = await attachedTo(db, qt.id);
+  if (!attached.recurring.length && !attached.invoices.some((i) => i.status === "draft")) return null;
+  return afterSign(attached).team.replace(/^When they sign: /, "Accepting it does this too: ");
 }

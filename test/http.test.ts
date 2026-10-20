@@ -32,7 +32,7 @@ before(async () => {
   s = r;
   db = r.db;
   await setup(db, seeds);
-  await applySchema(db, readFileSync("test/fixtures/other-apps.sql", "utf8"));
+  await applySchema(db, readFileSync("src/forms/schema.sql", "utf8") + ";\n" + readFileSync("src/payments/schema.sql", "utf8"));
   await db.sql`insert into forms (key, title) values ('contact', 'Contact us')`;
   // Through the forms skill, as the Website writes one: Pat is a customer the moment it is in.
   await insertSubmission(db, { form_key: "contact", name: "Pat Doe", email: "pat@example.com", phone: "555 010 9999", data: { message: "Do you service boilers?" }, source: "website", page: null, status: "new" });

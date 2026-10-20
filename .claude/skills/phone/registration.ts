@@ -56,12 +56,12 @@ export async function optInPage(db: Db, links: Links | null): Promise<string | n
   // A page is a path on the site that took it: the Website's ("website"), or the CRM's /q ("crm").
   const [used] = await db.sql<{ page: string }>`
     select s.page from submissions s join forms f on f.key = s.form_key
-    where f.active and to_jsonb(f)->>'follow_up' = 'true' and s.page like '/%' and s.status <> 'spam'
+    where f.active and f.follow_up and s.page like '/%' and s.status <> 'spam'
       and s.source = ${links.prefix ? "crm" : "website"}
     order by s.created_at desc limit 1`.catch(() => []);
   if (used) return `${links.base}${used.page}`;
   const forms = await db.sql<{ key: string; fields: Field[] }>`
-    select key, fields from forms f where active and to_jsonb(f)->>'follow_up' = 'true' order by id`.catch(() => []);
+    select key, fields from forms where active and follow_up order by id`.catch(() => []);
   const own = forms.find((f) => stepsOf(f.fields ?? []).length);
   if (own) return `${links.base}${links.prefix}/forms/${own.key}/start`;
   const [t] = await db.sql`select 1 from booking_types where active limit 1`.catch(() => []);

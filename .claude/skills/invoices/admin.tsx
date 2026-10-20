@@ -24,7 +24,7 @@ import { cut, readCursor } from "../admin/keyset";
 import { sectionPages, type Frame, type NavItem } from "../admin/layout";
 import { DataTable, EmptyState, NoMatches, SearchBar, SetupNeeded, TableRows, When, type TableSpec } from "../admin/list";
 import { idParam, isPartial, listUrl, str } from "../admin/query";
-import { buttonClass, controlClass, fieldClass, primaryClass, StatusBadge, type StatusOption } from "../admin/status";
+import { buttonClass, controlClass, fieldClass, primaryClass, Select, StatusBadge, type StatusOption } from "../admin/status";
 import { businessOf } from "../data/business";
 import type { GetDb } from "../data/db";
 import { envOf } from "../data/env";
@@ -34,18 +34,18 @@ import { stripeConnected, stripeFrom, type Stripe } from "../payments/stripe";
 import { invoiceHtml, isDay, quoteHtml, quoteMessage, sendQuote, taxSummary, todayIn } from "./document";
 import { createTaxRate, percentText, setTaxRateActive, taxRates, type TaxRate } from "../payments/tax";
 import { amountInput, type Errors, type SavedLine } from "./lines";
-import { CustomerFields, formLines, LineItems, linesOf } from "./form";
+import { CustomerFields, formLines, LineItems, linesOf, OneOrRepeats } from "./form";
 import {
   cannotSend, copyQuote, createQuote, decideQuote, expireQuote, isEditable, markSent, QUOTE_STATUS_LABELS, quoteById, quotesPage, saveQuote, SHOWN_QUOTE_STATUSES, shownStatus,
   type Quote, type QuoteRow, type ShownQuoteStatus,
 } from "./quotes";
 import {
-  createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, INVOICE_STATUSES, INVOICE_STATUS_LABELS, invoiceTotals, pastDue, saveInvoice,
+  attachableDrafts, attachInvoice, createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, INVOICE_STATUSES, INVOICE_STATUS_LABELS, invoiceTotals, pastDue, saveInvoice,
   type Invoice, type InvoiceRow, type InvoiceStatus,
 } from "./invoices";
 import { cardName, defaultCard } from "./cards";
 import { RECURRING_MESSAGES, recurringRoutes } from "./recurring-admin";
-import { shortDay } from "./recurring";
+import { recurringList, scheduleText, shortDay } from "./recurring";
 import { chargeInvoice, emailPaymentPage, markUncollectible, paidSoFar, PAYMENT_METHODS, recordPayment, sendInvoice, voidInvoice } from "./stripe";
 
 type Ctx = Context<{ Variables: TeamVars }>;
@@ -224,6 +224,8 @@ const MESSAGES: FlashMessages = {
   "not-now": "Not from its current status. Nothing changed.",
   "past-valid": "Not sent: its valid-until date has passed. Change or clear it, then send.",
   "invoice-created": "Invoice drafted. Check it, then send it with Stripe.",
+  "invoice-attached": "Attached: it is sent to pay when they say yes.",
+  "invoice-detached": "Taken off the quote. It stays a draft.",
   "invoice-sent": "Sent. Stripe emailed the invoice from your Stripe account.",
   "invoice-charged": "Charged. It turns paid here when Stripe confirms, usually within seconds.",
   "page-emailed": "Stripe emailed them the payment page.",
@@ -246,13 +248,15 @@ const MESSAGES: FlashMessages = {
 type FormValues = {
   email: string; name: string; phone: string; address: string; currency: string; valid_until: string; notes: string; terms: string;
   days_until_due: string; visit_id: string; deal_id: string; lines: { description: string; quantity: string; unit: string; tax_rate_id: string }[];
+  /** A new invoice's quote: it goes on it, sent when they say yes. */
+  quote_id?: string;
 };
 
 function readForm(body: Record<string, unknown>): FormValues {
   return {
     email: str(body.email), name: str(body.name), phone: str(body.phone), address: str(body.address), currency: str(body.currency),
     valid_until: str(body.valid_until), notes: str(body.notes), terms: str(body.terms), days_until_due: str(body.days_until_due),
-    visit_id: str(body.visit_id), deal_id: str(body.deal_id), lines: formLines(body),
+    visit_id: str(body.visit_id), deal_id: str(body.deal_id), lines: formLines(body), quote_id: str(body.quote_id),
   };
 }
 
@@ -387,6 +391,10 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const open = isEditable(qt);
     const linked = opts.links ? await opts.links(c, { kind: "quote", quote: qt }) : {};
     const invoices = (await invoicesFor(getDb(c), { quoteId: qt.id })).filter((i) => i.status !== "void");
+    const recurring = (await recurringList(getDb(c), { quoteId: qt.id })).filter((r) => r.status !== "ended");
+    // Until they answer, what is on it is what their yes sends (and starts); the customer's other drafts can go on it too.
+    const waiting = open;
+    const drafts = waiting ? await attachableDrafts(getDb(c), qt.email) : [];
     const panel = opts.proposal ? await opts.proposal.panel(c, qt) : null;
     return framed(c, qbase, {
       title: `${W} ${qt.number}`,
@@ -435,15 +443,37 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             {panel}
           </div>
           <div class="flex flex-col gap-4">
-            {invoices.length ? (
-              <Section title="Invoices">
+            {waiting || invoices.length || recurring.length ? (
+              <Section title={waiting ? "When they say yes" : "Invoices"}>
+                {waiting ? <p class="mb-3 text-label text-ink-3">Each invoice here is sent to pay, and each recurring one starts.</p> : null}
                 {invoices.map((i) => (
-                  <p class="mb-2 flex flex-wrap items-center gap-2">
+                  <div class="mb-2 flex flex-wrap items-center gap-2">
                     <a href={`${base}/${i.id}`}>{i.number ? `Invoice ${i.number}` : "Draft invoice"}</a>
                     <span class="text-ink-2">{money(i.total_cents, i.currency)}</span>
                     {i.number ? <StatusBadge value={i.status} options={INVOICE_OPTIONS} /> : null}
+                    {waiting ? <form method="post" action={`${base}/${i.id}/detach`}><button class="text-label text-ink-2 underline">Detach</button></form> : null}
+                  </div>
+                ))}
+                {recurring.map((r) => (
+                  <p class="mb-2">
+                    <a href={`${base}/recurring/${r.id}`}>{r.title}</a>
+                    <span class="block text-label text-ink-2">{money(r.total_cents, r.currency)} {scheduleText(r)}</span>
                   </p>
                 ))}
+                {waiting ? (
+                  <div class="mt-3 flex flex-col gap-3 border-t border-line pt-3">
+                    <a href={`${base}/new?quote=${qt.id}`} class={buttonClass + " self-start"}>New invoice</a>
+                    {drafts.length ? (
+                      <form method="post" action={`${self}/attach`} class="flex flex-wrap items-center gap-2">
+                        <span class="w-full text-label text-ink-3">Or one of their drafts</span>
+                        <Select name="invoice" aria-label="One of their drafts">
+                          {drafts.map((d) => <option value={d.id}>Draft, {money(d.total_cents, d.currency)}, made {shortDay(todayIn(opts.timeZone, d.created_at))}</option>)}
+                        </Select>
+                        <button class={buttonClass}>Attach</button>
+                      </form>
+                    ) : null}
+                  </div>
+                ) : null}
               </Section>
             ) : null}
             <Section title="Details">
@@ -675,6 +705,24 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     return copy ? back(c, `${qbase}/${copy.id}/edit`, "copied") : c.notFound();
   });
 
+  // One of the customer's drafts goes on the quote, or comes off it: their yes sends what is on it.
+  app.post("/quotes/:id/attach", async (c) => {
+    const qt = await load(c);
+    if (!qt) return c.notFound();
+    const ok = await attachInvoice(getDb(c), str((await c.req.parseBody()).invoice), qt.id, c.get("user"));
+    if (ok) await saved(c, qt);
+    return back(c, `${qbase}/${qt.id}`, ok ? "invoice-attached" : "not-now");
+  });
+
+  app.post("/:id{[0-9]+}/detach", async (c) => {
+    const inv = await invoiceById(getDb(c), c.req.param("id"));
+    if (!inv) return c.notFound();
+    const quote = inv.quote_id ? await quoteById(getDb(c), inv.quote_id) : null;
+    const ok = !!quote && (await attachInvoice(getDb(c), inv.id, null, c.get("user")));
+    if (ok) await saved(c, quote!);
+    return back(c, quote ? `${qbase}/${quote.id}` : `${base}/${inv.id}`, ok ? "invoice-detached" : "not-now");
+  });
+
   // From an accepted quote: its lines the first time, then what is left to bill.
   app.post("/quotes/:id/invoice", async (c) => {
     const id = idParam(c.req.param("id"));
@@ -741,24 +789,45 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 
   const invoiceEditor = async (c: Ctx, p: { title: string; action: string; values: FormValues; errors: Errors; current: string }, status = 200) => {
     const rates = await taxRates(getDb(c));
-    return framed(c, base, p.title, <DocForm kind="invoice" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === base ? "Create invoice" : "Save"} taxPage={`${base}/tax-rates`} currency={opts.currency} />, status);
+    const isNew = p.action === base;
+    return framed(c, base, p.title, (
+      <>
+        {isNew ? <OneOrRepeats base={base} repeats={false} query={new URL(c.req.url).search} /> : null}
+        <DocForm kind="invoice" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={isNew ? "Create invoice" : "Save"} taxPage={`${base}/tax-rates`} currency={opts.currency} />
+      </>
+    ), status);
   };
 
-  // Blank, or prefilled from the query: a customer's page or an appointment hands over who, and the first line.
+  // Blank, or prefilled from the query: a customer's page or an appointment hands over who, and the first line;
+  // a quote waiting for its answer, its customer and lines, to make into what their yes sends (a deposit, all of it).
   app.get("/new", async (c) => {
     const qy = (k: string) => (c.req.query(k) ?? "").slice(0, 500);
-    const values: FormValues = {
+    const quote = idParam(qy("quote")) ? await quoteById(getDb(c), qy("quote")) : null;
+    const on = quote && isEditable(quote) ? quote : null;
+    const values: FormValues = on ? {
+      email: on.email, name: on.name ?? "", phone: on.phone ?? "", address: on.address ?? "", currency: on.currency,
+      valid_until: "", notes: "", terms: "", days_until_due: String(opts.daysUntilDue ?? 30), visit_id: on.visit_id ?? "", deal_id: "",
+      lines: linesOf(on), quote_id: on.id,
+    } : {
       email: qy("email"), name: qy("name"), phone: qy("phone"), address: qy("address"), currency: (qy("currency") || opts.currency || "usd").toLowerCase(),
       valid_until: "", notes: "", terms: "", days_until_due: String(opts.daysUntilDue ?? 30), visit_id: qy("event"), deal_id: "",
       lines: qy("line") ? [{ description: qy("line"), quantity: "1", unit: qy("unit"), tax_rate_id: "" }] : [],
     };
-    return invoiceEditor(c, { title: "New invoice", action: base, values, errors: {}, current: base });
+    return invoiceEditor(c, { title: on ? `New invoice for ${w} ${on.number}` : "New invoice", action: base, values, errors: {}, current: on ? `${qbase}/${on.id}` : base });
   });
 
   app.post("/", async (c) => {
     const values = readForm(await c.req.parseBody({ all: true }));
+    const quote = idParam(values.quote_id ?? "") ? await quoteById(getDb(c), values.quote_id!) : null;
+    const current = quote ? `${qbase}/${quote.id}` : base;
+    if (quote && !isEditable(quote)) return invoiceEditor(c, { title: "New invoice", action: base, values: { ...values, quote_id: "" }, errors: { status: `${W} ${quote.number} was ${quote.status}, so this would not go with it. Create it again to make it on its own.` }, current: base }, 422);
+    if (quote && quote.email.toLowerCase() !== values.email.trim().toLowerCase()) return invoiceEditor(c, { title: "New invoice", action: base, values, errors: { email: `${W} ${quote.number} is for ${quote.email}; an invoice on it is too.` }, current }, 422);
     const r = await createInvoice(getDb(c), values, c.get("user"), opts.source);
-    if (!r.ok) return invoiceEditor(c, { title: "New invoice", action: base, values, errors: r.errors, current: base }, 422);
+    if (!r.ok) return invoiceEditor(c, { title: "New invoice", action: base, values, errors: r.errors, current }, 422);
+    if (quote && (await attachInvoice(getDb(c), r.value.id, quote.id, c.get("user")))) {
+      await saved(c, quote);
+      return back(c, `${qbase}/${quote.id}`, "invoice-attached");
+    }
     return back(c, `${base}/${r.value.id}`, "invoice-created");
   });
 
@@ -796,6 +865,8 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     // Jobber's More actions: everything but the one next step, in one menu.
     const more = [
       draft ? <a href={`${self}/edit`} class={menuItem}>Edit</a> : null,
+      // QuickBooks' Make recurring: the recurring form with its customer and lines (and its quote, while that waits).
+      draft && !inv.recurring_id ? <a href={`${base}/recurring/new?invoice=${inv.id}`} class={menuItem}>Make it repeat</a> : null,
       !inv.pdf_url ? <a href={`${self}/document`} target="_blank" class={menuItem}>Preview</a> : null,
       inv.hosted_url && inv.status !== "void" ? <a href={inv.hosted_url} target="_blank" rel="noopener" class={menuItem}>Payment page</a> : null,
       inv.pdf_url ? <a href={inv.pdf_url} target="_blank" rel="noopener" class={menuItem}>PDF</a> : null,
@@ -869,7 +940,10 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
                 { label: "Sent", value: inv.sent_at ? <When at={inv.sent_at} timeZone={opts.timeZone} /> : null },
                 { label: "Paid by", value: inv.sent_at && inv.collect === "charge" ? "Their card on file" : null },
                 { label: "Paid", value: inv.paid_at ? <When at={inv.paid_at} timeZone={opts.timeZone} /> : null },
-                { label: "Quote", value: quote ? <a href={`${qbase}/${quote.id}`}>Quote {quote.number}</a> : null },
+                {
+                  label: W,
+                  value: quote ? <><a href={`${qbase}/${quote.id}`}>{W} {quote.number}</a>{draft && isEditable(quote) ? <span class="block text-label text-ink-3">Sent to pay when they say yes</span> : null}</> : null,
+                },
                 { label: "Recurring", value: inv.recurring_id ? <a href={`${base}/recurring/${inv.recurring_id}`}>{inv.period_on ? `The one for ${shortDay(inv.period_on)}` : "Open it"}</a> : null },
                 ...(linked.more ?? []),
               ]} />
@@ -901,13 +975,20 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       if (r.errors.status && !(await invoiceById(getDb(c), id))) return c.notFound();
       return invoiceEditor(c, { title: "Edit draft invoice", action: `${base}/${id}`, values, errors: r.errors, current: `${base}/${id}` }, 422);
     }
+    // On a quote waiting for its answer, the quote says what it comes to.
+    const quote = r.value.quote_id ? await quoteById(getDb(c), r.value.quote_id) : null;
+    if (quote && isEditable(quote)) await saved(c, quote);
     return back(c, `${base}/${id}`, "saved");
   });
 
   app.post("/:id{[0-9]+}/discard", async (c) => {
     const id = idParam(c.req.param("id"));
     if (!id) return c.notFound();
-    return back(c, `${base}/${id}`, (await discardInvoice(getDb(c), id, c.get("user"))) ? "discarded" : "not-now");
+    const ok = await discardInvoice(getDb(c), id, c.get("user"));
+    const quoteId = ok ? (await invoiceById(getDb(c), id))?.quote_id : null;
+    const quote = quoteId ? await quoteById(getDb(c), quoteId) : null;
+    if (quote && isEditable(quote)) await saved(c, quote);
+    return back(c, `${base}/${id}`, ok ? "discarded" : "not-now");
   });
 
   // Each Stripe action: a page that says exactly what will happen, then its POST.
@@ -1190,7 +1271,7 @@ function DocForm({ kind, action, v, errors, rates, cancel, submit, taxPage, curr
       {problems ? <p role="alert" class={alertClass}>Fix what is marked below. Nothing was saved.</p> : null}
       {errors.status ? <p role="alert" class={alertClass}>{errors.status}</p> : null}
       <input type="hidden" name="visit_id" value={v.visit_id} />
-      {kind === "quote" ? <input type="hidden" name="deal_id" value={v.deal_id} /> : null}
+      {kind === "quote" ? <input type="hidden" name="deal_id" value={v.deal_id} /> : <input type="hidden" name="quote_id" value={v.quote_id ?? ""} />}
       <CustomerFields v={v} errors={errors} />
       <LineItems lines={v.lines} errors={errors} rates={rates} taxPage={taxPage} />
       <Section title={kind === "quote" ? "Terms" : "Payment"}>

@@ -1,7 +1,7 @@
 // Proposals over HTTP, as the team and the customer use them: a quote's
 // components, its page, the link given by hand and by email, the
 // customer opening it signed out, a page changed under them, the signature
-// and what it does (deal won, deposit invoice), a decline, mail scanners, a
+// and what it does (deal won, the attached deposit sent), a decline, mail scanners, a
 // dead link. Skipped without TEST_DATABASE_URL.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
@@ -90,7 +90,7 @@ async function newQuote(email: string, name: string, deal: string, unit = "2000.
   return /\/invoices\/quotes\/(\d+)\?saved=created/.exec(res.headers.get("location")!)![1];
 }
 
-test("a proposal end to end: built, linked, opened, changed under them, signed; its deal won and its deposit drafted", async (t) => {
+test("a proposal end to end: built, its deposit attached, linked, opened, changed under them, signed; its deal won and its deposit sent", async (t) => {
   if (skip) return t.skip(skip);
   const { deal } = await customerWithDeal("Ann Lee", "ann@example.com");
   const id = await newQuote("ann@example.com", "Ann Lee", deal);
@@ -100,14 +100,26 @@ test("a proposal end to end: built, linked, opened, changed under them, signed; 
   assert.match(html, /name="components" value="about"/);
   assert.match(html, /About us<\/span><span class="text-ink-3"> \(sample\)/, "a component still showing the starter's words says so");
   assert.match(html, /Read our website and write our proposal sections from it\./, "and what to ask the AI");
-  let res = await post(`/invoices/quotes/${id}/proposal`, { title: "A new fence", components: ["about", "nope"], first_invoice: "draft" });
+  let res = await post(`/invoices/quotes/${id}/proposal`, { title: "A new fence", components: ["about", "nope"] });
   assert.match(decodeURIComponent(res.headers.get("location")!), /Nothing was saved: No component nope/);
 
-  res = await post(`/invoices/quotes/${id}/proposal`, { title: "A new fence for Ann", components: ["about", "reviews"], first_invoice: "draft", deposit_percent: "50" });
+  res = await post(`/invoices/quotes/${id}/proposal`, { title: "A new fence for Ann", components: ["about", "reviews"] });
   assert.match(res.headers.get("location")!, /saved=saved$/);
   assert.deepEqual((await db.sql`select key from quote_components where quote_id = ${id}::bigint order by key`).map((r) => r.key), ["about", "reviews"]);
+
+  // Their yes sends what the owner attaches: New invoice from the quote's page starts from its lines; this one is a deposit.
+  html = await (await get(`/invoices/new?quote=${id}`)).text();
+  assert.match(html, /New invoice for quote Q-\d{4}/);
+  assert.match(html, /value="Cedar fence"/, "the quote's lines to start from");
+  assert.match(html, /href="\/invoices\/recurring\/new\?quote=\d+"[^>]*>Repeats/, "or one that repeats");
+  res = await post("/invoices", {
+    email: "ann@example.com", name: "Ann Lee", currency: "usd", quote_id: id, days_until_due: "14", notes: "", visit_id: "",
+    description: ["Deposit", ""], quantity: ["", ""], unit: ["1000.00", ""], tax: "",
+  });
+  assert.match(res.headers.get("location")!, new RegExp(`/invoices/quotes/${id}\\?saved=invoice-attached$`));
   html = await (await get(`/invoices/quotes/${id}`)).text();
-  assert.match(html, /A draft invoice for a 50% deposit of \$1,000\.00 is made for you to review/);
+  assert.match(html, /When they say yes/);
+  assert.match(html, /Draft invoice<\/a><span class="text-ink-2">\$1,000\.00/);
 
   const doc = await (await get(`/invoices/quotes/${id}/document`)).text();
   assert.match(doc, /A new fence for Ann/);
@@ -115,6 +127,7 @@ test("a proposal end to end: built, linked, opened, changed under them, signed; 
   assert.match(doc, /id="reviews"/);
   assert.doesNotMatch(doc, /id="team"/, "a component not ticked is not on the page");
   assert.match(doc, /id="pricing"/, "pricing is on every one");
+  assert.match(doc, /When you sign, the invoice for \$1,000\.00 is due, and you are taken straight to pay it online\./);
   assert.match(doc, /The team or the work/, "a photograph's slot says what belongs there");
   assert.match(doc, /A preview: on the customer(&#39;|')s page this form signs it/);
   assert.doesNotMatch(doc, /<script/);
@@ -186,9 +199,10 @@ test("a proposal end to end: built, linked, opened, changed under them, signed; 
   const invoices = await invoicesFor(db, { quoteId: id });
   assert.equal(invoices.length, 1);
   const dep = (await invoiceById(db, invoices[0].id))!;
-  assert.deepEqual([dep.status, dep.lines[0].description, dep.total_cents], ["draft", `Deposit (50%) for ${qt.number}`, "120000"]);
-  assert.equal((await db.sql`select title from follow_ups where title like 'Check and send the deposit%'`)[0]?.title,
-    `Check and send the deposit invoice (50%) for $1,200.00 for Ann Lee (${qt.number}): they signed, and it is a draft`, "signed online, so a task says the draft waits");
+  assert.deepEqual([dep.lines[0].description, dep.total_cents], ["Deposit", "100000"], "the owner's own deposit, not a share of the new total");
+  // No Stripe here: it stays a draft, and a task says so.
+  assert.equal(dep.status, "draft");
+  assert.match((await db.sql`select title from follow_ups where title like 'The invoice for $1,000.00%'`)[0]?.title ?? "", /Stripe is not connected/);
   assert.match(mail.at(-1)!.subject, /^You signed quote Q-\d{4} with Acme Test Co$/);
   assert.match(mail.at(-1)!.text, new RegExp(`Your copy, with what happens next: ${HOST}/q/${token}`));
 
@@ -202,14 +216,15 @@ test("a proposal end to end: built, linked, opened, changed under them, signed; 
   assert.deepEqual((await db.sql`select key from quote_components where quote_id = ${id}::bigint order by key`).map((r) => r.key), ["about", "reviews"]);
 });
 
-test("then, recurring: a weekly plan waits on the proposal, shown beside the total; signing starts it, makes today's and makes the lead a customer; a no ends another", async (t) => {
+test("then, recurring: a weekly plan waits on the proposal, shown beside the total; signing starts it, makes today's and makes the lead a customer; a no ends another and discards its deposit", async (t) => {
   if (skip) return t.skip(skip);
   // A lead with no deal: the yes alone makes them a customer.
   const [eve] = await db.sql`insert into customers (name, email, stage) values ('Eve Park', 'eve@example.com', 'lead') returning id::text as id`;
   const deal = "";
   const id = await newQuote("eve@example.com", "Eve Park", deal, "500.00");
   let html = await (await get(`/invoices/quotes/${id}`)).text();
-  assert.match(html, new RegExp(`href="/invoices/recurring/new\\?quote=${id}"`));
+  assert.match(html, new RegExp(`href="/invoices/new\\?quote=${id}"`), "New invoice, on the quote");
+  assert.match(await (await get(`/invoices/new?quote=${id}`)).text(), new RegExp(`href="/invoices/recurring/new\\?quote=${id}"[^>]*>Repeats`), "whose Repeats makes a recurring one");
   assert.match(await (await get(`/invoices/recurring/new?quote=${id}`)).text(), /value="eve@example\.com"/, "the form starts from the quote's customer");
 
   // Weekly from today, so any day of the month will do; a draft for the team, so no Stripe here.
@@ -222,7 +237,7 @@ test("then, recurring: a weekly plan waits on the proposal, shown beside the tot
   const [rec] = await db.sql`select id::text as id, status from recurring_invoices where quote_id = ${id}::bigint`;
   assert.equal(rec.status, "pending");
   html = await (await get(`/invoices/quotes/${id}`)).text();
-  assert.match(html, /A recurring invoice starts\. An invoice for \$60\.00, every week on/);
+  assert.match(html, /When they say yes[\s\S]*>Weekly lawn care<\/a><span class="block text-label text-ink-2">\$60\.00 every week/);
 
   const token = tokenOf(await (await post(`/invoices/quotes/${id}/send`, { how: "link" })).text());
   html = await (await get(`/q/${token}`, NOBODY)).text();
@@ -246,10 +261,12 @@ test("then, recurring: a weekly plan waits on the proposal, shown beside the tot
     quote_id: other, email: "eve@example.com", currency: "usd", title: "Monthly care", period: "month", every: "1", first_on: "2099-01-01",
     ends: "never", mode: "send", description: ["Care", ""], quantity: ["", ""], unit: ["40", ""], tax: "",
   });
+  await post("/invoices", { email: "eve@example.com", currency: "usd", quote_id: other, days_until_due: "14", description: ["Deposit", ""], quantity: ["", ""], unit: ["50", ""], tax: "" });
   const t2 = tokenOf(await (await post(`/invoices/quotes/${other}/send`, { how: "link" })).text());
   const page2 = await (await get(`/q/${t2}`, NOBODY)).text();
   await post(`/q/${t2}/decline`, { reason: "Price", note: "", page: shaOf(page2) }, NOBODY);
   assert.equal((await db.sql`select status from recurring_invoices where quote_id = ${other}::bigint`)[0].status, "ended");
+  assert.deepEqual((await db.sql`select status from invoices where quote_id = ${other}::bigint`).map((r) => r.status), ["void"], "its deposit is discarded");
 });
 
 test("emailed: the link goes by the owner's sender with nothing attached; an open in the first minute is a mail scanner", async (t) => {

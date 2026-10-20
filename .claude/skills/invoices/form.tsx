@@ -96,3 +96,21 @@ export function LineItems({ lines, errors, rates, taxPage }: { lines: FormLine[]
     </Section>
   );
 }
+
+/**
+ * New invoice's first choice, as QuickBooks' and Stripe's editors ask it: one
+ * invoice, or one that repeats (a recurring invoice). Who it is for and the
+ * quote it goes on (the query) carry over.
+ */
+export function OneOrRepeats({ base, repeats, query }: { base: string; repeats: boolean; query: string }) {
+  const tab = (href: string, label: string, on: boolean) => (
+    <a href={href} aria-current={on ? "page" : undefined}
+      class={"rounded-control px-3 py-1.5 no-underline " + (on ? "bg-surface font-medium text-ink shadow-card" : "text-ink-2 hover:text-ink")}>{label}</a>
+  );
+  return (
+    <nav aria-label="One invoice or repeating" class="mb-4 inline-flex gap-1 rounded-control bg-panel p-1">
+      {tab(`${base}/new${query}`, "One invoice", !repeats)}
+      {tab(`${base}/recurring/new${query}`, "Repeats", repeats)}
+    </nav>
+  );
+}

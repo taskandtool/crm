@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { validate } from "../src/config-schema";
-import { additiveProblems } from "../src/data/migrate";
 
 // The config the CRM ships with; every test runs against it (pin-config.mjs).
 const SHIPPED = "test/fixtures/crm.config.json";
@@ -134,10 +133,6 @@ test("the time zone is checked", () => {
   assert.ok(validate(c).some((x) => x.includes("IANA")));
 });
 
-test("schema.sql only adds", () => {
-  assert.deepEqual(additiveProblems(readFileSync("schema.sql", "utf8")), []);
-  assert.deepEqual(additiveProblems(readFileSync("test/fixtures/other-apps.sql", "utf8")), []);
-});
 
 test("the manifest follows the platform's rules", () => {
   const m = JSON.parse(readFileSync("starter-app.json", "utf8"));

@@ -82,7 +82,8 @@ Everything a business wants changed is one of these.
 
 4. **`schema.sql`, for a real column** (indexed, filtered, joined on). It is
    applied by `applySchema` (`src/data/migrate.ts`) at every start and every
-   deploy, by every copy of this app at any version, so it only adds:
+   deploy, so each line is safe to run again; a column on a table that is
+   already there is its own line:
 
    ```sql
    alter table customers add column if not exists region text;

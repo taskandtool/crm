@@ -1,23 +1,8 @@
-// Applies a skill's schema.sql to the project's database. Every app that
-// carries the skill runs it at setup and when its service starts, so it must
-// be safe to run again, by any app, at any version of the skill.
-//
-// Two apps can carry different versions of the same skill, so tables only
-// grow. A schema file may hold nothing but:
-//
-//   create table if not exists <name> (...)
-//   create [unique] index if not exists <name> on <table> (...)
-//   alter table <name> add column if not exists <column> ...
-//   alter table <name> alter column <column> drop not null
-//   comment on ...
-//
-// Table names are plain, never schema-qualified, so every table lands in the
-// one namespace every app reads. No drop, rename, type change, or added
-// constraint (Postgres has no `add constraint if not exists`): a newer skill
-// adds a column an older app ignores, and an older one never removes what a
-// newer one needs. Loosening a column to allow null is the one change to what
-// exists: an older app still fills it, and runs again as a no-op. `applySchema` refuses a file that breaks this before
-// running any of it.
+// Applies a skill's schema.sql to the project's database: its create tables
+// and indexes, each written to run again harmlessly (`if not exists`), since
+// every app that carries the skill runs it at setup and when its service
+// starts. Table names are plain, never schema-qualified, so every table lands
+// in the one namespace every app reads.
 //
 // Machine only: run it from the app's setup or start script, never per request
 // and never at the edge.
@@ -25,18 +10,6 @@
 //   import { readFileSync } from "node:fs";
 //   await applySchema(db, readFileSync("src/booking/schema.sql", "utf8"));
 import { q, type Db, type Query } from "./db";
-
-// Loosening is the one change to what exists that is safe while older apps
-// still run: a column that may now be null, or a check (Postgres's
-// <table>_<column>_check) that now allows more. An older app's writes still pass both.
-const LOOSEN = /^alter\s+table\s+(if\s+exists\s+)?\w+\s+(alter\s+column\s+\w+\s+drop\s+not\s+null|drop\s+constraint\s+if\s+exists\s+\w+_check)$/i;
-const ALLOWED = [
-  /^create\s+table\s+if\s+not\s+exists\s+\w+\s*\(/i,
-  /^create\s+(unique\s+)?index\s+if\s+not\s+exists\s+\w+\s+on\s+\w+(\s|\()/i,
-  /^alter\s+table\s+(if\s+exists\s+)?\w+\s+add\s+column\s+if\s+not\s+exists\s+\w+\s/i,
-  LOOSEN,
-  /^comment\s+on\s+/i,
-];
 
 /** The statements in a schema file: comments dropped, split on semicolons outside quotes. */
 export function statements(text: string): string[] {
@@ -70,28 +43,8 @@ export function statements(text: string): string[] {
   return out.map((s) => s.trim()).filter(Boolean);
 }
 
-/** Why a schema file is not additive; empty when it is. */
-export function additiveProblems(text: string): string[] {
-  let list: string[];
-  try {
-    list = statements(text);
-  } catch (e) {
-    return [(e as Error).message];
-  }
-  const problems: string[] = [];
-  for (const s of list) {
-    const head = s.replace(/\s+/g, " ").slice(0, 80);
-    if (!ALLOWED.some((re) => re.test(s))) problems.push(`not additive: ${head}`);
-    else if (LOOSEN.test(s)) continue;
-    else if (/\b(drop|rename)\b/i.test(s) || /\balter\s+column\b/i.test(s)) problems.push(`changes what exists: ${head}`);
-  }
-  return problems;
-}
-
 /** Apply a schema file in one transaction, behind a lock every app shares. */
 export async function applySchema(db: Db, text: string): Promise<void> {
-  const problems = additiveProblems(text);
-  if (problems.length) throw new Error("schema refused:\n  " + problems.join("\n  "));
   const run: Query[] = [q`select pg_advisory_xact_lock(hashtext('taskandtool.schema'))`];
   for (const s of statements(text)) run.push({ text: s, values: [] });
   await db.transaction(run);

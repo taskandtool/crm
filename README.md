@@ -105,7 +105,7 @@ time zone, which forms count as leads, and what an event is called and
 records. `examples/` has five worked configs. Ask the AI to shape the CRM
 for your business; it reads them, asks what it cannot infer, and sets it
 up. After the first run, statuses and deal stages are rows, edited from
-Edit stages on the board. A field that deserves a real column is an additive line in
+Edit stages on the board. A field that deserves a real column is a line in
 `schema.sql`.
 
 ## How it runs
@@ -127,7 +127,7 @@ Edit stages on the board. A field that deserves a real column is an additive lin
 
 ```
 crm.config.json          the levers: words, statuses, deals, sources, fields, zone, events, invoices
-schema.sql               the tables, additive only, applied at start and deploy
+schema.sql               the tables, applied at start and deploy
 src/app.tsx              the Hono app: the team-only gate, the routes
 src/crm/                 home, customers, leads, stages, deals, tasks, events, notifications, search, history, merge, import
 src/views/               home, leads, tasks, deals, customers, a customer, events, notifications, search, settings, stages

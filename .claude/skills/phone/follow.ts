@@ -33,13 +33,13 @@ export async function openNow(db: Db, now = new Date()): Promise<boolean> {
 
 /** A form's booking step's service, when it has one. */
 async function formBooking(db: Db, formKey: string): Promise<{ follow_up: boolean; type: BookingType | null; hasBooking: boolean; title: string } | null> {
-  const [f] = await db.sql<{ fields: Field[]; follow_up: string | null; title: string }>`
-    select fields, to_jsonb(f)->>'follow_up' as follow_up, title from forms f where key = ${formKey}`;
+  const [f] = await db.sql<{ fields: Field[]; follow_up: boolean; title: string }>`
+    select fields, follow_up, title from forms where key = ${formKey}`;
   if (!f) return null;
   const step = stepsOf(f.fields ?? []).find((s) => s.kind === "booking");
   const slug = step && step.kind === "booking" ? step.field.booking_type : null;
   const [t] = slug ? await db.sql`select * from booking_types where slug = ${slug} and active` : [];
-  return { follow_up: f.follow_up === "true", type: t ? toType(t) : null, hasBooking: !!step, title: f.title };
+  return { follow_up: f.follow_up, type: t ? toType(t) : null, hasBooking: !!step, title: f.title };
 }
 
 /** The next three open times of a service in the coming week, as a text names them ("Tue 9am"). */
@@ -162,7 +162,7 @@ export async function scan(ctx: PhoneCtx): Promise<{ scheduled: number; sent: nu
   if (s.thanks.enabled) {
     const subs = await db.sql<{ id: string; phone: string | null; email: string | null; completed_at: Date }>`
       select s.id::text as id, s.phone, s.email::text as email, s.completed_at from submissions s join forms f on f.key = s.form_key
-      where to_jsonb(f)->>'follow_up' = 'true' and not f.fields @> '[{"type": "booking"}]'::jsonb
+      where f.follow_up and not f.fields @> '[{"type": "booking"}]'::jsonb
         and s.completed_at > ${lastHour(s.thanks)}::timestamptz and s.completed_at <= ${now.toISOString()}::timestamptz and s.status <> 'spam'
         and not exists (select 1 from text_sends t where t.flow = 'thanks' and t.subject_type = 'submission' and t.subject_id = s.id::text)
       order by s.completed_at limit 100`;
@@ -186,7 +186,7 @@ export async function scan(ctx: PhoneCtx): Promise<{ scheduled: number; sent: nu
     const drafts = await db.sql<{ id: string; form_key: string; phone: string | null; email: string | null }>`
       select d.id::text as id, d.form_key, d.phone, d.email::text as email from submission_drafts d join forms f on f.key = d.form_key
       where d.submission_id is null and not d.spam and d.step >= 1 and (d.phone is not null or d.email is not null)
-        and to_jsonb(f)->>'follow_up' = 'true' and f.fields @> '[{"type": "booking"}]'::jsonb
+        and f.follow_up and f.fields @> '[{"type": "booking"}]'::jsonb
         and d.updated_at < ${now.toISOString()}::timestamptz - make_interval(mins => ${wait})
         and d.updated_at > ${sinceFor(s.unbooked)}::timestamptz
         and not exists (select 1 from text_sends t where t.flow = 'unbooked' and t.step = 1 and t.subject_type = 'draft' and t.subject_id = d.id::text)
@@ -266,7 +266,7 @@ export async function render(ctx: PhoneCtx, row: SendRow, s: FlowSettings): Prom
     }
     case "thanks": {
       const [sub] = await db.sql<{ name: string | null; email: string | null; phone: string | null; text_consent: string | null }>`
-        select name, email::text as email, phone, to_jsonb(s)->>'text_consent' as text_consent from submissions s where id = ${row.subject_id}::bigint`;
+        select name, email::text as email, phone, s.text_consent from submissions s where id = ${row.subject_id}::bigint`;
       if (!sub) return { skip: "the submission is gone" };
       return {
         to: { phone: sub.phone, email: sub.email, name: sub.name, contactId: null, consent: await mayText(db, sub.phone, !!sub.text_consent) },
@@ -275,7 +275,7 @@ export async function render(ctx: PhoneCtx, row: SendRow, s: FlowSettings): Prom
     }
     case "unbooked": {
       const [d] = await db.sql<{ id: string; form_key: string; name: string | null; email: string | null; phone: string | null; submission_id: string | null; text_consent: string | null; created_at: Date }>`
-        select id::text as id, form_key, name, email::text as email, phone, submission_id::text as submission_id, to_jsonb(d)->>'text_consent' as text_consent, created_at
+        select id::text as id, form_key, name, email::text as email, phone, submission_id::text as submission_id, d.text_consent, created_at
         from submission_drafts d where id = ${row.subject_id}::bigint`;
       if (!d) return { skip: "the form they started is gone" };
       if (d.submission_id) return { skip: "they finished the form" };
@@ -315,7 +315,8 @@ export async function render(ctx: PhoneCtx, row: SendRow, s: FlowSettings): Prom
     case "after_visit": {
       const id = row.subject_id.split("@")[0];
       const [b] = await db.sql<{ name: string; email: string | null; phone: string | null; starts_at: Date; ends_at: Date; status: string; text_consent: string | null; booker_time_zone: string | null; type_name: string | null; host_name: string | null; host_zone: string | null; customer_id: string | null }>`
-        select b.name, b.email::text as email, b.phone, b.starts_at, b.ends_at, b.status, coalesce(to_jsonb(b)->>'text_consent', (select to_jsonb(s)->>'text_consent' from submissions s where s.id = b.submission_id)) as text_consent, b.booker_time_zone,
+        select b.name, b.email::text as email, b.phone, b.starts_at, b.ends_at, b.status, coalesce(b.text_consent, (select s.text_consent from submissions s where s.id = b.submission_id)) as text_consent, b.booker_time_zone,
+               -- customer_id is the CRM's own column on bookings (its schema.sql), so it is read by name: null where the CRM is not.
                t.name as type_name, r.name as host_name, r.time_zone as host_zone, to_jsonb(b)->>'customer_id' as customer_id
         from bookings b left join booking_types t on t.id = b.type_id left join resources r on r.id = b.resource_id where b.id = ${id}::bigint`;
       if (!b) return { skip: "the booking is gone" };

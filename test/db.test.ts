@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { q, type Db } from "../src/data/db";
 import { applySchema } from "../src/data/migrate";
-import { moveVisits, setup, setupKey, setupOnce } from "../src/db/setup";
+import { setup, setupKey, setupOnce } from "../src/db/setup";
 import { cut } from "../src/admin/keyset";
 import { createCustomer, findCustomer, findMatch, getCustomer, listPage, NO_FILTER, readListCursor, patchCustomer, retag, saveDetails, saveEveryone, setArchived, setStage } from "../src/crm/customers";
 import { everythingFrom } from "../src/crm/history";
@@ -210,7 +210,7 @@ test("Home, with none of the other apps' tables", async (t) => {
 
 test("setup saves everyone and makes a lead of each open request: by email, else by phone; not spam, not a form with leads off", async (t) => {
   if (skip) return t.skip(skip);
-  await applySchema(db, readFileSync("test/fixtures/other-apps.sql", "utf8"));
+  await applySchema(db, readFileSync("src/forms/schema.sql", "utf8") + ";\n" + readFileSync("src/payments/schema.sql", "utf8"));
   await db.transaction([
     q`insert into forms (key, title) values ('quote', 'Quote request')`,
     q`insert into forms (key, title, leads) values ('newsletter', 'Newsletter', false)`,
@@ -569,35 +569,6 @@ test("a booking held for a form still being paid is no one's event: not listed, 
   assert.equal((await getEvent(db, b.id))!.customer_id, customer.id);
 });
 
-test("an old CRM's visits move into bookings once, with the quotes and invoices that named them", async (t) => {
-  if (skip) return t.skip(skip);
-  const { customer } = await createCustomer(db, { name: "Old Timer", email: "old@example.com", stage: "new", address: "1 Elm St" }, ME);
-  const [{ id: booked }] = await db.sql<{ id: string }>`
-    insert into bookings (starts_at, ends_at, name, email, location_kind) values (now(), now() + interval '1 hour', 'Old Timer', 'old@example.com', 'phone') returning id::text as id`;
-  await db.transaction([
-    q`create table customer_visits (id bigserial primary key, customer_id bigint not null, booking_id bigint, title text not null, status text not null,
-        starts_at timestamptz, owner citext, amount_cents bigint, currency text, fields jsonb not null default '{}'::jsonb, notes text,
-        created_by citext, updated_by citext, created_at timestamptz not null default now(), updated_at timestamptz not null default now())`,
-    q`insert into customer_visits (id, customer_id, booking_id, title, status, starts_at, owner, amount_cents, currency, notes) values
-        (1, ${customer.id}::bigint, null, 'Furnace repair', 'done', '2026-05-01 15:00+00', 'Sam', 12900, 'USD', 'Replaced the igniter'),
-        (2, ${customer.id}::bigint, ${booked}::bigint, 'Phone consult', 'done', null, null, 5000, 'USD', null)`,
-  ]);
-  await applySchema(db, readFileSync("test/fixtures/other-apps.sql", "utf8"));
-  await applySchema(db, readFileSync("src/payments/schema.sql", "utf8"));
-  await applySchema(db, readFileSync("src/invoices/schema.sql", "utf8"));
-  const [{ id: quoteId }] = await db.sql<{ id: string }>`
-    insert into quotes (number, email, currency, visit_id) values ('Q-OLD', 'old@example.com', 'usd', 1) returning id::text as id`;
-  await moveVisits(db);
-  assert.equal((await db.sql`select to_regclass('customer_visits') as t`)[0].t, null, "the old table is gone");
-  const events = await customerEvents(db, customer.id);
-  const repair = events.find((e) => e.what === "Furnace repair")!;
-  assert.deepEqual([repair.status, repair.amount_cents, repair.notes, repair.host_name, repair.location], ["completed", "12900", "Replaced the igniter", "Sam", "1 Elm St"]);
-  const consult = (await getEvent(db, booked))!;
-  assert.deepEqual([consult.status, consult.amount_cents, consult.customer_id], ["completed", "5000", customer.id], "one made from a booking fills it in");
-  assert.equal((await db.sql<{ v: string }>`select visit_id::text as v from quotes where id = ${quoteId}::bigint`)[0].v, repair.id, "the quote names its booking");
-  await moveVisits(db); // no table: nothing happens
-});
-
 test("the customer list runs by last contact, one never contacted by when they were added", async (t) => {
   if (skip) return t.skip(skip);
   for (const n of [1, 2, 3]) await createCustomer(db, { name: `Order ${n}`, email: `order${n}@example.com`, stage: "new" }, ME);
@@ -610,7 +581,7 @@ test("the customer list runs by last contact, one never contacted by when they w
 
 test("a team member written by name or by email is one person: shown by name, filtered either way", async (t) => {
   if (skip) return t.skip(skip);
-  await applySchema(db, readFileSync("test/fixtures/other-apps.sql", "utf8"));
+  await applySchema(db, readFileSync("src/forms/schema.sql", "utf8") + ";\n" + readFileSync("src/payments/schema.sql", "utf8"));
   await db.sql`insert into resources (name, email, time_zone) values ('Dee Ortiz', 'dee@team.example', 'UTC')`;
   await loadTeam(db);
   try {
@@ -625,7 +596,7 @@ test("a team member written by name or by email is one person: shown by name, fi
 
 test("the morning email reaches a team member a task names by name, at the team list's email", async (t) => {
   if (skip) return t.skip(skip);
-  await applySchema(db, readFileSync("test/fixtures/other-apps.sql", "utf8"));
+  await applySchema(db, readFileSync("src/forms/schema.sql", "utf8") + ";\n" + readFileSync("src/payments/schema.sql", "utf8"));
   await db.sql`insert into resources (name, email, time_zone) values ('Mo Reyes', 'mo@team.example', 'UTC')`;
   const { customer } = await createCustomer(db, { name: "Name Owner", email: "name-owner@example.com", stage: "new" }, ME);
   await addTask(db, customer.id, { kind: "call", title: "Ring by name", due_on: "2031-03-03", due_time: null, owner: "Mo Reyes", deal_id: null }, ME);

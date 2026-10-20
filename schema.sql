@@ -1,11 +1,6 @@
--- The CRM's tables. Applied with applySchema (src/data/migrate.ts) every time
--- the service starts and before every deploy, by every copy of this app, so
--- it only ever adds: create table if not exists, create index if not exists,
--- alter table add column if not exists, comment on. Never drop, rename or
--- retype; a new column gets its own `alter table ... add column if not
--- exists` line below as well as a place in the create.
--- No semicolons inside a statement and no double hyphens inside a string:
--- applySchema splits on the one and strips the other.
+-- The CRM's tables, and its columns on the booking skill's bookings. Applied
+-- with applySchema (src/data/migrate.ts) every time the service starts and
+-- before every deploy, so each statement is safe to run again.
 
 create table if not exists pipeline_stages (
   key         text primary key check (key ~ '^[a-z0-9][a-z0-9_-]{0,39}$'),
@@ -97,11 +92,10 @@ create table if not exists follow_ups (
   created_by   citext,
   updated_by   citext,
   created_at   timestamptz not null default now(),
-  updated_at   timestamptz not null default now()
+  updated_at   timestamptz not null default now(),
+  -- The timeline note ticking one off made, so Undo takes it back.
+  done_note_id bigint
 );
-
--- The timeline note ticking one off made, so Undo takes it back.
-alter table follow_ups add column if not exists done_note_id bigint;
 
 create index if not exists follow_ups_open on follow_ups (due_on, due_time, id) where done_at is null;
 create index if not exists follow_ups_customer_open on follow_ups (customer_id, due_on) where done_at is null;

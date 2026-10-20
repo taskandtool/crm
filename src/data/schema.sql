@@ -1,6 +1,6 @@
 -- The data skill's tables: what every app in the project shares about the
 -- business itself, and the email opt-outs every app's follow-up emails
--- keep. Additive only (migrate.ts). Applied before any other skill's tables.
+-- keep. Applied before any other skill's tables.
 
 -- The business, once for the whole project: the name texts sign with,
 -- quotes print and the texting box names, the privacy and terms pages the
@@ -12,9 +12,9 @@ create table if not exists business (
   privacy_url      text,
   terms_url        text,
   updated_by       citext,
-  updated_at       timestamptz not null default now()
+  updated_at       timestamptz not null default now(),
+  address text
 );
-alter table business add column if not exists address text;
 
 -- The follow-up emails a person unsubscribed from (the ones CAN-SPAM counts
 -- as commercial), and the keys their emails' unsubscribe links carry

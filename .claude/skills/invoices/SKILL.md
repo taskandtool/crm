@@ -42,9 +42,12 @@ Version: 0.5.0 (taskandtool/skills)
   payments row; the invoice stays open with less owed until nothing is left.
 - **A quote is edited until it is accepted or declined**, sent or not;
   after that it is copied, never changed.
-- **Invoices belong to the customer.** A quote makes as many as asked:
-  `from-quote` all of it while it has none, `--deposit 50` a share of each
-  tax rate's lines, `--rest` what is not billed yet. Never before the yes.
+- **Invoices belong to the customer.** Before the yes, the owner's own
+  drafts go on a quote (`add <who> --quote <id>`, New invoice on its page;
+  `attachInvoice`): the app sends them at the yes. After it,
+  `from-quote` all of it while it has none, `--rest` what is not billed yet.
+  New invoice has One invoice | Repeats; Make it repeat turns a draft into
+  a recurring invoice.
 - **Charge a card only with the customer's agreement** to pay that way (a
   signed proposal that says so is that). `send --charge` and `charge`
   name the card; a refused charge leaves the invoice open with a task, and
@@ -84,11 +87,11 @@ revenue work as for any payment.
 | `schema.sql` | `quotes`, `quote_lines`, `invoices`, `invoice_lines`, `recurring_invoices`, `recurring_invoice_lines`, `stripe_customers`, `stripe_cards`. Apply the payments schema first (its `tax_rates`) |
 | `lines.ts` | Reading typed lines; the line and total SQL |
 | `quotes.ts` | A quote's life: create, save until decided, copy, sent, viewed, accepted, declined, expired |
-| `invoices.ts` | An invoice's life before Stripe: create, save a draft, from an accepted quote (all, a deposit, the rest), discard; `owed(db, email)` |
+| `invoices.ts` | An invoice's life before Stripe: create, save a draft, from an accepted quote (all, the rest), on a quote before its yes (`attachInvoice`), discard; `owed(db, email)` |
 | `document.tsx` | A quote or invoice as HTML on one sheet (previews, a quote's PDF); `sendQuote`, with a link or without |
 | `stripe.ts` | `sendInvoice` (safe to repeat; emailed, or `collect: "charge"`), `chargeInvoice`, `emailPaymentPage`, `recordPayment` and `paidSoFar`, `voidInvoice`, `markUncollectible` |
 | `cards.ts` | Saved cards: `cardEvents` for the webhook, `cardsFor`, `chargeCard` (read fresh from Stripe), `useCard`, `removeCard` |
-| `recurring.ts` | A recurring invoice's life and dates; `runRecurring` (the daily job's), `makeNow`, `startFromQuote` and `endForQuote` (a proposal's "Then, recurring"), the sentences |
+| `recurring.ts` | A recurring invoice's life and dates; `runRecurring` (the daily job's), `makeNow`, `startFromQuote` and `endForQuote` (one attached to a quote), the sentences |
 | `cli.ts` | `quotesCli`, `invoicesCli`, `recurringCli`: what the app's `scripts/quotes.mjs`, `invoices.mjs` and `recurring.mjs` run |
 | `webhook.ts` | `invoiceEvents` for the payments webhook |
 | `form.tsx` | The form parts every document shares: customer, line items |

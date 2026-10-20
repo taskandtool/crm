@@ -2,7 +2,7 @@
 -- A note the team logs on a submission (the forms list) is on that
 -- customer's timeline in the CRM, and one logged in the CRM shows on the
 -- submission. Whichever app runs first makes the tables; the other's run
--- then changes nothing. Additive only (data/SKILL.md).
+-- then changes nothing.
 
 create table if not exists customers (
   id               bigserial primary key,
@@ -22,7 +22,14 @@ create table if not exists customers (
   created_by       citext,
   updated_by       citext,
   created_at       timestamptz not null default now(),
-  updated_at       timestamptz not null default now()
+  updated_at       timestamptz not null default now(),
+  -- Merging: the addresses a customer also goes by (the merged record's,
+  -- lower case, as data/email.ts stores every address; text[] because pg reads
+  -- a citext[] back as a string), so
+  -- what the project's other tables hold under those addresses is still theirs,
+  -- and on the merged record, the one it went into.
+  other_emails text[] not null default '{}',
+  merged_into bigint
 );
 
 -- Email is unique when present; a customer may have only a phone.
@@ -36,9 +43,7 @@ create index if not exists customers_email_trgm on customers using gin ((email::
 create index if not exists customers_phone_trgm on customers using gin (phone gin_trgm_ops);
 create index if not exists customers_company_trgm on customers using gin (company gin_trgm_ops);
 -- The phone match key: its last ten digits, an extension left off
--- (the CRM's src/crm/phone.ts says why). customers_phone_key is the first version's,
--- kept because this file only adds.
-create index if not exists customers_phone_key on customers ((right(regexp_replace(phone, '[^0-9]', '', 'g'), 10)));
+-- (the CRM's src/crm/phone.ts says why).
 create index if not exists customers_phone_match on customers ((right(regexp_replace(regexp_replace(phone, '[[:space:]]*(ext|extension|x|#)[.:[:space:]]*[0-9]+[[:space:]]*$', '', 'i'), '[^0-9]', '', 'g'), 10)));
 
 create table if not exists customer_notes (
@@ -53,13 +58,6 @@ create table if not exists customer_notes (
 
 create index if not exists customer_notes_customer on customer_notes (customer_id, happened_at desc, id desc);
 
--- Merging: the addresses a customer also goes by (the merged record's,
--- lower case, as data/email.ts stores every address; text[] because pg reads
--- a citext[] back as a string), so
--- what the project's other tables hold under those addresses is still theirs,
--- and on the merged record, the one it went into.
-alter table customers add column if not exists other_emails text[] not null default '{}';
-alter table customers add column if not exists merged_into bigint;
 create index if not exists customers_other_emails on customers using gin (other_emails);
 -- The CRM list's order: most recent contact first, one never contacted by when they were added.
 create index if not exists customers_contact_order on customers ((coalesce(last_contact_at, created_at)) desc, id desc);

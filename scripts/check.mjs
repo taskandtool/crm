@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // The CRM's own checks, run with `npm run check` before showing work:
 //   - crm.config.json and every example are valid (the server's validator)
-//   - schema.sql only adds (the same rule applySchema enforces)
 //   - no markup carries what DESIGN.md refuses: hex colours, default
 //     Tailwind colours, gradients, blur, animations, tracking/leading
 //     overrides, weights above semibold; in src/views, Tailwind's default
@@ -20,10 +19,9 @@ import { join } from "node:path";
 
 const findings = [];
 
-// crm.config.json, the examples and schema.sql, through the app's own code (needs tsx)
+// crm.config.json and the examples, through the app's own code (needs tsx)
 const cfgCheck = spawnSync("node_modules/.bin/tsx", ["-e", `
   import { validate } from "./src/config-schema";
-  import { additiveProblems } from "./src/data/migrate";
   import { readFileSync, readdirSync } from "node:fs";
   const files = ["crm.config.json", ...readdirSync("examples").filter((f) => f.endsWith(".json")).map((f) => "examples/" + f)];
   for (const f of files) {
@@ -31,7 +29,6 @@ const cfgCheck = spawnSync("node_modules/.bin/tsx", ["-e", `
     for (const p of validate(raw)) console.log(f + ": " + p);
     if (f === "crm.config.json" && typeof raw.business === "string" && raw.business.includes("to fill")) console.error("note: crm.config.json's business line is still to fill; the CRM is a template until the AI shapes it");
   }
-  for (const p of additiveProblems(readFileSync("schema.sql", "utf8"))) console.log("schema.sql: " + p);
 `], { encoding: "utf8" });
 for (const line of (cfgCheck.stdout || "").split("\n").filter(Boolean)) findings.push(line);
 if (cfgCheck.status !== 0) findings.push("the config could not be validated:\n" + (cfgCheck.stderr || "").trim().split("\n").slice(0, 6).join("\n"));

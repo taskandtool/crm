@@ -533,14 +533,11 @@ test("a booking moved and then marked completed keeps its event, at the new time
     assert.equal(calls.filter((c) => c.method === "PATCH").length, 1);
   }));
 
-test("event_key is filled for every booking, old rows included, and stays put", (t) =>
+test("event_key is filled for every booking and stays put", (t) =>
   withDb(t, async (s) => {
     const { resource } = await setup(s, "google");
     assert.ok((await book(s.db, { typeId: resource.id, start: T("2026-03-09T10:00:00Z"), name: "Ann", email: "ann@example.com", source: "website", now: NOW })).ok);
     assert.ok((await book(s.db, { typeId: resource.id, start: T("2026-03-09T12:00:00Z"), name: "Bo", email: "bo@example.com", source: "website", now: NOW })).ok);
-    // Rows from before the column existed get a key when the schema adds it.
-    await s.db.sql`alter table bookings drop column event_key`;
-    await applySchema(s.db, schema);
     const before = await s.db.sql`select event_key from bookings order by id`;
     assert.ok(before.every((r) => /^[0-9a-f]{32}$/.test(r.event_key)));
     assert.notEqual(before[0].event_key, before[1].event_key);

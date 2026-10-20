@@ -9,9 +9,8 @@ import type { Charge } from "./price";
 /** The form with this key, or null. A broken field in the row is left out, never rendered half-made. */
 export async function loadForm(db: Db, key: string): Promise<Form | null> {
   const [row] = await db.sql`
-    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads, deals, owner::text as owner, deal_stage,
-           to_jsonb(f)->>'follow_up' = 'true' as follow_up
-    from forms f where key = ${key}`;
+    select key, title, fields, notify_emails::text[] as notify_emails, redirect_to, success_message, submit_label, active, leads, deals, owner::text as owner, deal_stage, follow_up
+    from forms where key = ${key}`;
   return row ? toForm(row) : null;
 }
 
@@ -86,8 +85,7 @@ export async function insertSubmission(
 export async function saveSubmitter(db: Db, id: string | number, user: string | null = null): Promise<CustomerRef | null> {
   const [s] = await db.sql<{ name: string | null; email: string | null; phone: string | null; data: Record<string, unknown> | null; created_at: Date; source: string; leads: boolean; owner: string | null }>`
     select s.name, s.email::text as email, s.phone, s.data, s.created_at, coalesce(f.title, s.form_key) as source, coalesce(f.leads, true) as leads,
-           -- Read by name from the row, so a forms table an older app made (no owner yet) reads as no one.
-           to_jsonb(f) ->> 'owner' as owner
+           f.owner::text as owner
     from submissions s left join forms f on f.key = s.form_key
     where s.id = ${String(id)}::bigint and s.status <> 'spam' and s.form_key <> ${BOOKING_PAGE.key}`;
   if (!s) return null;

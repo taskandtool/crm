@@ -75,7 +75,7 @@ webhook: `references/setup.md`.
 
 | File | What |
 |---|---|
-| `schema.sql` | `payments`, `stripe_events`, `tax_rates`, additive |
+| `schema.sql` | `payments`, `stripe_events`, `tax_rates` |
 | `stripe.ts` | `stripeFrom(env)`: the caller, gateway or bound key; `StripeError`; `stripeConnected(env)`: whether Stripe answers here |
 | `checkout.ts` | `startCheckout`: the pending row, then Checkout (one amount, or `lines`) |
 | `form-step.tsx` | `paymentStep(getDb, stripeOf, { source })`: a form's payment step |

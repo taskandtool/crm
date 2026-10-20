@@ -44,7 +44,7 @@ before(async () => {
     s = r;
     db = r.db;
     await setup(db, { statuses: STATUSES, dealStages: DEAL_STAGES }, { invoices: true, forms: true });
-    await applySchema(db, readFileSync("test/fixtures/other-apps.sql", "utf8"));
+    await applySchema(db, readFileSync("src/forms/schema.sql", "utf8") + ";\n" + readFileSync("src/payments/schema.sql", "utf8"));
   }
 });
 after(async () => {

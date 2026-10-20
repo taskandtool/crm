@@ -1,6 +1,6 @@
 ---
 name: data
-description: "The project's one shared database: table rules (email links people, schema files only add), the Db handle, settings, connection calls, email and spam checks. Use before creating or changing a table or copying another skill's code. Not for getting a database (the `database` skill)."
+description: "The project's one shared database: table rules (email links people, schemas safe to run again), the Db handle, settings, connection calls, email and spam checks. Use before creating or changing a table or copying another skill's code. Not for getting a database (the `database` skill)."
 ---
 
 # Data
@@ -9,7 +9,7 @@ Every app in a project shares one Postgres database, so a CRM installed
 later finds the Website's form submissions, bookings and payments already
 there.
 
-Version: 0.4.0 (taskandtool/skills)
+Version: 0.5.0 (taskandtool/skills)
 
 ## The rules
 
@@ -20,28 +20,15 @@ Version: 0.4.0 (taskandtool/skills)
 - **Look before you build.** Before creating anything, list what is there:
   `select table_name from information_schema.tables where table_schema = 'public'`.
   A table another app made is the one to use: add a column to it rather than
-  making a second one. Never make `leads` beside `submissions`.
+  making a second one.
 - **A person is an email.** Every table that names a person has
   `email citext`. Store it through `normalizeEmail` (`email.ts`). Nothing else
   links people across apps: no people table, no foreign keys between
   skills' tables.
-- **Tables only grow.** Several apps may run different versions of the same
-  skill, so a newer one adds a column an older one ignores and neither breaks
-  the other. A `schema.sql` holds only `create table if not exists x`,
-  `create [unique] index if not exists … on x`, `alter table x add column if
-  not exists …`, the two loosenings an older app's writes still pass
-  (`alter table x alter column y drop not null`, and `alter table x drop
-  constraint if exists x_y_check` when a check should allow more; the
-  code that writes it checks its values instead) and `comment on`, with
-  plain table names. Put constraints
-  inline in `create table`, or on the column in `add column`. Never drop,
-  rename or change a type; add a new column and stop writing the old one.
-  `applySchema` refuses anything else before running any of it.
-- **A column added in a later version gets its own line**:
-  `alter table x add column if not exists y …`, as well as being in the
-  `create table`. `create table if not exists` skips a table that is already
-  there, so a project whose table an older copy made never gets a column that
-  is only inside the `create`.
+- **A `schema.sql` runs every time the app starts**, so each statement
+  must be safe to run again: `create table if not exists`, `create index if
+  not exists`. A table already there is skipped, so a column added to one
+  needs its own line: `alter table x add column if not exists y …`.
 - **Times are `timestamptz`.** Store the IANA zone next to any time a person
   chose in their own zone (`time_zone text`). Never store a local time without
   its zone.
@@ -84,6 +71,10 @@ Each app makes its handle from the driver it already uses:
   owner bound to the production Worker (`delivery="edge"`).
   That key's env name is the connection's `env_name` in `python3 ~/tools/taskandtool.py list-connections`
   (`<SLUG>_API_KEY`); read it there rather than assuming it.
+  `listConnections(env)` (machine only) is that list for code: a slug per
+  granted endpoint, with its `service` and `account`. Two people's Google on
+  one app are `google-calendar` and `google-calendar-7c2e1a`, so code that
+  serves everyone who connected finds them by `service`, not by one slug.
 - **Email** (`send.ts`): `sendEmail(env, mail)` through Resend or Postmark
   (the owner's, to anyone; `NOTIFY_FROM` and `NOTIFY_VIA`), else Task & Tool
   email (ours, free, nothing to set). Task & Tool email sends only mail
@@ -139,10 +130,10 @@ No `DATABASE_URL` means the app has no database yet: ask the owner with
 |---|---|
 | `db.ts` | `Db`, `GetDb`, `q` |
 | `neon.ts`, `pg.ts` | the two handles: Neon HTTP (edge and machine), node-postgres (the machine, and production deployed with `nodejs_compat`) |
-| `migrate.ts` | `applySchema`, the additive check |
+| `migrate.ts` | `applySchema` |
 | `email.ts` | `normalizeEmail` |
 | `env.ts` | `envVar`, `envOf`, `setting`, `keyName` |
-| `gateway.ts` | `gatewayFetch` (machine only at run time) |
+| `gateway.ts` | `gatewayFetch`, `listConnections` (machine only at run time) |
 | `send.ts` | `sendEmail`, `afterResponse` |
 | `spam.tsx` | `SpamFields`, `makeStamp`, `verdict` |
 | `schema.sql` | `business`, `email_optouts`, `unsubscribe_keys` |
@@ -150,4 +141,4 @@ No `DATABASE_URL` means the app has no database yet: ask the owner with
 | `unsubscribe.tsx` | `unsubscribeLink`, `unsubscribe`, `emailOptedOut`, `unsubscribeRoutes` |
 | `token.ts` | `newToken`, `tokenHash`: a key a visitor holds, stored as its hash |
 | `cli.mjs` | what every script shares: arguments, usage, `done`, `fail`, `misused`, `machineEnv` (machine only) |
-| `test/` | the additive check, the handles, settings, sending, spam |
+| `test/` | applying a schema, the handles, settings, sending, spam |

@@ -96,7 +96,7 @@ node scripts/export.mjs --out customers.csv     # the list out
 - To look from the machine:
   `curl -H 'X-TaskTool-User: you@example.com' localhost:3000/`.
 - `npm run check` before showing work (config and examples valid, the
-  schema additive, the refuse list, the typecheck). `npm test` for the
+  refuse list, the typecheck). `npm test` for the
   tests.
 - `npm run deploy` publishes to production (schema, build, deploy), after
   the crm skill's checks.

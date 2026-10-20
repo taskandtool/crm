@@ -1,8 +1,9 @@
 // The team's side of proposals, team only: the panel on a quote's page, with
 // the checklist of its components by name (their design and words are code
-// the AI writes from the brand record), its title and what happens when they
-// sign, and where it stands: its link, who opened it, the signature. Then
-// New link and the signed copy. Every form works without JavaScript.
+// the AI writes from the brand record), its title, and where it stands: its
+// link, who opened it, the signature. Then New link and the signed copy.
+// What their yes sends is the invoices on the quote (the quote's page lists
+// them). Every form works without JavaScript.
 import { Hono, type Context } from "hono";
 import type { Child } from "hono/jsx";
 import { FieldList, Section } from "../admin/detail";
@@ -13,15 +14,13 @@ import { AskAi, When } from "../admin/list";
 import { idParam, str } from "../admin/query";
 import { buttonClass, controlClass, fieldClass, inputClass, primaryClass, smallText } from "../admin/status";
 import type { GetDb, Db } from "../data/db";
-import { taxRates } from "../payments/tax";
 import { isEditable, quoteById, type Quote } from "../invoices/quotes";
 import type { SavedLine } from "../invoices/lines";
 import { COMPONENTS, PICKABLE } from "./components";
 import { fillPage } from "./page";
 import { signedState } from "./sign";
 import type { Base } from "./link";
-import { describe, RECURRING_STATUS_LABELS, recurringList } from "../invoices/recurring";
-import { afterSign, chosenKeys, ensureProposal, mintLink, opensOf, proposalOf, saveProposal, storePage, type ProposalOpts } from "./store";
+import { chosenKeys, ensureProposal, mintLink, opensOf, proposalOf, saveProposal, storePage, type ProposalOpts } from "./store";
 
 type Ctx = Context<{ Variables: TeamVars }>;
 
@@ -58,7 +57,7 @@ export function proposalAdmin(getDb: GetDb, o: ProposalAdminOpts) {
     const body = await c.req.parseBody({ all: true });
     const picked = Array.isArray(body.components) ? body.components.map(str) : body.components === undefined ? [] : [str(body.components)];
     const db = getDb(c);
-    const r = await saveProposal(db, qt.id, { title: body.title, first_invoice: str(body.first_invoice), deposit_percent: str(body.deposit_percent), components: picked }, c.get("user"));
+    const r = await saveProposal(db, qt.id, { title: body.title, components: picked }, c.get("user"));
     if (!r.ok) return c.redirect(`${o.quotes}/${qt.id}?problem=${encodeURIComponent(`Nothing was saved: ${Object.values(r.errors).join(" ")}`)}`, 303);
     const stored = await storePage(db, qt.id, o.opts);
     if (!stored.ok) return c.redirect(`${o.quotes}/${qt.id}?problem=${encodeURIComponent(stored.why)}`, 303);
@@ -97,17 +96,13 @@ export function proposalAdmin(getDb: GetDb, o: ProposalAdminOpts) {
   return app;
 }
 
-/** The proposal's part of a quote's page: its components, what signing does, its link, who opened it, the answer. */
+/** The proposal's part of a quote's page: its components, its link, who opened it, the answer. */
 export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, o: { opts: ProposalOpts; quotes: string; timeZone: string }): Promise<Child> {
   await ensureProposal(db, qt);
-  const [p, keys, opens, rates, linked] = await Promise.all([proposalOf(db, qt.id), chosenKeys(db, qt.id), opensOf(db, qt.id), taxRates(db), recurringList(db, { quoteId: qt.id })]);
-  // "Then, recurring": the recurring invoice waiting on this quote (or started by its yes).
-  const recurring = linked.filter((r) => r.status !== "ended");
-  const invoicesBase = o.quotes.replace(/\/quotes$/, "");
+  const [p, keys, opens] = await Promise.all([proposalOf(db, qt.id), chosenKeys(db, qt.id), opensOf(db, qt.id)]);
   const [sig] = await db.sql`select name, email::text as email, signed_at, ip from quote_signatures where quote_id = ${qt.id}::bigint`;
   const self = `${o.quotes}/${qt.id}`;
   const shown = COMPONENTS.filter((cpt) => !cpt.always && keys.includes(cpt.key));
-  const after = p ? afterSign(p, qt, rates, undefined, recurring.filter((r) => r.status === "pending")).team : null;
   const w = o.opts.word.toLowerCase();
   const opened = opens.customer
     ? <>Opened {opens.customer === 1 ? "once" : `${opens.customer} times`}, last <When at={opens.last!} timeZone={o.timeZone} /></>
@@ -122,14 +117,6 @@ export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, 
           value: isEditable(qt) ? null : shown.length
             ? <>{shown.map((cpt, i) => <>{i ? ", " : ""}{cpt.label}{cpt.sample ? <SampleTag /> : null}</>)}</>
             : "None: a plain quote, its price and sign-off",
-        },
-        { label: "When they sign", value: after ? after.replace(/^When they sign: /, "").replace(/^./, (x) => x.toUpperCase()) : null },
-        // Once its yes started it, the recurring invoice is a link away (before that, "Then, recurring" below).
-        {
-          label: "Recurring",
-          value: recurring.some((r) => r.status !== "pending")
-            ? <>{recurring.filter((r) => r.status !== "pending").map((r) => <a href={`${invoicesBase}/recurring/${r.id}`} class="block">{r.title}, {RECURRING_STATUS_LABELS[r.status].toLowerCase()}</a>)}</>
-            : null,
         },
         { label: "Link", value: p?.link_made_at ? <>Made <When at={p.link_made_at} timeZone={o.timeZone} />{p.emailed_at ? <>, emailed <When at={p.emailed_at} timeZone={o.timeZone} /></> : ", given by hand"}</> : null },
         { label: "Opened", value: opened ? <>{opened}{aside ? <span class="block text-label text-ink-3">Not counted: {aside}</span> : null}</> : null },
@@ -168,33 +155,6 @@ export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, 
             </div>
           </fieldset>
           <label class={fieldClass}>Title<input name="title" value={p?.title ?? ""} maxlength={160} placeholder={`${o.opts.word} ${qt.number}`} class={inputClass} /></label>
-          <fieldset class="flex flex-col gap-2">
-            <legend class="mb-1 font-semibold">After they sign</legend>
-            {([["none", "Nothing: I send the invoice myself"], ["draft", "Make a draft invoice for me to review"], ["send", "Send the invoice through Stripe, and take them to pay it"]] as const).map(([val, label]) => (
-              <label class="flex items-center gap-2"><input type="radio" name="first_invoice" value={val} checked={(p?.first_invoice ?? "none") === val} class="size-4" /> {label}</label>
-            ))}
-            <label class={fieldClass + " mt-2 max-w-48"}>Deposit, percent (blank: the full total)
-              <input name="deposit_percent" value={p?.deposit_percent ? String(p.deposit_percent) : ""} inputmode="numeric" placeholder="50" class={inputClass} />
-            </label>
-          </fieldset>
-          <div>
-            <p class="mb-1 font-semibold">Then, recurring</p>
-            {recurring.length ? (
-              <ul class="flex flex-col gap-2">
-                {recurring.map((r) => (
-                  <li>
-                    <span class="block max-w-prose">{describe(r)}</span>
-                    <a href={`${invoicesBase}/recurring/${r.id}`} class={smallText}>{r.status === "pending" ? "Change it" : "Open it"}</a>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p class={smallText + " max-w-prose text-ink-3"}>
-                A monthly retainer or a payment plan: it starts when they sign, and the {w} shows it beside the total.{" "}
-                <a href={`${invoicesBase}/recurring/new?quote=${qt.id}`}>Add a recurring invoice</a>
-              </p>
-            )}
-          </div>
           <div class="flex flex-wrap items-center gap-2">
             <button class={primaryClass}>Save</button>
             <a href={`${self}/document`} target="_blank" class={buttonClass}>Preview</a>

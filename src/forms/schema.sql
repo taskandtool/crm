@@ -1,5 +1,5 @@
 -- forms: every form in the project is a row, and every submission from any
--- app lands in one table the CRM reads. Additive only (data/SKILL.md).
+-- app lands in one table the CRM reads.
 
 create table if not exists forms (
   id              bigserial primary key,
@@ -15,21 +15,20 @@ create table if not exists forms (
   source          text,
   updated_by      citext,
   created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now()
+  updated_at      timestamptz not null default now(),
+  -- Each submission's lead becomes a deal straight away, made by the app that has
+  -- deals (the CRM), as Pipedrive's web forms save a deal and Jobber's job booking
+  -- converts its request. Only with leads on.
+  deals boolean not null default false,
+  -- Whose each submission's lead (and its deal) is, as Pipedrive's web forms set an
+  -- owner; and the stage its deal lands in (a key of the app's stages; the first
+  -- open one when empty or gone).
+  owner citext,
+  deal_stage text,
+  -- A form that follows up on its own (the phone skill's flows 2 and 3): by
+  -- text where it can, by email where it can't. Off by default.
+  follow_up boolean not null default false
 );
--- Each submission's lead becomes a deal straight away, made by the app that has
--- deals (the CRM), as Pipedrive's web forms save a deal and Jobber's job booking
--- converts its request. Only with leads on.
-alter table forms add column if not exists deals boolean not null default false;
--- Whose each submission's lead (and its deal) is, as Pipedrive's web forms set an
--- owner; and the stage its deal lands in (a key of the app's stages; the first
--- open one when empty or gone).
-alter table forms add column if not exists owner citext;
-alter table forms add column if not exists deal_stage text;
--- A form that follows up on its own (the phone skill's flows 2 and 3): by
--- text where it can, by email where it can't. Off by default.
-alter table forms add column if not exists follow_up boolean not null default false;
-
 
 create table if not exists submissions (
   id          bigserial primary key,
@@ -44,9 +43,12 @@ create table if not exists submissions (
   updated_by  citext,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
-  completed_at timestamptz default now()
+  completed_at timestamptz default now(),
+  notified text,
+  -- What a person agreed to: the words of the texting box they ticked, and when.
+  text_consent text,
+  text_consent_at timestamptz
 );
-alter table submissions add column if not exists completed_at timestamptz default now();
 
 create index if not exists submissions_form_recent on submissions (form_key, created_at desc, id desc);
 create index if not exists submissions_recent on submissions (created_at desc, id desc);
@@ -55,13 +57,11 @@ create index if not exists submissions_status on submissions (status, created_at
 create index if not exists submissions_name_trgm on submissions using gin (name gin_trgm_ops);
 create index if not exists submissions_email_trgm on submissions using gin ((email::text) gin_trgm_ops);
 
-alter table forms add column if not exists leads boolean not null default true;
 comment on column forms.leads is 'Each submission is a lead (customers skill leads). Off for a newsletter sign-up or a job application: the person is still saved.';
 comment on table forms is 'One row per form. fields is the ordered definition the renderer and validator read (forms skill).';
 comment on table submissions is 'Every form submission from every app in the project. A person is their email. No IP addresses are stored.';
 comment on column submissions.completed_at is 'When the whole form was done: its questions, then any booking step and any payment (once Stripe reports it paid). Null while a step is still to do. Rows from before this column have the time it was added.';
 comment on column submissions.data is 'Every answer that is not name, email or phone, keyed by field name. _consent holds the wording of each consent box ticked; _utm (source, medium, campaign) and _referrer (a host) say where the visitor came from.';
-alter table submissions add column if not exists notified text;
 comment on column submissions.notified is 'The email telling the team about it, in one line: who it went to, or why it was not sent (forms/store.ts recordNotified). Null when none was tried.';
 
 -- A form with steps, while someone is still answering it. A draft is written
@@ -86,17 +86,15 @@ create table if not exists submission_drafts (
   page text,
   submission_id bigint,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  -- An email's link back to a draft carries a second key (the phone skill's
+  -- draftLink), so the page the visitor still has open keeps working.
+  text_key_hash text,
+  -- What a person agreed to: the words of the texting box they ticked, and when.
+  text_consent text,
+  text_consent_at timestamptz
 );
 create unique index if not exists submission_drafts_key on submission_drafts (key_hash);
 create index if not exists submission_drafts_recent on submission_drafts (form_key, updated_at desc, id desc);
 create index if not exists submission_drafts_submission on submission_drafts (submission_id);
--- An email's link back to a draft carries a second key (the phone skill's
--- draftLink), so the page the visitor still has open keeps working.
-alter table submission_drafts add column if not exists text_key_hash text;
 create index if not exists submission_drafts_text_key on submission_drafts (text_key_hash) where text_key_hash is not null;
--- What a person agreed to: the words of the texting box they ticked, and when.
-alter table submission_drafts add column if not exists text_consent text;
-alter table submission_drafts add column if not exists text_consent_at timestamptz;
-alter table submissions add column if not exists text_consent text;
-alter table submissions add column if not exists text_consent_at timestamptz;

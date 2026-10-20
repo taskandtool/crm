@@ -17,7 +17,7 @@ import { formatMoney } from "../src/payments/money";
 const HELP = `usage: node scripts/proposal-preview.mjs
 
 Draws the proposal page with every component ticked, on a made-up quote
-(a made-up business, three lines, a 30% deposit), into
+(a made-up business, three lines, a deposit invoice on it), into
 uploads/proposal-preview/page.html, and screenshots it at 1280 and 390
 pixels wide with tt-crawl shoot. Nothing is stored on a quote. Run it after
 npm run css.
@@ -53,7 +53,7 @@ let html: string;
 try {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   html = renderPage({ word, business, timeZone: cfg.time_zone, quote: quote as any, rates: [], title: `A ${word.toLowerCase()} for Sam Rivera`,
-    afterSign: `When you sign, a 30% deposit of ${deposit} is due, and you are taken straight to pay it online.` }, PICKABLE.map((c) => c.key));
+    afterSign: `When you sign, the invoice for ${deposit} is due, and you are taken straight to pay it online.` }, PICKABLE.map((c) => c.key));
   html = fillPage(html, { kind: "open", action: "/q/preview", sha: "0".repeat(64), reasons: ["Price", "Timing"] }, word);
 } catch (e) {
   fail(`proposal-preview: the page did not draw (${(e as Error).message})`, "npm run css && npm run check");

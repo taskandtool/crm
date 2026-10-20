@@ -10,7 +10,7 @@
 //
 //   const r = await createInvoice(db, { email, currency: "usd", lines: [...] }, by, "crm");
 //   const inv = await invoiceFromQuote(db, quoteId, by, "crm");   // an accepted quote's lines
-//   const dep = await invoiceFromQuote(db, quoteId, by, "crm", 30, { share: { kind: "percent", percent: 50 } });
+//   await attachInvoice(db, draft.id, quoteId, by);                 // sent when the quote is accepted (the app's afterDecide)
 import { likePattern } from "../admin/query";
 import { q, type Db } from "../data/db";
 import { taxRates } from "../payments/tax";
@@ -125,8 +125,8 @@ export async function saveInvoice(db: Db, id: string, f: InvoiceFields, by: stri
 
 export type FromQuote = { ok: true; value: Invoice } | { ok: false; reason: "not_found" | "not_accepted" | "invoiced" | "nothing_left"; invoiceId?: string };
 
-/** How much of a quote an invoice bills: all its lines, a share of it (a deposit), or what no invoice has billed yet. */
-export type Share = { kind: "all" } | { kind: "percent"; percent: number } | { kind: "rest" };
+/** How much of a quote an invoice bills: all its lines, or what no invoice has billed yet. */
+export type Share = { kind: "all" } | { kind: "rest" };
 
 /**
  * A draft invoice from an accepted quote, in one transaction behind a lock
@@ -136,17 +136,12 @@ export type Share = { kind: "all" } | { kind: "percent"; percent: number } | { k
  * `invoiced` with the newest.
  *
  * - `all` (the default): its customer, appointment, lines and totals.
- * - `percent`: one line per tax rate the quote uses, "Deposit (50%) for
- *   Q-0012", carrying the same share of each rate's lines, so the tax is the
- *   same share too.
  * - `rest`: what the quote's invoices (not void) have not billed yet, per tax
  *   rate, "Balance for Q-0012"; all its lines when none has.
  */
 export async function invoiceFromQuote(db: Db, quoteId: string, by: string, source: string, days = 30, opts: { share?: Share; seen?: number } = {}): Promise<FromQuote> {
   if (!/^\d{1,18}$/.test(quoteId)) return { ok: false, reason: "not_found" };
   const share = opts.share ?? { kind: "all" };
-  const pct = share.kind === "percent" ? Math.round(share.percent) : null;
-  if (pct !== null && !(pct >= 1 && pct <= 100)) throw new Error(`a deposit is 1 to 100 percent, not ${share.kind === "percent" ? share.percent : ""}`);
   const seen = opts.seen ?? null;
   const out = await db.transaction([
     // Lock the quote: two clicks wait for each other, and the second sees the first's invoice.
@@ -161,11 +156,9 @@ export async function invoiceFromQuote(db: Db, quoteId: string, by: string, sour
       groups as (
         select l.tax_rate_id, sum(l.amount_cents) as amount, min(l.position) as first
         from quote_lines l where l.quote_id = ${quoteId}::bigint group by l.tax_rate_id),
-      -- A share of each rate's lines: the deposit's percent, or what is left to bill.
+      -- What is left to bill of each rate's lines.
       shares as (
-        select g.tax_rate_id, g.first,
-               case when ${pct}::int is not null then round(g.amount * ${pct}::int / 100.0)::bigint
-                    else g.amount - coalesce(b.amount, 0) end as amount
+        select g.tax_rate_id, g.first, g.amount - coalesce(b.amount, 0) as amount
         from groups g left join billed b on b.tax_rate_id is not distinct from g.tax_rate_id),
       whole as (select ${share.kind}::text = 'all' or (${share.kind}::text = 'rest' and not exists (select 1 from billed)) as yes),
       made as (
@@ -182,7 +175,7 @@ export async function invoiceFromQuote(db: Db, quoteId: string, by: string, sour
       parts as (
         insert into invoice_lines (invoice_id, position, description, quantity, unit_cents, tax_rate_id, amount_cents, tax_cents)
         select made.id, row_number() over (order by s.first),
-               case when ${pct}::int is not null then 'Deposit (' || ${pct}::int || '%) for ' else 'Balance for ' end || qt.number
+               'Balance for ' || qt.number
                  || case when (select count(*) from groups) > 1 then coalesce(' (' || t.name || ')', ' (no tax)') else '' end,
                1, s.amount, s.tax_rate_id, s.amount,
                coalesce(case when t.inclusive then s.amount - round(s.amount * 10000.0 / (10000 + t.percent_bp))
@@ -207,6 +200,32 @@ export async function invoiceFromQuote(db: Db, quoteId: string, by: string, sour
   const now = out[3][0];
   if (seen !== null && now.n !== seen) return { ok: false, reason: "invoiced", invoiceId: now.id };
   return { ok: false, reason: "nothing_left" };
+}
+
+/**
+ * Put a draft on a quote still waiting for its answer, or take it off
+ * (`quoteId` null): what is on it, the app sends at the yes (the CRM's
+ * afterAccepted). Only a draft of the quote's own customer that never went
+ * to Stripe and is no recurring invoice's; false when it is not one.
+ */
+export async function attachInvoice(db: Db, id: string, quoteId: string | null, by: string): Promise<boolean> {
+  if (!/^\d{1,18}$/.test(id) || (quoteId !== null && !/^\d{1,18}$/.test(quoteId))) return false;
+  const rows = await db.sql`
+    update invoices i set quote_id = ${quoteId}::bigint, updated_by = ${by}, updated_at = now()
+    where i.id = ${id}::bigint and i.status = 'draft' and i.stripe_invoice_id is null and i.recurring_id is null
+      and exists (select 1 from quotes q where q.id = coalesce(${quoteId}::bigint, i.quote_id)
+                  and q.status in ('draft', 'sent', 'expired') and (${quoteId}::bigint is null or q.email = i.email))
+    returning i.id`;
+  return rows.length > 0;
+}
+
+/** A customer's drafts that could go on a quote: none on another quote, none a recurring invoice's. */
+export async function attachableDrafts(db: Db, email: string): Promise<Invoice[]> {
+  const rows = await db.sql`
+    select *, to_char(due_date, 'YYYY-MM-DD') as due_day, to_char(period_on, 'YYYY-MM-DD') as period_day from invoices
+    where email = ${email}::citext and status = 'draft' and stripe_invoice_id is null and quote_id is null and recurring_id is null
+    order by created_at desc limit 20`;
+  return rows.map(toInvoice);
 }
 
 /** Discard a draft that never went to Stripe: it turns void and stays on record. */

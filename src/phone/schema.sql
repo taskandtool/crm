@@ -1,7 +1,6 @@
 -- The phone skill's tables: the business's numbers, every text and call on
--- them, and the automatic texts' changes and sends. Additive only
--- (data/migrate.ts). Applied after the data, customers, booking and forms
--- skills' tables, whose columns it adds to.
+-- them, and the automatic texts' changes and sends. Applied after the
+-- customers skill's tables: it adds texts_off to customers.
 
 -- A number the business owns on its own Twilio account. The first is the
 -- business number; more can be added for a van or an ad, each with a label,
@@ -27,7 +26,9 @@ create table if not exists phone_numbers (
   hooks_url        text,
   created_by       citext,
   created_at       timestamptz not null default now(),
-  updated_at       timestamptz not null default now()
+  updated_at       timestamptz not null default now(),
+  -- When the owner, texting the number from their own cell, was last told where to reply (once an hour).
+  owner_replied_at timestamptz
 );
 
 -- Every text and call, in and out: one table, as GoHighLevel keeps them, so
@@ -81,7 +82,9 @@ create table if not exists text_flows (
   words            jsonb not null default '{}'::jsonb,
   timing           integer,
   updated_by       text,
-  updated_at       timestamptz not null default now()
+  updated_at       timestamptz not null default now(),
+  -- When the owner last turned a flow on: what came before is never texted about.
+  enabled_at timestamptz
 );
 
 -- One automatic text, claimed before it goes, so two runs never send it
@@ -122,12 +125,6 @@ create table if not exists messages_seen (
 
 -- A contact the team should not text (as if they had said STOP).
 alter table customers add column if not exists texts_off boolean not null default false;
-
--- When the owner, texting the number from their own cell, was last told where to reply (once an hour).
-alter table phone_numbers add column if not exists owner_replied_at timestamptz;
-
--- When the owner last turned a flow on: what came before is never texted about.
-alter table text_flows add column if not exists enabled_at timestamptz;
 
 -- What kind of line a number is, asked of Twilio Lookup once (about a cent)
 -- before its first automatic text: a landline can't get one, so it gets the

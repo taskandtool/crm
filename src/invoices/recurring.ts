@@ -269,7 +269,7 @@ export async function previewRecurring(db: Db, f: RecurringFields, now?: Recurri
 const SELECT = q`select *, to_char(first_on, 'YYYY-MM-DD') as first_day, to_char(next_on, 'YYYY-MM-DD') as next_day, to_char(ends_on, 'YYYY-MM-DD') as ends_day from recurring_invoices`;
 
 /**
- * A new recurring invoice. `pending` (a proposal's "Then, recurring") waits
+ * A new recurring invoice. `pending` (attached to a quote) waits
  * for its quote's yes; anything else starts active, its first invoice on
  * `first_on`.
  */

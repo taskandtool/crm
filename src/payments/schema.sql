@@ -1,5 +1,5 @@
 -- payments: what was charged through the owner's Stripe account, the
--- Stripe events already handled, and tax rates. Additive only (data/SKILL.md).
+-- Stripe events already handled, and tax rates.
 
 create table if not exists payments (
   id bigserial primary key,
@@ -22,16 +22,14 @@ create table if not exists payments (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   paid_at timestamptz,
-  match_key text                                  -- random, sent as metadata[payment_key]: an event from another project on the same Stripe account never matches this row
+  match_key text,                                 -- random, sent as metadata[payment_key]: an event from another project on the same Stripe account never matches this row
+  -- What was paid in all, tax and fees included, from the paid session; amount_cents
+  -- stays the subtotal the webhook checks.
+  total_cents bigint,
+  -- A payment taken another way (cash, a check, a bank transfer) and recorded on an
+  -- invoice: Stripe's payment record for it, attached to the invoice there.
+  stripe_payment_record_id text
 );
-
-alter table payments add column if not exists match_key text;
--- What was paid in all, tax and fees included, from the paid session; amount_cents
--- stays the subtotal the webhook checks. Null for a payment made before this column.
-alter table payments add column if not exists total_cents bigint;
--- A payment taken another way (cash, a check, a bank transfer) and recorded on an
--- invoice: Stripe's payment record for it, attached to the invoice there.
-alter table payments add column if not exists stripe_payment_record_id text;
 
 create index if not exists payments_ref on payments (ref_type, ref_id);
 create index if not exists payments_email on payments (email);
@@ -66,8 +64,8 @@ create table if not exists tax_rates (
   stripe_tax_rate_id text,
   livemode boolean,
   updated_by citext,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Stripe's idempotency key for making the rate there: random, since keys are
+  -- per Stripe account and another project's rate 1 shares the id.
+  stripe_key text not null default replace(gen_random_uuid()::text, '-', '')
 );
--- Stripe's idempotency key for making the rate there: random, since keys are
--- per Stripe account and another project's rate 1 shares the id.
-alter table tax_rates add column if not exists stripe_key text not null default replace(gen_random_uuid()::text, '-', '');

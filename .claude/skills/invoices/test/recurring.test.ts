@@ -334,6 +334,61 @@ test("the pages: make one, read what happens, a charged invoice from Send, a car
   });
 });
 
+test("on a quote: New invoice starts from its lines and goes on it, a draft is attached or detached, Make it repeat replaces a draft", async (t) => {
+  await withDb(t, async (s) => {
+    const { createQuote } = await import("../quotes");
+    const app = new Hono();
+    app.route("/invoices", invoicesAdmin(() => s.db, { base: "/invoices", css: "/site.css", source: "crm", timeZone: "America/Denver", stripe: () => fakeStripe().stripe }));
+    const HOST = "https://crm.example";
+    const headers = { "x-tasktool-user": BY, origin: HOST, host: "crm.example" };
+    const get = (p: string) => app.request(HOST + p, { headers });
+    const post = (p: string, data: Record<string, string | string[]> = {}) => {
+      const body = new URLSearchParams();
+      for (const [k, v] of Object.entries(data)) for (const x of Array.isArray(v) ? v : [v]) body.append(k, x);
+      return app.request(HOST + p, { method: "POST", body, headers: { ...headers, "content-type": "application/x-www-form-urlencoded" } });
+    };
+    const q = await createQuote(s.db, { email: "ann@example.com", name: "Ann Lee", currency: "usd", lines: [{ description: "Fence", unit: "2000" }] }, BY, "crm");
+    assert.ok(q.ok);
+    const qid = q.value.id;
+
+    // New invoice from the quote: its customer and lines, One invoice or Repeats; saved, it is on the quote.
+    let html = await (await get(`/invoices/new?quote=${qid}`)).text();
+    assert.match(html, /value="Fence"/);
+    assert.match(html, new RegExp(`aria-current="page"[^>]*>One invoice</a><a href="/invoices/recurring/new\\?quote=${qid}"`));
+    let res = await post("/invoices", { email: "bob@example.com", currency: "usd", quote_id: qid, days_until_due: "30", description: "Deposit", unit: "500", quantity: "1" });
+    assert.equal(res.status, 422, "only the quote's own customer");
+    res = await post("/invoices", { email: "ann@example.com", currency: "usd", quote_id: qid, days_until_due: "30", description: "Deposit", unit: "500", quantity: "1" });
+    assert.match(res.headers.get("location")!, new RegExp(`/invoices/quotes/${qid}\\?saved=invoice-attached$`));
+    const [dep] = await s.db.sql`select id::text as id from invoices where quote_id = ${qid}::bigint`;
+    html = await (await get(`/invoices/quotes/${qid}`)).text();
+    assert.match(html, /When they say yes/);
+    assert.match(html, new RegExp(`action="/invoices/${dep.id}/detach"`));
+    assert.match(await (await get(`/invoices/${dep.id}`)).text(), /Sent to pay when they say yes/);
+
+    // Detached, it is one of their drafts the quote's page offers to attach again.
+    res = await post(`/invoices/${dep.id}/detach`);
+    assert.match(res.headers.get("location")!, /saved=invoice-detached$/);
+    html = await (await get(`/invoices/quotes/${qid}`)).text();
+    assert.match(html, new RegExp(`<option value="${dep.id}">Draft, \\$500\\.00`));
+    res = await post(`/invoices/quotes/${qid}/attach`, { invoice: dep.id });
+    assert.match(res.headers.get("location")!, /saved=invoice-attached$/);
+
+    // Make it repeat: the recurring form from the draft (and its quote); saved, the draft is gone, so it is never sent twice.
+    html = await (await get(`/invoices/recurring/new?invoice=${dep.id}`)).text();
+    assert.match(html, /Make it repeat/);
+    assert.match(html, /value="Deposit"/);
+    assert.match(html, new RegExp(`name="quote_id" value="${qid}"`));
+    res = await post("/invoices/recurring", {
+      email: "ann@example.com", currency: "usd", title: "Monthly care", period: "month", every: "1", first_on: "2026-12-01", ends: "never",
+      mode: "send", days_ahead: "3", days_until_due: "30", description: "Care", unit: "500", quantity: "1", quote_id: qid, from_invoice: dep.id,
+    });
+    assert.match(res.headers.get("location")!, /saved=recurring-pending$/);
+    assert.equal((await invoiceById(s.db, dep.id))!.status, "void");
+    const [r] = await s.db.sql`select status from recurring_invoices where quote_id = ${qid}::bigint`;
+    assert.equal(r.status, "pending", "it starts at their yes");
+  });
+});
+
 test("the payment page: Stripe emails an emailed invoice's; a charged one's goes through the owner's sender, or its link is given", async (t) => {
   await withDb(t, async (s) => {
     const make = async () => {

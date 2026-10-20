@@ -23,7 +23,7 @@ import { stripeFrom } from "../payments/stripe";
 import { createTaxRate, percentText, taxRates, type TaxRate } from "../payments/tax";
 import { isDay, quoteMessage, sendQuote, todayIn } from "./document";
 import {
-  createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, owed, saveInvoice, INVOICE_STATUSES,
+  attachInvoice, createInvoice, discardInvoice, invoiceById, invoiceFromQuote, invoicesFor, invoicesPage, owed, saveInvoice, INVOICE_STATUSES,
   type Invoice, type InvoiceFields, type InvoiceStatus,
 } from "./invoices";
 import { amountInput, type LineInput, type SavedLine } from "./lines";
@@ -68,7 +68,7 @@ export type InvoicesCli = {
   more?: { help: string; commands: Record<string, Extra>; flags?: Record<string, string[]> };
   /** What the business calls a quote: "Quote" (default), "Proposal" or "Estimate". */
   word?: string;
-  /** recurring.mjs: a recurring invoice on a quote changed, so the app re-makes what the quote shows (default: proposal.saved). */
+  /** An invoice or a recurring invoice on a quote changed, so the app re-makes what the quote shows (default: proposal.saved). */
   quoteSaved?: (db: Db, qt: Quote) => Promise<void>;
   /** Quotes as the app's own pages at a link the customer reads and accepts (the CRM's proposals). */
   proposal?: {
@@ -378,9 +378,9 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
 
 // ---- invoices -----------------------------------------------------------------
 
-const INVOICE_FIELDS = ["line", "days", "notes", "event", "currency", "as"];
+const INVOICE_FIELDS = ["line", "days", "notes", "event", "currency", "quote", "as"];
 const INVOICE_FLAGS: Record<string, string[]> = {
-  list: ["status", "find", "limit", "customer"], show: [], owed: [], add: INVOICE_FIELDS, edit: INVOICE_FIELDS, "from-quote": ["deposit", "rest", "as"],
+  list: ["status", "find", "limit", "customer"], show: [], owed: [], add: INVOICE_FIELDS, edit: INVOICE_FIELDS, "from-quote": ["rest", "as"],
   discard: ["as"], send: ["charge", "confirm", "as"], charge: ["confirm", "as"], "email-page": ["confirm", "as"], "record-payment": ["amount", "method", "on", "reference", "confirm", "as"], void: ["confirm", "as"], uncollectible: ["confirm", "as"],
 };
 const INVOICE_ARITY: Record<string, number> = { list: 0, show: 1, owed: 1, add: 1, edit: 1, "from-quote": 1, discard: 1, send: 1, charge: 1, "email-page": 1, "record-payment": 1, void: 1, uncollectible: 1 };
@@ -394,10 +394,12 @@ export async function invoicesCli(argv: string[], cli: InvoicesCli): Promise<voi
   show <id>
   owed <who>                           open invoices, live money only, per currency
   add <who> --line "<what>|[qty|]<price>[|<tax rate>]"... [--days ${days}] [--notes n] [--event <id>] [--currency ${cli.currency}]
+  add <who> --quote <quote id> [--line ...]
+                                       on a quote waiting for its answer: sent to pay at their yes (a deposit,
+                                       all of it); its lines unless --line gives others
   from-quote <quote id>                an accepted quote's lines, when it has no invoice yet
-  from-quote <quote id> --deposit 50   a deposit: that percent of each tax rate's lines, when it has no invoice yet
   from-quote <quote id> --rest         what its invoices have not billed yet
-  edit <id> [the add flags]            a draft not yet in Stripe; --line replaces every line
+  edit <id> [the add flags]            a draft not yet in Stripe; --line replaces every line; --quote "" takes it off its quote
   discard <id>                         a draft not yet in Stripe: kept as void
   send <id> | void <id> | uncollectible <id>
   send <id> --charge                   charged to the card they saved, not emailed to pay
@@ -504,21 +506,34 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         if (has(a, "notes")) f.notes = flag(a, "notes") ?? "";
         if (has(a, "event")) f.visit_id = flag(a, "event") ?? "";
         if (has(a, "currency")) f.currency = flag(a, "currency") ?? "";
+        // On a quote: what their yes sends. Its customer's, and its lines unless --line says otherwise.
+        const qid = has(a, "quote") ? flag(a, "quote") || null : undefined;
+        const quote = qid ? await quoteById(db, qid) : null;
+        if (qid && (!quote || !["draft", "sent", "expired"].includes(quote.status))) {
+          fail(`${at}: ${quote ? `quote #${qid} is ${quote.status}; an invoice goes on one still waiting for its answer` : `no quote ${qid}`}`, `node scripts/quotes.mjs show ${qid}`);
+        }
+        if (quote && quote.email.toLowerCase() !== String(f.email ?? "").trim().toLowerCase()) fail(`${at}: quote #${qid} is for ${quote.email}; an invoice on it is too`, `node scripts/invoices.mjs add ${quote.email} --quote ${qid}`);
+        if (quote && !current && !has(a, "line")) f.lines = quote.lines.map((l) => ({ description: l.description, quantity: l.quantity, unit: amountInput(l.unit_cents, quote.currency), tax_rate_id: l.tax_rate_id ?? "" }));
         if (has(a, "line")) f.lines = lineFlags(a, rates, "invoices");
         const r = current ? await saveInvoice(db, current.id, f, by) : await createInvoice(db, f, by, cli.source);
         if (!r.ok) fail(`${at}: not saved\n${problems(r.errors)}`, "node scripts/invoices.mjs --help");
-        if (json) return out(true, r.value, String);
-        return done(at, `${current ? "saved" : "drafted"} ${fmt(r.value)}`, { next: `node scripts/invoices.mjs send ${r.value.id}` });
+        if (qid !== undefined && !(await attachInvoice(db, r.value.id, qid, by))) {
+          fail(`${at}: saved, but ${qid ? `not put on quote #${qid}` : "not taken off its quote"}: only a draft not yet in Stripe, on a quote still waiting for its answer`, `node scripts/invoices.mjs show ${r.value.id}`);
+        }
+        const on = quote ?? (current?.quote_id ? await quoteById(db, current.quote_id) : null);
+        if (on) await (cli.quoteSaved ?? cli.proposal?.saved)?.(db, on);
+        const saved = (await invoiceById(db, r.value.id))!;
+        if (json) return out(true, saved, String);
+        return done(at, `${current ? "saved" : "drafted"} ${fmt(saved)}${qid ? `, on quote #${qid}: sent to pay when they say yes` : ""}`, {
+          next: qid ? `node scripts/quotes.mjs show ${qid}` : `node scripts/invoices.mjs send ${saved.id}`,
+        });
       }
 
       case "from-quote": {
         if (!rest[0] || !ID.test(rest[0])) misused(`${at}: name the quote by its id (#12 is 12)`, "node scripts/quotes.mjs list --status accepted");
-        const dep = flag(a, "deposit");
-        if (dep !== undefined && (!/^\d{1,3}$/.test(dep) || Number(dep) < 1 || Number(dep) > 100)) misused(`${at}: --deposit ${dep} is not a percent from 1 to 100`, `node scripts/invoices.mjs from-quote ${rest[0]} --deposit 50`);
-        if (dep !== undefined && has(a, "rest")) misused(`${at}: a deposit or the rest, not both`, `node scripts/invoices.mjs from-quote ${rest[0]} --rest`);
-        // Run twice, the whole quote and a deposit make one invoice: they are made only while it has none. The rest bills what is left.
+        // Run twice, the whole quote makes one invoice: it is made only while it has none. The rest bills what is left.
         const seen = has(a, "rest") ? (await invoicesFor(db, { quoteId: rest[0] })).filter((i) => i.status !== "void").length : 0;
-        const share = has(a, "rest") ? { kind: "rest" as const } : dep !== undefined ? { kind: "percent" as const, percent: Number(dep) } : { kind: "all" as const };
+        const share = has(a, "rest") ? { kind: "rest" as const } : { kind: "all" as const };
         const r = await invoiceFromQuote(db, rest[0], by, cli.source, days, { share, seen });
         if (!r.ok && r.reason === "invoiced" && r.invoiceId) {
           const inv = await invoiceById(db, r.invoiceId);

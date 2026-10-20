@@ -19,10 +19,10 @@ import { StripeError, type Stripe } from "../payments/stripe";
 import { taxRates, type TaxRate } from "../payments/tax";
 import { cardName, cardsFor, removeCard, syncCards, useCard, type Card } from "./cards";
 import { addDays, todayIn } from "./document";
-import { CustomerFields, formLines, LineItems, linesOf, type FormLine } from "./form";
-import { INVOICE_STATUS_LABELS, type Invoice } from "./invoices";
+import { CustomerFields, formLines, LineItems, linesOf, OneOrRepeats, type FormLine } from "./form";
+import { discardInvoice, invoiceById, INVOICE_STATUS_LABELS, type Invoice } from "./invoices";
 import type { Errors, SavedLine } from "./lines";
-import { quoteById } from "./quotes";
+import { isEditable, quoteById } from "./quotes";
 import {
   createRecurring, describe, endRecurring, invoicesOf, lastRun, makeNow, MODE_LABELS, MODES, pastText, pauseRecurring, periodLabel, recurringById, recurringList,
   RECURRING_STATUS_LABELS, resumeRecurring, saveRecurring, scheduleText, shortDay, UNITS, type Recurring, type RecurringFields,
@@ -58,7 +58,7 @@ export const RECURRING_OPTIONS: StatusOption[] = (["pending", "active", "paused"
 
 export const RECURRING_MESSAGES: Record<string, string> = {
   "recurring-created": "Recurring invoice made. Its invoices are made on their dates.",
-  "recurring-pending": "Saved with the proposal. It starts when they say yes.",
+  "recurring-pending": "Attached: it starts when they say yes.",
   "recurring-paused": "Paused. Nothing is made until you resume it.",
   "recurring-resumed": "Resumed from the next date to come.",
   "recurring-ended": "Ended. The invoices it made stay.",
@@ -75,6 +75,8 @@ type RV = {
   email: string; name: string; phone: string; address: string; currency: string; title: string; unit: string; every: string; first_on: string;
   ends: string; ends_on: string; ends_after: string; mode: string; days_ahead: string; days_until_due: string; notes: string; note_for_team: string;
   owner: string; quote_id: string; lines: FormLine[];
+  /** Make it repeat: the draft this one replaces, discarded once it is saved. */
+  from_invoice?: string;
 };
 
 const readRV = (b: Record<string, unknown>): RV => ({
@@ -82,7 +84,7 @@ const readRV = (b: Record<string, unknown>): RV => ({
   // "period", not "unit": each line's price is the form's "unit".
   unit: str(b.period), every: str(b.every), first_on: str(b.first_on), ends: str(b.ends), ends_on: str(b.ends_on), ends_after: str(b.ends_after),
   mode: str(b.mode), days_ahead: str(b.days_ahead), days_until_due: str(b.days_until_due), notes: str(b.notes), note_for_team: str(b.note_for_team),
-  owner: str(b.owner), quote_id: str(b.quote_id), lines: formLines(b),
+  owner: str(b.owner), quote_id: str(b.quote_id), lines: formLines(b), from_invoice: str(b.from_invoice),
 });
 
 const fields = (v: RV): RecurringFields => ({ ...v });
@@ -110,6 +112,7 @@ function RecurringForm({ action, v, errors, rates, cancel, submit, taxPage, time
         <p role="status" class={alertClass}>Dates are in UTC. Set your time zone first, so each invoice is made on your date.</p>
       ) : null}
       <input type="hidden" name="quote_id" value={v.quote_id} />
+      {v.from_invoice ? <input type="hidden" name="from_invoice" value={v.from_invoice} /> : null}
       <input type="hidden" name="currency" value={v.currency} />
       <CustomerFields v={v} errors={errors} />
       <Section title="Schedule">
@@ -287,22 +290,31 @@ export function recurringRoutes(app: Hono<{ Variables: TeamVars }>, h: Recurring
   const editor = async (c: Ctx, p: { title: string; action: string; v: RV; errors: Errors; cancel: string; fixed: boolean }, status = 200) => {
     const rates = await taxRates(h.getDb(c));
     return h.framed(c, base, { title: p.title, back: { href: p.cancel, label: "Back" } }, (
+      <>
+      {p.action === base ? <OneOrRepeats base={h.base} repeats={true} query={new URL(c.req.url).search} /> : null}
       <RecurringForm action={p.action} v={p.v} errors={p.errors} rates={rates} cancel={p.cancel} submit={p.action === base ? "Save recurring invoice" : "Save"}
         taxPage={`${h.base}/tax-rates`} timeZone={h.timeZone} fixed={p.fixed} />
+      </>
     ), status);
   };
 
-  // Blank, from a customer's page (who), or from a quote ("Then, recurring" on a proposal: it waits for their yes).
+  // Blank, from a customer's page (who), from a quote waiting for its answer (attached: it starts at their yes,
+  // its lines to begin from), or Repeat this invoice (a draft's customer and lines, and its quote while that waits).
   app.get("/recurring/new", async (c) => {
     const qy = (k: string) => (c.req.query(k) ?? "").slice(0, 500);
-    const quote = idParam(qy("quote")) ? await quoteById(h.getDb(c), qy("quote")) : null;
+    const db = h.getDb(c);
+    const from = idParam(qy("invoice")) ? await invoiceById(db, qy("invoice")) : null;
+    const quote = idParam(qy("quote") || from?.quote_id || "") ? await quoteById(db, qy("quote") || from!.quote_id!) : null;
+    const on = quote && isEditable(quote) ? quote : null;
+    const doc = from ?? on;
     const v: RV = {
-      email: quote?.email ?? qy("email"), name: quote?.name ?? qy("name"), phone: quote?.phone ?? qy("phone"), address: quote?.address ?? qy("address"),
-      currency: quote?.currency ?? h.currency, title: "", unit: "month", every: "1", first_on: "", ends: "never", ends_on: "", ends_after: "",
-      mode: "send", days_ahead: "3", days_until_due: String(h.daysUntilDue), notes: "", note_for_team: "", owner: "", quote_id: quote?.id ?? "", lines: [],
+      email: doc?.email ?? qy("email"), name: doc?.name ?? qy("name"), phone: doc?.phone ?? qy("phone"), address: doc?.address ?? qy("address"),
+      currency: doc?.currency ?? h.currency, title: "", unit: "month", every: "1", first_on: "", ends: "never", ends_on: "", ends_after: "",
+      mode: "send", days_ahead: "3", days_until_due: String(from?.days_until_due ?? h.daysUntilDue), notes: from?.notes ?? "", note_for_team: "", owner: "",
+      quote_id: on?.id ?? "", lines: doc ? linesOf(doc) : [], from_invoice: from?.status === "draft" ? from.id : "",
     };
-    const cancel = quote ? `${h.base}/quotes/${quote.id}` : base;
-    return editor(c, { title: quote ? `Then, recurring: ${h.word} ${quote.number}` : "New recurring invoice", action: base, v, errors: {}, cancel, fixed: false });
+    const cancel = from ? `${h.base}/${from.id}` : on ? `${h.base}/quotes/${on.id}` : base;
+    return editor(c, { title: from ? "Make it repeat" : on ? `New invoice for ${h.word.toLowerCase()} ${on.number}` : "New invoice", action: base, v, errors: {}, cancel, fixed: false });
   });
 
   app.post("/recurring", async (c) => {
@@ -311,11 +323,14 @@ export function recurringRoutes(app: Hono<{ Variables: TeamVars }>, h: Recurring
     // A quote still waiting for its answer: this starts at its yes. One already accepted: now.
     const pending = quote && ["draft", "sent", "expired"].includes(quote.status) ? { quoteId: quote.id } : undefined;
     if (quote?.status === "declined") {
-      return editor(c, { title: "New recurring invoice", action: base, v: { ...v, quote_id: "" }, errors: { status: `${h.word} ${quote.number} was declined, so nothing starts at its yes. Save again to start this one on its own.` }, cancel: base, fixed: false }, 422);
+      return editor(c, { title: "New invoice", action: base, v: { ...v, quote_id: "" }, errors: { status: `${h.word} ${quote.number} was declined, so nothing starts at its yes. Save again to start this one on its own.` }, cancel: base, fixed: false }, 422);
     }
     const r = await createRecurring(h.getDb(c), fields(v), c.get("user"), h.source, { pending });
-    if (!r.ok) return editor(c, { title: "New recurring invoice", action: base, v, errors: r.errors, cancel: quote ? `${h.base}/quotes/${quote.id}` : base, fixed: false }, 422);
+    if (!r.ok) return editor(c, { title: "New invoice", action: base, v, errors: r.errors, cancel: quote ? `${h.base}/quotes/${quote.id}` : base, fixed: false }, 422);
     if (quote?.status === "accepted") await h.getDb(c).sql`update recurring_invoices set quote_id = ${quote.id}::bigint where id = ${r.value.id}::bigint`;
+    // Made from a draft (Make it repeat): the draft is replaced, so it is never sent as well.
+    const from = idParam(v.from_invoice ?? "") ? await invoiceById(h.getDb(c), v.from_invoice!) : null;
+    if (from && from.email.toLowerCase() === r.value.email.toLowerCase()) await discardInvoice(h.getDb(c), from.id, c.get("user"));
     if (pending) await h.quoteChanged?.(c, quote!.id);
     return pending ? h.back(c, `${h.base}/quotes/${quote!.id}`, "recurring-pending") : h.back(c, `${base}/${r.value.id}`, "recurring-created");
   });

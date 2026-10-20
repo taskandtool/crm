@@ -899,7 +899,7 @@ if (invoicesCfg) {
         await sentTo(dbOf(c), doc.email, (c as unknown as C).var.user);
         if (doc.kind === "quote") await storePage(dbOf(c), doc.id, PROPOSAL_OPTS);
       },
-      // A yes on the quote's page wins the deal it is for, and does what "After they sign" says.
+      // A yes on the quote's page wins the deal it is for, and sends and starts what is attached to it.
       afterDecide: async (c, qt) => {
         await winFromQuotes(dbOf(c), (c as unknown as C).var.user);
         if (qt.status === "accepted") await afterAccepted(dbOf(c), qt, (c as unknown as C).var.user, answerDeps(c));

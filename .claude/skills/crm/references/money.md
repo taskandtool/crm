@@ -52,12 +52,16 @@ then `node scripts/proposal-preview.mjs` and read the desktop images it names. T
 Copy link (`send <id> --link --confirm`). The customer opens it signed out,
 types their name to accept, or declines with a reason. It stays editable
 until then; the link always shows the current page, and a page changed
-while they read is refused at Accept. "After they sign" on the quote makes
-the first invoice: a draft, or sent through Stripe with Pay now (a deposit
-is a percent). Mark accepted does the same, after saying so. Opens, the
+while they read is refused at Accept. Their yes sends the invoices the
+owner attached to the quote through Stripe, with Pay now on their copy, and
+starts its recurring ones; a no discards them. The owner writes those
+invoices like any other (a deposit, all of it, anything):
+`invoices.mjs add <who> --quote <id>` (the quote's lines unless `--line`
+says otherwise), or New invoice on the quote's page, whose Repeats makes a
+recurring one. Mark accepted does the same, after saying so. Opens, the
 signature and the decline show on the quote; signed and declined ring the
-bell; the morning email lists ones opened, and a task comes 3 days before
-one expires unsigned. Without a link (no production yet) it goes as a PDF
+bell; the morning email lists ones opened, and a task comes 3 days after
+one went unsigned (or 3 before its valid-until date). Without a link (no production yet) it goes as a PDF
 and they reply to accept.
 
 An invoice is made in the owner's Stripe account: Stripe emails it and
@@ -73,9 +77,8 @@ invoice on Stripe's page; Send then offers "Charge Visa 4242"
 (`invoices.mjs send <id> --charge`). A recurring invoice
 (`node scripts/recurring.mjs add <who> --name "Maintenance plan" --line "Care|300" --first 2026-11-01 --mode charge`)
 makes an ordinary invoice on each date: a draft with a task, emailed, or
-charged. On a quote, `--quote <id>` (or "Add a recurring invoice" on its
-page) makes it "Then, recurring": the proposal shows it beside the total,
-signing starts it, a decline ends it.
+charged. On a quote, `--quote <id>` attaches it: the proposal shows it
+beside the total, signing starts it, a decline ends it.
 
 Set it up once, in this order:
 
