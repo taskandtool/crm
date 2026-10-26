@@ -99,6 +99,7 @@ const FIX = {
   "personal-attribute": "speak about the offer, not the reader's condition (Meta refuses it)",
   "weak-cta": 'name what the reader gets: "Book a survey", "Check availability"',
   "restates-heading": "the line under a heading adds a fact the heading did not say",
+  "joined-heading": 'one plain sentence or a plain label: "Fall cleanup in Larkfield starts at $90.", not "Fall cleanup in Larkfield, from $90." or "Garden design: a plan in a week"',
   "repeated-phrase": "say it once, where it matters most",
   puffery: "a number, a name or a source beside it, or cut it",
 };
@@ -137,10 +138,27 @@ function weFindings(text, kind) {
   return [];
 }
 
+/**
+ * A heading made of fragments joined by a colon or a comma ("Garden design: a
+ * plan in a week, planted in spring.", "What we do, and what it costs"). A
+ * list's commas are fine ("Forms, bookings and payments on the site."), as are
+ * numbers (1,412) and times (8:00).
+ */
+export function joinedHeading(heading) {
+  const h = String(heading || "").replace(/(\d),(\d)/g, "$1$2").replace(/(\d):(\d)/g, "$1$2").replace(/\s+/g, " ").trim();
+  if (/[A-Za-z)]:\s*\S/.test(h)) return h;
+  const parts = h.split(/,\s*/);
+  if (parts.length < 2) return null;
+  const tail = parts[parts.length - 1];
+  const list = / (and|or) /.test(` ${tail}`) && !/^(and|or|but)\b/i.test(tail);
+  return list ? null : h;
+}
+
 // One section: the phrase tells in its heading and body, and the shapes that
 // only mean something within a section (triads, rhythm, density).
 function sectionFindings(text, { kind = "page", heading = "" } = {}) {
   const out = heading ? phraseFindings(heading) : [];
+  if (heading && joinedHeading(heading)) out.push(finding("joined-heading", heading));
   if (!text || !text.trim()) return out;
   const label = text.trim().replace(/[\s→›».!]+$/, "");
   out.push(...phraseFindings(text));

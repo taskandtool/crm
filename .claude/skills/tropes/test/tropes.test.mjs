@@ -12,6 +12,15 @@ test("clean copy passes", () => {
   assert.deepEqual(rules("Book a survey this week: we measure, quote and fit within ten days."), []);
 });
 
+test("a heading of fragments joined by a colon or a comma; a list's commas, numbers and times are fine", () => {
+  for (const h of ["Fall cleanup in Larkfield, from $90.", "Fall cleanup in Larkfield,from $90.", "What we do, and what it costs", "Garden design: a plan in a week, planted in spring.", "Spring planting, Elm Street", "Send a proposal that wins the job, or just an invoice."]) {
+    assert.ok(rules("A line under it.", { heading: h }).includes("joined-heading"), h);
+  }
+  for (const h of ["Fall cleanup in Larkfield starts at $90.", "Forms, bookings and payments on the site.", "Garden design, lawn, hedge and seasonal care", "1,412 visitors in October", "Open from 8:00 AM"]) {
+    assert.ok(!rules("A line under it.", { heading: h }).includes("joined-heading"), h);
+  }
+});
+
 test("negation pivot", () => {
   assert.ok(rules("It's not just a roof, it's peace of mind.").includes("negation-pivot"));
   assert.ok(rules("Our roofers are licensed, not cheap.").includes("negation-pivot"));

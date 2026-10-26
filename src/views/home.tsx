@@ -46,8 +46,13 @@ function Numbers({ h, noStripe }: { h: Home; noStripe: boolean }) {
   const deals = (k: number) => (k === 1 ? `1 ${dealsCfg.one.toLowerCase()}` : `${k} ${dealsCfg.many.toLowerCase()}`);
   const moved = h.leads.current - h.leads.previous;
   return (
-    // One card, its cells sharing 1px rules (Tailwind's own stats block): all in a row from lg, two a row below, the odd one out across both.
-    <div class={"mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-card bg-line shadow-card ring-1 ring-line [&>*:last-child:nth-child(odd)]:col-span-2 lg:[&>*:last-child:nth-child(odd)]:col-span-1 " + (h.owed ? "lg:grid-cols-5" : "lg:grid-cols-4")}>
+    // One card, its cells sharing 1px rules (Tailwind's own stats block): two a row below lg, the odd one out across both;
+    // four in a row from lg. Five fit one row only from xl: at lg a tile is ~100px, too narrow for "$25,960" at
+    // text-display, so they sit three over two there.
+    <div class={"mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-card bg-line shadow-card ring-1 ring-line max-lg:[&>*:last-child:nth-child(odd)]:col-span-2 " +
+      (h.owed
+        ? "lg:grid-cols-6 lg:[&>*]:col-span-2 lg:[&>*:nth-child(n+4)]:col-span-3 xl:grid-cols-5 xl:[&>*]:col-span-1 xl:[&>*:nth-child(n+4)]:col-span-1"
+        : "lg:grid-cols-4")}>
       <Stat href="/leads" label="Leads, 7 days" value={String(h.leads.current)} count={h.leads.current}
         sub={`${h.leads.previous} the week before`} chip={moved ? { text: (moved > 0 ? "+" : "") + moved, tone: moved > 0 ? "good" : "neutral" } : undefined} />
       <Stat href="/tasks" label="Your tasks due" value={String(due)} count={due}
