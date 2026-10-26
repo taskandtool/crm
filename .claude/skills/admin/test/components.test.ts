@@ -96,8 +96,10 @@ test("JSON a visitor sent is readable and escaped", async () => {
 });
 
 test("a time shows in the business's zone, not the server's", async () => {
-  const html = await render(When({ at: new Date("2026-01-01T03:30:00Z"), timeZone: "America/Chicago" }));
+  const now = new Date("2026-06-01T12:00:00Z");
+  const html = await render(When({ at: new Date("2026-01-01T03:30:00Z"), timeZone: "America/Chicago", now }));
   assert.ok(html.includes("9:30") && html.includes("Dec 31, 2025"), html);
+  assert.ok((await render(When({ at: new Date("2026-02-01T18:00:00Z"), timeZone: "America/Chicago", now }))).includes("Feb 1, 12:00 PM"), "this year's dates leave the year out");
   assert.ok(html.includes('datetime="2026-01-01T03:30:00.000Z"'));
   assert.equal(await render(When({ at: "not a date", timeZone: "UTC" }) ?? ""), "");
 });

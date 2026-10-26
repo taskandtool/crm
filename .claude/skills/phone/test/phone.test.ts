@@ -436,18 +436,39 @@ test("the day before a visit: looking forward to it, once; a move reminds again 
     assert.equal(tw.texts.length, 2);
   }));
 
-test("quiet hours hold an automatic text to 8am", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+/** 10pm and the next 8am in the test business's zone (Chicago, CDT). */
+const TONIGHT = new Date("2026-10-21T03:00:00Z");
+const MORNING = new Date("2026-10-21T13:00:00Z");
+const minutesFrom = (t: Date, m: number) => new Date(t.getTime() + m * 60_000);
+
+test("a thank-you right after a 10pm form goes at once: it answers what they just did", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
   withDb(async (s) => {
     const { ctx, tw, setNow } = await setup(s);
     await s.db.sql`insert into forms (key, title, fields, follow_up) values ('quote', 'Quote', '[{"name":"phone","label":"Phone","type":"tel"}]', true)`;
     const [sub] = await s.db.sql<{ id: string }>`insert into submissions (form_key, name, phone, source, text_consent) values ('quote', 'Natalie', '512-555-0123', 'test', 'Text me') returning id::text as id`;
-    setNow(new Date("2026-10-21T03:00:00Z")); // 10pm in Chicago
+    setNow(TONIGHT);
     await onSubmitted(ctx, sub.id);
+    assert.equal(tw.texts.length, 1);
+  }));
+
+test("quiet hours hold a text found late at night to 8am, and never an email", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withDb(async (s) => {
+    const { ctx, tw, setNow } = await setup(s);
+    await s.db.sql`insert into forms (key, title, fields, follow_up) values ('quote', 'Quote', '[{"name":"phone","label":"Phone","type":"tel"}]', true)`;
+    // Another app's forms, found by the job twenty minutes later: no longer an answer.
+    const done = minutesFrom(TONIGHT, -20).toISOString();
+    await s.db.sql`insert into submissions (form_key, name, phone, source, text_consent, completed_at) values ('quote', 'Natalie', '512-555-0123', 'test', 'Text me', ${done}::timestamptz)`;
+    await s.db.sql`insert into submissions (form_key, name, email, source, completed_at) values ('quote', 'Sam', 'sam@example.com', 'test', ${done}::timestamptz)`;
+    setNow(TONIGHT);
+    await scan(ctx);
     assert.equal(tw.texts.length, 0);
-    const [row] = await s.db.sql<{ due_at: Date; status: string }>`select due_at, status from text_sends`;
-    assert.equal(row.status, "due");
-    assert.equal(new Date(row.due_at).toISOString(), "2026-10-21T13:00:00.000Z");
-    setNow(new Date("2026-10-21T13:05:00Z"));
+    const [held] = await s.db.sql<{ due_at: Date; status: string }>`select due_at, status from text_sends where remote_key is not null`;
+    assert.equal(held.status, "due");
+    assert.equal(new Date(held.due_at).toISOString(), MORNING.toISOString());
+    // Sam can only be emailed: worked out tonight, not held (this app has no email sender, so it says that instead).
+    const [mail] = await s.db.sql<{ status: string }>`select status from text_sends where email = 'sam@example.com'`;
+    assert.equal(mail.status, "skipped");
+    setNow(minutesFrom(MORNING, 5));
     await scan(ctx);
     assert.equal(tw.texts.length, 1);
   }));
@@ -672,13 +693,15 @@ function stubFetch(answer: (url: URL) => unknown = () => ({})) {
   return { seen, doFetch };
 }
 
-test("with the key bound (production's Worker), a text goes to the given account with the key, and nothing lists accounts", async () => {
-  const f = stubFetch(() => ({ sid: "SM1", status: "queued" }));
-  const tw = twilioFrom({ TWILIO_API_KEY: KEY, TWILIO_ACCOUNT_SID: SID }, f.doFetch);
+test("in production (TT), a text goes to the connection's account, and a bound key is never read", async () => {
+  const sent: string[] = [];
+  const TT = {
+    fetch: async (url: string) => (sent.push(url), Response.json({ sid: "SM1", status: "queued" })),
+    list: async () => ({ connections: [{ slug: "twilio", provider: "twilio", service: "api", account: SID }] }),
+  };
+  const tw = twilioFrom({ TT, TWILIO_API_KEY: KEY });
   assert.deepEqual(await tw.sendText({ from: "+15125550100", to: "+15125559999", body: "Hi" }), { id: "SM1", status: "queued" });
-  assert.equal(f.seen.length, 1);
-  assert.equal(f.seen[0].url.href, `https://api.twilio.com/2010-04-01/Accounts/${SID}/Messages.json`);
-  assert.equal(f.seen[0].auth, `Basic ${btoa(KEY)}`);
+  assert.deepEqual(sent, [`https://tt/twilio/2010-04-01/Accounts/${SID}/Messages.json`]);
 });
 
 test("through the gateway (the machine), the Account SID is the connection's account in list-connections, read once", async () => {
@@ -699,10 +722,11 @@ test("through the gateway (the machine), the Account SID is the connection's acc
 });
 
 test("a connection with no Account SID says to connect Twilio again, and does not count as connected", async () => {
-  const f = stubFetch();
-  await assert.rejects(twilioFrom({ TWILIO_API_KEY: KEY }, f.doFetch).sendText({ from: "+1", to: "+2", body: "x" }), /connect Twilio again, with its Account SID/);
-  assert.equal(f.seen.length, 0, "nothing reached Twilio");
-  assert.equal(await twilioConnected({ TWILIO_API_KEY: KEY }, f.doFetch), false);
+  const f = stubFetch(() => ({ connections: [{ slug: "twilio", provider: "twilio", service: "api", account: null }] }));
+  const env = { PHOENIX_URL: "https://tt.example", MACHINE_TOKEN: "mt" };
+  await assert.rejects(twilioFrom(env, f.doFetch).sendText({ from: "+1", to: "+2", body: "x" }), /connect Twilio again, with its Account SID/);
+  assert.ok(f.seen.every((x) => x.url.pathname === "/api/machine/connections"), "nothing reached Twilio");
+  assert.equal(await twilioConnected(env, f.doFetch), false);
 });
 
 test("owned numbers follow Twilio's next pages; the account summary leaves out what a Standard key may not read", async () => {
@@ -714,12 +738,14 @@ test("owned numbers follow Twilio's next pages; the account summary leaves out w
   };
   const doFetch = (async (input: string | URL | Request) => {
     const url = new URL(String(input));
+    url.pathname = url.pathname.replace("/api/machine/gateway/twilio", "");
     if (url.pathname.endsWith(`/Accounts/${SID}.json`)) return new Response(JSON.stringify({ code: 20003 }), { status: 401 });
     if (url.pathname.endsWith("/Balance.json")) return new Response(JSON.stringify({ balance: "12.50", currency: "USD" }));
     const body = url.searchParams.get("PageToken") ? { incoming_phone_numbers: [{ sid: "PN2", phone_number: "+15125550101" }], next_page_uri: null } : pages[url.pathname];
     return new Response(JSON.stringify(body));
   }) as typeof fetch;
-  const tw = twilioFrom({ TWILIO_API_KEY: KEY, TWILIO_ACCOUNT_SID: SID }, doFetch);
+  // The SID where the owner put the key on the machine: no listing needed.
+  const tw = twilioFrom({ PHOENIX_URL: "https://tt.example", MACHINE_TOKEN: "mt", TWILIO_ACCOUNT_SID: SID }, doFetch);
   assert.deepEqual((await tw.ownedNumbers()).map((n) => n.id), ["PN1", "PN2"]);
   assert.deepEqual(await tw.account(), { sid: SID, name: null, balance: "12.50", currency: "USD", trial: null });
 });

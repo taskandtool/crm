@@ -28,7 +28,7 @@ import { book, toType } from "../booking/book";
 import { phoneKey, saveLead, savePerson } from "../customers/customer";
 import { fill, OWNER_TEXTS, SPOKEN } from "./flows";
 import { nextThree, onBooked, onMissedCall, openNow, render, sendMissed } from "./follow";
-import { deliver, schedule, sendById, sendText, type PhoneCtx, type Slot } from "./send";
+import { deliver, nowOf, schedule, sendById, sendText, type PhoneCtx, type Slot } from "./send";
 import {
   attachRecording, attachVoicemail, byProviderId, lastSeenMessages, numberById, optedOut, ownerOf, ownerReplyDue, prettyPhone, record, toE164, updateStatus,
   type PhoneNumber,
@@ -274,8 +274,9 @@ export function phoneHooks(getDb: GetDb, opts: HookOpts) {
       // A caller who hung up while it rang: the dial never reported, so it is missed here.
       if (call && call.direction === "in" && call.status === "ringing") {
         await updateStatus(db, f.CallSid, { status: f.CallStatus === "completed" ? "no-answer" : f.CallStatus });
-        // Gone within a few seconds (a pocket dial, a one-ring scam): no text.
-        if (Date.now() - new Date(call.created_at).getTime() >= 6_000) await settle(onMissedCall(await opts.ctx(c), call.id, call.remote_e164, { send: true }));
+        // Gone within a few seconds (a pocket dial, a one-ring scam): no text. The database stamped the call, so its clock times it.
+        const [{ rang }] = await db.sql<{ rang: boolean }>`select created_at <= now() - interval '6 seconds' as rang from communications where id = ${call.id}::bigint`;
+        if (rang) await settle(onMissedCall(await opts.ctx(c), call.id, call.remote_e164, { send: true }));
       } else if (call && call.direction === "in" && !call.answered_by && f.CallStatus === "completed") {
         // A missed call over (they hung up in the greeting, or there is no voicemail): its text goes now.
         await settle(sendMissed(await opts.ctx(c), call.id));
@@ -343,15 +344,15 @@ export function phoneHooks(getDb: GetDb, opts: HookOpts) {
       // A reply has no address: the team adds it, as for a booking taken by phone.
       addressOptional: true,
       textConsent: "Replied to a text to book",
-      now: ctx.now?.(),
+      now: nowOf(ctx),
     });
     if (r.ok) {
       await onBooked(ctx, { event: "booked", booking: r.booking });
       return true;
     }
     if (r.reason !== "taken" || offered.step >= 3) return false;
-    const offer = await nextThree(db, type, ctx.zone, ctx.now?.());
-    const sendId = await schedule(db, { flow: "unbooked", step: 3, subjectType: "draft", subjectId: d.id, phone: remote, email: d.email });
+    const offer = await nextThree(db, type, ctx.zone, nowOf(ctx));
+    const sendId = await schedule(db, { flow: "unbooked", step: 3, subjectType: "draft", subjectId: d.id, phone: remote, email: d.email, dueAt: nowOf(ctx) });
     if (!sendId || offer.length < 3) return false;
     const row = await sendById(db, sendId);
     if (row) {

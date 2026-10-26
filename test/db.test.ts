@@ -449,7 +449,8 @@ test("events: scheduled, then completed, no-show or cancelled; completed is cont
   assert.deepEqual([later.what, later.status, later.customer_id, later.host_name, later.email, later.source], ["Tune-up", "confirmed", customer.id, "Sam", "event@example.com", "crm"]);
   assert.equal((await getCustomer(db, customer.id))!.last_contact_at, null, "scheduled is not contact");
   // Someone with one coming up is not waiting on a task, and a team-made one is not a lead.
-  await db.sql`update customers set last_contact_at = now() - interval '60 days' where id = ${customer.id}::bigint`;
+  // Last heard from before the past visit below: completing that visit moves it on.
+  await db.sql`update customers set last_contact_at = '2026-07-01T12:00:00Z' where id = ${customer.id}::bigint`;
   assert.ok(!(await nothingPlanned(db, null, 500)).some((c) => c.id === customer.id));
   await leadsForOpenItems(db);
   assert.equal((await db.sql`select 1 from leads where booking_id = ${later.id}::bigint`).length, 0);

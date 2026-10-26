@@ -93,7 +93,7 @@ export const FLOWS: Flow[] = [
     timing: { choices: [10, 30, 60], ours: 10, says: (m) => `${minutes(m)} to ${minutes(m + 15)} later` },
     steps: (t) => [
       { kind: "start", says: "Someone fills in the form and leaves before booking" },
-      { kind: "wait", says: `${FLOWS_BY().unbooked.timing!.says(t ?? 10)} (8am to 8pm only)` },
+      { kind: "wait", says: `${FLOWS_BY().unbooked.timing!.says(t ?? 10)} (texts 8am to 8pm only)` },
       {
         kind: "text",
         variants: [{ key: "times", label: "With three open times this week" }, { key: "notimes", label: "When there aren't three open times this week", email: "nextday" }],
@@ -134,7 +134,7 @@ export const FLOWS: Flow[] = [
     on: true,
     where: "Every booking from someone who agreed to texts.",
     fills: ["first_name", "business", "service", "host", "when"],
-    timing: { choices: [1440, 120], ours: 1440, says: (m) => (m === 1440 ? "The day before, at the time of the visit (8am to 8pm only)" : `${minutes(m)} before the visit (8am to 8pm only)`) },
+    timing: { choices: [1440, 120], ours: 1440, says: (m) => (m === 1440 ? "The day before, at the time of the visit (texts 8am to 8pm only)" : `${minutes(m)} before the visit (texts 8am to 8pm only)`) },
     steps: (t) => [
       { kind: "start", says: "A visit is coming up" },
       { kind: "wait", says: FLOWS_BY().reminder.timing!.says(t ?? 1440) },
@@ -152,7 +152,7 @@ export const FLOWS: Flow[] = [
     on: false,
     where: "Every visit marked done. A visit nobody marks done gets nothing.",
     fills: ["first_name", "business", "service", "host"],
-    timing: { choices: [60, 120, 240], ours: 120, says: (m) => `${minutes(m)} after the visit ends (8am to 8pm only)` },
+    timing: { choices: [60, 120, 240], ours: 120, says: (m) => `${minutes(m)} after the visit ends (texts 8am to 8pm only)` },
     steps: (t) => [
       { kind: "start", says: "A visit is marked done" },
       { kind: "wait", says: FLOWS_BY().after_visit.timing!.says(t ?? 120) },

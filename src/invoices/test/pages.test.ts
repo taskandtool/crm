@@ -38,7 +38,7 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
     const went: string[] = [];
     const app = new Hono();
     app.route("/invoices", invoicesAdmin(() => s.db, {
-      base: "/invoices", css: "/site.css", source: "crm", timeZone: "America/Denver",
+      base: "/invoices", css: "/site.css", source: "crm", timeZone: "America/Denver", now: () => new Date("2026-10-20T18:00:00Z"),
       afterDecide: async (_c, qt) => void decided.push(`${qt.status} ${qt.deal_id}`),
       afterSend: async (_c, doc) => void went.push(`${doc.kind} ${doc.email}`),
       send: async (_c, m) => (mail.push(m), answer),

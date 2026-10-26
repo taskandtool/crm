@@ -1,6 +1,6 @@
 // An invoice in the owner's Stripe account: made, finalized and emailed by
 // Stripe, paid on Stripe's hosted page. Every call goes through
-// payments/stripe.ts (the gateway in dev, the bound key in production) with
+// payments/stripe.ts (the app's connections, in dev and production) with
 // an Idempotency-Key from the invoice's random match_key (a customer's from
 // its email and mode), so a retry never makes a second invoice, line or customer.
 //
@@ -248,7 +248,7 @@ export type RecordInput = {
  * which can arrive before this call returns, never counts it as paid online.
  * It turns paid once Stripe has it, or failed; the same key again retries it.
  */
-export async function recordPayment(db: Db, stripe: Stripe, id: string, p: RecordInput, by: string): Promise<StripeResult & { remaining?: number }> {
+export async function recordPayment(db: Db, stripe: Stripe, id: string, p: RecordInput, by: string, now = new Date()): Promise<StripeResult & { remaining?: number }> {
   const inv = await invoiceById(db, id);
   if (!inv) return fail("not_found", "No such invoice.");
   if (!inv.stripe_invoice_id || !inv.stripe_customer_id) return fail("status", "This invoice was never sent with Stripe.");
@@ -260,9 +260,9 @@ export async function recordPayment(db: Db, stripe: Stripe, id: string, p: Recor
   const balance = Number(inv.total_cents) - (await paidSoFar(db, inv.id));
   if (!Number.isSafeInteger(p.amountCents) || p.amountCents <= 0) return fail("amount", "Enter the amount paid.");
   if (p.amountCents > balance) return fail("amount", `That is more than the ${formatMoney(balance, inv.currency)} still owed.`);
-  const now = Math.floor(Date.now() / 1000);
   const [{ midday }] = await db.sql<{ midday: string }>`select extract(epoch from (${p.paidOn}::date + time '12:00') at time zone ${p.timeZone})::bigint::text as midday`;
-  const when = p.paidOn >= todayIn(p.timeZone) ? now : Math.min(Number(midday), now);
+  const nowS = Math.floor(now.getTime() / 1000);
+  const when = p.paidOn >= todayIn(p.timeZone, now) ? nowS : Math.min(Number(midday), nowS);
   const at = new Date(when * 1000);
   // "Check · 1042": how, then their reference.
   const what = [p.method, p.reference].filter(Boolean).join(" · ");

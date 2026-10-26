@@ -559,14 +559,14 @@ export type Status = (typeof STATUSES)[number];
  * block a slot, so marking a future one would open its time to a second
  * booker. Cancelling raises SEQUENCE so the sync job removes the calendar event.
  */
-export async function setStatus(db: Db, id: string, status: Exclude<Status, "confirmed">, by: string): Promise<Booking | null> {
+export async function setStatus(db: Db, id: string, status: Exclude<Status, "confirmed">, by: string, now = new Date()): Promise<Booking | null> {
   const [r] = await db.sql`
     update bookings
     set status = ${status}, updated_by = ${by}, updated_at = now(),
         cancelled_at = case when ${status} = 'cancelled' then now() else cancelled_at end,
         sequence = sequence + case when ${status} = 'cancelled' then 1 else 0 end
     where id = ${id}::bigint and status <> 'cancelled' and status <> ${status}
-      and (${status} = 'cancelled' or starts_at <= now())
+      and (${status} = 'cancelled' or starts_at <= ${now.toISOString()}::timestamptz)
     returning *`;
   return r ? toBooking(r) : null;
 }

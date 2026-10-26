@@ -285,15 +285,16 @@ test("where it happens is checked for the type and kept on the booking", (t) =>
 test("the team marks a booking; a cancelled one stays cancelled", (t) =>
   withDb(t, async (s) => {
     const r = await person(s, "Pat");
-    const a = await book(s.db, { ...who, typeId: r.id, start: T("2026-03-09T10:00:00Z") });
+    const a = await book(s.db, { ...who, now: NOW, typeId: r.id, start: T("2026-03-09T10:00:00Z") });
     assert.ok(a.ok);
-    const done = await setStatus(s.db, a.booking.id, "completed", "owner@example.com");
+    const after = T("2026-03-09T11:00:00Z");
+    const done = await setStatus(s.db, a.booking.id, "completed", "owner@example.com", after);
     assert.equal(done?.status, "completed");
     assert.equal(done?.updated_by, "owner@example.com");
     assert.equal(done?.sequence, 0);
-    const cancelled = await setStatus(s.db, a.booking.id, "cancelled", "owner@example.com");
+    const cancelled = await setStatus(s.db, a.booking.id, "cancelled", "owner@example.com", after);
     assert.equal(cancelled?.sequence, 1);
-    assert.equal(await setStatus(s.db, a.booking.id, "no_show", "owner@example.com"), null);
+    assert.equal(await setStatus(s.db, a.booking.id, "no_show", "owner@example.com", after), null);
   }));
 
 test("the hours editor refuses bad and overlapping windows", (t) =>
@@ -318,15 +319,14 @@ test("the hours editor refuses bad and overlapping windows", (t) =>
 test("a booking that has not started cannot be marked completed or no-show: that would free its slot", (t) =>
   withDb(t, async (s) => {
     const r = await person(s, "Pat");
-    const soon = new Date(Math.ceil((Date.now() + 2 * 86_400_000) / 3_600_000) * 3_600_000);
-    soon.setUTCHours(10);
-    const a = await book(s.db, { ...who, now: new Date(), typeId: r.id, start: soon });
+    const soon = T("2026-03-03T10:00:00Z");
+    const a = await book(s.db, { ...who, now: NOW, typeId: r.id, start: soon });
     assert.ok(a.ok, JSON.stringify(a));
-    assert.equal(await setStatus(s.db, a.booking.id, "completed", "owner@example.com"), null);
-    assert.equal(await setStatus(s.db, a.booking.id, "no_show", "owner@example.com"), null);
-    const second = await book(s.db, { ...who, email: "bo@example.com", now: new Date(), typeId: r.id, start: soon });
+    assert.equal(await setStatus(s.db, a.booking.id, "completed", "owner@example.com", NOW), null);
+    assert.equal(await setStatus(s.db, a.booking.id, "no_show", "owner@example.com", NOW), null);
+    const second = await book(s.db, { ...who, email: "bo@example.com", now: NOW, typeId: r.id, start: soon });
     assert.equal(!second.ok && second.reason, "taken", "the slot is still held");
-    assert.equal((await setStatus(s.db, a.booking.id, "cancelled", "owner@example.com"))?.status, "cancelled", "cancelling a future booking is fine");
+    assert.equal((await setStatus(s.db, a.booking.id, "cancelled", "owner@example.com", NOW))?.status, "cancelled", "cancelling a future booking is fine");
   }));
 
 test("at their place the address is required, unless the team is booking by phone and does not have it yet", () => {

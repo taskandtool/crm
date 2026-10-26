@@ -11,9 +11,9 @@ import { formatTime, localDate, addDays, wallToInstant } from "../booking/slots"
 import { bookableTypes as bookable, openSlotsFor, toType, type BookingType } from "../booking/book";
 import { stepsOf, type Field } from "../forms/fields";
 import { phoneKey } from "../customers/customer";
-import { flowOf, flowSettings, notQuiet, type Fill, type FlowSettings } from "./flows";
+import { flowOf, flowSettings, type Fill, type FlowSettings } from "./flows";
 import { communicationById, ownerOf } from "./store";
-import { deliver, draftLink, dueSends, mayText, schedule, sendById, type PhoneCtx, type Rendered, type SendRow, type Slot } from "./send";
+import { deliver, draftLink, dueSends, mayText, nowOf, schedule, sendById, type PhoneCtx, type Rendered, type SendRow, type Slot } from "./send";
 
 const firstName = (name: string | null | undefined) => {
   const n = (name ?? "").trim().split(/\s+/)[0];
@@ -87,7 +87,7 @@ function whenText(t: Date, zone: string, now = new Date()): string {
  */
 export async function onMissedCall(ctx: PhoneCtx, callId: string, remote: string, o: { send?: boolean } = {}): Promise<void> {
   // Due in three minutes: the job sends it then only if neither of the call's own webhooks came.
-  const dueAt = new Date((ctx.now ? ctx.now() : new Date()).getTime() + 3 * 60_000);
+  const dueAt = new Date(nowOf(ctx).getTime() + 3 * 60_000);
   const id = await schedule(ctx.db, { flow: "missed_call", subjectType: "call", subjectId: callId, phone: remote, dueAt });
   if (id && o.send) await deliverOne(ctx, id);
 }
@@ -116,7 +116,7 @@ export async function onSubmitted(ctx: PhoneCtx, submissionId: string, o: { send
     return b ? onBooked(ctx, { event: "booked", booking: b }, o) : false;
   }
   if (!form?.follow_up) return false;
-  const id = await schedule(ctx.db, { flow: "thanks", subjectType: "submission", subjectId: submissionId, phone: s.phone, email: s.email });
+  const id = await schedule(ctx.db, { flow: "thanks", subjectType: "submission", subjectId: submissionId, phone: s.phone, email: s.email, dueAt: nowOf(ctx) });
   if (id && o.send !== false) await deliverOne(ctx, id);
   return !!id;
 }
@@ -124,7 +124,7 @@ export async function onSubmitted(ctx: PhoneCtx, submissionId: string, o: { send
 /** A booking made: "Booked", now. Moves and cancels are the booking emails' to say (their manage link is there). `send` as onSubmitted's. */
 export async function onBooked(ctx: PhoneCtx, e: { event: string; booking: { id: string; phone: string | null; email: string | null } }, o: { send?: boolean } = {}): Promise<boolean> {
   if (e.event !== "booked") return false;
-  const id = await schedule(ctx.db, { flow: "booked", subjectType: "booking", subjectId: e.booking.id, phone: e.booking.phone, email: e.booking.email });
+  const id = await schedule(ctx.db, { flow: "booked", subjectType: "booking", subjectId: e.booking.id, phone: e.booking.phone, email: e.booking.email, dueAt: nowOf(ctx) });
   if (id && o.send !== false) await deliverOne(ctx, id);
   return !!id;
 }
@@ -144,7 +144,7 @@ async function deliverOne(ctx: PhoneCtx, id: string): Promise<void> {
  */
 export async function scan(ctx: PhoneCtx): Promise<{ scheduled: number; sent: number; skipped: number; failed: number; later: number }> {
   const db = ctx.db;
-  const now = ctx.now ? ctx.now() : new Date();
+  const now = nowOf(ctx);
   const s = await flowSettings(db);
   let scheduled = 0;
   // Three days back at most, and never before the owner turned the flow on.
@@ -157,8 +157,6 @@ export async function scan(ctx: PhoneCtx): Promise<{ scheduled: number; sent: nu
   // What another app's form or booking page made, in the hour before at most: a CRM added later thanks nobody for
   // last week. Each is one row (text_sends_once), so what the CRM's own pages already scheduled is left as it is.
   const lastHour = (f: FlowSettings) => new Date(Math.max(now.getTime() - 3_600_000, f.enabledAt?.getTime() ?? 0)).toISOString();
-  // Found more than ten minutes after the person's own action, it is no longer an answer at night: it waits for 8am (send.ts ANSWERS).
-  const dueFor = (at: Date) => (now.getTime() - new Date(at).getTime() < 10 * 60_000 ? now : notQuiet(now, ctx.zone));
   if (s.thanks.enabled) {
     const subs = await db.sql<{ id: string; phone: string | null; email: string | null; completed_at: Date }>`
       select s.id::text as id, s.phone, s.email::text as email, s.completed_at from submissions s join forms f on f.key = s.form_key
@@ -167,7 +165,7 @@ export async function scan(ctx: PhoneCtx): Promise<{ scheduled: number; sent: nu
         and not exists (select 1 from text_sends t where t.flow = 'thanks' and t.subject_type = 'submission' and t.subject_id = s.id::text)
       order by s.completed_at limit 100`;
     for (const r of subs) {
-      if (await schedule(db, { flow: "thanks", subjectType: "submission", subjectId: r.id, phone: r.phone, email: r.email, dueAt: dueFor(r.completed_at) })) scheduled++;
+      if (await schedule(db, { flow: "thanks", subjectType: "submission", subjectId: r.id, phone: r.phone, email: r.email, dueAt: new Date(r.completed_at) })) scheduled++;
     }
   }
   if (s.booked.enabled) {
@@ -177,7 +175,7 @@ export async function scan(ctx: PhoneCtx): Promise<{ scheduled: number; sent: nu
         and not exists (select 1 from text_sends t where t.flow = 'booked' and t.subject_type = 'booking' and t.subject_id = b.id::text)
       order by b.created_at limit 100`;
     for (const b of books) {
-      if (await schedule(db, { flow: "booked", subjectType: "booking", subjectId: b.id, phone: b.phone, email: b.email, dueAt: dueFor(b.created_at) })) scheduled++;
+      if (await schedule(db, { flow: "booked", subjectType: "booking", subjectId: b.id, phone: b.phone, email: b.email, dueAt: new Date(b.created_at) })) scheduled++;
     }
   }
 
@@ -248,7 +246,7 @@ export async function scan(ctx: PhoneCtx): Promise<{ scheduled: number; sent: nu
 /** What a flow's text is about, worked out as it goes. */
 export async function render(ctx: PhoneCtx, row: SendRow, s: FlowSettings): Promise<Rendered> {
   const db = ctx.db;
-  const now = ctx.now ? ctx.now() : new Date();
+  const now = nowOf(ctx);
   const base: Fill = { business: ctx.business };
   switch (row.flow) {
     case "missed_call": {
@@ -343,7 +341,7 @@ export async function render(ctx: PhoneCtx, row: SendRow, s: FlowSettings): Prom
 /** For the flow page: a contact whose details fill the example, the most recent real one, or a sample (`sample`). */
 export async function exampleFill(ctx: PhoneCtx): Promise<Fill & { sample: boolean }> {
   const [c] = await ctx.db.sql<{ name: string }>`select name from customers where name ~ '^[A-Za-z]' order by created_at desc limit 1`;
-  const now = new Date();
+  const now = nowOf(ctx);
   const links = await ctx.links();
   const form_link = `${links ? `${links.base}${links.prefix}` : "https://example.com"}/forms/quote/next?k=x7Kp2Q`;
   const types = await bookable(ctx.db);

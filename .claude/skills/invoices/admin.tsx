@@ -88,6 +88,8 @@ export type InvoicesAdminOptions = {
   source: string;
   /** The business's zone: "today" for valid-until dates. */
   timeZone: string;
+  /** The clock "today" is read from: the real one unless a test pins it. */
+  now?: () => Date;
   /** A new quote's currency; default usd. */
   currency?: string;
   /** Standing terms a new quote starts with ("Payment due within 14 days of the work."). */
@@ -272,7 +274,8 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   ];
   const stripeOf = opts.stripe ?? ((c: Ctx) => stripeFrom(envOf(c)));
   // The business's name, at the top of every quote and in its email: the project's, as set now (data/business.ts).
-  const docOf = async (c: Ctx) => ({ business: (await businessOf(getDb(c))).name ?? "", timeZone: opts.timeZone, word: opts.word });
+  const today = () => todayIn(opts.timeZone, opts.now?.());
+  const docOf = async (c: Ctx) => ({ business: (await businessOf(getDb(c))).name ?? "", timeZone: opts.timeZone, word: opts.word, now: opts.now?.() });
   const send = opts.send ?? ((c: Ctx, mail: Email) => sendEmail(envOf(c), mail));
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
@@ -310,7 +313,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       { label: W, cell: (r) => <span class="whitespace-nowrap">{r.number}</span> },
       { label: "Customer", cell: (r) => r.name ?? r.email },
       { label: "Total", cell: (r) => money(r.total_cents, r.currency), class: "text-right" },
-      { label: "Status", cell: (r) => <StatusBadge value={shownStatus(r, todayIn(opts.timeZone))} options={QUOTE_OPTIONS} /> },
+      { label: "Status", cell: (r) => <StatusBadge value={shownStatus(r, today())} options={QUOTE_OPTIONS} /> },
       { label: "Created", cell: (r) => <When at={r.created_at} timeZone={opts.timeZone} />, class: "hidden sm:table-cell" },
     ],
   };
@@ -320,7 +323,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const asked = c.req.query("status");
     const status = SHOWN_QUOTE_STATUSES.includes(asked as ShownQuoteStatus) ? (asked as ShownQuoteStatus) : null;
     const after = readCursor(c.req.query("after"));
-    const { page, next } = cut(await quotesPage(getDb(c), { q, status }, after, size, todayIn(opts.timeZone)), size);
+    const { page, next } = cut(await quotesPage(getDb(c), { q, status }, after, size, today()), size);
     const params = { q, status };
     const self = listUrl(qbase, params);
     const more = (cur: string) => listUrl(qbase, { ...params, after: cur });
@@ -387,7 +390,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     if (!qt) return c.notFound();
     const rates = await taxRates(getDb(c));
     const self = `${qbase}/${qt.id}`;
-    const shown = shownStatus(qt, todayIn(opts.timeZone));
+    const shown = shownStatus(qt, today());
     const open = isEditable(qt);
     const linked = opts.links ? await opts.links(c, { kind: "quote", quote: qt }) : {};
     const invoices = (await invoicesFor(getDb(c), { quoteId: qt.id })).filter((i) => i.status !== "void");
@@ -531,7 +534,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const qt = await load(c);
     if (!qt) return c.notFound();
     const self = `${qbase}/${qt.id}`;
-    const no = cannotSend(qt, todayIn(opts.timeZone));
+    const no = cannotSend(qt, today());
     if (no) return back(c, self, no === "past" ? "past-valid" : "not-now");
     const rates = await taxRates(getDb(c));
     const noLink = opts.proposal ? await opts.proposal.linkReady(c, qt) : "";
@@ -594,7 +597,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const qt = await load(c);
     if (!qt) return c.notFound();
     const self = `${qbase}/${qt.id}`;
-    const no = cannotSend(qt, todayIn(opts.timeZone));
+    const no = cannotSend(qt, today());
     if (no) return back(c, self, no === "past" ? "past-valid" : "not-now");
     const how = str((await c.req.parseBody()).how);
     const proposal = opts.proposal;
@@ -757,7 +760,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const due = asked === "due";
     const status = INVOICE_STATUSES.includes(asked as InvoiceStatus) ? (asked as InvoiceStatus) : null;
     const after = readCursor(c.req.query("after"));
-    const { page, next } = cut(await invoicesPage(getDb(c), { q, status, due }, after, size, todayIn(opts.timeZone)), size);
+    const { page, next } = cut(await invoicesPage(getDb(c), { q, status, due }, after, size, today()), size);
     const params = { q, status: due ? "due" : status };
     const self = listUrl(base, params);
     const more = (cur: string) => listUrl(base, { ...params, after: cur });
@@ -775,7 +778,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     );
     if (isPartial(c)) return c.html(results);
     const currency = (opts.currency ?? "usd").toLowerCase();
-    const totals = after ? null : await invoiceTotals(getDb(c), { today: todayIn(opts.timeZone), timeZone: opts.timeZone, currency });
+    const totals = after ? null : await invoiceTotals(getDb(c), { today: today(), timeZone: opts.timeZone, currency });
     return framed(c, base, { title: "Invoices", actions: <a href={`${base}/new`} class={primaryClass}>New invoice</a> }, (
       <>
         {(await stripeReady(c)) ? null : needStripe}
@@ -882,7 +885,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       back: { href: base, label: "Invoices" },
       sub: (
         <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <StatusBadge value={pastDue(inv, todayIn(opts.timeZone), quote) ? "due" : inv.status} options={SHOWN_INVOICE} />
+          <StatusBadge value={pastDue(inv, today(), quote) ? "due" : inv.status} options={SHOWN_INVOICE} />
           <span>{inv.name ?? inv.email} · {money(inv.total_cents, inv.currency)}</span>
           {inv.livemode === false ? <span class="text-label text-ink-3">Stripe test mode: not real money</span> : null}
         </p>
@@ -1161,7 +1164,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
               </select>
             </label>
             <label class={fieldClass}>Date paid
-              <input name="on" type="date" required value={v.on} max={todayIn(opts.timeZone)} class={controlClass} />
+              <input name="on" type="date" required value={v.on} max={today()} class={controlClass} />
             </label>
             <label class={fieldClass}>Reference
               <input name="reference" maxlength={100} value={v.reference} placeholder="Check number" class={controlClass} />
@@ -1181,7 +1184,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     if (!inv) return c.notFound();
     if (!owing(inv)) return back(c, `${base}/${inv.id}`, "not-now");
     const left = Number(inv.total_cents) - (await paidSoFar(getDb(c), inv.id));
-    return paymentPage(c, inv, { amount: amountInput(left, inv.currency), method: "Check", on: todayIn(opts.timeZone), reference: "", key: crypto.randomUUID() }, null);
+    return paymentPage(c, inv, { amount: amountInput(left, inv.currency), method: "Check", on: today(), reference: "", key: crypto.randomUUID() }, null);
   });
   app.post("/:id{[0-9]+}/payment", async (c) => {
     const inv = await loadInvoice(c);
@@ -1192,12 +1195,11 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     const v = { amount: str(body.amount).trim(), method: str(body.method), on: str(body.on), reference: str(body.reference).trim().slice(0, 100), key: str(body.key) };
     const cents = toMinor(v.amount, inv.currency);
     const method = PAYMENT_METHODS.find((m) => m === v.method);
-    const today = todayIn(opts.timeZone);
     const problem = cents === null || cents <= 0 ? "Enter the amount paid, like 120 or 120.50."
       : !method ? "Choose how it was paid."
-      : !isDay(v.on) || v.on > today ? "Enter the day it was paid, today or before." : null;
+      : !isDay(v.on) || v.on > today() ? "Enter the day it was paid, today or before." : null;
     if (problem) return paymentPage(c, inv, v, problem, 422);
-    const r = await recordPayment(getDb(c), stripeOf(c), inv.id, { amountCents: cents!, method: method!, paidOn: v.on, reference: v.reference || null, key: v.key, timeZone: opts.timeZone }, c.get("user"));
+    const r = await recordPayment(getDb(c), stripeOf(c), inv.id, { amountCents: cents!, method: method!, paidOn: v.on, reference: v.reference || null, key: v.key, timeZone: opts.timeZone }, c.get("user"), opts.now?.());
     // Stripe refused it: the form comes back with a new key, so a corrected amount is a new request to Stripe.
     if (!r.ok) return paymentPage(c, inv, r.reason === "stripe" ? { ...v, key: crypto.randomUUID() } : v, r.message, r.reason === "stripe" ? 502 : 422);
     return back(c, self, r.remaining === 0 ? "payment-recorded-all" : "payment-recorded");

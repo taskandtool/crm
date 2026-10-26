@@ -14,14 +14,15 @@ Version: 0.2.0 (taskandtool/skills)
 
 ## The rules
 
-- **Twilio is a connection, asked for with `--delivery edge`**:
-  `python3 ~/tools/taskandtool.py request-connection twilio --why "A business number: calls ring your phone, missed calls get a text" --auth api_key --delivery edge`.
+- **Twilio is a connection**:
+  `python3 ~/tools/taskandtool.py request-connection twilio --why "A business number: calls ring your phone, missed calls get a text" --auth api_key`.
   The missed-call text goes from the call's own webhook, which production's
-  Worker answers, so the key must reach the edge. The owner gives the
-  Account SID and an API key made in that account (a Standard key is
-  enough); for an agency's client, the client's own subaccount. The SID
-  arrives beside the key (`TWILIO_ACCOUNT_SID`) and as the connection's
-  account in `list-connections`; `twilio.ts` reads it there.
+  Worker answers; it reaches Twilio through the app's connections there as
+  in dev. The owner gives the Account SID and an API key made in that
+  account (a Standard key is enough); for an agency's client, the client's
+  own subaccount. The SID is the connection's account in
+  `list-connections` (and `TWILIO_ACCOUNT_SID` where the key is bound);
+  `twilio.ts` reads it there.
 - **Twilio's webhooks come through the inbound route**
   (`inbound-url /hooks/twilio`), never a public path; each number's hook
   addresses carry its own secret, which `hooks.ts` checks.
@@ -44,8 +45,8 @@ Version: 0.2.0 (taskandtool/skills)
 - **Automatic texts keep the rules in `send.ts`'s header**: a ticked box,
   or they called or texted first (the nudge to finish booking and the
   review request need the box); never after a STOP, in any words, or to a
-  contact marked Don't text; never to a landline; nothing from 8pm to 8am in the business's zone but an answer
-  to what they just did; three a number a day, the booking's confirmation
+  contact marked Don't text; never to a landline; no text from 8pm to 8am in the business's zone but an answer
+  within ten minutes of what they just did (emails go at any hour); three a number a day, the booking's confirmation
   and reminder apart. Where a text can't go, flows 2, 3 and 6 go by email.
   A send that didn't go says why in `text_sends.why`. A person may text any
   number that hasn't opted out or been marked Don't text (`phone.mjs send`).
@@ -73,7 +74,7 @@ Version: 0.2.0 (taskandtool/skills)
 | File | What |
 |---|---|
 | `schema.sql` | `phone_numbers`, `communications` (texts and calls, one table), `text_flows`, `text_sends`, `messages_seen`, `phone_lines`; `customers.texts_off` |
-| `twilio.ts` | `twilioFrom` (bound key or gateway), the `Provider`, `twilioConnected`, TwiML |
+| `twilio.ts` | `twilioFrom` (through the app's connections), the `Provider`, `twilioConnected`, TwiML |
 | `store.ts` | Numbers, texts and calls, whose number, threads, read state, opt-outs |
 | `flows.ts` | The six flows' definitions, our words, `fill`, `checkWords`, `segments`, quiet hours, the owner's changes |
 | `send.ts` | `sendText`, the claims (`schedule`, `deliver`), `mayText`, an email's link back to its form |

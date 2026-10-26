@@ -52,7 +52,7 @@ export type PhoneCtx = {
   now?: () => Date;
 };
 
-const nowOf = (ctx: PhoneCtx) => (ctx.now ? ctx.now() : new Date());
+export const nowOf = (ctx: PhoneCtx) => (ctx.now ? ctx.now() : new Date());
 
 // ---- one text -----------------------------------------------------------------
 
@@ -101,12 +101,12 @@ export type SubjectType = "call" | "submission" | "draft" | "booking";
 /** A text a flow will send, once: the row is unique per flow, step and subject. */
 export async function schedule(
   db: Db,
-  s: { flow: FlowKey; step?: number; subjectType: SubjectType; subjectId: string; phone?: string | null; email?: string | null; dueAt?: Date },
+  s: { flow: FlowKey; step?: number; subjectType: SubjectType; subjectId: string; phone?: string | null; email?: string | null; dueAt: Date },
 ): Promise<string | null> {
   const key = s.phone ? phoneKey(s.phone) : null;
   const [r] = await db.sql<{ id: string }>`
     insert into text_sends (flow, step, subject_type, subject_id, remote_key, email, due_at)
-    values (${s.flow}, ${s.step ?? 1}, ${s.subjectType}, ${s.subjectId}, ${key}, ${s.email ?? null}::citext, ${(s.dueAt ?? new Date()).toISOString()}::timestamptz)
+    values (${s.flow}, ${s.step ?? 1}, ${s.subjectType}, ${s.subjectId}, ${key}, ${s.email ?? null}::citext, ${s.dueAt.toISOString()}::timestamptz)
     on conflict (flow, step, subject_type, subject_id) do nothing
     returning id::text as id`;
   return r?.id ?? null;
@@ -115,19 +115,19 @@ export async function schedule(
 export type Slot = { start: string; label: string };
 export type SendRow = {
   id: string; flow: FlowKey; step: number; subject_type: SubjectType; subject_id: string; remote_key: string | null; email: string | null;
-  due_at: Date; link: string | null; offer: Slot[] | null; created_at: Date; updated_at: Date;
+  due_at: Date; link: string | null; offer: Slot[] | null; updated_at: Date;
 };
 
 /** Every row due by now, oldest first. */
 export async function dueSends(db: Db, now: Date, limit = 200): Promise<SendRow[]> {
   return db.sql<SendRow>`
-    select id::text as id, flow, step, subject_type, subject_id, remote_key, email::text as email, due_at, link, offer, created_at, updated_at
+    select id::text as id, flow, step, subject_type, subject_id, remote_key, email::text as email, due_at, link, offer, updated_at
     from text_sends where status = 'due' and due_at <= ${now.toISOString()}::timestamptz order by due_at, id limit ${limit}`;
 }
 
 export async function sendById(db: Db, id: string): Promise<SendRow | null> {
   const [r] = await db.sql<SendRow>`
-    select id::text as id, flow, step, subject_type, subject_id, remote_key, email::text as email, due_at, link, offer, created_at, updated_at
+    select id::text as id, flow, step, subject_type, subject_id, remote_key, email::text as email, due_at, link, offer, updated_at
     from text_sends where id = ${id}::bigint`;
   return r ?? null;
 }
@@ -149,7 +149,7 @@ export type Renderer = (ctx: PhoneCtx, row: SendRow, s: FlowSettings) => Promise
 
 /**
  * Send one claimed automatic text, by text or by email, or say why not.
- * Quiet hours move it to 8am (the missed-call text excepted). Returns what
+ * Quiet hours move a text to 8am; an email goes at any hour. Returns what
  * happened, for the job's report.
  */
 export async function deliver(ctx: PhoneCtx, row: SendRow, render: Renderer): Promise<"sent" | "skipped" | "failed" | "later"> {
@@ -168,11 +168,6 @@ export async function deliver(ctx: PhoneCtx, row: SendRow, render: Renderer): Pr
   try {
     const settings = (await flowSettings(db))[row.flow];
     if (!settings.enabled) return (await finish("skipped", "the flow is off"), "skipped");
-    // Quiet hours first: what it says (and the links it makes) is worked out only when it goes. A reply to
-    // what the person just did goes at any hour: the missed-call text, and a confirmation or thank-you
-    // within minutes of their booking or form (someone booking at 11pm expects it then).
-    const answering = row.flow === "missed_call" || (ANSWERS.has(row.flow) && now.getTime() - new Date(row.created_at).getTime() < 10 * 60_000);
-    if (!answering && isQuiet(now, ctx.zone)) return (await finish("due", "quiet hours", { dueAt: notQuiet(now, ctx.zone) }), "later");
     const r = await render(ctx, row, settings);
     if ("skip" in r) return (await finish("skipped", r.skip), "skipped");
 
@@ -183,6 +178,10 @@ export async function deliver(ctx: PhoneCtx, row: SendRow, render: Renderer): Pr
     const reachable = !!(number && phone && key && r.to.consent && !(await optedOut(db, key)));
     const landline = reachable && (await isLandline(ctx, phone!, key!));
     const allowed = reachable && !landline;
+    // Quiet hours hold a text, never an email. An answer goes at any hour within ten minutes of what the person did
+    // (its due time): someone booking at 11pm expects it then.
+    const answering = isAnswer(row) && now.getTime() - new Date(row.due_at).getTime() < 10 * 60_000;
+    if (allowed && !answering && isQuiet(now, ctx.zone)) return (await finish("due", "quiet hours", { dueAt: notQuiet(now, ctx.zone) }), "later");
     // Three a day at most; past that it goes by email where the flow has one, as any text that can't go.
     // A confirmation or reminder is never held back by the cap (it is what they need most), nor counted in it.
     const capped = allowed && !UNCAPPED.has(row.flow) && (await textsToday(db, key!, row.id)) >= 3;
@@ -254,8 +253,10 @@ async function isLandline(ctx: PhoneCtx, phone: string, key: string): Promise<bo
   return NO_TEXTS.has(type ?? "");
 }
 
-/** Flows that answer what the person just did, and so go at night when sent within minutes of it. */
-const ANSWERS = new Set<FlowKey>(["thanks", "booked"]);
+/** Flows that answer what the person just did: a call, a form, a booking. */
+const ANSWERS = new Set<FlowKey>(["missed_call", "thanks", "booked"]);
+/** An answer's text, or the reply about a taken time (the unbooked flow's third step). */
+const isAnswer = (row: SendRow) => ANSWERS.has(row.flow) || (row.flow === "unbooked" && row.step === 3);
 /** Flows the three-a-day cap neither stops nor counts: the booking's own confirmation and reminder. */
 const UNCAPPED = new Set<FlowKey>(["booked", "reminder"]);
 

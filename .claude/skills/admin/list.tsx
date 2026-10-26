@@ -310,7 +310,7 @@ export function SearchBar(props: {
  * is not this one; `day` leaves the time out. The server's zone is UTC on the
  * machine and at the edge, so formatting without `timeZone` shows the wrong hour.
  */
-export function When({ at, timeZone, locale = "en-US", day = false }: { at: Date | string | null | undefined; timeZone: string; locale?: string; day?: boolean }) {
+export function When({ at, timeZone, locale = "en-US", day = false, now = new Date() }: { at: Date | string | null | undefined; timeZone: string; locale?: string; day?: boolean; now?: Date }) {
   if (!at) return null;
   const d = at instanceof Date ? at : new Date(at);
   if (Number.isNaN(d.getTime())) return null;
@@ -319,7 +319,7 @@ export function When({ at, timeZone, locale = "en-US", day = false }: { at: Date
     timeZone,
     month: "short",
     day: "numeric",
-    year: year(d) === year(new Date()) ? undefined : "numeric",
+    year: year(d) === year(now) ? undefined : "numeric",
     ...(day ? {} : { hour: "numeric", minute: "2-digit" }),
   }).format(d);
   return (

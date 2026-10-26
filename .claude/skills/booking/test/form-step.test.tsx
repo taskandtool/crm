@@ -131,9 +131,10 @@ test("a paid intake: questions, a time held inside the form, the price charged, 
     assert.equal(await complete(), false, "booked and sent to pay: not complete until Stripe says paid");
 
     // A checkout just opened keeps the hold past its time; once that is old too and nothing paid, it is released.
-    const later = new Date(Date.now() + 50 * 60_000);
-    await s.db.sql`update bookings set hold_until = now() - interval '1 minute'`;
-    assert.equal(await releaseLapsedHolds(s.db), 0, "past the hold, but its checkout is still open");
+    const now = new Date();
+    const later = new Date(now.getTime() + 50 * 60_000);
+    await s.db.sql`update bookings set hold_until = ${new Date(now.getTime() - 60_000).toISOString()}::timestamptz`;
+    assert.equal(await releaseLapsedHolds(s.db, now), 0, "past the hold, but its checkout is still open");
     await s.db.sql`update payments set status = 'failed'`;
     assert.equal(await releaseLapsedHolds(s.db, later), 0, "one card declined, the checkout still open: held");
     await s.db.sql`update payments set status = 'cancelled'`; // checkout.session.expired

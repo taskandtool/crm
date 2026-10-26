@@ -309,9 +309,9 @@ test("in an app's own frame, a booking opens on the app's page, and an event the
     assert.doesNotMatch(html, /<html/, "no second document inside the app's");
     // No service, nobody assigned, no email: it shows by its title, and opens the app's page.
     const [{ id }] = await s.db.sql<{ id: string }>`
-      insert into bookings (starts_at, ends_at, title, name, location_kind) values (now() + interval '1 hour', now() + interval '2 hours', 'Walk-in cooler check', 'Hank', 'their_place')
+      insert into bookings (starts_at, ends_at, title, name, location_kind) values ('2026-03-10T15:00:00Z', '2026-03-10T16:00:00Z', 'Walk-in cooler check', 'Hank', 'their_place')
       returning id::text as id`;
-    assert.match(await (await app.request("/schedule", { headers: team })).text(), new RegExp(`href="/events/${id}"[^>]*>Hank</a><span class="text-ink-2"> · Walk-in cooler check</span>`));
+    assert.match(await (await app.request("/schedule?date=2026-03-10", { headers: team })).text(), new RegExp(`href="/events/${id}"[^>]*>Hank</a><span class="text-ink-2"> · Walk-in cooler check</span>`));
     const res = await app.request(`/schedule/${id}/status`, form({ status: "cancelled" }, team));
     assert.match(res.headers.get("location")!, new RegExp(`^/events/${id}\\?saved=cancelled$`));
     assert.deepEqual(after, ["cancelled"], "the app hears of the change");
@@ -423,7 +423,7 @@ test("the team books for someone: carried details, a time, the confirmation sent
 });
 
 
-test("a person's Calendars: Show available calendars asks the held accounts on the machine, and Attach adds one", async (t) => {
+test("a person's Calendars: Show available calendars asks the held accounts, and Attach adds one", async (t) => {
   const s = await scratch();
   if (!s) return t.skip(why);
   const realFetch = globalThis.fetch;
@@ -436,11 +436,14 @@ test("a person's Calendars: Show available calendars asks the held accounts on t
     const page = `/admin/team/${pat.value.id}`;
     const machine = { PHOENIX_URL: "https://phoenix.test/", MACHINE_TOKEN: "mt-1" };
 
-    // Off the machine (production's Worker) there is no gateway to ask.
+    // Where the app reaches no connections (a Worker deployed before them), nothing to ask.
     let html = await (await app.request(page, { headers: team })).text();
-    assert.match(html, /Find their calendars from the team address/);
+    assert.match(html, /once this app is deployed again/);
     assert.doesNotMatch(html, /Show available calendars/);
+    // On the machine, and in production through the routing Worker's connections.
     assert.match(await (await app.request(page, { headers: team }, machine)).text(), /Show available calendars/);
+    const TT = { fetch: async () => new Response("{}"), list: async () => ({ connections: [] }) };
+    assert.match(await (await app.request(page, { headers: team }, { TT })).text(), /Show available calendars/);
 
     // Pat connected their Google; it can also read Sam's calendar.
     globalThis.fetch = (async (url: string) =>

@@ -8,7 +8,7 @@ import type { Scratch } from "../../data/test/scratch";
 import { book, cancelByToken, reschedule, rescheduleById, setStatus } from "../book";
 import { addWindow, createPerson, createType, setHosts } from "../hours";
 import { linkAccounts } from "../calendars";
-import { eventTag, GOOGLE_TAG, MICROSOFT_TAG, syncCalendars } from "../sync";
+import { eventTag, GOOGLE_TAG, MICROSOFT_TAG, pushBookings, syncCalendars } from "../sync";
 import { fake, held, json, team, withDb, type Call } from "./calendar-fixtures";
 
 const schema = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "schema.sql"), "utf8");
@@ -516,7 +516,7 @@ test("a booking moved and then marked completed keeps its event, at the new time
     const { calls, gw } = fake(g.routes);
     await syncCalendars(s.db, gw, NOW);
     assert.ok((await reschedule(s.db, a.token, T("2026-03-09T14:00:00Z"), NOW)).ok);
-    assert.ok(await setStatus(s.db, a.booking.id, "completed", "o@example.com")); // 9 March is past by the wall clock
+    assert.ok(await setStatus(s.db, a.booking.id, "completed", "o@example.com", T("2026-03-09T15:00:00Z")));
     calls.length = 0;
     await syncCalendars(s.db, gw, NOW);
     assert.equal(calls.filter((c) => c.method === "DELETE").length, 0);
@@ -579,4 +579,33 @@ test("two people's Google are read through their own connections", (t) =>
     assert.deepEqual(calls.map((c) => c.path.split("/")[1]).sort(), ["google-calendar", "google-calendar-7c2e1a"]);
     const busy = await s.db.sql`select r.name, b.starts_at from busy b join calendars k on k.id = b.calendar_id join resources r on r.id = k.resource_id order by r.name`;
     assert.deepEqual(busy.map((b) => `${b.name} ${new Date(b.starts_at).toISOString()}`), ["Pat 2026-03-09T10:00:00.000Z", "Sam 2026-03-09T14:00:00.000Z"]);
+  }));
+
+test("a calendar reached through a connection this app does not hold is left for the app that holds it", (t) =>
+  withDb(t, async (s) => {
+    const { resource } = await setup(s, "google");
+    const before = await s.db.sql`select now() - interval '1 hour' as at`;
+    const a = await book(s.db, { typeId: resource.id, start: T("2026-03-09T10:00:00Z"), name: "Ann", email: "ann@example.com", source: "website", now: NOW });
+    assert.ok(a.ok);
+    // an earlier attempt that died, long enough ago to be claimed again
+    await s.db.sql`update bookings set push_claimed_at = ${before[0].at}`;
+    const { calls, gw } = fake(googleCalendar().routes);
+
+    let r = await pushBookings(s.db, gw, NOW, 100, async () => new Set(["microsoft-calendar"]));
+    assert.deepEqual([r.pushed, r.errors, calls.length], [0, [], 0]);
+    const [row] = await s.db.sql`select push_claimed_at from bookings`;
+    assert.equal(new Date(row.push_claimed_at).toISOString(), new Date(before[0].at).toISOString(), "its claim is as it was");
+
+    r = await pushBookings(s.db, gw, NOW, 100, async () => new Set(["google-calendar"]));
+    assert.equal(r.pushed, 1);
+  }));
+
+test("pushes that overlap (a write's and the job's) place one event", (t) =>
+  withDb(t, async (s) => {
+    const { resource } = await setup(s, "google");
+    assert.ok((await book(s.db, { typeId: resource.id, start: T("2026-03-09T10:00:00Z"), name: "Ann", email: "ann@example.com", source: "website", now: NOW })).ok);
+    const { calls, gw } = fake(googleCalendar().routes);
+    const runs = await Promise.all([pushBookings(s.db, gw, NOW), pushBookings(s.db, gw, NOW), syncCalendars(s.db, gw, NOW)]);
+    assert.equal(runs.reduce((n, r) => n + r.pushed, 0), 1);
+    assert.equal(calls.filter((c) => c.method === "POST").length, 1);
   }));

@@ -18,7 +18,8 @@ import { cannotSend, markSent, PAST_VALID, type Quote } from "./quotes";
  * The business's name, and its zone: the quote's date is the day it is there.
  * `word` is what the business calls a quote ("Quote", "Proposal", "Estimate").
  */
-export type DocOptions = { business: string; timeZone?: string; locale?: string; word?: string };
+/** `now` is the clock "today" is read from: the real one unless a test pins it. */
+export type DocOptions = { business: string; timeZone?: string; locale?: string; word?: string; now?: Date };
 
 /** "2026-11-30" as "November 30, 2026"; the date is a calendar day, read in UTC. */
 export function dayText(day: string | null, locale = "en-US"): string {
@@ -242,7 +243,7 @@ export function QuoteDocument({ qt, rates, o }: { qt: Quote & { lines: SavedLine
  */
 export function InvoiceDocument({ inv, rates, o }: { inv: Invoice & { lines: SavedLine[] }; rates: TaxRate[]; o: DocOptions }) {
   const sent = inv.sent_at ?? null;
-  const day = todayIn(o.timeZone ?? "UTC", sent ?? new Date());
+  const day = todayIn(o.timeZone ?? "UTC", sent ?? o.now);
   const due = inv.due_date ?? addDays(day, inv.days_until_due);
   const paid = inv.status === "paid";
   // Only one that can still be paid shows what is due and a Pay button; a void or written-off one shows its total.
@@ -286,7 +287,7 @@ export type SendQuote = {
  * sending.
  */
 export async function sendQuote(db: Db, qt: Quote & { lines: SavedLine[] }, rates: TaxRate[], o: DocOptions, how: SendQuote): Promise<{ sent: Sent; pdf: boolean; printError: string | null }> {
-  const why = cannotSend(qt, todayIn(o.timeZone ?? "UTC"));
+  const why = cannotSend(qt, todayIn(o.timeZone ?? "UTC", o.now));
   if (why) return { sent: { status: "none", why: why === "past" ? PAST_VALID : `it is ${qt.status}` }, pdf: false, printError: null };
   const msg = quoteMessage(qt, rates, o, how.link);
   let pdf: Uint8Array | null = null;
