@@ -54,6 +54,13 @@ export function chooseFaces(faces, roles) {
   return faces.some((f) => f.max > f.min) ? faces.filter((f) => f.max > f.min) : [...new Set(want.map(near))];
 }
 
+/** Each weight a role wants that no chosen face has, with the nearest one shown instead. */
+export function missingWeights(faces, roles) {
+  const has = (w) => faces.some((f) => w >= f.min && w <= f.max);
+  const nearest = (w) => faces.map((f) => Math.min(Math.max(w, f.min), f.max)).reduce((a, b) => (Math.abs(b - w) < Math.abs(a - w) ? b : a));
+  return roles.flatMap((role) => WANT[role].filter((w) => !has(w)).map((w) => ({ role, want: w, shown: nearest(w) })));
+}
+
 const slug = (family) => family.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 export const fileOf = (family, f) => `${slug(family)}-latin-${f.max > f.min ? "wght" : f.min}-normal.woff2`;
 const face = (family, f) =>
@@ -136,6 +143,7 @@ async function main() {
     lines: [
       ...written.map((p) => `wrote ${p}`),
       changed ? `${CSS}: @font-face and --font-${roles.join(", --font-")}${was.length ? ` (was ${[...new Set(was)].join(", ")})` : ""}` : `${CSS}: already set, left alone`,
+      ...missingWeights(chosen, roles).map((m) => `${family} has no ${m.want} weight: ${m.role} text set at ${m.want} shows at ${m.shown} (the page never fakes a bold)`),
       build.stdout.trim(),
     ],
     next: "npm run check, then Preview a quote",

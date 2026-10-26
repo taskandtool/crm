@@ -52,11 +52,11 @@ export function Picture({ src, alt, label, class: cls }: { src: string | null; a
   );
 }
 
-/** Stars out of five, in the accent colour. */
+/** Stars out of five, in the star colour. */
 export function Stars({ n, night }: { n: number; night?: boolean }) {
   const k = Math.max(0, Math.min(5, Math.round(n)));
   return (
-    <p class="text-small text-accent" aria-label={`${k} out of 5 stars`}>
+    <p class="text-small text-star" aria-label={`${k} out of 5 stars`}>
       {"★".repeat(k)}
       <span class={night ? "text-line-night" : "text-line-strong"}>{"★".repeat(5 - k)}</span>
     </p>

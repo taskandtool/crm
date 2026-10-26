@@ -18,7 +18,7 @@ import { saveBusiness } from "../src/data/business";
 import { invoiceById, invoicesFor } from "../src/invoices/invoices";
 import { quoteById } from "../src/invoices/quotes";
 import { markEmailed } from "../src/proposals/store";
-import { chooseFaces, END, latinFaces, rewrite, rolesFor, START } from "../scripts/proposal-font.mjs";
+import { chooseFaces, END, latinFaces, missingWeights, rewrite, rolesFor, START } from "../scripts/proposal-font.mjs";
 import { wordsOf } from "../scripts/proposal-copy";
 import type { Runtime } from "../src/runtime";
 import { scratch, type Scratch } from "./scratch";
@@ -293,6 +293,24 @@ test("emailed: the link goes by the owner's sender with nothing attached; an ope
   await markEmailed(db, id);
 });
 
+test("the customer's link reads the business itself: a page made there, and the one they sign, names it with no team request first", async (t) => {
+  if (skip) return t.skip(skip);
+  const { deal } = await customerWithDeal("Bea Ng", "bea@example.com");
+  const id = await newQuote("bea@example.com", "Bea Ng", deal);
+  const token = tokenOf(await (await post(`/invoices/quotes/${id}/send`, { how: "link" })).text());
+  // Renamed straight in the database: only a request that reads the business itself sees it, as a fresh
+  // server or Worker would (before this, the link took whatever a team request had loaded: nothing, then "Us").
+  await db.sql`update business set name = 'Bright Fence Co'`;
+  try {
+    const html = await (await get(`/q/${token}`, NOBODY)).text();
+    assert.match(html, /Bright Fence Co/);
+    assert.equal((await post(`/q/${token}`, { name: "Bea Ng", agree: "1", page: shaOf(html) }, NOBODY)).status, 303, "and signing it is not refused as changed");
+    assert.equal((await quoteById(db, id))!.status, "accepted");
+  } finally {
+    await db.sql`update business set name = 'Acme Test Co'`;
+  }
+});
+
 test("declined at the link: the quote declined, its deal lost with their reason; an expired or unknown link is dead", async (t) => {
   if (skip) return t.skip(skip);
   const { deal } = await customerWithDeal("Cy Lo", "cy@example.com");
@@ -387,6 +405,11 @@ test("proposal-font: the latin faces, the weights each role uses, the token and 
   assert.deepEqual(chooseFaces(statics, ["display", "body"]).map((f: { min: number }) => f.min), [700, 400]);
   const variable = latinFaces(sheet(400, "https://g/v.woff2") + sheet(700, "https://g/v.woff2"));
   assert.deepEqual(variable, [{ url: "https://g/v.woff2", min: 400, max: 700 }], "one file for a variable family");
+  // A one-weight display face (Instrument Serif's 400) is said, with the weight shown instead; one that has them is not.
+  const single = latinFaces(sheet(400, "https://g/one.woff2"));
+  assert.deepEqual(missingWeights(chooseFaces(single, ["display"]), ["display"]), [{ role: "display", want: 700, shown: 400 }]);
+  assert.deepEqual(missingWeights(chooseFaces(statics, ["display", "body"]), ["display", "body"]), []);
+  assert.deepEqual(missingWeights(variable, ["display"]), []);
 
   const css = `${START}\n@font-face {\n  font-family: "Old";\n  src: url("/fonts/old.woff2");\n}\n${END}\n@theme {\n  --font-display: "Old", serif;\n  --font-body: "Old", sans-serif;\n}`;
   const once = rewrite(css, "New", ["display"], [{ url: "u", min: 700, max: 700 }])!;

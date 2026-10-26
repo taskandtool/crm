@@ -21,6 +21,8 @@ import { pageFor, proposalOf, quoteIdByToken, recordView, storePage } from "./st
 export type PublicOpts = {
   /** This request's database, or null while it is not up. */
   db: (c: Context) => { db: Db | null; close?: () => Promise<void> };
+  /** Read once the database is open, before the page is made: what `deps` names (the business), as the team's requests load it. */
+  load: (db: Db) => Promise<unknown>;
   deps: (c: Context) => AnswerDeps;
   /** The reasons a customer may give for declining (crm.config.json deals.lost_reasons). */
   reasons: string[];
@@ -77,6 +79,8 @@ export function proposalPages(opts: PublicOpts) {
     const opened = opts.db(c);
     if (!opened.db) return c.text("Back in a moment: this page is starting up.", 503);
     try {
+      // Before the page: a page made, or checked at signing, without the business's name is a different page.
+      await opts.load(opened.db);
       return await fn(opened.db);
     } finally {
       if (opened.close) await opened.close().catch(() => {});

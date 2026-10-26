@@ -34,6 +34,8 @@
   /* The one action and highlight colour: the business's own. */
   --color-accent: #1f6f5c;
   --color-accent-ink: #ffffff;
+  /* Review stars, on the dark band: their own colour, so an accent as dark as night does not hide them. */
+  --color-star: #f2b630;
   --color-line: #e3e6e2;
   --color-line-strong: #c9cec9;
   --color-line-night: rgb(245 246 243 / 0.16);
@@ -90,7 +92,8 @@
 }
 
 @layer base {
-  html { background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-body); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  /* A weight the family has no face for shows its nearest real one, never a smeared fake bold (a one-weight display serif). */
+  html { background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-body); font-synthesis-weight: none; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
   body { margin: 0; }
   a { color: inherit; text-underline-offset: 0.2em; }
   :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }

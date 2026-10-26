@@ -247,6 +247,7 @@ if (invoicesCfg) {
       const opened = (c as unknown as C).env.runtime.open();
       return opened.db ? { db: opened.db, close: opened.close } : { db: null };
     },
+    load: loadBusiness,
     deps: answerDeps,
     reasons: dealsCfg.lost_reasons,
   }));
