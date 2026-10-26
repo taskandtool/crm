@@ -591,12 +591,12 @@ test("a calendar reached through a connection this app does not hold is left for
     await s.db.sql`update bookings set push_claimed_at = ${before[0].at}`;
     const { calls, gw } = fake(googleCalendar().routes);
 
-    let r = await pushBookings(s.db, gw, NOW, 100, async () => new Set(["microsoft-calendar"]));
+    let r = await pushBookings(s.db, gw, NOW, 100, ["microsoft-calendar"]);
     assert.deepEqual([r.pushed, r.errors, calls.length], [0, [], 0]);
     const [row] = await s.db.sql`select push_claimed_at from bookings`;
-    assert.equal(new Date(row.push_claimed_at).toISOString(), new Date(before[0].at).toISOString(), "its claim is as it was");
+    assert.equal(new Date(row.push_claimed_at).toISOString(), new Date(before[0].at).toISOString(), "never claimed");
 
-    r = await pushBookings(s.db, gw, NOW, 100, async () => new Set(["google-calendar"]));
+    r = await pushBookings(s.db, gw, NOW, 100, ["google-calendar"]);
     assert.equal(r.pushed, 1);
   }));
 

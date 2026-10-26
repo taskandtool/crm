@@ -744,7 +744,7 @@ test("owned numbers follow Twilio's next pages; the account summary leaves out w
     const body = url.searchParams.get("PageToken") ? { incoming_phone_numbers: [{ sid: "PN2", phone_number: "+15125550101" }], next_page_uri: null } : pages[url.pathname];
     return new Response(JSON.stringify(body));
   }) as typeof fetch;
-  // The SID where the owner put the key on the machine: no listing needed.
+  // The SID where the owner put the key on the machine, when the listing names none.
   const tw = twilioFrom({ PHOENIX_URL: "https://tt.example", MACHINE_TOKEN: "mt", TWILIO_ACCOUNT_SID: SID }, doFetch);
   assert.deepEqual((await tw.ownedNumbers()).map((n) => n.id), ["PN1", "PN2"]);
   assert.deepEqual(await tw.account(), { sid: SID, name: null, balance: "12.50", currency: "USD", trial: null });

@@ -14,7 +14,7 @@
 // same invoices.
 import { q, type Db } from "../data/db";
 import type { Email, Sent } from "../data/send";
-import type { Stripe } from "../payments/stripe";
+import { NOT_CONNECTED, type Stripe } from "../payments/stripe";
 import { formatMoney } from "../payments/money";
 import { addTask } from "../crm/tasks";
 import { findMatch } from "../crm/customers";
@@ -90,19 +90,19 @@ async function sendAttached(db: Db, qt: Quote, by: string, deps: AnswerDeps): Pr
   const lines: string[] = [];
   for (const inv of drafts) {
     const what = `invoice for ${formatMoney(inv.total_cents, inv.currency)}`;
+    const notConnected = `The ${what} for ${qt.name ?? qt.email} (${qt.number}) is a draft: Stripe is not connected, so it was not sent. Connect Stripe, then send it.`;
     let stripe: Stripe;
     try {
       stripe = deps.stripe();
     } catch {
-      const problem = `The ${what} for ${qt.name ?? qt.email} (${qt.number}) is a draft: Stripe is not connected, so it was not sent. Connect Stripe, then send it.`;
-      await taskFor(db, qt, problem, deps);
-      lines.push(problem);
+      await taskFor(db, qt, notConnected, deps);
+      lines.push(notConnected);
       continue;
     }
     const sent = await sendInvoice(db, stripe, inv.id, by, { timeZone: deps.opts.timeZone });
     if (sent.ok) lines.push(`sent the ${what} through Stripe`);
     else {
-      const problem = `Send the ${what} for ${qt.name ?? qt.email} (${qt.number}): Stripe said ${sent.message}`;
+      const problem = sent.message === NOT_CONNECTED ? notConnected : `Send the ${what} for ${qt.name ?? qt.email} (${qt.number}): Stripe said ${sent.message}`;
       await taskFor(db, qt, problem, deps);
       lines.push(problem);
     }

@@ -1,5 +1,5 @@
 // Recurring invoices: lines that become an ordinary invoice on each date,
-// made by one daily run (Task & Tool's scheduled job runs the app's command),
+// made by one daily run (Task & Tool's scheduled job calls the app's route),
 // then left as a draft for a person, sent to be paid, or charged to the card
 // on file. Every invoice it makes is a draft first and goes to Stripe through
 // sendInvoice, as any other: one lifecycle.

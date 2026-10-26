@@ -1,6 +1,6 @@
 // The reminders: a message to each booker a set time before their booking,
-// through a `Send` (notify.ts; email by default). Edge-safe; the job's
-// command is reminders-job.ts (machine only).
+// through a `Send` (notify.ts; email by default). Edge-safe; the job is
+// jobs.ts's /jobs/booking-reminders.
 //
 // Each reminder is claimed by a row in booking_reminders before it is
 // sent, so two runs never send one twice and a failed send is not retried

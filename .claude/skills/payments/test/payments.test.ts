@@ -233,7 +233,7 @@ test("a checkout Stripe refuses leaves its row cancelled, not pending", async (t
   if (!s) return t.skip(why);
   const fakeFetch = (async () => Response.json({ error: { message: "Amount too small" } }, { status: 400 })) as unknown as typeof fetch;
   await assert.rejects(
-    startCheckout(s.db, stripeFrom({ STRIPE_API_KEY: "sk_test" }, fakeFetch), {
+    startCheckout(s.db, stripeFrom({ PHOENIX_URL: "https://tt.example", MACHINE_TOKEN: "mt" }, fakeFetch), {
       kind: "full", refType: "invoice", refId: "inv-1", amountCents: 10, currency: "usd", description: "x",
       source: "t", successUrl: "https://s/ok", cancelUrl: "https://s/no",
     }),

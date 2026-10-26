@@ -5,7 +5,7 @@
 // proposals opened, and how many leads came in since yesterday. Through a `Send`
 // (booking/notify.ts) as team mail: Task & Tool email reaches whoever can open
 // the CRM, Resend or Postmark anyone.
-// Edge-safe; the job's command is digest-job.ts (machine only).
+// Edge-safe; the job is jobs.ts's /jobs/task-emails.
 //
 // Each person's email is claimed in follow_up_digests (email, day) before it
 // is sent, so a job run every hour sends it once a day, and a failed send is

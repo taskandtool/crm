@@ -116,8 +116,9 @@ The code keeps these; never redo them by hand:
   team). The same job makes the follow-up task for an unsigned proposal.
   Schedule it once, if `python3 ~/tools/taskandtool.py list-jobs` does not
   show it: `python3 ~/tools/taskandtool.py schedule-job "Task emails"
-  --when "0 * * * *" --command "npx tsx src/crm/digest-job.ts" --team-only`
-  (hourly; it sends at 7:00 in the business's zone, `--hour` to change).
+  --when "0 * * * *" --route /jobs/task-emails --team-only` (hourly; it
+  sends at 7:00 in the business's zone, `DEFAULT_HOUR` in
+  `src/crm/digest.ts`).
   An owner written as an email gets one, and so does a team member
   (Settings, Team) written by name.
 - Two records of one person: `customers.mjs merge <keep> <other>` shows

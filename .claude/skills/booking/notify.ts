@@ -1,8 +1,8 @@
 // What a booker is told, and how it reaches them. The words live here once
 // (bookingMessage); the delivery is a `Send`, a function that takes a
 // message and says what happened. The default is email through the sender
-// the owner connected (data/send.ts: NOTIFY_FROM, NOTIFY_VIA, a bound key at
-// the edge or the gateway on the machine). No sender: nothing is sent, the
+// the owner connected (data/send.ts: NOTIFY_FROM, NOTIFY_VIA, through the
+// app's connections). No sender: nothing is sent, the
 // booking stands, and the manage page's .ics download is the invite. Task &
 // Tool never sends for an app.
 //
@@ -10,7 +10,7 @@
 //
 // Another connector is another Send: a text through the owner's Twilio,
 // written by the app's AI against the gateway, takes the same message and
-// returns the same `Sent`. The reminder job (reminders-job.ts) takes one too.
+// returns the same `Sent`. The reminder job (jobs.ts) takes one too.
 import type { Env } from "../data/env";
 import { emailsCustomers, sendEmail, type Sent } from "../data/send";
 import type { Db } from "../data/db";

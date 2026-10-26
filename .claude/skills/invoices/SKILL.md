@@ -61,7 +61,7 @@ Version: 0.5.0 (taskandtool/skills)
   saved card. A date found more than two days late is left as a draft with
   a task, whatever the mode. Nothing is made without the app's daily
   "Recurring invoices" scheduled job: set it up once (the app's skill has
-  the command).
+  the `schedule-job --route` line).
 
 ## Keys and the webhook
 

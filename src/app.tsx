@@ -56,8 +56,11 @@ import { StagesPage } from "./views/stages";
 import { bookingAdmin, peopleRoutes, typeRoutes } from "./booking/admin";
 import { allPeople, allTypes } from "./booking/hours";
 import { confirmFormBooking } from "./booking/confirm";
+import { bookingJobs } from "./booking/jobs";
+import { pushAfterWrites } from "./booking/sync";
 import { emailSend, emailSender, notifyBooking } from "./booking/notify";
 import { envOf } from "./data/env";
+import { crmJobs } from "./crm/jobs";
 import { sendEmail } from "./data/send";
 import { stripeConnected, stripeFrom } from "./payments/stripe";
 import { proposalAdmin, proposalPanel } from "./proposals/admin";
@@ -115,6 +118,13 @@ const moneySection = (current: string): NavSection =>
   current.startsWith("/invoices/quotes") ? "quotes" : current.startsWith("/invoices/tax-rates") ? "settings" : "invoices";
 const PAGE = 50;
 const app = new Hono<AppEnv>();
+
+// A booking any write changed reaches its calendar after the response, on a
+// database of its own: the request's closes once the response is sent.
+app.use("*", pushAfterWrites((c) => {
+  const opened = (c as unknown as C).env.runtime.open();
+  return opened.db ? { db: opened.db, close: opened.close } : null;
+}) as unknown as MiddlewareHandler<AppEnv>);
 
 // The one public path: whether the database is ready. It says nothing else.
 app.get("/healthz", (c) => {
@@ -252,6 +262,12 @@ if (invoicesCfg) {
     reasons: dealsCfg.lost_reasons,
   }));
 }
+
+// Scheduled work (`schedule-job --route`): the platform's, never a visitor's
+// (data/jobs.ts isJob). Ahead of the team gate: a job is nobody signed in.
+app.use("/jobs/*", publicDb);
+app.route("/", bookingJobs((c) => (c as unknown as C).var.db));
+app.route("/", crmJobs((c) => (c as unknown as C).var.db, (c) => (c as unknown as C).env.runtime.production));
 
 app.use("*", teamOnly() as unknown as MiddlewareHandler<AppEnv>);
 

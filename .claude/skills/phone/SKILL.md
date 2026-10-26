@@ -21,7 +21,7 @@ Version: 0.2.0 (taskandtool/skills)
   in dev. The owner gives the Account SID and an API key made in that
   account (a Standard key is enough); for an agency's client, the client's
   own subaccount. The SID is the connection's account in
-  `list-connections` (and `TWILIO_ACCOUNT_SID` where the key is bound);
+  `list-connections` (and `TWILIO_ACCOUNT_SID` where the owner put the key on this machine);
   `twilio.ts` reads it there.
 - **Twilio's webhooks come through the inbound route**
   (`inbound-url /hooks/twilio`), never a public path; each number's hook
@@ -83,6 +83,6 @@ Version: 0.2.0 (taskandtool/skills)
 | `setup.ts` | `inboundUrl`, `buy`, `adopt`, `point`, `unhook`, `callOut` |
 | `registration.ts` | `check`: reads the 10DLC or toll-free registration back from Twilio; `steps` for the page, with the words to paste; `optInPage`, the form reviewers open |
 | `admin.tsx` | `phoneSettings` (the setup page, each flow's picture), `messagesRoutes` (Messages), `ContactTexts` |
-| `job.ts` | `phoneJob`: the scan and the hourly registration check, for the app's job every 15 minutes |
+| `job.ts` | `phoneJob`: the scan and the hourly registration check, for the app's route job every 15 minutes |
 | `cli.ts` | `phoneCli`: what the app's `scripts/phone.mjs` runs |
 | `test/` | The words' lengths, quiet hours, the call path with press 1, STOP, each flow, booking by reply |

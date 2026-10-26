@@ -46,14 +46,21 @@ before(async () => {
   await setup(db, seeds);
   await saveBusiness(db, { name: "Acme Test Co" }, "ann@team.example");
   runtime = { open: () => ({ db }) };
-  // Production is this app (its /q/ answers as proposals do); the owner's sender is Resend, faked.
+  // Production is this app (its /q/ answers as proposals do); the owner's sender is Resend,
+  // through the app's connections, faked.
   process.env.PROPOSAL_BASE_URL = HOST;
-  process.env.RESEND_API_KEY = "re_test";
+  process.env.NOTIFY_VIA = "resend";
+  process.env.PHOENIX_URL = "https://tt.test";
+  process.env.MACHINE_TOKEN = "mt";
   process.env.NOTIFY_FROM = "Acme <hello@acme.example>";
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input);
     if (url.startsWith(HOST)) return app.request(url, { ...init, headers: NOBODY }, { runtime });
-    if (url.startsWith("https://api.resend.com")) {
+    // No Stripe granted to this app: the gateway says so, as it would.
+    if (url.startsWith("https://tt.test/api/machine/gateway/stripe/")) {
+      return new Response(JSON.stringify({ error: "unknown_connection" }), { status: 404, headers: { "x-tasktool-refusal": "unknown_connection" } });
+    }
+    if (url.startsWith("https://tt.test/api/machine/gateway/resend/")) {
       mail.push(JSON.parse(String(init?.body)));
       return new Response(JSON.stringify({ id: "em_1" }), { status: 200, headers: { "content-type": "application/json" } });
     }
@@ -62,7 +69,7 @@ before(async () => {
 });
 after(async () => {
   globalThis.fetch = realFetch;
-  for (const k of ["PROPOSAL_BASE_URL", "RESEND_API_KEY", "NOTIFY_FROM"]) delete process.env[k];
+  for (const k of ["PROPOSAL_BASE_URL", "NOTIFY_VIA", "PHOENIX_URL", "MACHINE_TOKEN", "NOTIFY_FROM"]) delete process.env[k];
   await s?.drop();
 });
 
@@ -396,6 +403,7 @@ test("in production the edge's header says whether /q is open; a visitor's own h
     const ask = async (h: Record<string, string>) => (await app.request("https://crm.example/", { headers: { host: "crm.example", ...h } })).text();
     assert.equal(await ask({ "x-tasktool-public-paths": "/q" }), "ready");
     assert.equal(await ask({ "x-tasktool-public-paths": "/reports,/q" }), "ready");
+    assert.equal(await ask({ "x-tasktool-public-paths": "*" }), "ready", "a public site: everything open");
     assert.match(await ask({}), /customers cannot open \/q\/ on production yet/);
   } finally {
     if (saved !== undefined) process.env.PROPOSAL_BASE_URL = saved;

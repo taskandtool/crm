@@ -19,23 +19,25 @@ shows both). It claims the booking first, so the message goes once,
 whichever app, and whichever of the two hooks, gets there first; an app with
 no sender leaves it for one that has a sender.
 
-**Reminders** are a job on the CRM's machine (`reminders-job.ts`, the command;
-`reminders.ts`, the sending), a day and an hour before by default.
-Schedule it once (the `schedule-job` skill; check `python3 ~/tools/taskandtool.py list-jobs` first), every 15
-minutes, not visible to clients:
+**Reminders** are the CRM's job route `/jobs/booking-reminders`
+(`bookingJobs` in `jobs.ts`; `reminders.ts`, the sending), a day and an
+hour before by default. Schedule it once (the `schedule-job` skill; check
+`python3 ~/tools/taskandtool.py list-jobs` first), every 15 minutes, not
+visible to clients:
 
 ```bash
-python3 ~/tools/taskandtool.py schedule-job "Booking reminders" --when "*/15 * * * *" --command "npx tsx src/booking/reminders-job.ts" --team-only
+python3 ~/tools/taskandtool.py schedule-job "Booking reminders" --when "*/15 * * * *" --route /jobs/booking-reminders --team-only
 ```
 
-`--before 1440,120` changes the times. The job prints what was sent and
-what was left alone, and exits 1 when a send failed. Each reminder is
+`bookingJobs(getDb, { before: [1440, 120] })` changes the times. The job
+answers what was sent and what was left alone, and a 500 when a send
+failed. Each reminder is
 claimed in `booking_reminders` before it is sent, so it goes once
 (`reminders.ts` lists which go); with no sender each is recorded as `none`.
 
 **Sending to a booker uses the owner's connection** (Task & Tool email
 reaches only the team). Email is Resend or Postmark
-(`python3 ~/tools/taskandtool.py list-connections`; ask with `python3 ~/tools/taskandtool.py request-connection resend --why "…" --delivery edge` if
+(`python3 ~/tools/taskandtool.py list-connections`; ask with `python3 ~/tools/taskandtool.py request-connection resend --why "…"` if
 neither is granted), then `NOTIFY_FROM` on a domain verified there. Texts
 are the `phone` skill's: its Booked and Looking forward texts go from the
 business number beside these emails (call its `onBooked` from the same

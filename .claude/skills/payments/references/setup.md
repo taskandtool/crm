@@ -25,14 +25,11 @@ and nothing else:
 
 Without invoices, the first three and Balance are enough. Ask with
 `python3 ~/tools/taskandtool.py request-connection stripe --why "take
-payments" --auth api_key --delivery edge` and give the owner its review
-link.
+payments" --auth api_key` and give the owner its review link.
 
-One grant delivered to the edge serves both: dev (the machine) never holds
-the key and calls through the gateway; production has it bound into its
-Worker under the connection's `env_name` (`STRIPE_API_KEY` for slug
-`stripe`; read it in `python3 ~/tools/taskandtool.py list-connections`) and calls Stripe directly. For
-another slug: `stripeFrom(envOf(c), fetch, "stripe-eu")`.
+The grant serves dev and production alike: the key never reaches the app,
+and Task & Tool adds it to each call (`stripeFrom`). For another slug:
+`stripeFrom(envOf(c), fetch, "stripe-eu")`.
 
 ## The webhook
 

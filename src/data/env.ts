@@ -11,7 +11,7 @@
 import type { Context } from "hono";
 
 /** Settings by name: a plain record (process.env, a test's object) or a reader such as envOf(c). */
-export type Env = Record<string, unknown> | ((name: string) => string | undefined);
+export type Env = Record<string, unknown> | ((name: string) => unknown);
 
 /** A setting from the Worker's bindings at the edge, or the process env on the machine. */
 export function envVar(c: Context, name: string): string | undefined {
@@ -21,9 +21,16 @@ export function envVar(c: Context, name: string): string | undefined {
   return proc?.env?.[name];
 }
 
-/** This request's settings as an Env, read by name when asked. */
+/**
+ * This request's settings as an Env, read by name when asked. A binding that
+ * is not text comes back as it is: production's connections (`TT`,
+ * connectionsOf) are one.
+ */
 export function envOf(c: Context): Env {
-  return (name) => envVar(c, name);
+  return (name) => {
+    const bound = (c.env as Record<string, unknown> | undefined)?.[name];
+    return bound !== undefined && typeof bound !== "string" ? bound : envVar(c, name);
+  };
 }
 
 /** One setting, trimmed; undefined when it is missing, empty or not text. */
@@ -32,11 +39,13 @@ export function setting(env: Env, name: string): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
 }
 
-/**
- * The env name a connection's key has where the owner bound it (delivery
- * `edge` or `machine`): `<SLUG>_API_KEY`, so `resend` is RESEND_API_KEY and
- * `resend-2` is RESEND_2_API_KEY. `python3 ~/tools/taskandtool.py list-connections` shows the real env_name.
- */
-export function keyName(slug: string): string {
-  return slug.toUpperCase().replace(/[^A-Z0-9]+/g, "_") + "_API_KEY";
+/** Production's connections, which the routing Worker hands each request (`TT`); none on the machine. */
+export type Connections = {
+  fetch(input: string, init?: RequestInit): Promise<Response>;
+  list(): Promise<{ connections?: unknown[] }>;
+};
+
+export function connectionsOf(env: Env): Connections | undefined {
+  const tt = typeof env === "function" ? env("TT") : env.TT;
+  return tt != null && typeof tt !== "string" && typeof (tt as Connections).fetch === "function" ? (tt as Connections) : undefined;
 }

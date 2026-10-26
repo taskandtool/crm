@@ -22,7 +22,8 @@ test("no NOTIFY_FROM or no sender: nothing is sent", async () => {
 
 test("the invite goes as an attachment with the method in its content type", async () => {
   const { calls, f } = capture();
-  assert.deepEqual(await sendInvite({ RESEND_API_KEY: "re_1", NOTIFY_FROM: "hi@acme.com" }, mail, f), { status: "sent", via: "resend" });
+  const env = { NOTIFY_VIA: "resend", PHOENIX_URL: "https://phx", MACHINE_TOKEN: "mt", NOTIFY_FROM: "hi@acme.com" };
+  assert.deepEqual(await sendInvite(env, mail, f), { status: "sent", via: "resend" });
   const a = calls[0].body.attachments[0];
   assert.equal(a.filename, "invite.ics");
   assert.equal(new TextDecoder().decode(Uint8Array.from(atob(a.content), (c) => c.charCodeAt(0))), mail.ics);
@@ -30,10 +31,10 @@ test("the invite goes as an attachment with the method in its content type", asy
   assert.deepEqual(calls[0].body.to, ["ann@example.com"]);
 });
 
-test("a cancel through the gateway on the machine is cancel.ics with the machine token", async () => {
+test("a cancel is cancel.ics, through the app's connections", async () => {
   const { calls, f } = capture();
   const env = { NOTIFY_VIA: "postmark", PHOENIX_URL: "https://phx", MACHINE_TOKEN: "mt", NOTIFY_FROM: "hi@acme.com" };
-  assert.deepEqual(await sendInvite(env, { ...mail, method: "CANCEL" }, f), { status: "sent", via: "gateway:postmark" });
+  assert.deepEqual(await sendInvite(env, { ...mail, method: "CANCEL" }, f), { status: "sent", via: "postmark" });
   assert.equal(calls[0].url, "https://phx/api/machine/gateway/postmark/email");
   assert.equal(calls[0].headers.get("authorization"), "Bearer mt");
   assert.equal(calls[0].body.Attachments[0].Name, "cancel.ics");

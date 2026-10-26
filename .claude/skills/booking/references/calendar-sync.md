@@ -2,7 +2,8 @@
 
 Read when connecting a Google or Outlook calendar, scheduling the sync, or when busy times look wrong.
 
-`sync.ts` is machine only. Each run pushes first, then pulls. The push
+`sync.ts` is the sync, run as the app's job route `/jobs/calendar-sync`
+(`jobs.ts`). Each run pushes first, then pulls. The push
 gives each confirmed booking without an event one, with no attendees
 (Google and Microsoft would email the booker from the owner's account), and
 a raised SEQUENCE moves or deletes the event. The pull fetches each
@@ -34,22 +35,35 @@ the calendar's id and name, and whether that account can add events there
 (`receives_bookings`); one it can only read gives busy times and no
 bookings. So one account a team shares its calendars with covers everyone,
 and each person connecting their own works too. Free/busy access alone is
-not enough: the pull reads events. The lookup needs the gateway, so it runs
-from the team address (the machine), not production's Worker.
+not enough: the pull reads events. The lookup goes through the app's
+connections (`gatewayFetch`), from the team address or production alike.
 
-Calls go through the gateway with the machine token, to the row's
-connection (`$PHOENIX_URL/api/machine/gateway/<connection>/...`).
+Calls go through the app's connections (`gatewayFetch`: the machine's
+gateway in dev, `tt` in production), to the row's connection.
 Google is `events.list` with `singleEvents=true`, paged by `nextPageToken`;
 free (transparent), cancelled and declined events are not busy. Microsoft is
 `calendarView` with `Prefer: outlook.timezone="UTC"` and the tag `$expand`ed,
 paged by `@odata.nextLink`, because `getSchedule` refuses personal accounts.
 An all-day event covers its dates in the person's zone.
 
-Schedule it once (the `schedule-job` skill; check `python3 ~/tools/taskandtool.py list-jobs` first), as a
-command, every 15 minutes (the platform's floor), not visible to clients:
+Only the app that owns the calendars (the CRM) mounts it: it links
+accounts first, and `linkAccounts` drops the ones the calling app does not
+hold. `app.route("/", bookingJobs(getDb))` in its `app.tsx`, ahead of the
+team gate, then schedule it once (the `schedule-job` skill; check
+`python3 ~/tools/taskandtool.py list-jobs` first), every 15 minutes (the
+platform's floor), not visible to clients:
 
 ```bash
-python3 ~/tools/taskandtool.py schedule-job "Calendar sync" --when "*/15 * * * *" --command "npx tsx src/booking/sync.ts" --team-only
+python3 ~/tools/taskandtool.py schedule-job "Calendar sync" --when "*/15 * * * *" --route /jobs/calendar-sync --team-only
 ```
 
-It exits 1 with the errors when something failed, so `job-runs` shows why.
+It runs in production once the app is deployed (no machine wakes), on the
+dev server before. It answers 500 with the errors when something failed,
+so `job-runs` shows why.
+
+**A booking reaches the calendar at once.** `pushAfterWrites` (`sync.ts`),
+mounted first in `app.tsx`, pushes after every successful write: only the
+calendars whose connection the app holds, the rest by the job above. An app
+that takes bookings for the CRM's calendars (the Website) pushes at once
+when the owner grants it the same calendar connections; without them its
+bookings arrive with the CRM's next sync.

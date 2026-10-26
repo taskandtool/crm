@@ -12,9 +12,9 @@ enabled.
 
 `siteUrl` is the property exactly as Search Console names it
 (`sc-domain:acme.com`, or `https://acme.com/` with the slash). GA4 takes the
-numeric property id. The gateway answers only dev, so a report served in
-production renders `loadSnapshot` of what a job on the machine fetched and
-`saveSnapshot`ed. The figures that are easy to get wrong are in `seo.ts`'s
+numeric property id. A report page renders `loadSnapshot` of what a job
+fetched and `saveSnapshot`ed, never Google itself: the figures are slow to
+fetch and change daily. The figures that are easy to get wrong are in `seo.ts`'s
 header; `fetchSeo` and `SeoReport` keep them.
 
 ## The weekly SEO report for a client

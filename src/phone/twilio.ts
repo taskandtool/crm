@@ -6,15 +6,9 @@
 //   const tw = twilioFrom(process.env);         // a script on the machine
 //   await tw.sendText({ from: "+15552010142", to: "+15550100199", body: "Hi" });
 //
-// Where the key is, as for Stripe (payments/stripe.ts):
-// - Bound to this app (delivery `edge` or `machine`): `TWILIO_API_KEY` holds
-//   "SKxxx:secret" (an API key; a Standard one is enough) or
-//   "ACxxx:auth_token", with `TWILIO_ACCOUNT_SID` beside it, and calls go
-//   straight to Twilio. This is the only way edge code reaches Twilio, so the
-//   connection is asked for with `--delivery edge`: the missed-call text goes
-//   from the call's own webhook, which production's Worker answers.
-// - Otherwise through the gateway, on the machine only, the Account SID read
-//   from the connection's account in list-connections.
+// The key never reaches the app: every call goes through the app's
+// connections (data/gateway.ts), in dev and production alike, and the
+// Account SID is the connection's account in list-connections.
 // Every Twilio path names the account. The owner gives its SID when they
 // connect Twilio (an agency's client: that client's subaccount), because a
 // Standard key cannot read the Accounts resource to find it.
@@ -24,17 +18,17 @@
 // verification) and trusthub (the business profile). The catalogue lists
 // each as an endpoint of the one connection.
 //
-// Edge-safe: fetch and btoa only.
-import { keyName, setting, type Env } from "../data/env";
-import { gatewayFetch, listConnections } from "../data/gateway";
+// Edge-safe: fetch only.
+import { setting, type Env } from "../data/env";
+import { gatewayFetch, gatewayReachable, listConnections } from "../data/gateway";
 import { prettyPhone } from "./store";
 
 export type Host = "api" | "messaging" | "trusthub" | "lookups";
-const HOSTS: Record<Host, { base: string; slug: string }> = {
-  api: { base: "https://api.twilio.com", slug: "twilio" },
-  messaging: { base: "https://messaging.twilio.com", slug: "twilio-messaging" },
-  trusthub: { base: "https://trusthub.twilio.com", slug: "twilio-trusthub" },
-  lookups: { base: "https://lookups.twilio.com", slug: "twilio-lookups" },
+const HOSTS: Record<Host, { slug: string }> = {
+  api: { slug: "twilio" },
+  messaging: { slug: "twilio-messaging" },
+  trusthub: { slug: "twilio-trusthub" },
+  lookups: { slug: "twilio-lookups" },
 };
 
 export type Params = Record<string, string | number | boolean | null | undefined | string[]>;
@@ -54,8 +48,8 @@ export class TwilioError extends Error {
 
 export type Call = <T = any>(method: "GET" | "POST" | "DELETE", host: Host, path: string, params?: Params) => Promise<T>;
 
-/** A Twilio key here, or the gateway that brokers one. */
-export const twilioReachable = (env: Env): boolean => !!setting(env, keyName("twilio")) || !!(setting(env, "PHOENIX_URL") && setting(env, "MACHINE_TOKEN"));
+/** Whether this runtime reaches the app's Twilio connection. */
+export const twilioReachable = (env: Env): boolean => gatewayReachable(env);
 
 /** Form fields as Twilio reads them: a list repeats its key. */
 export function formEncode(params: Params): string {
@@ -70,10 +64,9 @@ export function formEncode(params: Params): string {
 
 /** The raw caller: one request to one of Twilio's hosts. */
 function twilioCall(env: Env, fetchImpl: typeof fetch = fetch): Call {
-  const key = setting(env, keyName("twilio"));
   if (!twilioReachable(env)) {
     throw new Error(
-      `No Twilio here: no ${keyName("twilio")} binding and no gateway. Ask the owner: python3 ~/tools/taskandtool.py request-connection twilio --why "<what it is for>" --auth api_key --delivery edge`,
+      `No Twilio here: this runtime reaches no connections. Ask the owner: python3 ~/tools/taskandtool.py request-connection twilio --why "<what it is for>" --auth api_key`,
     );
   }
   return async (method, host, path, params) => {
@@ -82,9 +75,7 @@ function twilioCall(env: Env, fetchImpl: typeof fetch = fetch): Call {
     const headers: Record<string, string> = {};
     if (method === "POST") headers["Content-Type"] = "application/x-www-form-urlencoded";
     const init: RequestInit = { method, headers, body: method === "POST" ? form : undefined, signal: AbortSignal.timeout(20_000) };
-    const res = key
-      ? await fetchImpl(HOSTS[host].base + target, { ...init, headers: { ...headers, Authorization: `Basic ${btoa(key)}` } })
-      : await gatewayFetch(env, HOSTS[host].slug, target, init, fetchImpl);
+    const res = await gatewayFetch(env, HOSTS[host].slug, target, init, fetchImpl);
     if (method === "DELETE" && res.status === 204) return null as never;
     const text = await res.text();
     let body: any = null;
@@ -129,17 +120,20 @@ export const isRecordingSid = (v: unknown): v is string => typeof v === "string"
 const ACCOUNT_SID = /^AC[0-9a-f]{32}$/;
 
 /**
- * The account every Twilio path names: `TWILIO_ACCOUNT_SID` beside a bound
- * key, else the connection's account in Task & Tool's list (the machine,
- * through the gateway).
+ * The account every Twilio path names: the connection's account in Task &
+ * Tool's list, else `TWILIO_ACCOUNT_SID` where the owner put the key on the
+ * machine.
  */
 async function accountSidOf(env: Env, fetchImpl: typeof fetch): Promise<string> {
-  const bound = setting(env, keyName("twilio").replace(/_API_KEY$/, "_ACCOUNT_SID"));
+  let listed: Error | null = null;
+  const c = await listConnections(env, fetchImpl)
+    .then((l) => l.find((x) => x.slug === HOSTS.api.slug))
+    .catch((e: Error) => void (listed = e));
+  if (c?.account && ACCOUNT_SID.test(c.account)) return c.account;
+  const bound = setting(env, "TWILIO_ACCOUNT_SID");
   if (bound && ACCOUNT_SID.test(bound)) return bound;
-  if (!setting(env, keyName("twilio"))) {
-    const c = (await listConnections(env, fetchImpl)).find((x) => x.slug === HOSTS.api.slug);
-    if (c?.account && ACCOUNT_SID.test(c.account)) return c.account;
-  }
+  // Task & Tool did not answer: say so, not that the connection is wrong.
+  if (listed) throw new TwilioError(`Could not ask Task & Tool for the Twilio account: ${(listed as Error).message}`, 503);
   throw new TwilioError("The Twilio connection names no Account SID. Ask the owner to connect Twilio again, with its Account SID.", 409);
 }
 
@@ -208,9 +202,7 @@ export function twilioFrom(env: Env, fetchImpl: typeof fetch = fetch): Provider 
     async recording(rsid) {
       // The id becomes a path on Twilio's API: only a recording's own shape is fetched.
       if (!isRecordingSid(rsid)) return new Response(null, { status: 404 });
-      const key = setting(env, keyName("twilio"));
-      const path = await acct(`/Recordings/${rsid}.mp3`);
-      return key ? fetchImpl(HOSTS.api.base + path, { headers: { Authorization: `Basic ${btoa(key)}` } }) : gatewayFetch(env, HOSTS.api.slug, path, {}, fetchImpl);
+      return gatewayFetch(env, HOSTS.api.slug, await acct(`/Recordings/${rsid}.mp3`), {}, fetchImpl);
     },
   };
 }

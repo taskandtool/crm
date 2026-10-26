@@ -90,10 +90,7 @@ every skill that sends: `NOTIFY_FROM`, an address on a domain verified
 with the vendor, and `NOTIFY_VIA=resend` or `postmark`, with `:<slug>`
 when the connection's endpoint slug is not the vendor's name.
 
-| Where | What it needs |
-|---|---|
-| production (the Worker) | the key bound to the Worker (`python3 ~/tools/taskandtool.py request-connection resend --why "send form emails" --delivery edge`) |
-| dev (this machine) | nothing more: the gateway adds the key, which never reaches the machine |
-
-The bound key's env name, and what `sendEmail` returns: the `data` skill's
-Email.
+The connection (`python3 ~/tools/taskandtool.py request-connection resend
+--why "send form emails"`) works in dev and production alike: Task & Tool
+adds the key, which never reaches the app. What `sendEmail` returns: the
+`data` skill's Email.

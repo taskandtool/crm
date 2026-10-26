@@ -2,7 +2,7 @@
 // time brings (follow.ts scan) and every text that is due, then the texting
 // registration (made by the owner in Twilio's Console), read once an hour
 // until it is approved. The app's job
-// command builds the context and calls it (the CRM's src/phone-job.ts).
+// route builds the context and calls it (the CRM's src/crm/jobs.ts).
 import { scan } from "./follow";
 import { check } from "./registration";
 import type { PhoneCtx } from "./send";

@@ -99,7 +99,7 @@ hand-over is a deliverable (`work` skill), and a deliverable is a file:
 | `charts.tsx` | `ChartScripts`, `KpiRow`/`KpiTile`, `LineChart`, `BarChart`, `FunnelChart`, `ReportSection`, `ReportDocument`, number formats |
 | `client.js` | the browser side: tokens, drawing, htmx, theme changes, print; the data contract is at its top |
 | `ops.tsx` | `loadOps` and `OpsReport`: leads (by where they came from, by form), bookings, revenue, the funnel |
-| `seo.ts` | `googleCall`, `fetchSeo`, `saveSnapshot`, `loadSnapshot`. Machine only for the fetch |
+| `seo.ts` | `googleCall`, `fetchSeo`, `saveSnapshot`, `loadSnapshot`. A job fetches; a page reads the snapshot |
 | `schema.sql` | `report_snapshots`, the SEO figures a job saved |
 | `seo-report.tsx` | `SeoReport` and `Notes` |
 | `print.ts` | `printToPdf`, `findChrome`, `fileUrl`. Machine only |

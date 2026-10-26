@@ -1,8 +1,9 @@
-// MACHINE ONLY. The calendar sync job: never import this from a page or
-// from code that deploys to the edge. Pages read busy; this fills it.
+// The calendar sync: pages read busy; this fills it. Edge-safe. It runs as
+// the app's job route `/jobs/calendar-sync` every 15 minutes (jobs.ts,
+// references/calendar-sync.md), and the push runs after every write too
+// (pushAfterWrites, below), so a booking reaches the calendar at once:
 //
-// Run it every 15 minutes as a command job (references/calendar-sync.md):
-//   npx tsx src/booking/sync.ts
+//   app.use("*", pushAfterWrites((c) => ({ db: getDb(c) })));   // first, before any route
 //
 // Each run, in this order:
 // 1. Push: confirmed bookings with no calendar event get one (its id is
@@ -21,16 +22,19 @@
 // Before both, linkAccounts (calendars.ts) records the calendar connections
 // this app holds and gives each new one to the person whose email it is.
 //
-// Every call goes through the Task & Tool gateway with the machine token
-// (data/gateway.ts), to the connection the calendar row names
-// (`google-calendar`, or `google-calendar-7c2e1a` for a second person's); no
-// OAuth token is ever on this machine or at the edge. Events are written
+// Every call goes through the app's connections (data/gateway.ts), to the
+// connection the calendar row names (`google-calendar`, or
+// `google-calendar-7c2e1a` for a second person's); no OAuth token is ever in
+// the app, in dev or production. Events are written
 // with no attendees: Google and Microsoft would email the booker from the
 // owner's account. Confirmations go through the owner's sender (notify.ts).
-import { pathToFileURL } from "node:url";
+import type { Context, MiddlewareHandler } from "hono";
 import { q, type Db } from "../data/db";
-import { gatewayFetch, listConnections } from "../data/gateway";
-import { call, graphNext, linkAccounts, query, type Gateway } from "./calendars";
+import { envOf } from "../data/env";
+import { gatewayFetch, gatewayReachable, listConnections } from "../data/gateway";
+import { isJob } from "../data/jobs";
+import { afterResponse } from "../data/send";
+import { call, graphNext, query, type Gateway } from "./calendars";
 import { dayBounds } from "./slots";
 
 const DAY = 86_400_000;
@@ -280,8 +284,13 @@ async function placeEvent(gw: Gateway, k: Cal, b: Due, tag: string): Promise<str
   return insertEvent(gw, k, b, tag);
 }
 
-/** Push due bookings to their calendars. Returns one message per failure. */
-export async function pushBookings(db: Db, gw: Gateway, now = new Date(), limit = 100): Promise<{ pushed: number; errors: string[] }> {
+/**
+ * Push due bookings to their calendars. Returns one message per failure.
+ * `held`, when given, is the connections this app holds: a booking whose
+ * calendar is reached through another is not claimed, and stays for the app
+ * that holds it.
+ */
+export async function pushBookings(db: Db, gw: Gateway, now = new Date(), limit = 100, held: string[] | null = null): Promise<{ pushed: number; errors: string[] }> {
   // Due: confirmed with no event yet; changed since the last push; or
   // cancelled before an attempt that may have made an event was saved.
   // Claiming fixes the calendar and fills a missing event_key, so a retry
@@ -295,6 +304,11 @@ export async function pushBookings(db: Db, gw: Gateway, now = new Date(), limit 
           or (b.external_event_id is null and b.status <> 'confirmed' and coalesce(b.synced_sequence, -1) < b.sequence
               and (b.push_claimed_at is not null or b.external_error is not null)))
         and (b.push_claimed_at is null or b.push_claimed_at < now() - interval '10 minutes')
+        and (${held}::text[] is null or not exists (
+          select 1 from calendars k
+          where k.id = coalesce(b.external_calendar_id, (
+            select k2.id from calendars k2 where k2.resource_id = b.resource_id and k2.receives_bookings order by k2.id limit 1))
+            and k.connection <> all(${held}::text[])))
       order by b.starts_at
       limit ${limit}
       for update skip locked)
@@ -374,34 +388,36 @@ export async function syncCalendars(db: Db, gw: Gateway, now = new Date()): Prom
   return { pushed, pulled, errors };
 }
 
-// `npx tsx src/booking/sync.ts`: one run; exits 1 with the errors so the job's run history shows them.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { fromPool, openPool } = await import("../data/pg");
-  const { fail, machineEnv, misused } = await import("../data/cli.mjs");
-  const CMD = "npx tsx src/booking/sync.ts";
-  const args = process.argv.slice(2);
-  if (args.includes("--help") || args.includes("-h")) {
-    console.log(`usage: ${CMD}\n\nGives each newly connected calendar to the person whose email it is, pushes bookings to the hosts' calendars and pulls their busy times, once. Schedule it every 15 minutes.`);
-    process.exit(0);
-  }
-  if (args.length) misused(`calendar sync: it takes no arguments (given ${args.join(" ")})`, CMD);
-  // The machine's settings, so a run by hand from a chat shell sees what the scheduled job sees.
-  const env = machineEnv();
-  const missing = ["PHOENIX_URL", "MACHINE_TOKEN", "DATABASE_URL"].filter((k) => !env[k]);
-  if (missing.length) fail(`calendar sync: ${missing.join(", ")} not set, here or in ~/.env`, `run it on the machine as a scheduled job: ${CMD}`);
-  const pool = openPool(env.DATABASE_URL!, 2);
-  try {
-    const db = fromPool(pool);
-    const linked = await linkAccounts(db, await listConnections(env));
-    const r = await syncCalendars(db, (slug, path, init) => gatewayFetch(env, slug, path, init));
-    console.log(`calendar sync: ${linked ? `linked ${linked} new calendar${linked === 1 ? "" : "s"}, ` : ""}pushed ${r.pushed} booking${r.pushed === 1 ? "" : "s"}, pulled ${r.pulled} calendar${r.pulled === 1 ? "" : "s"}${r.errors.length ? `, ${r.errors.length} failed` : ""}`);
-    for (const e of r.errors) console.error(`  ${e}`);
-    if (r.errors.length) console.error("  Try: each person's page under Team shows their calendar's last error");
-    process.exitCode = r.errors.length ? 1 : 0;
-  } catch (e) {
-    // the database or the gateway, never a stack trace in the job's run history
-    fail(`calendar sync: ${(e instanceof Error && (e.message || (e as { code?: string }).code)) || String(e)}`, `${CMD}, once the database answers`);
-  } finally {
-    await pool.end();
-  }
+const WRITES = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * After every successful write, the bookings it changed go to their
+ * calendars, after the response (pushBookings finds what is due from the
+ * rows, so this covers every page that writes one, now and later). Only the
+ * calendars whose connection this app holds; the rest wait for the app that
+ * does (its /jobs/calendar-sync). An app with no calendar it holds asks
+ * nothing more. `open` gives a database of its own: the request's may close
+ * once the response is sent.
+ */
+export function pushAfterWrites(open: (c: Context) => { db: Db; close?: () => Promise<void> } | null): MiddlewareHandler {
+  return async (c, next) => {
+    await next();
+    if (!WRITES.has(c.req.method) || c.res.status >= 400 || isJob(c)) return;
+    const env = envOf(c);
+    if (!gatewayReachable(env)) return;
+    afterResponse(c, (async () => {
+      const opened = open(c);
+      if (!opened) return;
+      try {
+        const linked = (await opened.db.sql<{ connection: string }>`select distinct connection from calendars`).map((k) => k.connection);
+        if (!linked.length) return;
+        const held = (await listConnections(env)).map((x) => x.slug).filter((slug) => linked.includes(slug));
+        if (!held.length) return;
+        const r = await pushBookings(opened.db, (slug, path, init) => gatewayFetch(env, slug, path, init), new Date(), 5, held);
+        if (r.errors.length) console.error(`calendar push: ${r.errors.join("; ")}`);
+      } finally {
+        await opened.close?.();
+      }
+    })());
+  };
 }

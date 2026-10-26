@@ -33,8 +33,8 @@ import { addDays, dayBounds, durationText, formatShortDate, formatSlot, formatTi
 import { chip, chipOn, DayAndTimes, upcoming } from "./public";
 import { noticeFor, runOnBooked, type BookingNotice } from "./notify";
 import { findCalendars, linkAccounts, type CalendarSearch } from "./calendars";
-import { envOf, setting } from "../data/env";
-import { gatewayFetch, listConnections } from "../data/gateway";
+import { envOf } from "../data/env";
+import { gatewayFetch, gatewayReachable, listConnections } from "../data/gateway";
 
 export type BookingAdminOptions = {
   base: string;
@@ -1070,8 +1070,8 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
     const d = getDb(c);
     const [hours, off, takes, cals] = await Promise.all([weeklyHours(d, r.id), timeOffList(d, r.id), typesHostedBy(d, r.id), calendarsOn ? calendars(d, r.id) : []]);
     const attached = (o: { connection: string; externalId: string }) => cals.some((k) => k.connection === o.connection && k.external_id === o.externalId);
-    // The lookup goes through the gateway, which only the app's machine has.
-    const onMachine = setting(envOf(c), "PHOENIX_URL") !== undefined;
+    // The lookup goes through the app's connections (dev or production).
+    const reachable = gatewayReachable(envOf(c));
     const self = `${base}/${r.id}`;
     const failed = Object.values(problems).some(Boolean);
     const today = localDate(new Date(), r.time_zone);
@@ -1165,9 +1165,9 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
                 <FieldError id="calendar-error" text={problems.calendar?.calendar} />
                 {found ? (
                   <FoundCalendars self={self} found={{ ...found, calendars: found.calendars.filter((f) => !f.options.some(attached)) }} />
-                ) : onMachine ? (
+                ) : reachable ? (
                   <form method="post" action={`${self}/calendars/find`}><button class={buttonClass}>Show available calendars</button></form>
-                ) : <p class={`${smallText} text-ink-3`}>Find their calendars from the team address, where the app runs on its machine.</p>}
+                ) : <p class={`${smallText} text-ink-3`}>Their calendars can be found once this app is deployed again.</p>}
               </Section>
             ) : null}
           </div>

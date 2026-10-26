@@ -18,13 +18,14 @@ Version: 0.9.0 (taskandtool/skills)
 
 ## The rules
 
-- **Pages read Postgres and nothing else.** Never call a calendar from a page,
-  in dev or in production. The sync job copies busy times into `busy`;
-  the page reads that. So production's Worker needs only `DATABASE_URL`, never
-  a calendar token, and works the same whichever calendar the owner uses.
-- **The jobs are the CRM's.** Calendar sync and reminders run there; other
-  apps book into the same tables and mount `bookingAdmin` with
-  `calendars: false`. Without the CRM in the project there is no sync and no
+- **Pages read Postgres for busy times.** A page never reads a calendar
+  while someone waits: the sync job copies busy times into `busy`, and the
+  page reads that. A booking a page writes goes to the calendar after the
+  response (`pushAfterWrites`), through the app's connections, which hold
+  no token in the app, in dev or production.
+- **The jobs are the CRM's.** Calendar sync and reminders run there
+  (`jobs.ts`, as job routes); other apps book into the same tables, mount
+  `bookingAdmin` with `calendars: false` and `pushAfterWrites`. Without the CRM in the project there is no sync and no
   reminders: offer the owner the CRM Starter App.
 - **Store instants, show local.** Bookings and time off are `timestamptz`.
   Weekly hours are wall times in the person's `time_zone`. Show a booker
@@ -107,9 +108,9 @@ bookings and payments".
 | `ics.ts` | RFC 5545 invite builder |
 | `notify.ts` | `bookingMessage` (the words), `notifyBooking`, `emailSend`/`emailSender`, the `Send` type, `runOnBooked`, `noticeFor` (a move or cancel made away from the booking pages, to tell the booker of), `sendInvite` (your own words with the invite) |
 | `reminders.ts` | `sendReminders`: claims and sends the reminders due now |
-| `reminders-job.ts` | The reminder job's command (machine only) |
 | `calendars.ts` | The connected calendar accounts: `linkAccounts`, `findCalendars` (what each account can see), the gateway call |
-| `sync.ts` | The calendar sync job (machine only): each person's connected calendar, then push and pull |
+| `sync.ts` | The calendar sync: `pushBookings`, then pull busy times; `pushAfterWrites`: a booking reaches its calendar after the write that changed it |
+| `jobs.ts` | `bookingJobs`: the routes `/jobs/calendar-sync` and `/jobs/booking-reminders` |
 | `test/` | Slots and DST, concurrency, sync and finding calendars with a fake gateway, ICS, the pages, spam, afterBook |
 
 ## Read next

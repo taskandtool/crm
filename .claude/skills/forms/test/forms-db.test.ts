@@ -88,7 +88,7 @@ test("the team is emailed through Task & Tool email, and the submission keeps wh
   }) as typeof fetch;
   try {
     await s.db.sql`update forms set notify_emails = '{owner@example.com,office@example.com}' where key = 'contact'`;
-    const env = { TASKANDTOOL_EMAIL_API_KEY: "tt_key", TASKANDTOOL_API_URL: "https://tt.example" };
+    const env = { PHOENIX_URL: "https://tt.example", MACHINE_TOKEN: "mt" };
     const res = await site(s).request(
       "https://site.example/forms/contact",
       {
@@ -105,7 +105,7 @@ test("the team is emailed through Task & Tool email, and the submission keeps wh
       notified = (await s.db.sql`select notified from submissions`)[0].notified;
     }
     assert.equal(notified, "Emailed owner@example.com. Not emailed: office@example.com (cannot open this app in Task & Tool)");
-    assert.equal(sent[0].url, "https://tt.example/api/email/emails");
+    assert.equal(sent[0].url, "https://tt.example/api/machine/gateway/taskandtool-email/emails");
     assert.equal(sent[0].body.reply_to, "ann@example.com");
   } finally {
     globalThis.fetch = real;

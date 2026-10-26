@@ -199,7 +199,7 @@ comment on column bookings.manage_token_hash is 'Hex SHA-256 of the manage link 
 
 comment on column bookings.event_key is 'Random, never changes. sync.ts derives each calendar event''s id or tag from it.';
 
--- Reminders the job (reminders-job.ts) claimed, one row each: a reminder is for a
+-- Reminders the job (jobs.ts) claimed, one row each: a reminder is for a
 -- booking at one start time, so a booking that moves is reminded again, and a
 -- claimed row is never sent twice. status: sent, none (no sender connected),
 -- failed (detail says why), sending (claimed by a run that died).

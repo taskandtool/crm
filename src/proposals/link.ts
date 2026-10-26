@@ -40,8 +40,9 @@ export async function readyHere(c: Context, production?: () => Promise<Productio
   const b = await linkBase(c, production);
   if (!b.ok) return b.why;
   if (production || envVar(c, "PROPOSAL_BASE_URL")) return linkReady(b.base);
+  // The router's list of what anyone may open: `*` on a public site.
   const open = (c.req.header("x-tasktool-public-paths") ?? "").split(",").map((p) => p.trim());
-  return open.some((p) => p === "/q") ? null : NOT_OPEN;
+  return open.some((p) => p === "/q" || p === "*") ? null : NOT_OPEN;
 }
 
 /** Null when customers can open links at `base`; else why not, in a sentence. */

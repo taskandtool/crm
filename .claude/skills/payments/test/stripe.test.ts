@@ -91,38 +91,37 @@ function fakeFetch(status: number, body: unknown, headers: Record<string, string
   return { f, calls };
 }
 
-test("with a bound key the call goes to Stripe; without one, through the gateway", async () => {
-  const direct = fakeFetch(200, { id: "cs_1" });
-  await stripeFrom({ STRIPE_API_KEY: "sk_test_x" }, direct.f)("POST", "/v1/checkout/sessions", { mode: "payment" }, { idempotencyKey: "k1" });
-  assert.equal(direct.calls[0].url, "https://api.stripe.com/v1/checkout/sessions");
-  const h = direct.calls[0].init.headers as Record<string, string>;
-  assert.equal(h.Authorization, "Bearer sk_test_x");
-  assert.equal(h["Idempotency-Key"], "k1");
-  assert.equal(h["Content-Type"], "application/x-www-form-urlencoded");
-  assert.equal(direct.calls[0].init.body, "mode=payment");
+const MACHINE = { PHOENIX_URL: "https://tt.example/", MACHINE_TOKEN: "mt" };
 
-  const gw = fakeFetch(200, { data: [] });
-  await stripeFrom({ PHOENIX_URL: "https://tt.example/", MACHINE_TOKEN: "mt" }, gw.f)("GET", "/v1/refunds", { limit: 3 });
-  assert.equal(gw.calls[0].url, "https://tt.example/api/machine/gateway/stripe/v1/refunds?limit=3");
-  assert.equal(new Headers(gw.calls[0].init.headers).get("authorization"), "Bearer mt");
+test("every call goes through the app's connections; a bound key is never read", async () => {
+  const gw = fakeFetch(200, { id: "cs_1" });
+  await stripeFrom({ ...MACHINE, STRIPE_API_KEY: "sk_test_x" }, gw.f)("POST", "/v1/checkout/sessions", { mode: "payment" }, { idempotencyKey: "k1" });
+  assert.equal(gw.calls[0].url, "https://tt.example/api/machine/gateway/stripe/v1/checkout/sessions");
+  const h = new Headers(gw.calls[0].init.headers);
+  assert.equal(h.get("authorization"), "Bearer mt");
+  assert.equal(h.get("idempotency-key"), "k1");
+  assert.equal(h.get("content-type"), "application/x-www-form-urlencoded");
+  assert.equal(gw.calls[0].init.body, "mode=payment");
 
-  // A connection whose slug is not "stripe" has its own key name.
-  const other = fakeFetch(200, { data: [] });
-  await stripeFrom({ STRIPE_API_KEY: "wrong", STRIPE_EU_API_KEY: "sk_eu" }, other.f, "stripe-eu")("GET", "/v1/refunds");
-  assert.equal((other.calls[0].init.headers as Record<string, string>).Authorization, "Bearer sk_eu");
+  await stripeFrom(MACHINE, gw.f)("GET", "/v1/refunds", { limit: 3 });
+  assert.equal(gw.calls[1].url, "https://tt.example/api/machine/gateway/stripe/v1/refunds?limit=3");
 
-  assert.throws(() => stripeFrom({}), /request-connection stripe/);
+  // A connection whose slug is not "stripe" is called by its own.
+  await stripeFrom(MACHINE, gw.f, "stripe-eu")("GET", "/v1/refunds");
+  assert.equal(gw.calls[2].url, "https://tt.example/api/machine/gateway/stripe-eu/v1/refunds");
+
+  assert.throws(() => stripeFrom({ STRIPE_API_KEY: "sk" }), /request-connection stripe/);
 });
 
 test("a POST without an idempotency key is refused before it is sent", async () => {
   const { f, calls } = fakeFetch(200, {});
-  await assert.rejects(stripeFrom({ STRIPE_API_KEY: "k" }, f)("POST", "/v1/refunds", {}), /idempotencyKey/);
+  await assert.rejects(stripeFrom(MACHINE, f)("POST", "/v1/refunds", {}), /idempotencyKey/);
   assert.equal(calls.length, 0);
 });
 
 test("Stripe's error and the platform's refusal come back typed", async () => {
   const e1 = fakeFetch(402, { error: { type: "card_error", code: "card_declined", message: "Your card was declined." } });
-  await assert.rejects(stripeFrom({ STRIPE_API_KEY: "k" }, e1.f)("GET", "/v1/x"), (e: unknown) => {
+  await assert.rejects(stripeFrom(MACHINE, e1.f)("GET", "/v1/x"), (e: unknown) => {
     assert.ok(e instanceof StripeError);
     assert.equal(e.status, 402);
     assert.equal(e.code, "card_declined");

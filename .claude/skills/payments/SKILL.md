@@ -67,7 +67,9 @@ payment (money)                   payments  payments
 
 ## The key and the webhook
 
-The owner connects a restricted key (`rk_…`) delivered to the edge. Call
+The owner connects a restricted key (`rk_…`), granted to the app; Task &
+Tool adds it to every call, in dev and production, and it is never in the
+app. Call
 Stripe with `stripeFrom(envOf(c))` in a route and `stripeFrom(process.env)`
 in a script. Making the key, the request command and registering the
 webhook: `references/setup.md`.
@@ -77,7 +79,7 @@ webhook: `references/setup.md`.
 | File | What |
 |---|---|
 | `schema.sql` | `payments`, `stripe_events`, `tax_rates` |
-| `stripe.ts` | `stripeFrom(env)`: the caller, gateway or bound key; `StripeError`; `stripeConnected(env)`: whether Stripe answers here |
+| `stripe.ts` | `stripeFrom(env)`: the caller, through the app's connections; `StripeError`; `stripeConnected(env)`: whether Stripe answers here |
 | `checkout.ts` | `startCheckout`: the pending row, then Checkout (one amount, or `lines`) |
 | `form-step.tsx` | `paymentStep(getDb, stripeOf, { source })`: a form's payment step |
 | `webhook.ts` | `stripeWebhook(getDb, { secret?, path?, more?, afterPaid? })`, `planEvent`, `applyEvent` |

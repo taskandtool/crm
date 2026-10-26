@@ -149,13 +149,15 @@ function EmailNote({ c, forms }: { c: Context; forms: FormInfo[] }) {
   if (typeof sender === "string" || (!ours && !setting(env, "NOTIFY_FROM"))) {
     return (
       <p class="mb-4 rounded-card border border-line bg-panel/60 px-4 py-3 text-copy text-ink">
-        <strong>Email is off.</strong> No email sender is connected, so nobody is emailed about new submissions and customers get no
-        booking confirmations. Ask the AI to turn on Task &amp; Tool email for your team, or to connect Resend to email customers too.
+        <strong>Email is off.</strong> This app's email settings are incomplete, so nobody is emailed about new submissions and
+        customers get no booking confirmations. Ask the AI to fix email for this app.
       </p>
     );
   }
   const text = to.length
-    ? `New form submissions are emailed to ${to.join(", ")}.${ours ? " Customers get no confirmation emails until Resend or Postmark is connected." : ""}`
+    ? ours
+      ? `New form submissions are emailed to ${to.join(", ")} by Task & Tool email, which reaches only people who can open this app in Task & Tool. Customers get no confirmation emails until Resend or Postmark is connected.`
+      : `New form submissions are emailed to ${to.join(", ")}.`
     : "Nobody is emailed about new submissions. Add yourself to a form's list.";
   return <p class={`mb-4 ${smallText} text-ink-2`}>{text}</p>;
 }

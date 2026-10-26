@@ -9,13 +9,18 @@ inside a form (confirmed when the form is complete, `confirm.ts`), and
 the Schedule, services and team are under its private
 `/admin/schedule`, `/admin/services` and `/admin/team` (`calendars: false`). Link the nav to `/book`. In another
 app, copy this folder to `src/booking/` with `data/` and `admin/` (leave
-out `sync.ts`, `reminders-job.ts` and their tests: they are the CRM's),
+out `jobs.ts`, `reminders.ts` and their tests: the jobs are the CRM's; mount
+`pushAfterWrites` from `sync.ts`),
 run `schema.sql` with `applySchema` from the setup script, and mount
 `app.route("/book", bookingPages(getDb, { base: "/book", domain, css, source, Page, onBooked }))`
 with the site's own frame as `Page` (`domain`, the host of the site's
 address, names every invite, so set it once) and `onBooked` as in
 `references/messages.md`. With the payments skill, `afterBook` returns the
-Checkout URL to take a deposit (its recipe).
+Checkout URL to take a deposit (its recipe). Bookings made here reach the
+hosts' calendars with the CRM's next sync, within 15 minutes; to send them
+at once, offer the owner to grant this app the calendar connections the CRM
+holds (`request-connection google --why "put bookings in your calendar the
+moment they are made"`).
 
 **Set up what can be booked.** Ask what people book, how long it takes,
 where it happens and who does it, then add the people (Team: name,
@@ -45,9 +50,8 @@ One account a team shares calendars with is enough too. If
 (or `microsoft`), give the owner the review link,
 and stop until it is granted; a Google owner also enables the Calendar API
 on their Google Cloud project. Schedule the sync job
-(`references/calendar-sync.md`) and run it once by hand
-(`npx tsx src/booking/sync.ts`): it gives each connected account to the
-person on Team whose email it is. For anyone else, the owner opens that
-person's page under Team on the team address, presses Show available
+(`references/calendar-sync.md`) and run it once from the app's Jobs tab: it
+gives each connected account to the person on Team whose email it is. For anyone else, the owner opens that
+person's page under Team, presses Show available
 calendars and attaches one. Then check their Calendars for a sync time and
 no error. A person with no calendar is scheduled from their hours alone.

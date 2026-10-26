@@ -1,7 +1,7 @@
 // Search Console and GA4 figures for the SEO report, fetched through the
-// Google connection on the platform's gateway. Machine only: the gateway
-// answers only the machine's token, so a report served from the edge reads
-// a snapshot a job saved (saveSnapshot / loadSnapshot), never Google.
+// Google connection (data/gateway.ts). A report page reads a snapshot a job
+// saved (saveSnapshot / loadSnapshot), never Google: the figures are slow
+// to fetch and change daily.
 //
 //   const call = googleCall(process.env);                                // through the gateway (data/gateway.ts)
 //   const period = lastFull("day", 28, zone, { lag: 3 });                // Search Console is final after ~3 days
@@ -31,7 +31,7 @@ import { addDays, days, previousPeriod, ratioOfSums, weightedMean, type Period }
 /** One call through the gateway: POST a JSON body to a vendor path, get JSON back. */
 export type Call = (slug: string, path: string, body: unknown) => Promise<any>;
 
-/** Google's report APIs through the gateway on this machine (`google-search-console`, `google-analytics-data`). Pass a fetch to test. */
+/** Google's report APIs through the app's connections (`google-search-console`, `google-analytics-data`). Pass a fetch to test. */
 export function googleCall(env: Env, fetchImpl: typeof fetch = fetch): Call {
   return async (slug, path, body) => {
     const res = await gatewayFetch(env, slug, path, {

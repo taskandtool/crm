@@ -131,7 +131,7 @@ export function stripeOr(env: InvoicesCli["env"], at?: string): ReturnType<typeo
     return stripeFrom(env);
   } catch {
     fail(`${at ? at + ": " : ""}nothing was done: this app has no Stripe connection`,
-      `python3 ~/tools/taskandtool.py request-connection stripe --why "send and collect invoices" --auth api_key --delivery edge`);
+      `python3 ~/tools/taskandtool.py request-connection stripe --why "send and collect invoices" --auth api_key`);
   }
 }
 

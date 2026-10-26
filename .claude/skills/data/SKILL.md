@@ -63,16 +63,19 @@ Each app makes its handle from the driver it already uses:
   takes an `Env`. Never `c.env ?? process.env`: on the machine `c.env` is
   node-server's `{ incoming, outgoing }`, so that reads nothing.
 - **A connection** (`gateway.ts`):
-  `gatewayFetch(env, slug, path, init)`. The gateway adds the key, and it
-  answers only the machine (dev). Production calls the vendor directly, with
-  the key the owner bound to the production Worker (`delivery="edge"`).
-  That key's env name is the connection's `env_name` in `python3
-  ~/tools/taskandtool.py list-connections` (usually `<SLUG>_API_KEY`); read
-  it there rather than assuming it.
-  `listConnections(env)` (machine only) is that list for code: a slug per
+  `gatewayFetch(env, slug, path, init)`, the same in dev and production:
+  Task & Tool adds the key or token, which never reaches app code. Pass
+  `envOf(c)`: in production it carries the connections the routing Worker
+  hands each request (`TT`), on the machine the gateway's address.
+  `listConnections(env)` is the app's list for code, in both: a slug per
   granted endpoint, with its `service` and `account`. Two people's Google on
   one app are `google-calendar` and `google-calendar-7c2e1a`, so code that
   serves everyone who connected finds them by `service`, not by one slug.
+- **Scheduled work** (`jobs.ts`): a `/jobs/<name>` route scheduled with
+  `schedule-job --route` runs where the app is served (production once
+  deployed, else the dev server). Put it on `jobRoutes()`: it answers only
+  when `isJob(c)` (the routing Worker's `props.job` in production, the
+  machine token in dev), and a throw becomes a JSON 500.
 - **Email** (`send.ts`): `sendEmail(env, mail)` through Resend or Postmark
   (the owner's, to anyone; `NOTIFY_FROM` and `NOTIFY_VIA`), else Task & Tool
   email (ours, free, nothing to set). Task & Tool email sends only mail
@@ -114,8 +117,8 @@ keeping the rules above and its tests passing. Then:
    `TEST_DATABASE_URL=postgres://… npx tsx --test src/<skill>/test/*.test.ts`
    (a role that may create databases; each test makes and drops its own).
 
-A machine-only file (`cli.mjs`, a skill's `cli.ts`, booking's `sync.ts` and
-`reminders-job.ts`, reports' `print.ts`, forms' `files.ts`) runs only on the machine and may
+A machine-only file (`cli.mjs`, a skill's `cli.ts`, reports' `print.ts`,
+forms' `files.ts`) runs only on the machine and may
 import Node built-ins. Nothing the production Worker imports may reach it.
 The Website's `npm run check:code` fails if something does; the CRM's `npm
 run check` allows Node built-ins only in the files listed in `nodeOnly`
@@ -136,8 +139,9 @@ No `DATABASE_URL` means the app has no database yet: ask the owner with
 | `neon.ts`, `pg.ts` | the two handles: `fromNeon` (Neon HTTP, edge and machine); `openPool`, `fromPool` (node-postgres: the machine, and production deployed with `nodejs_compat`) |
 | `migrate.ts` | `applySchema` |
 | `email.ts` | `normalizeEmail` |
-| `env.ts` | `envVar`, `envOf`, `setting`, `keyName` |
-| `gateway.ts` | `gatewayFetch`, `listConnections` (machine only at run time) |
+| `env.ts` | `envVar`, `envOf`, `setting`, `connectionsOf` |
+| `gateway.ts` | `gatewayFetch`, `listConnections`, `gatewayReachable` (dev and production) |
+| `jobs.ts` | `jobRoutes`, `isJob`: the scheduled route jobs' Hono app, and whether a request is one |
 | `send.ts` | `sendEmail`, `emailsCustomers`, `teamOf` (who Task & Tool email reaches), `afterResponse` |
 | `spam.tsx` | `SpamFields`, `makeStamp`, `verdict` |
 | `schema.sql` | `business`, `email_optouts`, `unsubscribe_keys` |

@@ -5,16 +5,10 @@
 //   const stripe = stripeFrom(process.env);  // a script on the machine
 //   const session = await stripe("POST", "/v1/checkout/sessions", params, { idempotencyKey: `checkout-${id}` });
 //
-// Where the key is:
-// - The owner bound it to this app (delivery `edge` or `machine`): it is in
-//   the env under the connection's env_name (`STRIPE_API_KEY` for slug
-//   `stripe`), and the call goes straight to api.stripe.com. This is the only
-//   way edge code can call Stripe.
-// - Otherwise (the default, `brokered`) the key never leaves Task & Tool: the
-//   call goes through the gateway (data/gateway.ts), which exists only
-//   on the machine.
-import { keyName, setting, type Env } from "../data/env";
-import { gatewayFetch } from "../data/gateway";
+// The key never reaches the app: every call goes through the app's
+// connections (data/gateway.ts), in dev and production alike.
+import type { Env } from "../data/env";
+import { gatewayFetch, gatewayReachable } from "../data/gateway";
 
 export type Params = { [key: string]: Param };
 type Param = string | number | boolean | null | undefined | Param[] | { [key: string]: Param };
@@ -23,9 +17,12 @@ export type Stripe = <T = any>(
   method: "GET" | "POST" | "DELETE",
   path: string,
   params?: Params,
-  /** `version` pins Stripe's API version for a call that needs a newer one than the account's default. */
-  opts?: { idempotencyKey?: string; version?: string },
+  /** `version` pins Stripe's API version for a call that needs a newer one than the account's default; `timeout` is in milliseconds. */
+  opts?: { idempotencyKey?: string; version?: string; timeout?: number },
 ) => Promise<T>;
+
+/** The message when this app holds no Stripe connection, for a caller that says so its own way. */
+export const NOT_CONNECTED = "Stripe is not connected to this app";
 
 /** Stripe's own error (`type`, `code`, `message`), or Task & Tool's refusal (`refusal`). */
 export class StripeError extends Error {
@@ -41,17 +38,11 @@ export class StripeError extends Error {
   }
 }
 
-const API = "https://api.stripe.com";
-
-/** A Stripe key here, or the gateway that brokers one. */
-const reachable = (env: Env, slug: string): boolean => !!setting(env, keyName(slug)) || !!(setting(env, "PHOENIX_URL") && setting(env, "MACHINE_TOKEN"));
-
 /** `slug` is the Stripe connection's endpoint slug when it is not `stripe` (list-connections). */
 export function stripeFrom(env: Env, fetchImpl: typeof fetch = fetch, slug = "stripe"): Stripe {
-  const key = setting(env, keyName(slug));
-  if (!reachable(env, slug)) {
+  if (!gatewayReachable(env)) {
     throw new Error(
-      `No Stripe here: no ${keyName(slug)} binding and no gateway. Ask the owner: python3 ~/tools/taskandtool.py request-connection stripe --why "<what it is for>" --auth api_key --delivery edge`,
+      `No Stripe here: this runtime reaches no connections. Ask the owner: python3 ~/tools/taskandtool.py request-connection stripe --why "<what it is for>" --auth api_key`,
     );
   }
 
@@ -65,10 +56,8 @@ export function stripeFrom(env: Env, fetchImpl: typeof fetch = fetch, slug = "st
       headers["Content-Type"] = "application/x-www-form-urlencoded";
       headers["Idempotency-Key"] = opts!.idempotencyKey!;
     }
-    const init: RequestInit = { method, headers, body: method === "POST" ? form : undefined };
-    const res = key
-      ? await fetchImpl(API + target, { ...init, headers: { ...headers, Authorization: `Bearer ${key}` } })
-      : await gatewayFetch(env, slug, target, init, fetchImpl);
+    const init: RequestInit = { method, headers, body: method === "POST" ? form : undefined, signal: opts?.timeout ? AbortSignal.timeout(opts.timeout) : undefined };
+    const res = await gatewayFetch(env, slug, target, init, fetchImpl);
     const text = await res.text();
     let body: any = null;
     try {
@@ -77,6 +66,7 @@ export function stripeFrom(env: Env, fetchImpl: typeof fetch = fetch, slug = "st
       /* not JSON: reported below */
     }
     const refusal = res.headers.get("x-tasktool-refusal");
+    if (refusal === "unknown_connection") throw new StripeError(NOT_CONNECTED, res.status, undefined, undefined, refusal);
     if (refusal) throw new StripeError(`Task & Tool refused the call: ${body?.error ?? refusal}`, res.status, undefined, undefined, refusal);
     if (!res.ok) {
       const e = body?.error ?? {};
@@ -90,8 +80,7 @@ export function stripeFrom(env: Env, fetchImpl: typeof fetch = fetch, slug = "st
 let reach: { slug: string; at: number; ok: boolean } | null = null;
 
 /**
- * Whether this app reaches the owner's Stripe: a key bound here, or a Stripe
- * connection through the gateway. Stripe is asked (a balance read, the
+ * Whether this app reaches the owner's Stripe through its connections. Stripe is asked (a balance read, the
  * cheapest call) and the answer kept a few minutes, a no only half a
  * minute, so a page shows the change soon after the owner connects. null
  * when Stripe could not be asked (a network error, or no answer in 3
@@ -100,10 +89,9 @@ let reach: { slug: string; at: number; ok: boolean } | null = null;
 export async function stripeConnected(env: Env, fetchImpl: typeof fetch = fetch, slug = "stripe"): Promise<boolean | null> {
   if (reach && reach.slug === slug && Date.now() - reach.at < (reach.ok ? 300_000 : 30_000)) return reach.ok;
   let ok = false;
-  if (reachable(env, slug)) {
+  if (gatewayReachable(env)) {
     try {
-      const quick: typeof fetch = (url, init) => fetchImpl(url, { ...init, signal: AbortSignal.timeout(3000) });
-      await stripeFrom(env, quick, slug)("GET", "/v1/balance");
+      await stripeFrom(env, fetchImpl, slug)("GET", "/v1/balance", undefined, { timeout: 3000 });
       ok = true;
     } catch (e) {
       if (!(e instanceof StripeError) || (!e.refusal && e.status !== 401 && e.status !== 403)) return null;
