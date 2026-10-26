@@ -121,7 +121,7 @@ test("a month's first date is the 1st to the 28th; a week's any day; ends on a d
     const r = await made(s, { ends: "after", ends_after: "12", mode: "charge" });
     assert.equal(r.total_cents, "30000");
     assert.equal(describe(r, "Visa 4242"), "An invoice for $300.00, every month on the 1st from Nov 1, 2026 for 12 invoices (the last on Oct 1, 2027), charged to Visa 4242.");
-    assert.equal(describeForCustomer(r), "From Nov 1, 2026: $300.00 every month on the 1st for 12 invoices (the last on Oct 1, 2027), charged to your card (emailed to pay until one is on file).");
+    assert.equal(describeForCustomer(r), "From Nov 1, 2026: $300.00 every month on the 1st for 12 invoices (the last on Oct 1, 2027), charged to the card you first pay with online.");
   });
 });
 

@@ -147,7 +147,9 @@ export function collectText(mode: Mode, card: string | null, who: "them" | "you"
   if (mode === "draft") return "made as a draft for the team to review and send";
   if (mode === "send") return `emailed to ${who === "you" ? "you" : "them"} to pay`;
   const theirs = who === "you" ? "your" : "their";
-  return card ? `charged to ${card}` : `charged to ${theirs} card (emailed to pay until one is on file)`;
+  if (card) return `charged to ${card}`;
+  // The team reads how it falls back; the customer reads where the card comes from (paying online once saves it).
+  return who === "you" ? "charged to the card you first pay with online" : `charged to ${theirs} card (emailed to pay until one is on file)`;
 }
 
 /** The team's sentence: "An invoice for $300.00, every month on the 1st from Nov 1, 2026, charged to Visa 4242." */

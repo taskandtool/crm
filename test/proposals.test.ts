@@ -127,7 +127,7 @@ test("a proposal end to end: built, its deposit attached, linked, opened, change
   assert.match(doc, /id="reviews"/);
   assert.doesNotMatch(doc, /id="team"/, "a component not ticked is not on the page");
   assert.match(doc, /id="pricing"/, "pricing is on every one");
-  assert.match(doc, /When you sign, the invoice for \$1,000\.00 is due, and you are taken straight to pay it online\./);
+  assert.match(doc, /When you sign, you can pay the \$1,000\.00 invoice online, right here\./);
   assert.match(doc, /The team or the work/, "a photograph's slot says what belongs there");
   assert.match(doc, /A preview: on the customer(&#39;|')s page this form signs it/);
   assert.doesNotMatch(doc, /<script/);

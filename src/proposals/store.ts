@@ -142,10 +142,11 @@ export function afterSign(a: { invoices: Invoice[]; recurring: Recurring[] }, lo
   const amounts = a.invoices.map((i) => formatMoney(i.total_cents, i.currency, locale));
   const list = amounts.length > 1 ? `${amounts.slice(0, -1).join(", ")} and ${amounts.at(-1)}` : amounts[0];
   const one = amounts.length === 1;
-  const pay = amounts.length ? `When you sign, ${one ? `the invoice for ${list} is` : `invoices for ${list} are`} due, and you are taken straight to pay ${one ? "it" : "them"} online.` : "";
+  // Signing leads back to this page, their copy, with Pay now on it: they pay from there, not by a redirect.
+  const pay = amounts.length ? `When you sign, you can pay ${one ? `the ${list} invoice` : `the invoices for ${list}`} online, right here.` : "";
   const agreed = a.recurring.map(describeForCustomer).join(" ");
   const team = [
-    amounts.length ? `${one ? `the invoice for ${list} is` : `invoices for ${list} are`} sent and they are taken to pay` : "",
+    amounts.length ? `${one ? `the invoice for ${list} is` : `invoices for ${list} are`} sent, and their copy shows Pay now` : "",
     ...a.recurring.map((r) => `${r.title} starts: ${describe(r)}`),
   ].filter(Boolean).join(". ");
   return {
