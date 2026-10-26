@@ -1,6 +1,7 @@
 // Small pieces the CRM's pages share: the stage badge,
 // a task's day and its mark, the flash messages, a field with its
 // label, a custom field's input, the record's "added by" line.
+import { personName } from "../crm/people";
 import type { Child } from "hono/jsx";
 import type { FlashMessages } from "../admin/flash";
 import { BOOKING_MESSAGES } from "../booking/admin";
@@ -291,12 +292,12 @@ export function RecordLine({ added, addedBy, changed, changedBy, children }: { a
     <div class="mt-6 flex flex-wrap items-center gap-x-2 gap-y-2 border-t border-line pt-3 text-label text-ink-3">
       <p class="min-w-0 break-words">
         Added <When at={added} timeZone={timeZone} day />
-        {addedBy ? ` by ${addedBy}` : ""}
+        {addedBy ? ` by ${personName(addedBy)}` : ""}
         {sameEdit ? null : (
           <>
             {" · Changed "}
             <When at={changed} timeZone={timeZone} day />
-            {changedBy ? ` by ${changedBy}` : ""}
+            {changedBy ? ` by ${personName(changedBy)}` : ""}
           </>
         )}
       </p>
@@ -379,7 +380,7 @@ export function ActivitySection({ action, notes }: { action: string; notes: Note
         <ol class="mt-4 flex flex-col gap-3">
           {notes.slice(0, 5).map((n) => (
             <li class="border-l-2 border-line pl-3">
-              <p class="text-label text-ink-3"><span class="font-semibold text-ink-2">{NOTE_LABELS[n.kind] ?? n.kind}</span> · <When at={n.happened_at} timeZone={timeZone} />{n.author ? ` · ${n.author}` : ""}</p>
+              <p class="text-label text-ink-3"><span class="font-semibold text-ink-2">{NOTE_LABELS[n.kind] ?? n.kind}</span> · <When at={n.happened_at} timeZone={timeZone} />{n.author ? ` · ${personName(n.author)}` : ""}</p>
               <p class="mt-0.5 whitespace-pre-wrap break-words">{n.body}</p>
             </li>
           ))}

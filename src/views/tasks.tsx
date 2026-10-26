@@ -367,7 +367,7 @@ export function TasksSection(p: {
             {p.done.map((task) => (
               <li>
                 {TASK_LABELS[task.kind]}: {task.title}
-                <span class="text-ink-3"> · <When at={task.done_at} timeZone={timeZone} />{task.done_by ? ` by ${task.done_by}` : ""}</span>
+                <span class="text-ink-3"> · <When at={task.done_at} timeZone={timeZone} />{task.done_by ? ` by ${personName(task.done_by)}` : ""}</span>
               </li>
             ))}
           </ul>

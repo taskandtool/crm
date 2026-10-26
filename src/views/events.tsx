@@ -129,32 +129,47 @@ function EventFields({ r, choices, where, deals = [], dealId = null }: { r?: Eve
   );
 }
 
-/** The section on a customer's page (theirs) or a deal's (its own, `dealId`), and a form to add one. */
+/** What is still to happen (scheduled, overdue ones too: they wait to be marked), soonest first; the rest is past. */
+export const scheduledOf = (events: Event[]) =>
+  events.filter((r) => r.status === "confirmed").sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+
+/**
+ * The section on a customer's page (theirs) or a deal's (its own, `dealId`), and a form to add one: what is
+ * scheduled, soonest first, and the past folded under it, as a contact's closed deals are (Pipedrive's Focus,
+ * then History), so a long-standing customer's page is not a column of finished jobs.
+ */
 export function CustomerEvents({ c, events, choices, deals, dealId = null }: { c: Customer; events: Event[]; choices: Choices; deals: DealChoice[]; dealId?: string | null }) {
+  const ahead = scheduledOf(events);
+  const past = events.filter((r) => r.status !== "confirmed");
+  const row = (r: Event) => (
+    <li class="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 border-l-2 border-line pl-3">
+      <div class="min-w-0">
+        <a href={`/events/${r.id}`} class="font-semibold no-underline underline-offset-2 hover:underline">
+          {r.what}
+        </a>
+        {/* One line under its name, as Home's Today: when (and Overdue), then its deal, who takes it, the amount. */}
+        <p class="text-label text-ink-3">
+          <span class="text-ink-2"><When at={r.starts_at} timeZone={timeZone} /></span>
+          {overdue(r) ? <> · <span class="font-semibold text-late">Overdue</span></> : null}
+          {[dealId ? null : r.deal_title, r.host_name, amountOf(r), fieldsLine(r)].filter(Boolean).map((x) => ` · ${x}`).join("")}
+        </p>
+      </div>
+      <StatusBadge value={r.status} options={BOOKING_STATUSES} />
+    </li>
+  );
   return (
     <div class="flex flex-col gap-4">
-      {events.length ? (
-        <ol class="flex flex-col gap-3">
-          {events.map((r) => (
-            <li class="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 border-l-2 border-line pl-3">
-              <div class="min-w-0">
-                <a href={`/events/${r.id}`} class="font-semibold no-underline underline-offset-2 hover:underline">
-                  {r.what}
-                </a>
-                {/* One line under its name, as Home's Today: when (and Overdue), then its deal, who takes it, the amount. */}
-                <p class="text-label text-ink-3">
-                  <span class="text-ink-2"><When at={r.starts_at} timeZone={timeZone} /></span>
-                  {overdue(r) ? <> · <span class="font-semibold text-late">Overdue</span></> : null}
-                  {[dealId ? null : r.deal_title, r.host_name, amountOf(r), fieldsLine(r)].filter(Boolean).map((x) => ` · ${x}`).join("")}
-                </p>
-              </div>
-              <StatusBadge value={r.status} options={BOOKING_STATUSES} />
-            </li>
-          ))}
-        </ol>
+      {ahead.length ? (
+        <ol class="flex flex-col gap-3">{ahead.map(row)}</ol>
       ) : (
-        <p class="text-ink-3">No {many} yet.</p>
+        <p class="text-ink-3">{past.length ? `Nothing scheduled.` : `No ${many} yet.`}</p>
       )}
+      {past.length ? (
+        <details>
+          <summary class="cursor-pointer text-label text-ink-2">{past.length === 1 ? `1 past ${one}` : `${past.length} past ${many}`}</summary>
+          <ol class="mt-3 flex flex-col gap-3">{past.map(row)}</ol>
+        </details>
+      ) : null}
       {events.length >= CUSTOMER_EVENTS ? (
         <p class="text-label text-ink-3">
           The {CUSTOMER_EVENTS} most recent. The rest are in <a href={`/events?view=all&q=${encodeURIComponent(c.name)}`}>All {many}</a>.

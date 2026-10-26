@@ -171,15 +171,15 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     const to = dayBounds(span.grid[span.grid.length - 1], zone).end.toISOString();
     // A booking the team scheduled may have no service (its title says what) and nobody yet. One held
     // for a form still being paid is not the business's yet: its time is kept, but it is not here.
-    const rows = await d.sql<{ id: string; submission_id: string | null; starts_at: Date; ends_at: Date; name: string; status: string; what: string | null; booked: boolean; host: string | null; location_kind: Booking["location_kind"]; location: string | null }>`
+    const rows = await d.sql<{ id: string; submission_id: string | null; starts_at: Date; ends_at: Date; name: string; status: string; what: string | null; booked: boolean; host: string | null; resource_id: string | null; location_kind: Booking["location_kind"]; location: string | null }>`
       select b.id::text as id, b.submission_id::text as submission_id, b.starts_at, b.ends_at, b.name, b.status, coalesce(b.title, t.name) as what,
-             t.id is not null as booked, r.name as host, b.location_kind, b.location
+             t.id is not null as booked, r.name as host, b.resource_id::text as resource_id, b.location_kind, b.location
       from bookings b left join booking_types t on t.id = b.type_id left join resources r on r.id = b.resource_id
       where b.status <> 'cancelled' and b.hold_until is null and b.starts_at < ${to}::timestamptz and b.ends_at > ${from}::timestamptz
         and (${person}::bigint is null or b.resource_id = ${person}::bigint)
       order by b.starts_at, b.id`;
-    const off = await d.sql<{ name: string; starts_at: Date; ends_at: Date; note: string | null }>`
-      select r.name, t.starts_at, t.ends_at, t.note from time_off t join resources r on r.id = t.resource_id
+    const off = await d.sql<{ name: string; resource_id: string; starts_at: Date; ends_at: Date; note: string | null }>`
+      select r.name, t.resource_id::text as resource_id, t.starts_at, t.ends_at, t.note from time_off t join resources r on r.id = t.resource_id
       where t.starts_at < ${to}::timestamptz and t.ends_at > ${from}::timestamptz
         and (${person}::bigint is null or t.resource_id = ${person}::bigint)
       order by t.starts_at`;
@@ -232,6 +232,78 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
           })}
       </ol>
     );
+    // A day for the whole team: a column a person against the hours, as Jobber's and Housecall Pro's crew
+    // schedule and Google Calendar's day by people, so who is free when shows at a glance. One person, one
+    // picked, or a phone (below sm the columns are too narrow to read) keeps the list.
+    const team = people.filter((p) => p.active);
+    const board = view === "day" && !person && team.length > 1 ? (() => {
+      const { b, mine, away } = onDay(anchor);
+      const at = (t: Date) => Math.min(Math.max(Math.round((new Date(t).getTime() - b.start.getTime()) / 60000), 0), 24 * 60);
+      // 7am to 6pm, or wider to take an early start or a late finish, on the hour.
+      const first = Math.min(7 * 60, ...mine.map((r) => Math.floor(at(r.starts_at) / 60) * 60));
+      const last = Math.max(18 * 60, ...mine.map((r) => Math.ceil(at(r.ends_at) / 60) * 60));
+      const hours = Array.from({ length: (last - first) / 60 }, (_, i) => first + i * 60);
+      const top = (m: number) => `${(((m - first) / (last - first)) * 100).toFixed(3)}%`;
+      const span = (s: number, e: number) => `top:${top(s)};height:${(((Math.max(e, s + 15) - s) / (last - first)) * 100).toFixed(3)}%`;
+      const columns = [...team.map((p) => ({ id: p.id as string | null, name: p.name })), ...(mine.some((r) => !r.resource_id) ? [{ id: null, name: "Not assigned" }] : [])];
+      const height = `height:${hours.length * 4}rem`;
+      // Hour lines behind every column, the same for each.
+      const lines = `background-image:repeating-linear-gradient(to bottom, var(--color-line) 0, var(--color-line) 1px, transparent 1px, transparent 4rem)`;
+      const nowAt = anchor === today ? at(new Date()) : -1;
+      return (
+        <div class="hidden overflow-x-auto rounded-card border border-line bg-surface shadow-card sm:block">
+          <div class="grid min-w-full" style={`grid-template-columns:4.5rem repeat(${columns.length}, minmax(11rem, 1fr))`}>
+            <div class="sticky top-0 border-b border-line bg-panel" />
+            {columns.map((col) => {
+              const n = mine.filter((r) => r.resource_id === col.id).length;
+              return (
+                <p class={`border-b border-l border-line bg-panel px-3 py-2 font-semibold ${col.id ? "text-ink" : "text-ink-2"}`}>
+                  {/* A count, not a noun: the app names its own (the CRM's jobs, a clinic's appointments). */}
+                  {col.name}{n ? <span class={`ml-2 rounded-full bg-surface px-2 py-0.5 ${smallText} font-medium tabular-nums text-ink-2 ring-1 ring-line`}>{n}</span> : null}
+                </p>
+              );
+            })}
+            <div class="relative" style={height}>
+              {hours.map((m) => (
+                <span class={`absolute right-2 -translate-y-1/2 ${smallText} tabular-nums text-ink-3`} style={`top:${top(m)}`}>{m === first ? "" : time(new Date(b.start.getTime() + m * 60000))}</span>
+              ))}
+            </div>
+            {columns.map((col) => {
+              const theirs = mine.filter((r) => r.resource_id === col.id).sort((x, y) => new Date(x.starts_at).getTime() - new Date(y.starts_at).getTime());
+              // Two at once side by side: each to the first lane free by its start.
+              const lanes: number[] = [];
+              const placed = theirs.map((r) => {
+                const s = at(r.starts_at), e = at(r.ends_at);
+                let lane = lanes.findIndex((end) => end <= s);
+                if (lane < 0) lane = lanes.push(e) - 1;
+                else lanes[lane] = e;
+                return { r, s, e, lane };
+              });
+              const width = 100 / Math.max(lanes.length, 1);
+              return (
+                <div class="relative border-l border-line" style={`${height};${lines}`}>
+                  {away.filter((t) => t.resource_id === col.id).map((t) => (
+                    <div class={`absolute inset-x-0 bg-panel/80 px-3 py-1 ${smallText} text-ink-2`} style={span(at(t.starts_at), at(t.ends_at))}>
+                      Off{t.note ? `: ${t.note}` : ""}
+                    </div>
+                  ))}
+                  {placed.map(({ r, s, e, lane }) => (
+                    <div class={"absolute overflow-hidden rounded-control border-l-4 px-2 py-1 " + (r.status === "confirmed" ? "border-accent bg-accent/10" : "border-line-strong bg-panel text-ink-2")}
+                      style={`${span(s, e)};left:calc(${lane * width}% + 2px);width:calc(${width}% - 4px)`}>
+                      {/* Who first, then when and what on one line: an hour's block holds both. */}
+                      <p class="truncate font-semibold">{opened(r) ? <a href={opened(r)!} class="text-ink no-underline hover:underline">{r.name}</a> : r.name}</p>
+                      <p class={`truncate ${smallText} text-ink-2`}><span class="tabular-nums">{time(r.starts_at)} – {time(r.ends_at)}</span>{r.what ? ` · ${r.what}` : ""}</p>
+                      {e - s >= 90 && (r.location || r.booked) ? <p class={`truncate ${smallText} text-ink-3`}>{r.location_kind === "their_place" && !r.location ? "Address not given yet" : whereText(r, { team: true })}</p> : null}
+                    </div>
+                  ))}
+                  {nowAt > first && nowAt < last ? <div class="pointer-events-none absolute inset-x-0 border-t-2 border-late" style={`top:${top(nowAt)}`} aria-hidden="true" /> : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    })() : null;
     // A month as a grid of weeks, Monday first, as every calendar's month view; each day its first few, then "+ more" to the day.
     // Below sm the grid is too narrow to read, so a phone gets the month's days that have something, as a list.
     const month = view === "month" ? (
@@ -298,7 +370,9 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
             </form>
           </div>
         </div>
-        {month ? <>{month}<div class="sm:hidden">{listOf(days.filter((day) => onDay(day).mine.length || onDay(day).away.length))}</div></> : listOf(days)}
+        {board ? <>{board}<div class="sm:hidden">{listOf(days)}</div></>
+          : month ? <>{month}<div class="sm:hidden">{listOf(days.filter((day) => onDay(day).mine.length || onDay(day).away.length))}</div></>
+          : listOf(days)}
         <p class={`mt-3 ${smallText} text-ink-3`}>Times are in {zoneName(zone)}.</p>
       </>
     ));

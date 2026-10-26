@@ -5,6 +5,7 @@ import type { Child } from "hono/jsx";
 import { SectionTabs } from "../admin/layout";
 import { dealsCfg, eventsCfg, invoicesCfg, showBooking, vocab } from "../config";
 import { business } from "../crm/business";
+import { personName } from "../crm/people";
 import { Icon } from "./icons";
 import { UnreadBadge } from "../phone/admin";
 import { inputClass } from "../admin/status";
@@ -181,9 +182,10 @@ export function Layout(props: {
           <nav aria-label="Settings" class="mt-auto flex flex-col gap-0.5 pt-8">
             {link({ href: "/settings", label: "Settings", section: "settings" })}
           </nav>
-          <p class="mt-3 flex items-center gap-2.5 border-t border-line px-2.5 pt-4" title="Signed in through Task & Tool">
-            <Avatar name={user} />
-            <span class="min-w-0 truncate text-ink-2">{user}</span>
+          {/* Who is signed in, by the name the team knows them by (the email for anyone not on it), the email on hover. */}
+          <p class="mt-3 flex items-center gap-2.5 border-t border-line px-2.5 pt-4" title={`Signed in as ${user} through Task & Tool`}>
+            <Avatar name={personName(user)} />
+            <span class="min-w-0 truncate text-ink-2">{personName(user)}</span>
           </p>
         </aside>
         {/* Behind an open drawer: a click on it closes the drawer. */}

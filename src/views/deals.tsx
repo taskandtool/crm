@@ -18,7 +18,7 @@ import { KIND_LABELS, type Stage } from "../crm/stages";
 import { amountText, formatWholeMoney } from "../crm/text";
 import type { Quote } from "../invoices/quotes";
 import type { Invoice } from "../invoices/invoices";
-import { CustomerEvents, type Choices } from "./events";
+import { CustomerEvents, scheduledOf, type Choices } from "./events";
 import { Docs } from "./money";
 import { TasksSection } from "./tasks";
 import { Layout } from "./layout";
@@ -356,7 +356,7 @@ export function DealPage(p: {
             </Section>
           ) : null}
           {p.schedule && (p.schedule.events.length || !closed) ? (
-            <Section title="Schedule" count={p.schedule.events.length}>
+            <Section title="Schedule" count={scheduledOf(p.schedule.events).length}>
               <CustomerEvents c={p.customer} events={p.schedule.events} choices={p.schedule.choices} deals={p.openDeals} dealId={d.id} />
             </Section>
           ) : null}

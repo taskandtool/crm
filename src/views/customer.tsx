@@ -29,7 +29,7 @@ import type { Lead } from "../crm/leads";
 import { ContactLeads } from "./leads";
 import { Layout } from "./layout";
 import { ArchivedNote, buttonClass, controlClass, menuItemClass, MoreMenu, CustomInput, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, shownField, stageOptions, telHref, timeZone } from "./ui";
-import { CustomerEvents, type Choices } from "./events";
+import { CustomerEvents, scheduledOf, type Choices } from "./events";
 import { CustomerMoney, type Owed } from "./money";
 import type { Quote } from "../invoices/quotes";
 import type { Invoice } from "../invoices/invoices";
@@ -114,7 +114,7 @@ export function CustomerPage(p: {
           </Section>
           {/* What is coming (tasks, then events) before the activity and its history, as Pipedrive's Focus comes before History. */}
           {eventsCfg ? (
-            <Section title={eventsCfg.many} count={p.events.length}>
+            <Section title={eventsCfg.many} count={scheduledOf(p.events).length}>
               <CustomerEvents c={c} events={p.events} choices={p.choices} deals={dealChoices(p.deals)} />
             </Section>
           ) : null}
@@ -309,7 +309,7 @@ function NoteEntry({ n }: { n: Note }) {
     <>
       <p class="text-label text-ink-3">
         <span class="font-semibold text-ink-2">{NOTE_LABELS[n.kind] ?? n.kind}</span> · <When at={n.happened_at} timeZone={timeZone} />
-        {n.author ? ` · ${n.author}` : ""}
+        {n.author ? ` · ${personName(n.author)}` : ""}
       </p>
       <p class="whitespace-pre-wrap break-words">{n.body}</p>
     </>
@@ -322,7 +322,8 @@ function HistoryEntry({ i }: { i: HistoryItem }) {
   return (
     <>
       <p class="text-label text-ink-3">
-        <span class="font-semibold text-ink-2">{kindName}</span> · <When at={i.at} timeZone={timeZone} /> · {i.status.replace(/_/g, " ")}
+        {/* A quote's, invoice's or payment's status is what came of it; a form's is only whether someone read it in Forms. */}
+        <span class="font-semibold text-ink-2">{kindName}</span> · <When at={i.at} timeZone={timeZone} />{i.kind === "submission" ? null : ` · ${i.status.replace(/_/g, " ")}`}
       </p>
       {i.kind === "submission" ? (
         <>

@@ -59,7 +59,7 @@ import { confirmFormBooking } from "./booking/confirm";
 import { emailSend, emailSender, notifyBooking } from "./booking/notify";
 import { envOf } from "./data/env";
 import { sendEmail } from "./data/send";
-import { stripeFrom } from "./payments/stripe";
+import { stripeConnected, stripeFrom } from "./payments/stripe";
 import { proposalAdmin, proposalPanel } from "./proposals/admin";
 import { linkBase, readyHere } from "./proposals/link";
 import { proposalPages } from "./proposals/public";
@@ -304,7 +304,9 @@ const back = (c: C, path: string, code: string) => c.redirect(backTo(path, code)
 
 app.get("/", async (c) => {
   const h = await home(c.var.db, { timeZone: cfg.time_zone, currency: dealsCfg.currency, invoiceCurrency: invoicesCfg?.currency ?? null, user: c.var.user });
-  return c.html(<HomePage user={c.var.user} h={h} flash={flashOf(c)} />);
+  // Nothing owed with no Stripe to send invoices is not "$0 owed": Home asks for Stripe instead. Only a sure no (null: not reachable just now).
+  const noStripe = !!h.owed && Number(h.owed.cents) === 0 && (await stripeConnected(envOf(c))) === false;
+  return c.html(<HomePage user={c.var.user} h={h} noStripe={noStripe} flash={flashOf(c)} />);
 });
 
 // ---- the bell ---------------------------------------------------------------

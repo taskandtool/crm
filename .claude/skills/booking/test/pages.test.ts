@@ -320,6 +320,42 @@ test("in an app's own frame, a booking opens on the app's page, and an event the
   }
 });
 
+test("a day for the whole team: a column a person against the hours, the unassigned beside them, two at once side by side, time off; one person picked keeps the list", async (t) => {
+  const s = await scratch();
+  if (!s) return t.skip(why);
+  try {
+    await applySchema(s.db, schema);
+    const ana = await createPerson(s.db, { name: "Ana", email: "ana@example.com", time_zone: "UTC" }, "owner@example.com", "test");
+    const marco = await createPerson(s.db, { name: "Marco", email: "marco@example.com", time_zone: "UTC" }, "owner@example.com", "test");
+    assert.ok(ana.ok && marco.ok);
+    const job = (who: string | null, from: string, to: string, title: string, name: string) => s.db.sql`
+      insert into bookings (resource_id, starts_at, ends_at, title, name, location_kind)
+      values (${who}::bigint, ${`2099-03-10T${from}:00Z`}::timestamptz, ${`2099-03-10T${to}:00Z`}::timestamptz, ${title}, ${name}, 'their_place')`;
+    await job(ana.value.id, "08:00", "09:00", "Lawn care", "Mei Lin");
+    await job(marco.value.id, "13:30", "15:30", "Hedge trim", "Rachel Harper");
+    await job(marco.value.id, "14:00", "15:00", "Quote visit", "Ruth Feldman");
+    await job(null, "11:00", "11:30", "Walk-in", "Hank");
+    await s.db.sql`insert into time_off (resource_id, starts_at, ends_at, note) values (${ana.value.id}::bigint, '2099-03-10T15:00:00Z', '2099-03-10T17:00:00Z', 'Dentist')`;
+    const app = new Hono();
+    app.route("/schedule", bookingAdmin(() => s.db, { base: "/schedule", css: "/crm.css", source: "crm", sections, timeZone: "UTC" }));
+
+    const html = await (await app.request("/schedule?view=day&date=2099-03-10", { headers: team })).text();
+    assert.match(html, /grid-template-columns:4\.5rem repeat\(3, minmax\(11rem, 1fr\)\)/, "Ana, Marco and the unassigned");
+    assert.match(html, />Ana<span[^>]*>1<\/span>[\s\S]*>Marco<span[^>]*>2<\/span>[\s\S]*>Not assigned<span[^>]*>1<\/span>/, "each column's count");
+    // 7am to 6pm: 8:00 is 60 of 660 minutes down, an hour long.
+    assert.match(html, /style="top:9\.091%;height:9\.091%;left:calc\(0% \+ 2px\);width:calc\(100% - 4px\)"[^>]*>[\s\S]*?Mei Lin/);
+    assert.match(html, /left:calc\(50% \+ 2px\);width:calc\(50% - 4px\)"[^>]*>[\s\S]*?Ruth Feldman/, "two at once, side by side");
+    assert.match(html, />\s*Off: Dentist\s*</);
+    assert.match(html, /class="sm:hidden"/, "a phone keeps the list");
+
+    const one = await (await app.request(`/schedule?view=day&date=2099-03-10&person=${ana.value.id}`, { headers: team })).text();
+    assert.doesNotMatch(one, /grid-template-columns/, "one person picked: the list");
+    assert.match(one, /Mei Lin/);
+  } finally {
+    await s.drop();
+  }
+});
+
 test("the team books for someone: carried details, a time, the confirmation sent; the week shows it", async (t) => {
   const s = await scratch();
   if (!s) return t.skip(why);

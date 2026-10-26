@@ -120,6 +120,7 @@ test("Home: the figures and the four short lists; the form's person is a contact
   assert.match(html, /<a href="\/" aria-current="page"[^>]*>(?:<svg.*?<\/svg>)?Home<\/a>/);
   for (const label of ["Leads, 7 days", "Your tasks due", "Won this month", "Owed"]) assert.match(html, new RegExp(label));
   assert.match(html, /<h1[^>]*>Good (morning|afternoon|evening)</, "a greeting; no name when all we have is an email");
+  assert.match(html, /title="Signed in as ann@team\.example through Task &amp; Tool"/, "the footer: who is signed in");
   assert.match(html, /data-count="\d+"/, "the figures carry the number they count up to");
   for (const [title, link] of [["New leads", "All leads"], ["Today", "Calendar"], ["Your tasks due", "All tasks"], ["Closing this month", "Deals"]]) {
     assert.match(html, new RegExp(`<h2[^>]*>${title}(<span[^>]*>\\d+</span>)?</h2>[\\s\\S]*?>${link}</a>`), title);
@@ -132,16 +133,44 @@ test("Home: the figures and the four short lists; the form's person is a contact
   assert.deepEqual([c.name, c.email, c.source, c.stage, c.created_by], ["Pat Doe", "pat@example.com", "Contact us", "lead", null]);
   const [lead] = await db.sql<{ id: string }>`select id::text as id from leads where submission_id = ${sub.id}::bigint`;
   assert.match(html, new RegExp(`href="/leads/${lead.id}"[^>]*>Pat Doe<`), "the new lead opens it");
+  // On their page the form is history: its name and when, not whether someone read it in Forms.
+  const entry = (await (await get(`/customers/${saved.id}`)).text()).match(/>Contact us<\/span> · [\s\S]*?<\/p>/)![0];
+  assert.doesNotMatch(entry, / · (new|read)/);
   assert.equal((await db.sql`select 1 from follow_ups where customer_id = ${saved.id}::bigint`).length, 0, "saving them plans nothing: the lead is the reminder");
   assert.equal((await get("/inbox/count")).status, 404, "the Inbox is gone");
 });
 
-test("Home's Owed is the open invoices, in the invoices' own currency", async (t) => {
+test("a customer's jobs: what is scheduled, soonest first; the past folded under it, as their closed deals are", async (t) => {
   if (skip) return t.skip(skip);
+  const [c] = await db.sql<{ id: string }>`insert into customers (name, email, stage) values ('Jo Fold', 'jo.fold@example.com', 'customer') returning id::text as id`;
+  const job = (title: string, at: string, status: string) =>
+    db.sql`insert into bookings (title, starts_at, ends_at, name, email, status, customer_id, location_kind)
+      values (${title}, ${at}::timestamptz, ${at}::timestamptz + interval '1 hour', 'Jo Fold', 'jo.fold@example.com', ${status}, ${c.id}::bigint, 'their_place')`;
+  await job("Spring mow", "2099-05-01 09:00+00", "confirmed");
+  await job("Patio laying", "2020-03-01 09:00+00", "completed");
+  await job("First visit", "2099-04-01 09:00+00", "confirmed");
+  const html = await (await get(`/customers/${c.id}`)).text();
+  const [ahead, past] = html.split(/<summary[^>]*>1 past /);
+  assert.ok(past, "the past one is folded");
+  assert.match(ahead, /First visit[\s\S]*Spring mow/, "soonest first");
+  assert.doesNotMatch(ahead, /Patio laying/);
+  assert.match(past, /Patio laying/);
+  await db.sql`delete from bookings where customer_id = ${c.id}::bigint`;
+  await db.sql`delete from customers where id = ${c.id}::bigint`;
+});
+
+test("Home's Owed is the open invoices, in the invoices' own currency; with none, and no Stripe to send them, it asks for Stripe", async (t) => {
+  if (skip) return t.skip(skip);
+  const open = await db.sql`select 1 from invoices where status = 'open'`;
+  if (!open.length) {
+    const html = await (await get("/")).text();
+    assert.match(html, />Owed<\/span><span[^>]*>Connect Stripe</, "no Stripe here: not \"$0 owed\"");
+    assert.match(html, /<a href="\/invoices"/);
+  }
   const owed = async () => Number((await (await get("/")).text()).match(/>Owed<[\s\S]*?data-count="(\d+)"/)![1]);
-  const before = await owed();
+  const before = open.length ? await owed() : 0;
   await db.sql`insert into invoices (email, currency, status, livemode, total_cents) values ('owed@example.com', 'usd', 'open', true, 1234500)`;
-  assert.equal(await owed() - before, 12345, "whole dollars, in the invoices' usd");
+  assert.equal(await owed() - before, 12345, "whole dollars, in the invoices' usd, Stripe or not");
   await db.sql`delete from invoices where email = 'owed@example.com'`;
 });
 
@@ -1035,5 +1064,10 @@ test("a form or a service can make each lead a deal straight away, as Pipedrive'
   const made = await db.sql<{ value_cents: string; title: string; currency: string; owner: string }>`select d.value_cents::text as value_cents, d.title, d.currency, d.owner::text as owner from deals d join leads l on l.deal_id = d.id where l.booking_id = ${b.id}::bigint`;
   assert.deepEqual(made.map((r) => ({ ...r })), [{ value_cents: "45000", title: "Bo Booker deal", currency: "USD", owner: "hal@team.example" }], "in the deals' own currency, as the board totals it");
   assert.equal((await db.sql`select 1 from deals where customer_id = ${c.id}::bigint`).length, 1, "made once");
+  // The footer names whoever is signed in by the name the team knows them by.
+  assert.match(await (await get("/", { ...ME, "x-tasktool-user": "hal@team.example" })).text(), /<span class="min-w-0 truncate text-ink-2">Hal Host<\/span>/);
+  // So do their notes on a record: a name, not an email.
+  await db.sql`insert into customer_notes (customer_id, kind, body, author) values (${c.id}::bigint, 'call', 'Gate code 2210', 'hal@team.example')`;
+  assert.match(await (await get(`/customers/${c.id}`)).text(), /· Hal Host<\/p>\s*<p[^>]*>Gate code 2210/);
   assert.equal((await db.sql<{ deal_id: string }>`select deal_id::text as deal_id from bookings where id = ${b.id}::bigint`)[0].deal_id !== null, true, "the booking is on the deal");
 });

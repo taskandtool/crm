@@ -194,6 +194,7 @@ test("a proposal end to end: built, its deposit attached, linked, opened, change
   const [sig] = await db.sql`select name, email::text as email, page_html, page_sha256 from quote_signatures where quote_id = ${id}::bigint`;
   assert.deepEqual([sig.name, sig.email], ["Ann Lee", "ann@example.com"]);
   assert.match(sig.page_html, /Signed on/);
+  assert.doesNotMatch(sig.page_html, /When you sign/, "the signed copy drops what only an unsigned page says");
   assert.match(sig.page_sha256, /^[0-9a-f]{64}$/);
   assert.equal((await db.sql`select stage from deals where id = ${deal}::bigint`)[0].stage, "won");
   const invoices = await invoicesFor(db, { quoteId: id });
@@ -254,6 +255,10 @@ test("then, recurring: a weekly plan waits on the proposal, shown beside the tot
   assert.deepEqual([inv.status, inv.quote_id, inv.period_on], ["draft", null, today], "today's is made at once, and not listed on the proposal");
   const [task] = await db.sql`select title from follow_ups where title like 'Review Eve Park%'`;
   assert.match(task.title, /^Review Eve Park's invoice for the week of/);
+  // Their copy keeps the plan they agreed to, and drops "When you sign".
+  const copy = await (await get(`/q/${token}`, NOBODY)).text();
+  assert.match(copy, /\$60\.00 every week on \w+, invoiced to you\./);
+  assert.doesNotMatch(copy, /When you sign/);
 
   // A second proposal with its own plan, declined at the link: the plan never starts.
   const other = await newQuote("eve@example.com", "Eve Park", deal, "100.00");

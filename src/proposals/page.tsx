@@ -6,6 +6,7 @@
 // and the bar that leads to it. Nothing else is drawn when it is asked for.
 import { raw } from "hono/html";
 import { COMPONENTS, type Ground, type PageData, type View } from "./components";
+import { BEFORE_SIGN } from "./components/types";
 import { Masthead } from "./components/cover";
 import { Accept, AcceptBar, type AcceptState } from "./components/signoff";
 import { PROPOSAL_CSS } from "./style";
@@ -66,10 +67,14 @@ export function renderPage(d: PageData, keys: string[]): string {
   return "<!doctype html>" + doc.toString();
 }
 
-/** The stored page with the sign-off's state drawn in, and the bar while it is open. */
+const BEFORE_SIGN_BLOCK = new RegExp(`${BEFORE_SIGN.open}[\\s\\S]*?${BEFORE_SIGN.close}`, "g");
+
+/** The stored page with the sign-off's state drawn in, the bar while it is open, and "When you sign…" only while it can be signed. */
 export function fillPage(stored: string, state: AcceptState, word: string): string {
+  const open = state.kind === "open" || state.kind === "preview";
   const bar = state.kind === "open" ? (<AcceptBar word={word} />).toString() : "";
-  return stored.replace(ACCEPT_MARK, () => (<Accept s={state} word={word} />).toString()).replace(BAR_MARK, () => bar);
+  const page = open ? stored : stored.replace(BEFORE_SIGN_BLOCK, "");
+  return page.replace(ACCEPT_MARK, () => (<Accept s={state} word={word} />).toString()).replace(BAR_MARK, () => bar);
 }
 
 export type { PageData } from "./components";

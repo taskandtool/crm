@@ -17,8 +17,10 @@ export type PageData = {
   rates: TaxRate[];
   /** The proposal's title (the quote's, else "<word> Q-0012"). */
   title: string;
-  /** What happens when they sign, in a sentence for the customer. */
-  afterSign: string;
+  /** What happens when they sign, said only while they can ("When you sign, …"): gone from the signed copy. */
+  beforeSign: string;
+  /** What signing starts (a recurring plan), kept on the signed copy as what they agreed to. */
+  agreed: string;
 };
 
 /** A light band's ground, given by the page so no two neighbours share one. */
@@ -43,3 +45,6 @@ export type ProposalComponent = {
   sample: boolean;
   render: (d: View) => Child;
 };
+
+/** Around the words only an unsigned page says: the page fills them while it is open, and drops them once it is decided. */
+export const BEFORE_SIGN = { open: "<!--tt-before-sign-->", close: "<!--/tt-before-sign-->" };

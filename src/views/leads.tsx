@@ -230,7 +230,7 @@ export function LeadPage(p: {
           ]} />
         </div>
       </div>
-      <p class="mt-6 border-t border-line pt-3 text-label text-ink-3">Added <When at={l.created_at} timeZone={timeZone} day />{l.created_by ? ` by ${l.created_by}` : ""}</p>
+      <p class="mt-6 border-t border-line pt-3 text-label text-ink-3">Added <When at={l.created_at} timeZone={timeZone} day />{l.created_by ? ` by ${personName(l.created_by)}` : ""}</p>
     </Layout>
   );
 }

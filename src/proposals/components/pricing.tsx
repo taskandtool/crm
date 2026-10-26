@@ -3,7 +3,8 @@
 import { formatMoney } from "../../payments/money";
 import { taxSummary } from "../../invoices/document";
 import { Band, Heading, Inner } from "./kit";
-import type { ProposalComponent } from "./types";
+import { raw } from "hono/html";
+import { BEFORE_SIGN, type ProposalComponent } from "./types";
 
 export const pricing: ProposalComponent = {
   key: "pricing", label: "Pricing", shows: "The quote's lines, tax and total, and what happens when they sign", on: true, always: true, sample: false,
@@ -46,7 +47,14 @@ export const pricing: ProposalComponent = {
                 <span class="text-eyebrow uppercase">Total</span>
                 <span class="font-display text-figure">{m(q.total_cents)}</span>
               </div>
-              <p class="mt-8 rounded-box border border-line bg-canvas p-6 text-body">{d.afterSign}</p>
+              {d.agreed ? (
+                <div class="mt-8 rounded-box border border-line bg-canvas p-6 text-body">
+                  {d.beforeSign ? <>{raw(BEFORE_SIGN.open)}<p class="mb-3">{d.beforeSign}</p>{raw(BEFORE_SIGN.close)}</> : null}
+                  <p>{d.agreed}</p>
+                </div>
+              ) : d.beforeSign ? (
+                <>{raw(BEFORE_SIGN.open)}<p class="mt-8 rounded-box border border-line bg-canvas p-6 text-body">{d.beforeSign}</p>{raw(BEFORE_SIGN.close)}</>
+              ) : null}
             </div>
           </div>
         </Inner>

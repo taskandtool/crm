@@ -13,7 +13,7 @@ import { COMPONENTS, type View } from "../src/proposals/components";
 
 const now = new Date("2026-01-15T15:00:00Z");
 const view = {
-  word: "Proposal", business: "The business", timeZone: "UTC", rates: [], title: "The proposal", afterSign: "",
+  word: "Proposal", business: "The business", timeZone: "UTC", rates: [], title: "The proposal", beforeSign: "", agreed: "",
   quote: {
     id: "1", number: "Q-0001", email: "c@example.com", name: "The customer", status: "sent", currency: "usd",
     subtotal_cents: "100000", tax_cents: "0", total_cents: "100000", valid_until: null,

@@ -40,7 +40,7 @@ function Stat(p: { href: string; label: string; value: string; count: number; cu
   );
 }
 
-function Numbers({ h }: { h: Home }) {
+function Numbers({ h, noStripe }: { h: Home; noStripe: boolean }) {
   const due = h.due.overdue + h.due.today;
   const whole = (cents: string) => Math.round(Number(cents) / 100);
   const deals = (k: number) => (k === 1 ? `1 ${dealsCfg.one.toLowerCase()}` : `${k} ${dealsCfg.many.toLowerCase()}`);
@@ -56,7 +56,13 @@ function Numbers({ h }: { h: Home }) {
         count={whole(h.open.cents)} currency={dealsCfg.currency} sub={deals(h.open.count)} />
       <Stat href="/deals" label="Won this month" value={formatWholeMoney(h.won.cents, dealsCfg.currency)}
         count={whole(h.won.cents)} currency={dealsCfg.currency} sub={deals(h.won.count)} />
-      {h.owed ? (
+      {h.owed && noStripe ? (
+        <a href="/invoices" class="group flex min-w-0 flex-col bg-surface px-5 py-4 no-underline hover:bg-canvas focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent">
+          <span class="truncate font-medium text-ink-2 group-hover:text-ink">Owed</span>
+          <span class="mt-2 font-semibold text-accent group-hover:underline">Connect Stripe</span>
+          <span class="mt-1 text-label text-ink-3">to send invoices and get paid</span>
+        </a>
+      ) : h.owed ? (
         <Stat href={listUrl("/invoices", { status: "open" })} label="Owed" value={formatWholeMoney(h.owed.cents, h.owed.currency)}
           count={whole(h.owed.cents)} currency={h.owed.currency} sub={h.owed.count === 1 ? "1 invoice" : `${h.owed.count} invoices`} />
       ) : null}
@@ -88,7 +94,7 @@ function greeting(now: Date): string {
   return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 }
 
-export function HomePage({ user, h, flash }: { user: string; h: Home; flash: { code?: string | null; n?: string | null } }) {
+export function HomePage({ user, h, noStripe = false, flash }: { user: string; h: Home; noStripe?: boolean; flash: { code?: string | null; n?: string | null } }) {
   const now = new Date();
   // Their first name when the team list knows them; an email alone is not a name to greet.
   const name = personName(user);
@@ -97,7 +103,7 @@ export function HomePage({ user, h, flash }: { user: string; h: Home; flash: { c
     <Layout title="Home" heading={first ? `${greeting(now)}, ${first}` : greeting(now)} user={user} section="home"
       sub={new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long", month: "long", day: "numeric" }).format(now)}>
       <Flash code={flash.code} n={flash.n} messages={MESSAGES} />
-      <Numbers h={h} />
+      <Numbers h={h} noStripe={noStripe} />
       {/* Two columns that stack on their own, so a short list never leaves an empty box beside a long one. */}
       <div class="grid items-start gap-6 lg:grid-cols-2">
         <div class="flex min-w-0 flex-col gap-6">

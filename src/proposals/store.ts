@@ -132,22 +132,25 @@ export async function attachedTo(db: Db, quoteId: string): Promise<{ invoices: I
 }
 
 /**
- * What their yes does, in a sentence for the customer (printed under the
- * total) and one for the team: each invoice on the quote is sent to pay, and
- * each recurring invoice starts, shown beside the total, never added to it.
+ * What their yes does, for the customer (printed under the total) and in one
+ * sentence for the team: each invoice on the quote is sent to pay, and each
+ * recurring invoice starts, shown beside the total, never added to it. The
+ * customer's is two parts: `before`, said only while it can still be signed
+ * ("When you sign, …"), and `agreed`, what they agree to, kept on the signed copy.
  */
-export function afterSign(a: { invoices: Invoice[]; recurring: Recurring[] }, locale?: string): { customer: string; team: string } {
+export function afterSign(a: { invoices: Invoice[]; recurring: Recurring[] }, locale?: string): { before: string; agreed: string; team: string } {
   const amounts = a.invoices.map((i) => formatMoney(i.total_cents, i.currency, locale));
   const list = amounts.length > 1 ? `${amounts.slice(0, -1).join(", ")} and ${amounts.at(-1)}` : amounts[0];
   const one = amounts.length === 1;
   const pay = amounts.length ? `When you sign, ${one ? `the invoice for ${list} is` : `invoices for ${list} are`} due, and you are taken straight to pay ${one ? "it" : "them"} online.` : "";
-  const customer = [pay, ...a.recurring.map(describeForCustomer)].filter(Boolean).join(" ");
+  const agreed = a.recurring.map(describeForCustomer).join(" ");
   const team = [
     amounts.length ? `${one ? `the invoice for ${list} is` : `invoices for ${list} are`} sent and they are taken to pay` : "",
     ...a.recurring.map((r) => `${r.title} starts: ${describe(r)}`),
   ].filter(Boolean).join(". ");
   return {
-    customer: customer || "When you sign, we get in touch about what comes next.",
+    before: pay || (agreed ? "" : "When you sign, we get in touch about what comes next."),
+    agreed,
     team: team ? `When they sign: ${team}` : "When they sign: nothing is sent. Attach an invoice to send one.",
   };
 }
@@ -161,7 +164,7 @@ export async function pageFor(db: Db, quoteId: string, opts: ProposalOpts): Prom
   const data: PageData = {
     word: opts.word, business: opts.business, timeZone: opts.timeZone, locale: opts.locale, quote: qt, rates,
     title: p?.title?.trim() || `${opts.word} ${qt.number}`,
-    afterSign: afterSign(attached, opts.locale).customer,
+    ...(({ before, agreed }) => ({ beforeSign: before, agreed }))(afterSign(attached, opts.locale)),
   };
   const html = renderPage(data, keys);
   return { html, sha: await tokenHash(html), bytes: new TextEncoder().encode(html).length };

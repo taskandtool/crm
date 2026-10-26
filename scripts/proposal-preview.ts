@@ -53,7 +53,7 @@ let html: string;
 try {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   html = renderPage({ word, business, timeZone: cfg.time_zone, quote: quote as any, rates: [], title: `A ${word.toLowerCase()} for Sam Rivera`,
-    afterSign: `When you sign, the invoice for ${deposit} is due, and you are taken straight to pay it online.` }, PICKABLE.map((c) => c.key));
+    beforeSign: `When you sign, the invoice for ${deposit} is due, and you are taken straight to pay it online.`, agreed: "" }, PICKABLE.map((c) => c.key));
   html = fillPage(html, { kind: "open", action: "/q/preview", sha: "0".repeat(64), reasons: ["Price", "Timing"] }, word);
 } catch (e) {
   fail(`proposal-preview: the page did not draw (${(e as Error).message})`, "npm run css && npm run check");
