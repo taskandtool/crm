@@ -41,7 +41,9 @@ export const fileUrl = (path: string) => pathToFileURL(resolve(path)).href;
 /**
  * The browser's arguments. `--virtual-time-budget` lets the page's scripts
  * (Chart.js from the CDN, client.js) finish before the print; the width is
- * the layout the charts are drawn at, close to an A4 or Letter page.
+ * the layout the charts are drawn at, close to an A4 or Letter page. The mock
+ * keychain keeps Chrome off the macOS keychain, which otherwise asks the
+ * person at the screen where to store a key.
  */
 export function chromeArgs(htmlFile: string, pdfFile: string, width = 1000): string[] {
   return [
@@ -51,6 +53,8 @@ export function chromeArgs(htmlFile: string, pdfFile: string, width = 1000): str
     "--disable-dev-shm-usage",
     "--hide-scrollbars",
     "--no-first-run",
+    "--use-mock-keychain",
+    "--password-store=basic",
     "--no-pdf-header-footer",
     "--run-all-compositor-stages-before-draw",
     "--virtual-time-budget=20000",
