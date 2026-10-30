@@ -1,7 +1,7 @@
 // A scratch schema for the database tests, made from TEST_DATABASE_URL and
 // dropped after. The schema rides on the connection itself (options=-c
 // search_path), so no query can slip through to the real tables before a
-// per-connection SET lands; `public` stays on the path for the extensions'
+// per-connection SET takes effect; `public` stays on the path for the extensions'
 // types and operators (citext, gin_trgm_ops). On a Task & Tool machine the
 // app's login cannot create a schema, and these tests must never run against
 // the real tables: they skip there and run wherever a scratch schema can be

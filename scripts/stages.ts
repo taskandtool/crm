@@ -17,7 +17,7 @@ const HELP = `stages.mjs <command> [--statuses] [--json] [--as <email>]
 
 Without --statuses these are the ${dealsCfg.one.toLowerCase()} pipeline's stages; with it, a
 ${vocab.one.toLowerCase()}'s statuses (Lead, Customer, Not a fit). <stage> is a key or a
-label. Each list keeps at least one open stage: new ones land in the first.
+label. Each list keeps at least one open stage: new ones start in the first.
 
 Prints what happened first, then Next:. A re-run says "already" and changes
 nothing. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`;
@@ -42,7 +42,7 @@ const thing = p === "customers" ? "status" : "stage";
 
 const WHY: Record<string, string> = {
   missing: `no such ${thing}`,
-  "last-open": `that would leave no open ${thing}; new ${many} need one to land in`,
+  "last-open": `that would leave no open ${thing}; new ${many} need one to start in`,
   "in-use": `${many} are still in it; pass --move-to <${thing}>`,
   "bad-target": `--move-to must name another active ${thing}`,
   label: `a ${thing} needs a label`,

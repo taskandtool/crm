@@ -257,7 +257,7 @@ export function machineEnv() {
       if (m) out[m[1]] = m[2].trim().replace(/^(['"])(.*)\1$/, "$2");
     }
   } catch {
-    // Off Task & Tool: the shell's env is the whole story.
+    // Off Task & Tool: only the shell's env counts.
   }
   return { ...out, ...process.env };
 }

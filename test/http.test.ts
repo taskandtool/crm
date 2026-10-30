@@ -1024,12 +1024,12 @@ test("a form or a service can make each lead a deal straight away, as Pipedrive'
   await db.sql`insert into forms (key, title, fields, source) values ('install-request', 'Install request', ${JSON.stringify([{ name: "name", label: "Name", type: "text", required: true }, { name: "email", label: "Email", type: "email", required: true }, { name: "message", label: "Message", type: "textarea" }])}::jsonb, 'crm') on conflict do nothing`;
   let html = await (await get("/forms/form/install-request")).text();
   assert.match(html, /name="becomes" value="deal"/, "the CRM's form editor offers a deal straight away");
-  // Its deals land in a stage it picks, owned by the person it names, as Pipedrive's web forms set both.
+  // Its deals start in a stage it picks, owned by the person it names, as Pipedrive's web forms set both.
   const [second] = await db.sql<{ key: string }>`select key from deal_stages where kind = 'open' and not archived order by position offset 1 limit 1`;
   await db.sql`update forms set deals = true, owner = 'ann@team.example', deal_stage = ${second.key} where key = 'install-request'`;
   html = await (await get("/forms/form/install-request")).text();
   assert.match(html, /name="becomes" value="deal" checked=""/);
-  assert.match(html, new RegExp(`name="deal_stage"[\\s\\S]*<option value="${second.key}" selected=""`), "Deals land in: the form's stage");
+  assert.match(html, new RegExp(`name="deal_stage"[\\s\\S]*<option value="${second.key}" selected=""`), "New deals start in: the form's stage");
   assert.match(html, /name="owner"[^>]*value="ann@team.example"/, "Owner: the form's");
 
   // A submission, as the Website takes one: its lead is a deal by the next page.

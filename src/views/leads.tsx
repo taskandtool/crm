@@ -113,7 +113,7 @@ export function LeadResults({ filter, rows }: { filter: LeadFilter; rows: Lead[]
             <EmptyState title="No leads match." action={<a href={listUrl("/leads", { status: params(filter).status })} class={buttonClass}>Clear filters</a>} />
           ) : filter.status === "open" ? (
             <EmptyState title="No open leads." action={<a href="/leads/new" class={buttonClass}>New lead</a>}>
-              Form requests and online bookings land here as they come in. Add a phone call or a walk-in with New lead.
+              Website form entries and online bookings appear here. Use New lead to add someone who called or walked in.
             </EmptyState>
           ) : (
             <EmptyState title={filter.status === "converted" ? `None converted to a ${deal} yet.` : "Nothing archived."} />

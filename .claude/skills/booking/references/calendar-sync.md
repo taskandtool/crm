@@ -11,7 +11,7 @@ calendar's events for the horizon and replaces that calendar's `busy` rows
 in one transaction, leaving out our own events.
 A booking the team moves to another person leaves the first one's
 calendar on the next push (its event deleted, its calendar forgotten) and
-lands in the new person's on the push after, as any booking with no event.
+is added to the new person's on the push after, as any booking with no event.
 A failed pull keeps the old rows and writes `calendars.last_error`, which the
 person's page under Team shows, and the Team list flags.
 
@@ -54,7 +54,7 @@ team gate, then schedule it once (the `schedule-job` skill; check
 platform's floor), not visible to clients:
 
 ```bash
-python3 ~/tools/taskandtool.py schedule-job "Calendar sync" --when "*/15 * * * *" --route /jobs/calendar-sync --team-only
+python3 ~/tools/taskandtool.py schedule-job "Calendar sync" --when "*/15 * * * *" --route /jobs/calendar-sync
 ```
 
 It runs in production once the app is deployed (no machine wakes), on the

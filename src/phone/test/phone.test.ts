@@ -104,7 +104,7 @@ test("an email keeps its lines and colons; the times go one to a line", () => {
 });
 
 test("words are straightened, emoji refused, unknown fill-ins named", () => {
-  const ok = checkWords("Hi {first_name}, it’s us — see you");
+  const ok = checkWords("Hi {first_name}, it’s us — see you"); // tropes-allow
   assert.ok(ok.ok && ok.words === "Hi {first_name}, it's us - see you");
   const emoji = checkWords("See you soon \u{1F600}");
   assert.ok(!emoji.ok && /three times longer/.test(emoji.why));

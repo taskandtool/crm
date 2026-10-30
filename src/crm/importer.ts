@@ -10,7 +10,7 @@
 //   kept unless `overwrite` is set.
 // - Anyone still without a last contact gets their latest submission,
 //   booking or payment (history.ts latestActivity), by email.
-// - The whole import is one transaction: all of it lands or none of it.
+// - The whole import is one transaction: all of it is saved or none of it.
 // - A dry run reads the database the same way and writes nothing.
 import { q, type Db, type Query } from "../data/db";
 import { normalizeEmail } from "../data/email";

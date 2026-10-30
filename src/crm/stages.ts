@@ -49,7 +49,7 @@ export async function stagesWithCounts(db: Db, p: Pipeline): Promise<StageWithCo
     order by s.archived, s.position, s.key`;
 }
 
-/** The stage a new row lands in: the first open one. */
+/** The stage a new row starts in: the first open one. */
 export async function firstOpenStage(db: Db, p: Pipeline): Promise<Stage | null> {
   const [s] = await sqlOn(db, p)<Stage>`
     select key, label, position, kind, archived from {stages}

@@ -159,7 +159,7 @@ export function instantsFor(date: string, minutes: number, zone: string): number
 /**
  * A wall time as an instant. Repeated: the earlier one. Skipped: null with
  * "strict"; with "forward", the instant the wall time would have had before
- * the change, which lands just as far past the gap (02:30 on a spring-forward
+ * the change, which falls just as far past the gap (02:30 on a spring-forward
  * night in New York becomes 03:30).
  */
 export function wallToInstant(date: string, minutes: number, zone: string, gap: "strict" | "forward" = "strict"): Date | null {

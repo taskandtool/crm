@@ -5,7 +5,7 @@
 // machine sees the same gap for a few seconds. So the server comes up
 // without a database, says so on one page, watches for the URL, and sets the
 // database up the moment it appears. Off-platform the file does not exist
-// and the env var is the whole story. Node only.
+// and only the env var counts. Node only.
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

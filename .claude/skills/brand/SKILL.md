@@ -23,7 +23,9 @@ Version: 0.3.2 (taskandtool/skills)
    more: get all of it, from everywhere below.
    A note that does not exist yet takes its shape from `templates/` beside
    this file; the frontmatter and citation rules are in
-   `references/notes.md`.
+   `references/notes.md`. Every page, post and ad copies their wording, so
+   check it: `node .claude/skills/tropes/tropes.mjs --scan brand public`
+   (others' words in quotation marks are left alone).
 3. **Say what went in,** in a line or two, and what is missing that matters.
 4. **After a fact changes,** grep the old value in the app's own files
    (`AGENTS.md` says where its work lives), fix it there too, and run the

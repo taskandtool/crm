@@ -56,7 +56,7 @@ test("the words: what and who, when in the booker's zone, where, how to change i
   assert.equal(booked.text, "Hi Ann,\n\nYou are booked: Estimate visit with Pat.\n\nTuesday, March 10, 10:00 AM to 11:00 AM CDT\nAt 12 Elm St\n\nTo change or cancel: https://acme.example/book/manage/tok");
   const cancelled = bookingMessage("cancelled", about);
   assert.equal(cancelled.text, "Hi Ann,\n\nYour Estimate visit with Pat is cancelled.\n\nTuesday, March 10, 10:00 AM to 11:00 AM CDT");
-  assert.doesNotMatch(bookingMessage("reminder", about).text, /—/, "no em dashes");
+  assert.doesNotMatch(bookingMessage("reminder", about).text, /—/, "no em dashes"); // tropes-allow
 });
 
 test("notifyBooking sends the confirmation with a REQUEST invite, and a cancel with a CANCEL, through any Send", async () => {

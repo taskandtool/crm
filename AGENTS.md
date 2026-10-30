@@ -96,7 +96,8 @@ node scripts/export.mjs --out customers.csv     # the list out
 - To look from the machine:
   `curl -H 'X-TaskTool-User: you@example.com' localhost:3000/`.
 - `npm run check` before showing work (config and examples valid, the
-  refuse list, the proposal components' words through `tropes`, the
+  refuse list, every line of the code, its comments and the skills, and
+  the proposal components' words through `tropes`, the
   typecheck). `npm test` for the tests.
 - `npm run deploy` publishes to production, after `npm run check` and
   `npm test` pass and you have looked at the change in dev.
@@ -127,5 +128,8 @@ node scripts/export.mjs --out customers.csv     # the list out
   by a person in Task & Tool (the crm skill's `references/money.md`).
 - Colours and sizes are tokens in `styles/theme.css` (`DESIGN.md`);
   `npm run check` refuses a hex value or a Tailwind default colour in
-  markup, and an em dash in interface copy.
+  markup.
+- Any words a person reads (a screen, a message to a customer, a
+  proposal): the `writing` skill; `npm run check` scans every line for the
+  tells of AI-written text.
 - Real data only: never invent customers, notes or history.

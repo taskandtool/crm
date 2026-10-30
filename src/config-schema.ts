@@ -117,7 +117,7 @@ export function validate(raw: unknown): string[] {
 }
 
 // A list of statuses or deal stages: slug keys, no repeats, a known kind, and
-// at least one open one for new rows to land in.
+// at least one open one for new rows to start in.
 function stageProblems(list: unknown, at: string, one: string, landing: string): string[] {
   const out: string[] = [];
   if (!Array.isArray(list) || list.length === 0) return [`${at} must list at least one ${one}`];

@@ -152,7 +152,7 @@ test("the manifest follows the platform's rules", () => {
     ids.add(s.id);
     assert.ok(s.label.length <= 48, s.label);
     assert.ok(s.prompt.length <= 1200, s.id);
-    assert.ok(!/—/.test(s.label + s.prompt), "no em dashes");
+    assert.ok(!/—/.test(s.label + s.prompt), "no em dashes"); // tropes-allow
   }
   assert.ok(m.suggestions.some((s: { when?: { path: string; is: string }[] }) => s.when?.some((w) => w.path === "crm.config.json" && w.is === "unfilled")));
 });

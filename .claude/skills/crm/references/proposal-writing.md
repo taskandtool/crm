@@ -1,39 +1,22 @@
 # Writing a proposal's words
 
 Read when writing or changing the words in a proposal component, or when the
-owner says one sounds generic, salesy or not like them.
-
-The facts a component may state are in `public/` and `brand/`; nothing else
-is a source. The voice is `brand/voice.md`: write it as the owner would
-say it to a customer face to face, and keep their own phrasing wherever it
-is clear.
+owner says one sounds generic, salesy or not like them. The `writing` skill
+holds the standard, the editing order and the cold read; this file adds what
+a proposal needs.
 
 - **Each component says one thing the customer wants to know** (who you are,
   how the job goes, what it costs), in its first line.
-- **Specific beats general:** a real number, place, step or name from the
-  notes, and the words customers use in their reviews. "Six roofs in one
-  day in Coles Crossing", not "fast, reliable service".
 - **A title names what is below it** ("How the job goes", "Your crew"),
   never a slogan or a label above a label.
-- **Others' words stay exactly as written:** reviews in the reviews
-  component, verbatim, credited as the source gives them, never a heading.
-- **Nothing is invented.** A figure, a bio or a rating goes in only where a
-  source states it; a job with no stated result still has its photograph,
-  its place and what was done. Where two sources disagree, use the
-  business's newest own page.
+- **Reviews go in the reviews component,** word for word.
+- **A job with no stated result** still has its photograph, its place and
+  what was done. Where two sources disagree, use the business's newest own
+  page.
 - **The reply says what went in,** not what is missing, what conflicted or
   what the owner could add.
 
-`npm run check` runs the `tropes` skill on every component's words, with the
-fix for each finding (`.claude/skills/tropes/SKILL.md` lists the tells).
-Rewrite the whole passage it flags, never only the word.
-
-## The cold read
-
-After `node scripts/proposal-preview.mjs`, give a fresh sub-agent only the
-page's words (`uploads/proposal-preview/page.html`), `public/` and
-`brand/voice.md`, and ask for every line that should change as
-`| line, exactly | replacement, or CUT | why |`: a claim the notes do not
-hold, a line no person would say, a vague line, a tell the check missed.
-Apply the table in one pass. Without a sub-agent, read the page yourself as
-a stranger and say so.
+`npm run check` runs the `tropes` skill on every component's words. For the
+cold read, after `node scripts/proposal-preview.mjs`:
+`node .claude/skills/tropes/tropes.mjs --words uploads/proposal-preview/page.html`
+gives the sub-agent the page's words alone.

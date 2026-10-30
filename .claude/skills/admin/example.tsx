@@ -89,7 +89,7 @@ export function adminRoutes(getDb: GetDb, opts: AdminOptions) {
   app.use("*", teamOnly());
 
   // The status cell is a form that swaps its own row; `returnTo` is where a
-  // plain post lands, so it is the list as the person filtered it.
+  // plain post is redirected to, so it is the list as the person filtered it.
   const spec = (returnTo: string): TableSpec<Item> => ({
     id: "rows",
     href: (r) => `${base}/${r.id}`,

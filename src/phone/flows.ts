@@ -294,7 +294,7 @@ function plainText(s: string): string {
   return s
     .replace(/[‘’‚′]/g, "'")
     .replace(/[“”„″]/g, '"')
-    .replace(/[–—−]/g, "-")
+    .replace(/[–—−]/g, "-") // tropes-allow
     .replace(/…/g, "...")
     .replace(/[    ]/g, " ");
 }

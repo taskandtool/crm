@@ -2,7 +2,21 @@
 
 Structures outlast word lists: the vocabulary moves with each model generation, the shapes do not. `tropes.mjs` finds the ones a pattern can (the id beside a trope is the rule it prints; the phrase tables are `refused-phrase`); the rest need an ear.
 
-## Vocabulary
+## Today's models (2025 to 2026)
+
+The older lists below are mostly 2023's, and people wrote many of them before any model did ("seamlessly", "all-in-one" and "say goodbye to" are all on 2020 homepages). These are what current Claude and GPT models write now, from Wikipedia's *Signs of AI writing* and the claudisms.ai catalog, each checked against 26,000 words of 2020 small-business pages and 90,000 words of 2020 app strings:
+
+| Trope | Examples | Fix |
+|---|---|---|
+| Figures of speech `model-tell` | "lands in your inbox", "the report lands every Monday", "replies land in Messages", "where it lands", "surfaces the issues", "hands you a brief", "stays yours", "load-bearing", "That matters.", "because it matters", "worth a look", "at its core", "this is where X comes in", "lean into", "trust compounds"; hints: quietly, genuinely, honestly, "lives in one place", "less X, more Y" | The literal verb: appears, arrives, starts in, shows, gives. Or cut the line |
+| Staged reveal `model-tell` | "Here's the real issue:", "Here's the kicker:", "The real problem is…", "That's the whole point." | Say the point |
+| "X, not Y" `negation-tail` | "Fill your chairs, not your phone", "progress every week, not just at the end" (none in the 2020 pages; four in 1,300 words of a current model's) | State X. Keep a "not" a customer needs: "Cash only, not cards." |
+| Pivot `negation-pivot` | "It's not a builder, it's a growth engine", "This isn't about software. It's about your time.", "Not a template. A real site.", "is more than a CRM, it's…" | State Y |
+| "With" rider `with-rider` | "Your site runs on Cloudflare, with its SEO and design done professionally." | End at the comma; say the rest with its own subject |
+| Even rhythm (by ear) | every lede one clause long, every line starting "The AI…" | Vary who acts and how long the sentences run |
+| Comma tails (by ear) | "Yards that look looked-after, all season", "built for salons and barbershops" after a comma | Twice as common in model copy as in people's, too common in both to fail: rewrite the ones that read as an afterthought |
+
+## Older vocabulary
 
 | Trope | Examples | Fix |
 |---|---|---|
@@ -19,7 +33,7 @@ Structures outlast word lists: the vocabulary moves with each model generation, 
 
 | Trope | Examples | Fix |
 |---|---|---|
-| **Negation pivot** (strongest tell) `negation-pivot` | "It's not X, it's Y", "not just X but Y", "Not because X. Because Y.", "Y rather than X"; "X, not Y." is a hint, often a plain fact ("Cash only, not cards.") | State Y. Nobody proposed X |
+| **Negation pivot** (strongest tell) `negation-pivot`, `negation-tail` | "It's not X, it's Y", "not just X but Y", "Not because X. Because Y.", "X, not Y."; "Y rather than X" by ear (people write it often) | State Y. Nobody proposed X |
 | Rule of three `triads` | three adjectives, three bullets, three examples per section | Use the number of things there really are. At most one triad a section |
 | Staccato triplet `triads` | "No fluff. No filler. No stress." "Fast. Simple. Effective." | One plain sentence with the real claim |
 | Throat-clearing openers | In today's fast-paced world; In a world where; Imagine a world; Welcome to; Are you looking for; When it comes to | Start with the offer |
@@ -44,6 +58,7 @@ Structures outlast word lists: the vocabulary moves with each model generation, 
 
 | Trope | Fix |
 |---|---|
+| Long heading `long-heading`, long hero `long-hero` (hints): a heading over 12 words; a hero line under the headline over 30 | One thing per heading; the hero says what it is and what the reader gets, the sections say the rest |
 | Uniform sentence length `uniform-length` (a hint): every sentence about as long as the last | Over six or more sentences, the longest is at least 12 words longer than the shortest |
 | Low punctuation variety: long "and"-joined sentences, few commas/semicolons, no parentheses (Economist) | Break at the "and". Let one sentence carry an aside |
 | Paragraph uniformity (claim, example, restatement, repeated) | Vary the order. Some paragraphs are one line |

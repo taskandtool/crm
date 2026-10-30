@@ -5,7 +5,8 @@
 //     Tailwind colours, gradients, blur, animations, tracking/leading
 //     overrides, weights above semibold; in src/views, Tailwind's default
 //     text sizes (the five size tokens only)
-//   - no em dashes in the interface copy
+//   - no tells of AI-written text in the code, its comments and copy, the
+//     skills or AGENTS.md (the tropes skill's --scan)
 //   - only the dev-only files under src/ import a Node built-in, so the
 //     code production runs on Cloudflare stays portable
 //   - the manifest, the skill, the vendored scripts are there
@@ -61,10 +62,12 @@ for (const file of walk("src").filter((f) => f.endsWith(".tsx") && !isTest(f))) 
   // The CRM's own pages keep to the five sizes; the skills' copies under src/<skill>/ bring Tailwind's form sizes with them.
   const size = file.startsWith("src/views/") && src.match(/\btext-(xs|sm|base|lg|xl|[2-9]xl)\b/);
   if (size) findings.push(`${file}: "${size[0]}" is a Tailwind default size: use text-display, title, heading, copy or label`);
-  src.split("\n").forEach((line, i) => {
-    if (line.includes("—")) findings.push(`${file}:${i + 1}: an em dash in interface copy; write a comma, a colon, or a new sentence`);
-  });
 }
+
+// every line of the code, its comments and copy, and the skills: no tells of AI-written text
+const scan = spawnSync("node", [".claude/skills/tropes/tropes.mjs", "--scan", "--json", "src", "scripts", "test", "examples", ".claude", "AGENTS.md"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+if (scan.status === 2 || !scan.stdout) findings.push("the words could not be scanned:\n" + (scan.stderr || "").trim());
+else for (const f of JSON.parse(scan.stdout)) findings.push(`${f.file}:${f.line}: ${f.rule} "${f.match}": ${f.fix}`);
 
 // production runs the same app on Cloudflare: Node built-ins only in the
 // files that run in dev alone

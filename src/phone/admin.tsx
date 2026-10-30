@@ -107,7 +107,7 @@ export function phoneSettings(getDb: GetDb, opts: PhoneAdminOptions) {
         <div class="space-y-6">
           {name}
           <SetupNeeded title="Connect Twilio for a business number" ask="Connect my Twilio account so customers can call and text my business number.">
-            Customers call and text one number. It rings your phone, a missed call gets a text back, and replies land in Messages. Twilio bills you
+            Customers call and text one number. It rings your phone. If you miss a call, the caller gets a text back, and replies show in Messages. Twilio bills you
             directly, about $1.15 a month for the number and under a cent a text. Connect Twilio to this app in Task &amp; Tool, on the app's Connections tab,
             with the Account SID and an API key from Twilio's Console. For a client of yours, use their own subaccount.
           </SetupNeeded>

@@ -3,7 +3,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { check, findings, repeated, sectionsOf } from "../tropes.mjs";
+import { check, findings, repeated, scan, sectionsOf, wordsOf } from "../tropes.mjs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const rules = (text, opts) => findings(text, opts).map((f) => f.rule);
 const CLI = fileURLToPath(new URL("../tropes.mjs", import.meta.url));
@@ -23,7 +26,8 @@ test("a heading of fragments joined by a colon or a comma; a list's commas, numb
 
 test("negation pivot", () => {
   assert.ok(rules("It's not just a roof, it's peace of mind.").includes("negation-pivot"));
-  assert.ok(rules("Our roofers are licensed, not cheap.").includes("negation-pivot"));
+  assert.ok(rules("Our roofers are licensed, not cheap.").includes("negation-tail"));
+  assert.ok(rules("This isn't about software. It's about your time.").includes("negation-pivot"));
   assert.ok(rules("Don't just fix it, fix it for good.").includes("negation-pivot"));
 });
 
@@ -58,6 +62,60 @@ test("an -ing rider", () => {
   assert.ok(rules("We rebuilt the porch in May, ensuring years of shelter.").includes("ing-rider"));
 });
 
+test("a 'with' rider bolted onto a finished sentence", () => {
+  assert.ok(rules("Your site runs on our servers, with its SEO and design done for you.").includes("with-rider"));
+  assert.ok(!rules("Fall cleanup with leaf removal starts at $90.").includes("with-rider"));
+});
+
+test("today's models' figures of speech, and the literal uses that pass", () => {
+  for (const s of ["Form requests land here as they come in.", "New deals land in the first stage.", "The quote landed.",
+    "That matters.", "Why this matters to your crew", "Not a template. A real site you own.", "It's worth mentioning the warranty."]) {
+    assert.ok(rules(s).some((r) => r === "model-tell" || r === "negation-pivot"), s);
+  }
+  for (const s of ["The plane lands at Logan at 9 AM.", "Read our landing page guide.", "Land more clients this spring.",
+    "This matters when the ground is frozen.", "Our heat pumps run quietly.", "It's not working? Call us."]) {
+    assert.ok(!findings(s).some((f) => f.severity === "error" && (f.rule === "model-tell" || f.rule === "negation-pivot")), s);
+  }
+  assert.equal(findings("Honestly, we love this job.").find((f) => f.rule === "model-tell").severity, "hint");
+});
+
+test("every figurative land, and the literal ones that pass", () => {
+  for (const s of ["Your invoice lands in your inbox in seconds.", "The report lands every Monday morning.", "When a new lead lands, you get a text.",
+    "Every booking lands straight in the CRM.", "Replies land in Messages.", "That line really landed."]) {
+    assert.ok(rules(s).includes("model-tell"), s);
+  }
+  for (const s of ["The plane lands at Logan at 9 AM.", "We landed a new client in March.", "Check the landed cost before you order.",
+    "We clear land in Larkfield.", "Read our landing page guide."]) {
+    assert.ok(!rules(s).includes("model-tell"), s);
+  }
+});
+
+test("the staged reveal, the crowned point and the handed-over brief", () => {
+  for (const s of ["Here's the real issue: nobody follows up.", "Here's the kicker: it's free.", "The real problem is follow-up.",
+    "That's the whole point.", "Then it hands you a short brief.", "Your data stays yours.", "At its core, it's a calendar.",
+    "This is where the AI comes in.", "Because it matters."]) {
+    assert.ok(rules(s).includes("model-tell"), s);
+  }
+  assert.ok(!rules("Back up anything that matters.").includes("model-tell"));
+});
+
+test("one staccato run is enough", () => {
+  assert.ok(rules("No contracts. No setup fees. Just results.").includes("triads"));
+});
+
+test("text a line at a time: today's tells only", () => {
+  const app = (s) => findings(s, { kind: "text" }).map((f) => f.rule);
+  assert.deepEqual(app("Learn more about two-factor sign-in.\nWelcome to the team.\nUse a trusted device."), []);
+  assert.deepEqual(app("New requests land here.\nSaved — reload to see it."), ["model-tell", "em-dash"]);
+});
+
+test("a long heading and a long hero are hints", () => {
+  const lede = "Your site loads fast and stays up while the AI checks it every Monday for broken links and slow images and then fixes whatever it found as soon as you ask it to.";
+  const found = check([{ heading: "A website you change by asking that the AI checks every single week for you", body: `${lede}\nStart your site` }]);
+  assert.deepEqual(found.filter((f) => f.rule.startsWith("long-")).map((f) => [f.rule, f.severity]), [["long-heading", "hint"], ["long-hero", "hint"]]);
+  assert.ok(!check([{ heading: "A website you change by asking.", body: "The AI builds the pages and checks them every week.\nStart your site" }]).some((f) => f.rule.startsWith("long-")));
+});
+
 test("a rhetorical question, then its answer", () => {
   assert.ok(rules("Tired of leaks? We fix them fast.").includes("rhetorical-question"));
 });
@@ -80,10 +138,14 @@ test("dated vocabulary counts by density, not one word", () => {
   assert.ok(rules("We delve into intricate, meticulous work.").includes("dated-vocabulary"));
 });
 
-test("'X, not Y.' is only a hint; 'It's not X, it's Y' is an error", () => {
-  const level = (t, rule) => findings(t).find((f) => f.rule === rule)?.severity;
-  assert.equal(level("Cash only, not cards.", "negation-pivot"), "hint");
+test("'X, not Y' is an error in a heading or with 'not just', a hint in a sentence, and left alone a line at a time", () => {
+  const level = (t, rule, kind) => findings(t, { kind }).find((f) => f.rule === rule)?.severity;
+  const heading = (t) => check([{ heading: t, body: "Booking opens at 9 AM." }]).find((f) => f.rule === "negation-tail")?.severity;
+  assert.equal(heading("Fill your chairs, not your phone"), "error");
+  assert.equal(level("Clients book online, not just by phone.", "negation-tail"), "error");
+  assert.equal(level("Cash only, not cards.", "negation-tail"), "hint");
   assert.equal(level("It's not just a roof, it's peace of mind.", "negation-pivot"), "error");
+  assert.equal(level("Reply to the topic, not any specific post", "negation-tail", "text"), undefined);
 });
 
 test("uniform sentence length", () => {
@@ -172,4 +234,60 @@ test("the command: the count first, errors before hints, the first 40 and how to
   assert.equal(lines.filter((l) => /^ {2}(error|hint)/.test(l)).length, 40);
   assert.match(lines.at(-1), /^ {2}40 of \d+ shown; --json for all$/);
   assert.ok(lines.findIndex((l) => l.startsWith("  hint")) === -1 || lines.findIndex((l) => l.startsWith("  hint")) > lines.findLastIndex((l) => l.startsWith("  error")));
+});
+
+test("--scan reads every line of code, comments and skills, and a sentence wrapped across two", () => {
+  const dir = mkdtempSync(join(tmpdir(), "tropes-scan-"));
+  mkdirSync(join(dir, "lib"));
+  mkdirSync(join(dir, "node_modules"));
+  writeFileSync(join(dir, "lib", "jobs.ex"), '# A run that lands on a sleeping machine waits.\ndef label, do: "Saved"\n# This isn\'t about speed.\n# It\'s about order.\n');
+  writeFileSync(join(dir, "lib", "SKILL.md"), 'Bad: "It\'s not a CRM, it\'s a team." <!-- tropes-allow -->\n');
+  writeFileSync(join(dir, "node_modules", "x.js"), "// the update lands here\n");
+  writeFileSync(join(dir, "lib", "notes.md"), '> "Came out on Christmas Eve — no extra charge." Priya\nShe said "it all lands on time — every week".\n');
+  const found = scan([dir]).map((f) => [f.file.slice(dir.length + 1), f.line, f.rule]);
+  assert.deepEqual(found, [["lib/jobs.ex", 1, "model-tell"], ["lib/jobs.ex", 3, "negation-pivot"]]);
+  const r = spawnSync(process.execPath, [CLI, "--scan", dir], { encoding: "utf8" });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /^tropes: 2 findings in 1 file\./);
+  assert.match(r.stdout, /lib\/jobs\.ex:1  model-tell  "lands"/);
+  assert.match(r.stdout, /Fixes:\n  model-tell: /);
+});
+
+test("--words: a page's words as markdown, without the navigation or the pictures", () => {
+  const html = `<html><body><nav><a href="/">Home</a></nav><main>
+    <section><h1>Fall cleanup in Larkfield starts at $90.</h1><p>We clear the leaves &amp; cut the beds back.</p>
+    <a class="btn btn-primary" href="/book">Book a visit</a>
+    <div role="img" aria-label="a garden"><p>Mon 12 Oct</p><div>inner</div></div>
+    <ul><li>Lawns</li><li>Hedges</li></ul></section></main><footer>© 2026</footer></body></html>`;
+  assert.equal(wordsOf(html), "# Fall cleanup in Larkfield starts at $90.\n\nWe clear the leaves & cut the beds back.\n[Book a visit]\n\n- Lawns\n- Hedges\n");
+});
+
+test("the skills around this one carry no tells of their own", () => {
+  const skills = fileURLToPath(new URL("../..", import.meta.url));
+  const found = scan([skills]).map((f) => `${f.file.slice(skills.length)}:${f.line} ${f.rule} "${f.match}"`);
+  assert.deepEqual(found, []);
+});
+
+test("a business's plain sentences pass, and the tells in curly quotes are caught", () => {
+  const errors = (s) => findings(s).filter((f) => f.severity === "error" && !["weak-cta", "we-over-you"].includes(f.rule)).map((f) => f.rule);
+  for (const s of ["If it isn't working, it's probably the battery.", "If this isn't your first visit, it's quicker to sign in.",
+    "Cash only, not cards.", "Our ferry lands at the pier at 9.", "Fresh fish, landed this morning in Newlyn.",
+    "Your flight will land at Heathrow.", "She landed a big contract.", "We disinfect surfaces every visit.",
+    "Our valet hands you the keys.", "We do the heavy lifting for you on moving day.", "North Star Plumbing",
+    "We pressure-test every gas line.", "A pharmacy that compounds custom medications.", "Lean into the stretch.",
+    "Read the whole story.", "Licensed. Bonded. Insured.", "Dr. Ana Ruiz. Dr. Ben Cole. Dr. Kim Park."]) {
+    assert.deepEqual(errors(s), [], s);
+  }
+  for (const s of ["It’s not a CRM, it’s your whole business.", "This isn’t about software. It’s about your time.",
+    "Here’s where it gets interesting.", "No fluff. No filler.", "No contracts. No setup fees. Just results."]) {
+    assert.ok(errors(s).length, s);
+  }
+  assert.deepEqual(findings('if job.state == :landed do\n["queued", "landed"]', { kind: "text" }), []);
+});
+
+test("--words keeps a hero outside <main> and a header inside it, and leaves out what is hidden", () => {
+  const html = `<body><header><a href="/">Logo</a></header><section><h1>Hero line.</h1></section><main>
+    <header><h2>A quote for Sam</h2></header><img src="a.png" aria-hidden="true" alt=""><p>Paragraph <b>one</b>, here.</p>
+    <div class="hidden md:block">desk</div><div hidden>modal</div><a href="/x"><h3>Lawn care</h3><p>Weekly</p></a></main><footer>© 2026</footer></body>`;
+  assert.equal(wordsOf(html), "# Hero line.\n\n## A quote for Sam\n\nParagraph one, here.\n\n### Lawn care\n\nWeekly\n");
 });

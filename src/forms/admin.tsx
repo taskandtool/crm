@@ -611,7 +611,7 @@ function PaymentCard({ p, label, at }: { p: Payment; label: string; at?: (id: st
  * or just a contact.
  */
 export type FormDeals = {
-  /** The stages a deal can land in, first the one it lands in by default. */
+  /** The stages a deal can start in, the default one first. */
   stages: (c: Context) => Promise<{ value: string; label: string }[]>;
   /** Who can own one: the team, then anyone already written down. */
   owners: (c: Context) => Promise<string[]>;
@@ -1105,7 +1105,7 @@ function Editor(props: {
             {props.deals ? (
               <div class="mt-2 grid gap-4 sm:grid-cols-2">
                 <label class={fieldClass + " hidden group-has-[input[value=deal]:checked]/becomes:flex"}>
-                  Deals land in
+                  New deals start in
                   <select name="deal_stage" class={controlClass}>
                     {props.deals.stages.map((st) => <option value={st.value} selected={st.value === form.deal_stage}>{st.label}</option>)}
                   </select>

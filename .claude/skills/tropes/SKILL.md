@@ -10,29 +10,37 @@ particular should be. Readers and platforms trust work that reads as
 generated less, so it costs the owner customers and reach. Fix it with the
 specific thing that was missing, not a synonym.
 
-Version: 0.1.1 (taskandtool/skills)
+Version: 0.3.0 (taskandtool/skills)
 
 ## Copy, by script
 
-The app's own check runs the script: `npm run check:copy` (the Website),
-`npm run check` (the CRM's proposal words) or `python3 scripts/check.py`
-(Marketing). For any other text:
+One set of tells for everything the AI writes; two ways to check it.
 
-```
-node .claude/skills/tropes/tropes.mjs [--kind page|post|ad] [--json] <file|->
-```
+- **Every line, anywhere:** `node .claude/skills/tropes/tropes.mjs --scan
+  <file or folder>...` reads code, comments, strings, templates, notes and
+  skills a line at a time: the figures of speech, the pivots, the riders,
+  the em dash. Others' words in markdown (a blockquote, text in quotation
+  marks) are left alone; a line holding `tropes-allow` is a deliberate
+  example. Each app's own check runs it over what the AI writes.
+- **A piece of copy, whole:** `node .claude/skills/tropes/tropes.mjs
+  [--kind page|post|ad] <file>` adds what only shows across a page, post or
+  ad: triads, rhythm, "X, not Y", joined headings, the hero's length.
+  Markdown headings split it into sections. The app's check runs it on its
+  output (`npm run check:copy` on a website's built pages, `npm run check`
+  on the CRM's proposals, `python3 scripts/check.py` on Marketing's
+  creatives).
 
-Markdown headings split the text into sections; each is checked with its
-heading and against the others. Each finding prints its rule, the words and
-the fix. `error` fails the check (exit 1); `hint` is worth a look and never
-fails: a real list of three stays.
+`error` fails the check (exit 1); a `hint` is for you to judge and never fails: a
+real list of three stays. For a cold read, `--words <page.html>` prints a
+built page's words as markdown.
 
 ## Fixing a finding
 
 - Rewrite the flagged line whole; never patch the phrase, and never add a
   fact to fill the gap a cut left. A missing fact is a `NEED:` line for the owner.
-- Strongest tells first: invented proof, the negation pivot, significance
-  inflation, then vocabulary.
+- Strongest tells first: invented proof, the negation pivot and "X, not Y",
+  today's models' figures of speech ("lands in your inbox", "hands you"),
+  then older vocabulary.
 - An owner who insists on a flagged phrase keeps it; the website marks it
   `data-lint-allow="<rule>"`.
 

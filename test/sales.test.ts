@@ -80,7 +80,7 @@ test("the morning email: overdue first, then today, then the leads", () => {
   ], "2026-10-08", 3);
   assert.equal(m.subject, "1 overdue and 1 due today");
   assert.match(m.text, /Overdue\n- Call: Call back Pat \(Pat Doe, 555 0100\), due 2026-10-06\n\nToday\n- Email: Send the quote \(Bo Ray\), 14:00\n\n3 new leads came in since yesterday\./);
-  assert.doesNotMatch(m.text, /—/);
+  assert.doesNotMatch(m.text, /—/); // tropes-allow
 });
 
 test("deals: opened, moved, closed; winning makes an open status a customer; the board's totals", async (t) => {

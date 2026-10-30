@@ -1,7 +1,7 @@
 // Applies a skill's schema.sql to the project's database: its create tables
 // and indexes, each written to run again harmlessly (`if not exists`), since
 // every app that carries the skill runs it at setup and when its service
-// starts. Table names are plain, never schema-qualified, so every table lands
+// starts. Table names are plain, never schema-qualified, so every table is created
 // in the one namespace every app reads.
 //
 // Machine only: run it from the app's setup or start script, never per request

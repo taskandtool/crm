@@ -19,7 +19,7 @@ drifts). When there is no sample yet, say so and leave the line to fill.
 
 ```text
 VOICE CARD
-reader:        to fill: the actual person who lands here and what they need
+reader:        to fill: the person who reads this site and what they need from it
 speaker:       to fill: who is talking (the owner, the team, the company)
 relationship:  to fill: peer | guide | operator | expert | host
 register:      plain
@@ -64,7 +64,7 @@ voice.
 
 | Generic | In this voice |
 |---|---|
-| to fill: e.g. "We offer bespoke kitchen solutions tailored to your needs." | to fill: e.g. "We make kitchens to fit the room you have." |
+| to fill: e.g. "We offer bespoke kitchen solutions tailored to your needs." <!-- tropes-allow --> | to fill: e.g. "We make kitchens to fit the room you have." |
 | to fill | to fill |
 
 ## Lexicon

@@ -136,7 +136,7 @@ test("an order: two kinds of cookies and delivery, taxed, paid through Checkout 
     const [pay] = await s.db.sql`select id::text as id, amount_cents::text as amount, status from payments where ref_type = 'submission' and ref_id = ${sub.id} order by id desc`;
     assert.deepEqual([pay.amount, pay.status], ["12600", "pending"]);
 
-    // The webhook: paid, with the total tax included.
+    // The webhook: paid. The total includes tax.
     res = await event(app, "checkout.session.completed", {
       id: "cs_2", object: "checkout.session", payment_status: "paid", payment_intent: "pi_1", amount_subtotal: 12600, amount_total: 13640, currency: "usd",
       customer_details: { email: "ann@example.com" }, metadata: session.metadata,

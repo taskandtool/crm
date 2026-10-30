@@ -26,7 +26,7 @@ hour before by default. Schedule it once (the `schedule-job` skill; check
 visible to clients:
 
 ```bash
-python3 ~/tools/taskandtool.py schedule-job "Booking reminders" --when "*/15 * * * *" --route /jobs/booking-reminders --team-only
+python3 ~/tools/taskandtool.py schedule-job "Booking reminders" --when "*/15 * * * *" --route /jobs/booking-reminders
 ```
 
 `bookingJobs(getDb, { before: [1440, 120] })` changes the times. The job

@@ -357,7 +357,7 @@ export const MESSAGES: FlashMessages = {
   "stage-archived": "Stage archived.",
   "stage-restored": "Stage restored, at the end of the pipeline.",
   "stage-in-use": { error: "Something is still in that stage. Choose a stage to move it to, then archive it." },
-  "last-open": { error: "Keep at least one open stage in each list: new ones land there." },
+  "last-open": { error: "Keep at least one open stage in each list: new ones start there." },
   "bad-target": { error: "Choose an active stage to move them to." },
   "pick-stage": { error: "Choose one of the stages." },
   "pick-status": { error: "Choose one of the statuses." },

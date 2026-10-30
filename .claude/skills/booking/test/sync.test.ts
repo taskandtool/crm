@@ -535,7 +535,7 @@ test("event_key is filled for every booking and stays put", (t) =>
     assert.deepEqual(await s.db.sql`select event_key from bookings order by id`, before, "running the schema again changes nothing");
   }));
 
-test("a booking moved to another person leaves the first one's calendar and lands in theirs", (t) =>
+test("a booking moved to another person leaves the first one's calendar and is added to theirs", (t) =>
   withDb(t, async (s) => {
     const { resource, calendarId } = await setup(s, "google");
     const sam = await createPerson(s.db, { name: "Sam", email: "sam@example.com", time_zone: "UTC" }, "o@example.com", "test");

@@ -64,7 +64,7 @@ Everything a business wants changed is one of these.
 
 2. **Statuses and deal stages are rows**, in `pipeline_stages` and
    `deal_stages`, edited on `/stages` or with `node scripts/stages.mjs`
-   (`--statuses` for a customer's). New ones land in the first open one. A
+   (`--statuses` for a customer's). New ones start in the first open one. A
    stage is archived, never deleted, and only once nothing is in it
    (`--move-to` moves them in the same transaction); each list keeps at
    least one open stage.

@@ -1,5 +1,5 @@
 -- forms: every form in the project is a row, and every submission from any
--- app lands in one table the CRM reads.
+-- app is saved to one table the CRM reads.
 
 create table if not exists forms (
   id              bigserial primary key,
@@ -21,7 +21,7 @@ create table if not exists forms (
   -- converts its request. Only with leads on.
   deals boolean not null default false,
   -- Whose each submission's lead (and its deal) is, as Pipedrive's web forms set an
-  -- owner; and the stage its deal lands in (a key of the app's stages; the first
+  -- owner; and the stage its deal starts in (a key of the app's stages; the first
   -- open one when empty or gone).
   owner citext,
   deal_stage text,

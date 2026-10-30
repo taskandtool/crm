@@ -185,7 +185,7 @@ export async function convertLead(db: Db, id: string, dealId: string, user: stri
  * as Convert to deal does (its submission done, its booking on the deal, a
  * "Call back" task). The lead stays, converted, as the deal's "Where it came
  * from". Each is claimed before its deal is made, so two requests at once
- * make one deal; a lead with no open stage to land in is let go, and a claim
+ * make one deal; a lead with no open stage to start in is let go, and a claim
  * left unfinished (the process stopped between) is taken up again after a
  * few minutes. Cheap when none is waiting; run before the team's pages and
  * the AI's lists.
