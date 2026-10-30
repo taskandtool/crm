@@ -9,8 +9,6 @@ Clear beats clever, and clear beats voice. A reader skims, gives a line a
 second or two, and leaves when they can't tell what it offers. Write what
 the business does and what the reader gets, in words a person would say.
 
-Version: 0.1.0 (taskandtool/skills)
-
 ## Where the words come from
 
 The facts are the owner's notes this app keeps (its `AGENTS.md` names them:

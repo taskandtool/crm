@@ -10,8 +10,6 @@ One number, or a few with labels, on the **owner's own Twilio account**
 Twilio). `twilio.ts` is the only file that knows Twilio; everything else
 talks to its `Provider`. From chat: `node scripts/phone.mjs` (`--help`).
 
-Version: 0.2.0 (taskandtool/skills)
-
 ## The rules
 
 - **Twilio is a connection**:

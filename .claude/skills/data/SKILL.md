@@ -9,8 +9,6 @@ Every app in a project shares one Postgres database, so a CRM installed
 later finds the Website's form submissions, bookings and payments already
 there.
 
-Version: 0.5.0 (taskandtool/skills)
-
 ## The rules
 
 - **One set of tables for the project, each by its plain name.** Every app

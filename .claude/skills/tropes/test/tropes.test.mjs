@@ -109,11 +109,10 @@ test("text a line at a time: today's tells only", () => {
   assert.deepEqual(app("New requests land here.\nSaved — reload to see it."), ["model-tell", "em-dash"]);
 });
 
-test("a long heading and a long hero are hints", () => {
+test("a long heading is a hint; the line under it may run long", () => {
   const lede = "Your site loads fast and stays up while the AI checks it every Monday for broken links and slow images and then fixes whatever it found as soon as you ask it to.";
   const found = check([{ heading: "A website you change by asking that the AI checks every single week for you", body: `${lede}\nStart your site` }]);
-  assert.deepEqual(found.filter((f) => f.rule.startsWith("long-")).map((f) => [f.rule, f.severity]), [["long-heading", "hint"], ["long-hero", "hint"]]);
-  assert.ok(!check([{ heading: "A website you change by asking.", body: "The AI builds the pages and checks them every week.\nStart your site" }]).some((f) => f.rule.startsWith("long-")));
+  assert.deepEqual(found.filter((f) => f.rule.startsWith("long-")).map((f) => [f.rule, f.severity]), [["long-heading", "hint"]]);
 });
 
 test("a rhetorical question, then its answer", () => {

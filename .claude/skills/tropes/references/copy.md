@@ -58,7 +58,7 @@ The older lists below are mostly 2023's, and people wrote many of them before an
 
 | Trope | Fix |
 |---|---|
-| Long heading `long-heading`, long hero `long-hero` (hints): a heading over 12 words; a hero line under the headline over 30 | One thing per heading; the hero says what it is and what the reader gets, the sections say the rest |
+| Long heading `long-heading` (a hint): a heading over 12 words | One thing per heading; the line under it says the rest |
 | Uniform sentence length `uniform-length` (a hint): every sentence about as long as the last | Over six or more sentences, the longest is at least 12 words longer than the shortest |
 | Low punctuation variety: long "and"-joined sentences, few commas/semicolons, no parentheses (Economist) | Break at the "and". Let one sentence carry an aside |
 | Paragraph uniformity (claim, example, restatement, repeated) | Vary the order. Some paragraphs are one line |

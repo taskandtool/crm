@@ -14,8 +14,6 @@ the project database reads the same rows: the Website's `/book` pages
 take bookings, the CRM sets types, hosts and hours and lists the bookings
 by email.
 
-Version: 0.9.0 (taskandtool/skills)
-
 ## The rules
 
 - **Pages read Postgres for busy times.** A page never reads a calendar

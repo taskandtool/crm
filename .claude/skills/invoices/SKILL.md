@@ -17,8 +17,6 @@ on money and test mode hold here.
 From chat, the app's `scripts/quotes.mjs`, `invoices.mjs` and
 `recurring.mjs` do everything below (`--help` on each).
 
-Version: 0.5.0 (taskandtool/skills)
-
 ## The rules
 
 - **The owner asking is the yes.** "Send Ann the invoice", "void #12": run

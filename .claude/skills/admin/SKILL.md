@@ -8,8 +8,6 @@ description: "The private side of an app: lists of what came in (submissions, bo
 Private views over the project's tables: the CRM's starting surface and the
 Website's `/admin`. The other skills build their own lists on these pieces.
 
-Version: 0.3.1 (taskandtool/skills)
-
 ## Where private views live
 
 Private views sit under one prefix (`/admin`, `/reports`) and are private by

@@ -9,8 +9,6 @@ Report pages are private views (`admin`) with charts in them. The figures
 are computed on the server, in SQL or from Google's rows; the browser only
 draws them.
 
-Version: 0.2.3 (taskandtool/skills)
-
 ## Figures that go wrong quietly
 
 - **Bucket in the business's zone, in SQL**: `date_trunc('week', created_at

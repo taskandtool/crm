@@ -10,8 +10,6 @@ One `customers` row per person the business deals with, keyed by email, a
 The CRM lists and edits them; any other app (the Website's submission page)
 reads them and adds notes, and both see the same rows.
 
-Version: 0.2.0 (taskandtool/skills)
-
 ## The rules
 
 - **Everyone who gets in touch is a customer, at once.** Whatever saves a

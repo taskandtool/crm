@@ -155,11 +155,9 @@ const FIX = {
   "model-tell": 'a figure of speech today\'s models overuse: say the literal thing ("appears here", "starts in the first stage") or cut it',
   "with-rider": "end the sentence at the comma; say the rest as its own sentence with a subject, or cut it",
   "long-heading": "a heading says one thing; move the rest to the line under it",
-  "long-hero": "the hero's line under the headline in one or two short sentences; the rest belongs in the sections",
 };
-export const HINT_RULES = ["puffery", "long-heading", "long-hero"];
+export const HINT_RULES = ["puffery", "long-heading"];
 const HEADING_WORDS = 12;
-const HERO_WORDS = 30;
 
 const finding = (rule, match, severity = HINT_RULES.includes(rule) ? "hint" : "error") =>
   ({ rule, match: String(match).trim(), fix: FIX[rule], severity });
@@ -325,18 +323,7 @@ export function check(sections, { kind = "page" } = {}) {
   });
   out.push(...weFindings(sections.map((s) => `${s.heading || ""}\n${s.body || ""}`).join("\n"), kind));
   out.push(...repeated(sections));
-  if (kind === "page") out.push(...heroFindings(sections));
   return out;
-}
-
-/** A page's hero is its first section with a heading; its lede is the first
- * line under it of six words or more (a button or a note is shorter). */
-function heroFindings(sections) {
-  const i = sections.findIndex((s) => s.heading);
-  if (i < 0) return [];
-  const lede = (sections[i].body || "").split("\n").map((l) => l.trim()).find((l) => l.split(/\s+/).length >= 6);
-  const n = lede ? lede.split(/\s+/).length : 0;
-  return n > HERO_WORDS ? [{ ...finding("long-hero", `${n} words: ${lede}`), section: i }] : [];
 }
 
 /** Markdown (or plain text) into sections: each heading starts one; frontmatter is skipped. */

@@ -11,8 +11,6 @@ paid appointment with questions are each a form, named for what it takes
 (`order`, `intake`), and "my orders" is that form's submissions. A new
 form or a new question is a change to a row, never a migration.
 
-Version: 0.8.0 (taskandtool/skills)
-
 ## The rules
 
 - **Look first, and use the command.** `node scripts/forms.mjs list` before

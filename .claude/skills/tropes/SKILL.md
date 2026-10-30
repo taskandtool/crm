@@ -10,8 +10,6 @@ particular should be. Readers and platforms trust work that reads as
 generated less, so it costs the owner customers and reach. Fix it with the
 specific thing that was missing, not a synonym.
 
-Version: 0.3.0 (taskandtool/skills)
-
 ## Copy, by script
 
 One set of tells for everything the AI writes; two ways to check it.
