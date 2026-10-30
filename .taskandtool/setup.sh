@@ -89,7 +89,7 @@ if [ -f "$HOME/tools/taskandtool.py" ]; then
   if jobs=$(python3 "$HOME/tools/taskandtool.py" list-jobs --json 2>/dev/null); then
     if ! printf '%s' "$jobs" | grep -q "/jobs/automatic-texts"; then
       echo "== scheduling the automatic texts"
-      python3 "$HOME/tools/taskandtool.py" schedule-job "Automatic texts" --when "*/15 * * * *" --route /jobs/automatic-texts --team-only \
+      python3 "$HOME/tools/taskandtool.py" schedule-job "Automatic texts" --when "*/15 * * * *" --route /jobs/automatic-texts \
         || echo "== warning: the automatic texts' job is not scheduled; run this script again"
     fi
   else

@@ -99,7 +99,7 @@ Set it up once, in this order:
 5. Recurring invoices need the time zone (lever 1) and one daily job, if
    `python3 ~/tools/taskandtool.py list-jobs` does not show it, at the UTC
    hour that is 06:00 in `time_zone`:
-   `python3 ~/tools/taskandtool.py schedule-job "Recurring invoices" --when "0 <h> * * *" --route /jobs/recurring-invoices --team-only`
+   `python3 ~/tools/taskandtool.py schedule-job "Recurring invoices" --when "0 <h> * * *" --route /jobs/recurring-invoices`
    (`src/crm/jobs.ts`).
 
 The `invoices` skill has the rules, sending among them; `src/invoices/` is its code.
