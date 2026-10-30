@@ -282,7 +282,8 @@ test("a business's plain sentences pass, and the tells in curly quotes are caugh
     "Here’s where it gets interesting.", "No fluff. No filler.", "No contracts. No setup fees. Just results."]) {
     assert.ok(errors(s).length, s);
   }
-  assert.deepEqual(findings('if job.state == :landed do\n["queued", "landed"]', { kind: "text" }), []);
+  assert.deepEqual(findings('if job.state == :landed do\n["queued", "landed"]\nlanded = visit(hook)\ncheck(code?(landed, "/x"), "#{landed.status}")', { kind: "text" }), []);
+  assert.ok(rules("The quote landed. Then the next one landed, too.").includes("model-tell"));
 });
 
 test("--words keeps a hero outside <main> and a header inside it, and leaves out what is hidden", () => {

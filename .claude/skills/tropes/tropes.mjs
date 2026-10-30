@@ -81,8 +81,8 @@ const VAGUE_FIT = [
 const MODEL_TELLS = [
   // "lands in your inbox", "the report lands every Monday", "when a lead lands,";
   // a plane, a boat, a catch, a job or a client landed, a landed cost, a
-  // landing page and a code token (:landed, "landed") pass
-  /(?<!\b(plane|planes|flight|flights|jet|helicopter|drone|aircraft|rocket|ferry|ferries|boat|boats|ship|ships|vessel|fish|catch|we|you|they|I|she|he),?\s)(?<![:"'`_])\b(lands|landed)\b(?!["'`_])(?! (a|an|the|another|more|new|two|three|your first|our first|their first)( \w+)? (job|jobs|client|clients|deal|deals|contract|contracts|role|customer|customers|sale|sales|gig|interview|account|accounts)\b)(?! cost)(?! (this|that|today|each) (morning|week|day))/gi,
+  // landing page and code (:landed, "landed", a variable `landed = …`) pass
+  /(?<!\b(plane|planes|flight|flights|jet|helicopter|drone|aircraft|rocket|ferry|ferries|boat|boats|ship|ships|vessel|fish|catch|we|you|they|I|she|he),?\s)(?<![:"'`_({.])(?<!#\{)\b(lands|landed)\b(?!["'`_(])(?!\s*=(?![=>]))(?!\.\w)(?! (a|an|the|another|more|new|two|three|your first|our first|their first)( \w+)? (job|jobs|client|clients|deal|deals|contract|contracts|role|customer|customers|sale|sales|gig|interview|account|accounts)\b)(?! cost)(?! (this|that|today|each) (morning|week|day))/gi,
   /(?<!\b(flight|flights|plane|planes|ferry|boat|ship|we|you|they|I) )\b(will|to|can|should|they|ones|replies|messages|emails|leads|requests|bookings|deals|orders|payments|invoices|files|updates) land (here|there|in|on|at|directly|straight|right)\b/gi,
   /\blanding (in|on) (your|the|their) (inbox|desk|desktop|phone|lap|calendar)\b/gi,
   /\bwhere (it|they|this|that|everything|I|we) (lands?|landed)\b/gi,
