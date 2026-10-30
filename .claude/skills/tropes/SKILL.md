@@ -21,7 +21,8 @@ One set of tells for everything the AI writes; two ways to check it.
   skills a line at a time: the figures of speech, the pivots, the riders,
   the em dash. Others' words in markdown (a blockquote, text in quotation
   marks) are left alone; a line holding `tropes-allow` is a deliberate
-  example. Each app's own check runs it over what the AI writes.
+  example. In a code file's comments and docs the em dash is let be; the
+  other tells still count there. Each app's own check runs it over what the AI writes.
 - **A piece of copy, whole:** `node .claude/skills/tropes/tropes.mjs
   [--kind page|post|ad] <file>` adds what only shows across a page, post or
   ad: triads, rhythm, "X, not Y", joined headings, the hero's length.

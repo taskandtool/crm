@@ -370,12 +370,38 @@ export function textFiles(paths) {
   return paths.filter((p) => existsSync(p)).flatMap(walk);
 }
 
+// A code file's comments and docs: lines that start with a comment marker,
+// and /* */, <%!-- --%> and @doc/@moduledoc heredoc blocks. A writer's em dash
+// there is no reader's business, so only the other tells count on them.
+const CODE_FILE = /\.(ex|exs|eex|ts|tsx|js|mjs|cjs|py|sh|sql|css)$/;
+function commentLines(lines) {
+  const out = new Set();
+  let block = null;
+  lines.forEach((l, i) => {
+    const t = l.trim();
+    if (block) {
+      out.add(i);
+      if (t.includes(block)) block = null;
+      return;
+    }
+    if (/^(#|\/\/|\*|--(?!-))/.test(t)) out.add(i);
+    const open = t.match(/^(\/\*|<%!--)/) || t.match(/^@(moduledoc|doc|typedoc)\s+(~S)?"""/);
+    if (!open) return;
+    out.add(i);
+    const close = open[0] === "/*" ? "*/" : open[0] === "<%!--" ? "--%>" : '"""';
+    const rest = open[0].startsWith("@") ? t.slice(t.indexOf('"""') + 3) : t.slice(open[0].length);
+    if (!rest.includes(close)) block = close;
+  });
+  return out;
+}
+
 /**
  * Every line of every file under `paths` through the text rules: code, its
  * comments and strings, templates and skills alike. Two lines are also read as
  * one, so a sentence wrapped across them is caught. A line holding
  * "tropes-allow" is a deliberate example and is skipped, and so, in
- * markdown, are others' words: a blockquote, or text in quotation marks.
+ * markdown, are others' words: a blockquote, or text in quotation marks. In
+ * a code file's comments and docs, the em dash alone is let be.
  * → [{ file, line, rule, match, fix, severity }]
  */
 export function scan(paths) {
@@ -383,6 +409,7 @@ export function scan(paths) {
   const bare = (l) => l.replace(/^\s*(\/\/+|\/\*+|#+|\*|--|<!--|<%!--|>|-|\d+\.)?\s*/, "").replace(/\s*(\*\/|-->|--%>)\s*$/, "").trim();
   for (const file of textFiles(paths)) {
     let lines = readFileSync(file, "utf8").split("\n");
+    const comments = CODE_FILE.test(file) ? commentLines(lines) : new Set();
     // In markdown, others' words sit in a blockquote or in quotation marks and
     // stay as their author wrote them; blanked, so line numbers hold.
     if (/\.md$/.test(file)) lines = lines.map((l) => (/^\s*>/.test(l) ? "" : l.replace(/"[^"\n]*"|“[^”\n]*”/g, (q) => " ".repeat(q.length))));
@@ -397,7 +424,7 @@ export function scan(paths) {
     };
     lines.forEach((l, i) => {
       if (l.includes(ALLOW)) return;
-      for (const f of textFindings(l)) add(i, f);
+      for (const f of textFindings(l)) if (!(f.rule === "em-dash" && comments.has(i))) add(i, f);
     });
     const single = new Set(seen);
     lines.forEach((l, i) => {

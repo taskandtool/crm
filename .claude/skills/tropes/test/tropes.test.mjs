@@ -291,3 +291,19 @@ test("--words keeps a hero outside <main> and a header inside it, and leaves out
     <div class="hidden md:block">desk</div><div hidden>modal</div><a href="/x"><h3>Lawn care</h3><p>Weekly</p></a></main><footer>© 2026</footer></body>`;
   assert.equal(wordsOf(html), "# Hero line.\n\n## A quote for Sam\n\nParagraph one, here.\n\n### Lawn care\n\nWeekly\n");
 });
+
+test("--scan lets an em dash be in a code file's comments and docs, not in its strings", () => {
+  const dir = mkdtempSync(join(tmpdir(), "tropes-comments-"));
+  writeFileSync(join(dir, "a.ex"), [
+    '# A backup runs nightly — the old one is kept.',
+    '@moduledoc """',
+    'One app — its machine and its code.',
+    '"""',
+    'def note, do: "Saved — reload to see it."',
+    '<%!-- the hero — first screen --%>',
+    '# The new request lands here.',
+  ].join("\n"));
+  writeFileSync(join(dir, "b.md"), "A backup runs nightly — the old one is kept.\n");
+  const found = scan([dir]).map((f) => [f.file.slice(dir.length + 1), f.line, f.rule]);
+  assert.deepEqual(found, [["a.ex", 5, "em-dash"], ["a.ex", 7, "model-tell"], ["b.md", 1, "em-dash"]]);
+});
