@@ -13,6 +13,12 @@ import os
 import re
 import sys
 
+try:
+    from PIL import Image, ImageOps
+    from PIL.PngImagePlugin import PngInfo
+except ImportError:  # said once a picture is to be made, so --help and misuse still answer
+    Image = None
+
 MAX_BYTES = 600 * 1024
 TRY = "python3 .claude/skills/brand/web_photos.py uploads/<file>"
 HELP_END = """Prints each picture written (its path, pixels and size), any left alone
@@ -68,7 +74,7 @@ def asked(width):
     return "web_photos width=%d" % width
 
 
-def made_for(Image, path):
+def made_for(path):
     """The request a copy records, or "" for one this script did not make."""
     try:
         info = Image.open(path).info
@@ -78,28 +84,34 @@ def made_for(Image, path):
     return v.decode("utf-8", "replace") if isinstance(v, bytes) else v
 
 
+def save(im, transparent, mark, quality):
+    """The image as JPEG at `quality`, or as PNG, with `mark` recorded in it
+    (a JPEG comment, a PNG text chunk)."""
+    buf = io.BytesIO()
+    if transparent:
+        text = PngInfo()
+        text.add_text("web_photos", mark)
+        im.save(buf, "PNG", optimize=True, pnginfo=text)
+    else:
+        im.save(buf, "JPEG", quality=quality, optimize=True, progressive=True, comment=mark.encode())
+    return buf.getvalue()
+
+
 def encode(im, transparent, mark):
-    """(bytes, image): the smallest good copy under MAX_BYTES, quality down
-    first, then a quarter smaller each round; the last try when nothing fits.
-    `mark` is recorded in the file (a JPEG comment, a PNG text chunk)."""
-    from PIL.PngImagePlugin import PngInfo
-    text = PngInfo()
-    text.add_text("web_photos", mark)
+    """(bytes, image): the first copy under MAX_BYTES, a JPEG's quality down
+    first, then a quarter smaller each round; the last try when nothing fits."""
+    qualities = (None,) if transparent else (85, 78, 70, 62, 55)
     while True:
-        for quality in (85, 78, 70, 62, 55):
-            buf = io.BytesIO()
-            if transparent:
-                im.save(buf, "PNG", optimize=True, pnginfo=text)
-            else:
-                im.save(buf, "JPEG", quality=quality, optimize=True, progressive=True, comment=mark.encode())
-            if buf.tell() <= MAX_BYTES or transparent:
-                break
-        if buf.tell() <= MAX_BYTES or min(im.size) < 200:
-            return buf.getvalue(), im
+        for quality in qualities:
+            data = save(im, transparent, mark, quality)
+            if len(data) <= MAX_BYTES:
+                return data, im
+        if min(im.size) < 200:
+            return data, im
         im = im.resize((im.width * 3 // 4, im.height * 3 // 4))
 
 
-def prepare(Image, ImageOps, src, dest_dir, name, crop, width):
+def prepare(src, dest_dir, name, crop, width):
     """Writes the web copy; returns what was written."""
     im = ImageOps.exif_transpose(Image.open(src))
     transparent = im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info)
@@ -161,9 +173,7 @@ def main(argv):
     twice = next((n for i, n in enumerate(names) if n in names[:i]), None)
     if twice:
         say("two of these would both be %s; run them one at a time with --as" % twice, code=2, as_json=as_json)
-    try:
-        from PIL import Image, ImageOps
-    except ImportError:
+    if Image is None:
         say("Pillow is not installed", try_cmd="python3 -m pip install pillow", as_json=as_json)
 
     written, kept = [], []
@@ -171,16 +181,16 @@ def main(argv):
         # Done only when a copy newer than the original was made for this same request.
         there = [os.path.join(args.to, "%s.%s" % (name, ext)) for ext in ("jpg", "png")]
         done = next((d for d in there if os.path.isfile(d) and os.path.getmtime(d) >= os.path.getmtime(src)
-                     and made_for(Image, d) == asked(args.width)), None)
+                     and made_for(d) == asked(args.width)), None)
         if done and not crop:
             kept.append(done)
             continue
         try:
-            written.append(prepare(Image, ImageOps, src, args.to, name, crop, args.width))
+            written.append(prepare(src, args.to, name, crop, args.width))
         except (OSError, ValueError) as e:
             before = ["written before it: %s" % w["path"] for w in written]
             say("%s could not be read as a picture (%s)" % (src, str(e).split("\n")[0][:200]), before,
-                try_cmd="a .jpg, .png, .webp or .heic file", as_json=as_json)
+                try_cmd="the picture as a .jpg, .png or .webp (an iPhone's HEIC: ask for it as a JPEG)", as_json=as_json)
 
     if args.json:
         print(json.dumps(written + [{"path": k, "kept": True} for k in kept], indent=2))
