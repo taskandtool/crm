@@ -80,17 +80,19 @@ first cold week."
 
 ## The cold read
 
-A checker misses jargon, vague claims and a sentence shape used three
-times. A fresh reader catches them. Read what this turn changed (one page,
+The cold read is the main check: the script catches a few shapes, a fresh
+reader with the list of tells catches the rest. Read what this turn changed (one page,
 one ad, one email), not the whole site, unless the owner asks for that.
 
 1. **The words alone, as markdown.** A built page:
    `node .claude/skills/tropes/tropes.mjs --words dist/<page>.html > /tmp/<page>.md`
    (headings, paragraphs, list items and `[buttons]`; no markup, navigation
    or pictures). An ad, post or email is already words.
-2. **A fresh sub-agent** gets only that file, the notes and `brand/voice.md`,
-   and lists every line that should change: `| line, exactly | replacement,
-   or CUT | why |` (a claim the notes don't hold, a line no person would say,
-   jargon, a vague line, a tell the check missed).
+2. **A fresh sub-agent** gets only that file, the notes, `brand/voice.md`
+   and the tropes skill's `references/copy.md`. For every line it asks: would
+   a person say this out loud, does the reader care, and which tell in
+   `references/copy.md` is it? It lists every line that should change:
+   `| line, exactly | replacement, or CUT | why |` (a claim the notes don't
+   hold, a tell by name, jargon, a vague line).
 3. **Apply the table in one pass.** Without a sub-agent, read the words
    yourself as a stranger, and say so.

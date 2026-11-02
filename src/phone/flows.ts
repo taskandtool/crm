@@ -2,8 +2,7 @@
 // flow's picture (admin.tsx FlowPicture) and the AI's command all read, so
 // what is shown is what is sent. Our words are here; an owner's changes
 // are `text_flows` rows (only what differs), and deleting the row brings
-// ours back. The words, their lengths and why each says what it says:
-// docs/plans/crm-calls-and-texts-messages.md in the platform repo.
+// ours back.
 //
 // A text is one 160-character segment of plain characters (GSM-7): one
 // emoji or curly quote makes the whole text the 70-character kind. Saving

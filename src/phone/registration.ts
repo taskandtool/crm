@@ -18,8 +18,7 @@
 // Toll-free: messaging /v1/Tollfree/Verifications for the number
 // (PENDING_REVIEW, IN_REVIEW, TWILIO_APPROVED, TWILIO_REJECTED).
 //
-// The words are ours (docs/plans/crm-calls-and-texts-messages.md, "For the
-// texting registration"). The name and the privacy and terms pages are the
+// The words are ours. The name and the privacy and terms pages are the
 // business's, set once (data/business.ts), and the texting box on the
 // forms says the same (forms/consent.ts): reviewers check one against the
 // other on the live form the words name (`optInPage`).

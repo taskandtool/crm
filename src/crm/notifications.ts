@@ -1,5 +1,5 @@
 // The bell: what happened without the team doing it, newest first, as
-// Jobber's activity feed (docs/plans/crm-contacts-leads-deals.md).
+// Jobber's activity feed.
 // A booker's own move or cancel (the booking skill's booking_changes), a
 // proposal the customer signed or declined at its link, and money paid
 // through Stripe, and a text, voicemail or missed call to the business

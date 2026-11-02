@@ -5,7 +5,7 @@
 // says what is true at 8am. Edge-safe: the CRM's production Worker sends
 // the missed-call text and its own pages' texts; the job sends the rest.
 //
-// The rules (docs/plans/crm-calls-and-texts.md, "The rules every flow keeps"):
+// The rules every flow keeps:
 // - consent: a ticked box, or they called or texted first
 // - never to a number that said STOP, or a contact marked Don't text
 // - consent by box only for a text that isn't an answer to them (the nudge

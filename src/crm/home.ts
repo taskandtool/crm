@@ -1,4 +1,4 @@
-// Home, the first screen (docs/plans/crm-contacts-leads-deals.md), as
+// Home, the first screen, as
 // Jobber's Home: the figures (new leads this week against the week before,
 // the viewer's tasks due, the open pipeline, what was won this month, what
 // is owed), then four short lists, each a way into its own page. Days and

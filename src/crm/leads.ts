@@ -1,5 +1,5 @@
 // Leads: one enquiry each from a contact, as Pipedrive's leads and Jobber's
-// requests are (docs/plans/crm-contacts-leads-deals.md). The customers skill
+// requests are. The customers skill
 // makes them as people arrive (saveLead: a form submission, an online
 // booking) and the team adds one for a phone call; here they are read,
 // converted to a deal or archived with a reason. Open, converted or

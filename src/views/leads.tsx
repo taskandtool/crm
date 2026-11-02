@@ -1,7 +1,6 @@
 // Leads, as Pipedrive's Leads Inbox and Jobber's Requests: every enquiry, open
-// until it is converted to a deal or archived with a reason
-// (docs/plans/crm-contacts-leads-deals.md). The list (Open, Converted,
-// Archived), a lead's page, and New lead for a phone call.
+// until it is converted to a deal or archived with a reason. The list (Open,
+// Converted, Archived), a lead's page, and New lead for a phone call.
 import type { Child } from "hono/jsx";
 import { FieldList, Section } from "../admin/detail";
 import { Flash } from "../admin/flash";

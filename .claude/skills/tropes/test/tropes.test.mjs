@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { check, findings, repeated, scan, sectionsOf, wordsOf } from "../tropes.mjs";
+import { check, findings, repeated, scan, sectionsOf, series, wordsOf } from "../tropes.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,7 +19,7 @@ test("a heading of fragments joined by a colon or a comma; a list's commas, numb
   for (const h of ["Fall cleanup in Larkfield, from $90.", "Fall cleanup in Larkfield,from $90.", "What we do, and what it costs", "Garden design: a plan in a week, planted in spring.", "Spring planting, Elm Street", "Send a proposal that wins the job, or just an invoice."]) {
     assert.ok(rules("A line under it.", { heading: h }).includes("joined-heading"), h);
   }
-  for (const h of ["Fall cleanup in Larkfield starts at $90.", "Forms, bookings and payments on the site.", "Garden design, lawn, hedge and seasonal care", "1,412 visitors in October", "Open from 8:00 AM"]) {
+  for (const h of ["Fall cleanup in Larkfield starts at $90.", "Forms, bookings and payments on the site.", "If a client leaves, you can give them the code.", "Garden design, lawn, hedge and seasonal care", "1,412 visitors in October", "Open from 8:00 AM"]) {
     assert.ok(!rules("A line under it.", { heading: h }).includes("joined-heading"), h);
   }
 });
@@ -117,6 +117,10 @@ test("a long heading is a hint; the line under it may run long", () => {
 
 test("a rhetorical question, then its answer", () => {
   assert.ok(rules("Tired of leaks? We fix them fast.").includes("rhetorical-question"));
+  assert.ok(rules("Looking for a plumber in Leeds? Look no further.").includes("rhetorical-question"));
+  for (const hook of ["Radiators cold at the top? That's not the boiler.", "£180 repair or £2,400 boiler? Here's how I decide."]) {
+    assert.ok(!rules(hook, { kind: "ad" }).includes("rhetorical-question"), hook);
+  }
 });
 
 test("one triad is allowed, two are not", () => {
@@ -124,6 +128,23 @@ test("one triad is allowed, two are not", () => {
   assert.ok(rules("Fast. Simple. Effective. Roofs, gutters, and skylights.").includes("triads"));
 });
 
+test("a series is a short list with and or or, or a chain of clauses with the serial comma", () => {
+  assert.equal(series("Start from a website, CRM or project board.").length, 1);
+  assert.equal(series("We work at home, at the office or on the road.").length, 1);
+  assert.equal(series("Ask for a change, check it in a working copy, and publish it when it's right.").length, 1);
+  for (const s of ["When a client leaves, they take their code and data.", "If it rains, we reschedule, and you pay nothing.",
+    "Hi, I'm Dana, and I run the shop.", "It changes when you ask, in your colors and fonts.", "Once it's published, people use it around the clock and none of that counts."]) {
+    assert.deepEqual(series(s), [], s);
+  }
+});
+
+test("two lists of three in the hero are a hint; elsewhere nothing", () => {
+  const body = "Start from a website, CRM or project board. Ask for a change, check it in a working copy, and publish it.";
+  const hero = check([{ heading: "Apps you change by asking.", body }]).filter((f) => f.rule === "triads");
+  assert.deepEqual(hero.map((f) => f.severity), ["hint"]);
+  const later = check([{ heading: "Apps you change by asking.", body: "Book a visit." }, { heading: "How it works", body }]).filter((f) => f.rule === "triads");
+  assert.deepEqual(later, []);
+});
 test("triads are counted per section, so a list of parts does not trip them", () => {
   const sections = [
     { heading: "Roofs", body: "We fit slate, tile and lead." },
@@ -147,15 +168,6 @@ test("'X, not Y' is an error in a heading or with 'not just', a hint in a senten
   assert.equal(level("Reply to the topic, not any specific post", "negation-tail", "text"), undefined);
 });
 
-test("uniform sentence length", () => {
-  const flat = "We fit new boilers in a day. We service old ones in an hour. We clear blocked drains on site. " +
-    "We mend leaking taps for a fee. We test gas pipes once a year. We fit smart thermostats for you.";
-  assert.ok(rules(flat).includes("uniform-length"));
-  const varied = "Boilers. We fit new boilers in a day and take the old one away the same afternoon, at no charge. " +
-    "We service old ones. Drains too. Taps. And gas pipes, tested once a year with a certificate for your landlord.";
-  assert.ok(!rules(varied).includes("uniform-length"));
-});
-
 test("talking about itself: an error in an ad, a hint on a page", () => {
   const text = "We built our firm on our name. We are here for you.";
   assert.equal(findings(text, { kind: "ad" }).find((f) => f.rule === "we-over-you").severity, "error");
@@ -167,15 +179,13 @@ test("personal attributes only in ads", () => {
   assert.ok(!rules("Struggling with debt?", { kind: "post" }).includes("personal-attribute"));
 });
 
-test("weak calls to action, as a label or in a sentence", () => {
-  for (const label of ["Learn more", "Get started →", "Submit", "Click here", "Sign up"]) {
-    assert.deepEqual(rules(label), ["weak-cta"], label);
+test("weak calls to action are a hint; Get started and Sign up are fine", () => {
+  for (const label of ["Learn more", "Submit", "Click here"]) {
+    assert.deepEqual(findings(label).map((f) => [f.rule, f.severity]), [["weak-cta", "hint"]], label);
   }
-  assert.ok(rules("Click here to see our prices.").includes("weak-cta"));
-  assert.deepEqual(rules("Book a service"), []);
+  for (const label of ["Get started", "Sign up", "Book a service"]) assert.deepEqual(rules(label), [], label);
   assert.deepEqual(rules("Submit your meter reading by Friday and we credit it the same day."), []);
 });
-
 test("a line that only restates its heading", () => {
   assert.ok(rules("We do fast boiler repairs across Leeds.", { heading: "Fast boiler repairs in Leeds" }).includes("restates-heading"));
   assert.ok(!rules("Same-day visits from Headingley to Horsforth, £85 for the first hour.", { heading: "Fast boiler repairs in Leeds" }).includes("restates-heading"));
@@ -195,12 +205,6 @@ test("the same four-word phrase on two sections", () => {
   assert.equal(found[0].match, "same two engineers since 2004");
   assert.deepEqual(found[0].sections, [0, 1]);
   assert.deepEqual(repeated([{ body: "one of the best in the city" }, { body: "one of the best in town" }]), []);
-});
-
-test("unsourced puffery is a hint; with a number it is fine", () => {
-  const f = findings("A trusted, certified local firm.");
-  assert.deepEqual(f.map((x) => [x.rule, x.severity]), [["puffery", "hint"]]);
-  assert.deepEqual(rules("Gas Safe certified since 2004, register number 512345."), []);
 });
 
 test("markdown splits into sections at its headings, past the frontmatter", () => {
@@ -307,3 +311,33 @@ test("--scan lets an em dash be in a code file's comments and docs, not in its s
   const found = scan([dir]).map((f) => [f.file.slice(dir.length + 1), f.line, f.rule]);
   assert.deepEqual(found, [["a.ex", 5, "em-dash"], ["a.ex", 7, "model-tell"], ["b.md", 1, "em-dash"]]);
 });
+
+test("--words reads a '>' inside an attribute as part of the tag, and keeps the space before '.zip'", () => {
+  const html = `<body><main><ul class="[&_article>img]:size-9"><li>Start from a repo or a .zip.</li></ul></main></body>`;
+  assert.equal(wordsOf(html), "- Start from a repo or a .zip.\n");
+});
+
+test("--words: an apostrophe in a script does not swallow the page", () => {
+  const html = `<body><main><script>if (a<b) { /* it's */ }</script><p>Book a visit.</p><p>Call us.</p></main></body>`;
+  assert.equal(wordsOf(html), "Book a visit.\n\nCall us.\n");
+});
+
+test("an order joined to a vague result is an error on a page", () => {
+  for (const s of ["Send it a price list and the site uses it.", "Save the brand once and every page uses it.",
+    "Change a price in the Brain, and the next page or post they write uses the new one."]) {
+    assert.ok(rules(s).includes("order-result"), s);
+  }
+  assert.ok(!rules("Upload a price list in the chat. The AI adds the prices to your site.").includes("order-result"));
+  assert.ok(!rules("Remove one, and the app can't use it anymore.").includes("order-result"));
+  assert.ok(!findings("Send it a price list and the site uses it.", { kind: "text" }).some((f) => f.rule === "order-result"));
+});
+
+test("'once' as a promise of no effort is an error; a literal once is not", () => {
+  for (const s of ["Ask once, and it runs every Monday.", "When Ana's season ends, remove her once.", "Change a fact once and your apps follow."]) {
+    assert.ok(rules(s).includes("effort-once"), s);
+  }
+  for (const s of ["It checks the notes once a week.", "Upgrades take effect at once.", "We send your share once it reaches $50.", "A person listed twice comes in once."]) {
+    assert.ok(!rules(s).includes("effort-once"), s);
+  }
+});
+

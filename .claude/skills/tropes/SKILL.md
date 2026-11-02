@@ -22,12 +22,10 @@ One set of tells for everything the AI writes; two ways to check it.
   example. In a code file's comments and docs the em dash is let be; the
   other tells still count there. Each app's own check runs it over what the AI writes.
 - **A piece of copy, whole:** `node .claude/skills/tropes/tropes.mjs
-  [--kind page|post|ad] <file>` adds what only shows across a page, post or
-  ad: triads, rhythm, "X, not Y", joined headings, the hero's length.
-  Markdown headings split it into sections. The app's check runs it on its
-  output (`npm run check:copy` on a website's built pages, `npm run check`
-  on the CRM's proposals, `python3 scripts/check.py` on Marketing's
-  creatives).
+  <file>` adds what only shows across a page, post or ad: triads, rhythm,
+  "X, not Y", joined headings, two lists of three in the hero (`--kind` names which;
+  `--help` lists them). Markdown headings split it into sections. The
+  app's own check, named in its `AGENTS.md`, runs it on what the app makes.
 
 `error` fails the check (exit 1); a `hint` is for you to judge and never fails: a
 real list of three stays. For a cold read, `--words <page.html>` prints a
@@ -45,7 +43,9 @@ built page's words as markdown.
 
 ## By eye
 
-The script lets some through. Read the copy aloud against the brand's voice
+The script holds only rules that rarely fire on people's copy, so most tells
+need a reader: the cold read in the `writing` skill, with `references/copy.md`
+("Today's sentence shapes" first). Read the copy aloud against the brand's voice
 notes: would the owner say it, could a competitor run it unchanged, is the
 one triad or contrast earned? Then pictures at full size and at 25%
 (`references/images.md`), and video frames at 0, 25, 50, 75 and 100%

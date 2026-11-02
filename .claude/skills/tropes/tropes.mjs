@@ -104,6 +104,21 @@ const MODEL_TELLS = [
   /\b(trust|value|growth|knowledge|advantage|progress) compounds\b/gi,
   /\blet'?s (break (it|this) down|unpack)\b/gi, /\bshed light on\b/gi,
 ];
+// The stock question and its stock answer: "Tired of leaks? We've got you.",
+// "Looking for a plumber? Look no further." A hook's real question with a
+// specific answer ("Radiators cold at the top? That's not the boiler.") passes.
+const RHETORICAL = [
+  /(?:^|(?<=[.!?]\s))(?:Tired|Sick|Fed up) (?:of|with) [^?\n]{1,60}\?(?:[ \t]+[A-Z][^.!?\n]{0,60}[.!])?/gm,
+  /[^.!?\n]{3,80}\?[ \t]+(?:We'?ve got (?:you|your back)(?: covered)?|We can help|We'?re here to help|Let us help|Look no further|You'?ve come to the right place|You'?re in the right place)\b[^.!?\n]{0,40}[.!]/gi,
+];
+
+// An order joined to a vague result: "Send it a price list and the site uses
+// it", "Save the brand once and every page uses it". None in the 2020 pages.
+const ORDER_RESULT = /\band (?:the|every|your|its|their|all|other|each)\b(?:(?!\bnot\b|n't|\bnever\b)[^.!?;\n]){0,40}?\b(?:uses?|gets?) (?:it|them|the new one)\b/gi;
+// "once" as a promise that it takes no effort: "Ask once", "remove her once",
+// "Change a fact once and…". "Once a week", "at once" and "once it reaches $50" pass.
+const EFFORT_ONCE = /(?<!\bat )\b(?:ask|tell|set|save|change|connect|add|remove|enter|type|upload|write|do)\b(?: [\w']+){0,3} once\b(?! (?:a|an|every|per|it|they|you|we|the|he|she|your)\b)/gi;
+
 // Common in people's speech too, so only hints.
 const MODEL_HINTS = [/\bhonestly\b/gi, /\bquietly\b/gi, /\bgenuinely\b/gi, /\bthe real (cost|value|work|test|story)\b/gi, /\blean(s|ing)? into\b/gi,
   /\b(lives|live) (in|on) (one place|your|the same|its own)\b/gi, /\byours to (keep|own|take)\b/gi,
@@ -125,11 +140,9 @@ const PERSONAL_ATTRIBUTES = [
 const ERA_WORDS = /\b(delve|intricate|meticulous|testament|garnered|align with|enhance|fostering|showcasing|highlighting|bolstered|emphasizing|underscores?|pivotal|vibrant|interplay)\b/gi;
 
 // A label that names the mechanism, not what the reader gets.
-const WEAK_CTA = /^(submit|click here|learn more|read more|find out more|see more|get started|sign up|explore|discover)$/i;
+const WEAK_CTA = /^(submit|click here|learn more|read more|find out more|see more)$/i;
 const WEAK_CTA_IN_TEXT = /\b(click here|learn more|read more|find out more)\b/gi;
 
-// Praise anyone can claim; fine with a number or a source beside it.
-const PUFFERY = /\b(certified|honest|quality|trusted|premier|top-rated|reliable|professional|leading)\b/gi;
 
 const STOP = new Set(("a an and are as at be by for from has have i in is it its of on or our so that the their them they this to up us we with you your " +
   "will can do does all any not no just more most than then there here what when who how if into out about over only also one best every each other some very own way like get").split(" "));
@@ -141,22 +154,22 @@ const FIX = {
   "negation-tail": 'state the claim alone ("Bookings fill your chairs."); keep it only when the "not" is a plain fact a customer needs ("Cash only, not cards.")',
   "vague-fit": "name what changes to fit: the stages, the fields, the hours, the price",
   "ing-rider": "cut the clause, or make it a sentence with a subject",
-  "rhetorical-question": "say the answer as a statement",
+  "rhetorical-question": "say what you offer as a statement; a hook's real question with a specific answer is fine",
   triads: "a rhythm of threes reads as generated: keep a real list of three, rewrite three-beat phrasing to the number of things there are",
   "dated-vocabulary": "the plain word; these date the copy to a model generation",
-  "uniform-length": "mix short sentences with long ones",
   "we-over-you": "write about what the reader gets; at least as much you as we",
   "personal-attribute": "speak about the offer, not the reader's condition (Meta refuses it)",
   "weak-cta": 'name what the reader gets: "Book a survey", "Check availability"',
   "restates-heading": "the line under a heading adds a fact the heading did not say",
   "joined-heading": 'one plain sentence or a plain label: "Fall cleanup in Larkfield starts at $90.", not "Fall cleanup in Larkfield, from $90." or "Garden design: a plan in a week"',
   "repeated-phrase": "say it once, where it matters most",
-  puffery: "a number, a name or a source beside it, or cut it",
   "model-tell": 'a figure of speech today\'s models overuse: say the literal thing ("appears here", "starts in the first stage") or cut it',
   "with-rider": "end the sentence at the comma; say the rest as its own sentence with a subject, or cut it",
   "long-heading": "a heading says one thing; move the rest to the line under it",
+  "order-result": 'say who does what, in order, with the real verb: "Send us your price list and we update the prices page.", not "Send us a price list and the site uses it"',
+  "effort-once": 'cut "once"; say the step plainly ("remove her from the team"), or the real number ("set it up in one call")',
 };
-export const HINT_RULES = ["puffery", "long-heading"];
+export const HINT_RULES = ["long-heading", "repeated-phrase", "weak-cta"];
 const HEADING_WORDS = 12;
 
 const finding = (rule, match, severity = HINT_RULES.includes(rule) ? "hint" : "error") =>
@@ -185,10 +198,8 @@ function phraseFindings(raw, place = "body") {
   for (const rx of MODEL_TELLS) for (const m of text.matchAll(rx)) out.push(finding("model-tell", m[0]));
   for (const rx of MODEL_HINTS) for (const m of text.matchAll(rx)) out.push(finding("model-tell", m[0], "hint"));
   for (const m of text.matchAll(WEAK_CTA_IN_TEXT)) out.push(finding("weak-cta", m[0]));
-  for (const s of text.split(/(?<=[.!?])\s+|\n+/)) {
-    const hits = s.match(PUFFERY);
-    if (hits && !/\d/.test(s)) out.push(finding("puffery", [...new Set(hits.map((h) => h.toLowerCase()))].join(", ")));
-  }
+  for (const m of text.matchAll(ORDER_RESULT)) out.push(finding("order-result", m[0]));
+  for (const m of text.matchAll(EFFORT_ONCE)) out.push(finding("effort-once", m[0]));
   return out;
 }
 
@@ -206,6 +217,8 @@ function weFindings(text, kind) {
  * numbers (1,412) and times (8:00).
  */
 export function joinedHeading(heading) {
+  // "If a client leaves, you can give them the code." is one sentence, not two fragments
+  if (/^(if|when|once|while|after|before|because|although|unless|until)\b/i.test(String(heading || "").trim())) return null;
   const h = String(heading || "").replace(/(\d),(\d)/g, "$1$2").replace(/(\d):(\d)/g, "$1$2").replace(/\s+/g, " ").trim();
   if (/[A-Za-z)]:\s*\S/.test(h)) return h;
   const parts = h.split(/,\s*/);
@@ -213,6 +226,43 @@ export function joinedHeading(heading) {
   const tail = parts[parts.length - 1];
   const list = / (and|or) /.test(` ${tail}`) && !/^(and|or|but)\b/i.test(tail);
   return list ? null : h;
+}
+
+// A series of three or more, joined by "and" or "or": a list of short items
+// ("a website, CRM or project board"), or a chain of clauses with the serial
+// comma ("Ask for a change, check it, and publish it"). A clause and a pair
+// ("When a client leaves, they take their code and data") is neither.
+const W = String.raw`[\w$'’&-]+`;
+const SHORT_SERIES = new RegExp(String.raw`\b(?:${W} ){0,2}${W}, (?:(?:${W} ){0,2}${W}, )*(?:${W} ){0,2}${W},? (?:and|or) (?:${W} ){0,2}${W}\b`, "gi");
+const CLAUSE_SERIES = new RegExp(String.raw`\b(?:${W} ){0,7}${W}, (?:(?:${W} ){0,7}${W}, )+(?:and|or) ${W}(?: ${W}){0,7}`, "gi");
+// "If it rains, we reschedule, and you pay nothing." "Hi, I'm Dana, and…": a lead-in, not an item
+const LEAD_IN = /^(if|when|whenever|once|while|after|before|because|since|although|though|unless|until|as|so|but|yes|no|hi|hello|thanks|today|now|then)\b/i;
+// "…when you ask, in your colors and fonts": a clause, then a pair in a phrase
+const PREP = /^(in|on|at|with|for|from|by|to|of|into|across|through|over|under)\b/i;
+const rider = (m) => {
+  const [a, b = ""] = m.split(", ");
+  const p = b.match(PREP)?.[0].toLowerCase();
+  return Boolean(p) && !new RegExp(`\\b${p}\\b`, "i").test(a);
+};
+export function series(text) {
+  const found = [];
+  for (const rx of [CLAUSE_SERIES, SHORT_SERIES]) {
+    for (const m of straight(text).matchAll(rx)) {
+      if (LEAD_IN.test(m[0]) || rider(m[0])) continue;
+      const [a, b] = [m.index, m.index + m[0].length];
+      if (!found.some((f) => a < f.b && f.a < b)) found.push({ a, b, text: m[0] });
+    }
+  }
+  return found.sort((x, y) => x.a - y.a).map((f) => f.text);
+}
+
+// A page's hero is its first section with a heading. Two lists of three in
+// its few lines read as generated; a hint, since people write them too.
+function heroFindings(sections) {
+  const i = sections.findIndex((s) => s.heading);
+  if (i < 0) return [];
+  const found = series(sections[i].body || "");
+  return found.length > 1 ? [{ ...finding("triads", found.slice(0, 3).join("; "), "hint"), section: i }] : [];
 }
 
 // One section: the phrase tells in its heading and body, and the shapes that
@@ -227,8 +277,7 @@ function sectionFindings(text, { kind = "page", heading = "" } = {}) {
   const label = text.trim().replace(/[\s→›».!]+$/, "");
   out.push(...phraseFindings(text, "body"));
   if (WEAK_CTA.test(label) && !out.some((f) => f.rule === "weak-cta")) out.push(finding("weak-cta", label));
-  for (const m of text.matchAll(/[^.!?\n]{3,80}\?[ \t]+[A-Z][^.!?\n]{0,60}[.!]/g)) out.push(finding("rhetorical-question", m[0]));
-  const triads = text.match(/\b\w+(?: \w+)?, \w+(?: \w+)?,? and \w+(?: \w+)?\b/g) || [];
+  for (const rx of RHETORICAL) for (const m of text.matchAll(rx)) out.push(finding("rhetorical-question", m[0].trim()));
   // three clipped sentences in a row; an abbreviation (Dr., St.) is not one
   const staccato = (text.match(/(?:\b[A-Z]\w*(?: \w+){0,2}\. ){2}[A-Z]\w*(?: \w+){0,2}\./g) || [])
     .filter((m) => !/\b(Dr|St|Mr|Mrs|Ms|Jr|Sr|Inc|Ltd|Co|Ave|Rd|Mt|No|Vol|Fig)\. /.test(m));
@@ -237,14 +286,9 @@ function sectionFindings(text, { kind = "page", heading = "" } = {}) {
   const pivot = text.match(/(?:^|[.!?]\s+)(No|Less|More|Zero|Not) \w+(?: \w+)?\. (No|Less|More|Zero|Not|Just) \w+(?: \w+){0,2}\./gm) || [];
   if (pivot.length) out.push(finding("triads", pivot[0].replace(/^[.!?]\s+/, "")));
   else if (staccato.length) out.push(finding("triads", staccato[0], kind === "page" ? "hint" : undefined));
-  else if (triads.length > 1) out.push(finding("triads", triads.slice(0, 3).join("; "), kind === "page" ? "hint" : undefined));
   const era = text.match(ERA_WORDS) || [];
   const n = text.split(/\s+/).filter(Boolean).length;
   if (era.length >= 2 && (era.length * 100) / n >= 1.5) out.push(finding("dated-vocabulary", [...new Set(era.map((e) => e.toLowerCase()))].sort().join(", ")));
-  const lengths = sentences(text).map((s) => s.split(/\s+/).length);
-  if (lengths.length >= 6 && Math.max(...lengths) - Math.min(...lengths) < 12) {
-    out.push(finding("uniform-length", `${Math.min(...lengths)} to ${Math.max(...lengths)} words`, "hint"));
-  }
   if (heading) {
     const h = new Set(content(heading));
     const first = sentences(text)[0] || text.trim();
@@ -323,7 +367,8 @@ export function check(sections, { kind = "page" } = {}) {
   });
   out.push(...weFindings(sections.map((s) => `${s.heading || ""}\n${s.body || ""}`).join("\n"), kind));
   out.push(...repeated(sections));
-  return out;
+  const hero = kind === "page" ? heroFindings(sections) : [];
+  return [...out, ...hero];
 }
 
 /** Markdown (or plain text) into sections: each heading starts one; frontmatter is skipped. */
@@ -426,6 +471,21 @@ export function scan(paths) {
   return out;
 }
 
+// A ">" inside an attribute ("[&_article>img]:size-9") does not end its tag:
+// escape the brackets inside quoted attribute values. Scripts and styles are
+// gone by now, so a quote in code cannot run on into the page.
+function quotedBrackets(h) {
+  let out = "", tag = false, quote = "";
+  for (const c of h) {
+    if (quote) { out += c === ">" ? "&gt;" : c === "<" ? "&lt;" : c; if (c === quote) quote = ""; continue; }
+    if (tag && (c === '"' || c === "'")) quote = c;
+    else if (c === "<") tag = true;
+    else if (c === ">") tag = false;
+    out += c;
+  }
+  return out;
+}
+
 /** A rendered page's words as markdown, for a cold read: headings,
  * paragraphs, list items and [links and buttons]. The site's navigation,
  * header and footer (outside <main>), scripts, pictures (role="img",
@@ -436,7 +496,8 @@ export function wordsOf(html) {
   let h = String(html).replace(/<head\b[\s\S]*?<\/head>/i, " ").replace(/<!--[\s\S]*?-->/g, " ");
   const body = h.match(/<body\b[^>]*>([\s\S]*)<\/body>/i);
   if (body) h = body[1];
-  h = h.replace(/<(script|style|svg|noscript|template|nav)\b[\s\S]*?<\/\1>/gi, " ");
+  h = quotedBrackets(h.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, " "));
+  h = h.replace(/<(svg|noscript|template|nav)\b[\s\S]*?<\/\1>/gi, " ");
   // the site's own header and footer sit outside <main>; a page's own header inside it is copy
   const main = h.search(/<main\b/i), end = h.search(/<\/main>/i);
   if (main >= 0 && end > main) {
@@ -472,12 +533,12 @@ export function wordsOf(html) {
     .replace(/<\/?(b|strong|em|i|u|small|code|mark|sup|sub|abbr|s|time|q)\b[^>]*>/gi, "")
     .replace(/<[^>]+>/g, " ")
     .replace(/&(#?\w+);/g, (m, e) => ENT[e] ?? (e[0] === "#" ? String.fromCodePoint(parseInt(e.slice(1).replace(/^x/, "0x"))) : m));
-  return h.split("\n").map((l) => l.replace(/[ \t]+/g, " ").replace(/ ([,.;:!?])/g, "$1").trim()).filter((l) => l !== "-").join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+  return h.split("\n").map((l) => l.replace(/[ \t]+/g, " ").replace(/ ([,.;:!?])(?![\w])/g, "$1").trim()).filter((l) => l !== "-").join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
 }
 
 // ── the command ──────────────────────────────────────────────────────────
 const CAP = 40;
-const HELP = `node tropes.mjs [--json] [--kind page|post|ad] <file|->
+const HELP = `node tropes.mjs [--json] [--kind page|post|ad|text] <file|->
 node tropes.mjs --scan [--json] [--all] <path>...
 node tropes.mjs --words <page.html|->
 
@@ -486,7 +547,7 @@ Checks copy for the tells of generated text.
 The first form checks one piece of copy: plain text or markdown, where each
 heading starts a section, checked with its heading and against the others.
 - reads stdin.
-  --kind page   a web page (default); we/you balance is a hint
+  --kind page   a web page (default): its first section is the hero; we/you balance is a hint
   --kind post   an organic post
   --kind ad     a paid ad: adds Meta's personal-attribute rule
   --kind text   any text a line at a time: only the tells inside a sentence
