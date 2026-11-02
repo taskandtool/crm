@@ -13,7 +13,8 @@ const HELP = `leads.mjs <command> [...] [--json] [--as <email>]      enquiries: 
   show <id>                            who, where it came from, what they said, what they already have
   add <who> "<what they need>" [--source ${MANUAL_SOURCES.join("|")}] [--notes n] [--owner o]
                                        a phone call or a walk-in; a form or an online booking makes its own
-  archive <id> [--reason "${ARCHIVE_REASONS.join('" | "')}"] [--undo]
+  archive <id> [--reason "${ARCHIVE_REASONS.join('" | "')}"]
+  restore <id>                         an archived lead, open again
 
 <who> is a customer's id, email or phone (customers.mjs add makes someone new).
 To convert a lead into a ${deal}: node scripts/deals.mjs add <who> --lead <id>
@@ -25,24 +26,23 @@ Prints what happened first, then Next:. A re-run says "already" and changes
 nothing. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`;
 
 const FLAGS: Record<string, string[]> = {
-  list: ["converted", "archived", "source", "owner", "find", "limit"], show: [], add: ["source", "notes", "owner", "as"], archive: ["reason", "undo", "as"],
+  list: ["converted", "archived", "source", "owner", "find", "limit"], show: [], add: ["source", "notes", "owner", "as"], archive: ["reason", "as"], restore: ["as"],
 };
-const WORDS: Record<string, number> = { list: 0, show: 1, archive: 1 };
+const WORDS: Record<string, number> = { list: 0, show: 1, archive: 1, restore: 1 };
 
-const a = parseArgs(process.argv.slice(2), { bare: ["converted", "archived", "undo"] });
+const a = parseArgs(process.argv.slice(2), { bare: ["converted", "archived"] });
 const [cmd, ...rest] = a._;
 usage(a, cmd, Object.keys(FLAGS), HELP, "leads", FLAGS);
 const at = `leads ${cmd}`;
 if (WORDS[cmd] !== undefined) noMore(rest, WORDS[cmd], at);
 const json = has(a, "json");
 const show = (id: string) => `node scripts/leads.mjs show ${id}`;
-if (["show", "archive"].includes(cmd) && !/^#?\d{1,18}$/.test(rest[0] ?? "")) misused(`${at}: name a lead by its id (#12 is 12)`, "node scripts/leads.mjs list");
+if (["show", "archive", "restore"].includes(cmd) && !/^#?\d{1,18}$/.test(rest[0] ?? "")) misused(`${at}: name a lead by its id (#12 is 12)`, "node scripts/leads.mjs list");
 if (has(a, "converted") && has(a, "archived")) misused(`${at}: one of --converted or --archived`, "node scripts/leads.mjs list --archived");
 const source = flag(a, "source");
 if (source && !(Object.keys(SOURCE_LABELS) as string[]).includes(source)) misused(`${at}: --source ${source}: one of ${Object.keys(SOURCE_LABELS).join(", ")}`, "node scripts/leads.mjs --help");
 if (cmd === "add" && source && !(MANUAL_SOURCES as string[]).includes(source)) misused(`${at}: --source ${source}: a lead added by hand is ${MANUAL_SOURCES.join(", ")}`, "node scripts/leads.mjs --help");
 const reason = flag(a, "reason");
-if (reason && has(a, "undo")) misused(`${at}: --reason is for archiving; --undo opens it again`, `node scripts/leads.mjs archive ${rest[0] ?? "<id>"} --undo`);
 if (reason && !ARCHIVE_REASONS.includes(reason)) misused(`${at}: --reason ${reason}: one of ${ARCHIVE_REASONS.join(", ")}`, "node scripts/leads.mjs --help");
 
 const fmt = (l: Lead) =>
@@ -92,13 +92,15 @@ await withDb(async (db) => {
       return result(l, `added ${fmt(l)}`, { next: convert(l) });
     }
 
+    case "restore": {
+      const l = await leadOr(rest[0]);
+      if (l.status !== "archived") return result(l, `lead ${l.id} is ${l.status}, not archived; left alone`);
+      await reopenLead(db, l.id, user);
+      return result(await getLead(db, l.id), `lead ${l.id} (${l.customer_name}) is open again`, { next: show(l.id) });
+    }
+
     case "archive": {
       const l = await leadOr(rest[0]);
-      if (has(a, "undo")) {
-        if (l.status !== "archived") return result(l, `lead ${l.id} is ${l.status}, not archived; left alone`);
-        await reopenLead(db, l.id, user);
-        return result(await getLead(db, l.id), `lead ${l.id} (${l.customer_name}) is open again`, { next: show(l.id) });
-      }
       if (l.status !== "open") return result(l, `lead ${l.id} is already ${l.status}; left alone`);
       await archiveLead(db, l.id, reason ?? "Other", user);
       return result(await getLead(db, l.id), `lead ${l.id} (${l.customer_name}) archived: ${reason ?? "Other"}`, { next: "node scripts/leads.mjs list" });

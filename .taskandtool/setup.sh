@@ -11,7 +11,7 @@
 #      builds the CSS once
 #   3. installs tt-crawl (the site reader the brand skill fills brand/ and
 #      public/ with, for the proposal's components) and its browsers, and
-#      Pillow (scripts/proposal-photo.mjs sizes the photographs with it)
+#      Pillow (the brand skill's web_photos.py sizes the photographs with it)
 #   4. registers the `web` service (`npm run dev`) so the CRM runs in dev on
 #      the machine's URL, or restarts it after a replacement
 #   5. schedules the automatic texts' job (the route /jobs/automatic-texts,
@@ -69,7 +69,7 @@ python3 -m pip install --quiet --upgrade "ttcrawl @ $CRAWLER" 2>&1 | tail -1 || 
 python3 -m pip install --quiet --force-reinstall --no-deps "ttcrawl @ $CRAWLER" 2>&1 | tail -1 || true
 python3 -m ttcrawl setup || echo "tt-crawl setup did not finish every step; its output above says which"
 tt-crawl --version || echo "== warning: tt-crawl is not on the PATH; the brand skill cannot read a site until bash .taskandtool/setup.sh runs clean"
-python3 -c "import PIL" 2>/dev/null || python3 -m pip install --quiet pillow 2>&1 | tail -1 || echo "== warning: Pillow did not install; scripts/proposal-photo.mjs needs it"
+python3 -c "import PIL" 2>/dev/null || python3 -m pip install --quiet pillow 2>&1 | tail -1 || echo "== warning: Pillow did not install; the brand skill's web_photos.py needs it"
 
 # 4. The web service. `npm run dev` rebuilds the CSS and restarts the server
 # on every change; the server applies schema.sql once DATABASE_URL is in

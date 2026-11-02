@@ -127,7 +127,7 @@ app's `tsconfig.json` needs `"allowJs": true`.
 ## When the database is not there
 
 No `DATABASE_URL` means the app has no database yet: ask the owner with
-`python3 ~/tools/taskandtool.py request-capability postgres`.
+`python3 ~/tools/taskandtool.py request-database`.
 
 ## Files
 

@@ -30,22 +30,22 @@ go in its message (`--notes`).
 **A component is its file** in `src/proposals/components/`: its design and
 its words written in, registered in `index.ts`. It starts with sample words
 (`sample: true`, and Send says so while one is ticked). Make it the
-business's from the brand record: `node scripts/proposal-read.mjs <their
-site>` reads their site and, when the app has the `google-places`
-connection, their Google listing; the `brand` skill turns those into
+business's from the brand record: `tt-crawl brand <their site> --places`
+reads their site and, when the app has the `google-places` connection,
+their Google listing; the `brand` skill turns those into
 `brand/` (look, logo, photographs in `brand/images/`) and `public/`
 (business, services, team, proof). Write every component from those notes
 (`references/proposal-writing.md`), then set `sample: false`.
 
 Photographs are `photo("brand/images/<file>")`, built into the page:
-`node scripts/proposal-photo.mjs <file>` puts one there at page size,
-`--crop` cutting off a logo or a frame laid on it. Change a component's
+`python3 .claude/skills/brand/web_photos.py <file> --width 1600` puts one
+there at page size, `--crop` cutting off a logo or a frame laid on it. Change a component's
 look, add one (a file and a line in `index.ts`) or remove one when asked.
 The look as a whole is `styles/proposal.css`: its tokens from
 `brand/visual-identity.md`, its fonts by
-`node scripts/proposal-font.mjs "<Family>" --for display|body`. The page
+`node scripts/proposal-font.mjs "<Family>"`. The page
 runs no script and loads nothing: keep it so. After any change:
-`npm run css`, `npm run check`, then `node scripts/proposal-preview.mjs`
+`npm run css`, `npm run check`, then `node scripts/proposal-sample.mjs`
 and read the desktop images it names.
 
 **Sending** gives a private link: emailed through the owner's sender, or

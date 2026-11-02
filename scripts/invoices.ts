@@ -38,7 +38,7 @@ async function invoiceForEvent(db: Db, event: Event, by: string, at: string): Pr
     return { invoice: (await invoiceById(db, id))!, outcome: "drafted" };
   }
   const currency = (event.currency ?? s.currency).toLowerCase();
-  if (!event.email) fail(`${at}: ${event.customer_name ?? event.name} has no email, and Stripe emails the invoice`, event.customer_id ? `node scripts/customers.mjs update ${event.customer_id} --email <address>` : `node scripts/events.mjs show ${event.id}`);
+  if (!event.email) fail(`${at}: ${event.customer_name ?? event.name} has no email, and Stripe emails the invoice`, event.customer_id ? `node scripts/customers.mjs edit ${event.customer_id} --email <address>` : `node scripts/events.mjs show ${event.id}`);
   const customer = event.customer_id ? await findCustomer(db, event.customer_id) : null;
   const r = await createInvoice(db, {
     email: event.email, name: event.customer_name ?? event.name, phone: event.phone, address: customer?.address ?? event.location,
@@ -69,7 +69,7 @@ await invoicesCli(process.argv.slice(2), {
             if (!rest[0] || !/^\d{1,18}$/.test(rest[0])) misused(`${at}: name a ${word()} by its id`, pastOnes);
             if (rest.length > 1) misused(`${at}: unexpected ${rest.slice(1).join(" ")}`, "node scripts/invoices.mjs --help");
             const event = (await getEvent(db, rest[0])) ?? fail(`${at}: no ${word()} #${rest[0]}`, pastOnes);
-            if (!billable(event)) fail(`${at}: ${word()} #${event.id} has no amount`, `node scripts/events.mjs update ${event.id} --amount <price>`);
+            if (!billable(event)) fail(`${at}: ${word()} #${event.id} has no amount`, `node scripts/events.mjs edit ${event.id} --amount <price>`);
             const { invoice, outcome } = await invoiceForEvent(db, event, by, at);
             if (has(a, "json")) return out(true, { outcome, invoice }, String);
             if (outcome === "left_alone") {
@@ -84,7 +84,7 @@ await invoicesCli(process.argv.slice(2), {
             if (rest.length > 1) misused(`${at}: unexpected ${rest.slice(1).join(" ")}`, "node scripts/invoices.mjs --help");
             if (has(a, "event") && !/^\d{1,18}$/.test(flag(a, "event") ?? "")) misused(`${at}: --event takes a ${word()}'s id`, `node scripts/events.mjs list --customer ${rest[0]}`);
             const c = await resolveCustomer(db, rest[0], at);
-            if (!c.email) fail(`${at}: ${c.name} has no email, and Stripe emails the invoice`, `node scripts/customers.mjs update ${c.id} --email <address>`);
+            if (!c.email) fail(`${at}: ${c.name} has no email, and Stripe emails the invoice`, `node scripts/customers.mjs edit ${c.id} --email <address>`);
             const json = has(a, "json");
             const finished = (await customerEvents(db, c.id)).filter((e) => e.status === "completed");
             const unbilled: Event[] = [];
@@ -93,7 +93,7 @@ await invoicesCli(process.argv.slice(2), {
             let event: Event;
             if (has(a, "event")) {
               event = finished.find((e) => e.id === flag(a, "event")) ?? fail(`${at}: ${c.name} has no finished ${word()} #${flag(a, "event")}`, `node scripts/events.mjs list --customer ${c.email}`);
-              if (!billable(event)) fail(`${at}: ${word()} #${event.id} has no amount`, `node scripts/events.mjs update ${event.id} --amount <price>`);
+              if (!billable(event)) fail(`${at}: ${word()} #${event.id} has no amount`, `node scripts/events.mjs edit ${event.id} --amount <price>`);
             } else {
               // A retry of a send that went through must not bill the next one:
               // an invoice sent to them in the last hour is the one they asked for.

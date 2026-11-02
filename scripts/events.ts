@@ -23,7 +23,7 @@ const HELP = ((ev) => !ev ? OFF : `events.mjs <command> [...] [--json] [--as <em
   show <id>
   add <who> "<what>" --at "YYYY-MM-DD HH:MM" [--length 60] [--service <name>] [--host <name>]
                [--where w] [--amount 245.00] [--notes n] [--deal <id>] [--field key=value]...
-  update <id> [--what w] [--at ...] [--length m] [--service s] [--host h] [--where w] [--amount a] [--notes n] [--deal <id>] [--field key=value]...
+  edit <id> [--what w] [--at ...] [--length m] [--service s] [--host h] [--where w] [--amount a] [--notes n] [--deal <id>] [--field key=value]...
                                        "" clears a value
   done <id> | no-show <id> | cancel <id>   completed and no-show only once it has started
 
@@ -40,10 +40,10 @@ nothing. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misus
 
 const FIELDS = ["at", "length", "service", "host", "where", "amount", "notes", "deal", "field", "as"];
 const FLAGS: Record<string, string[]> = {
-  list: ["overdue", "past", "all", "host", "find", "limit", "customer"], show: [], add: FIELDS, update: [...FIELDS, "what"],
+  list: ["overdue", "past", "all", "host", "find", "limit", "customer"], show: [], add: FIELDS, edit: [...FIELDS, "what"],
   done: ["as"], "no-show": ["as"], cancel: ["as"],
 };
-const WORDS: Record<string, number> = { list: 0, show: 1, update: 1, done: 1, "no-show": 1, cancel: 1 };
+const WORDS: Record<string, number> = { list: 0, show: 1, edit: 1, done: 1, "no-show": 1, cancel: 1 };
 
 const a = parseArgs(process.argv.slice(2), { bare: ["overdue", "past", "all"] });
 const [cmd, ...rest] = a._;
@@ -173,14 +173,14 @@ await withDb(async (db) => {
       return result(r, `added ${fmt(r)}`, { next: show(r.id) });
     }
 
-    case "update": {
+    case "edit": {
       const r = await eventOr(db, rest[0]);
       if (!["what", "at", "length", "service", "host", "where", "amount", "notes", "deal", "field"].some((k) => has(a, k))) misused(`${at}: nothing to change; name a flag such as --at`, "node scripts/events.mjs --help");
       const fr = fieldFlags(a, ev.fields, at, `${one} field`);
       const amount = amountFlag(r.amount_cents === null ? null : Number(r.amount_cents));
       const title = has(a, "what") ? clean(flag(a, "what"), 200) : r.title;
       const type = await serviceFlag(db, r.type_id);
-      if (!title && !type) misused(`${at}: it needs what it is, or a service`, `node scripts/events.mjs update ${r.id} --what "Annual tune-up"`);
+      if (!title && !type) misused(`${at}: it needs what it is, or a service`, `node scripts/events.mjs edit ${r.id} --what "Annual tune-up"`);
       const start = startWall(r, cfg.time_zone);
       const input: EventInput = {
         title, type_id: type, at: atFlag(start) ?? start, timeZone: cfg.time_zone,

@@ -41,6 +41,6 @@ curl -s -o /dev/null -w '%{http_code}\n' localhost:3000/healthz      # 200 once 
 A 404 without the header is the gate (`src/admin/guard.ts`), not a fault.
 If `/healthz` stays 503 the project has no Postgres yet: the owner adds it
 from the app's page, or ask with
-`python3 ~/tools/taskandtool.py request-capability postgres`. The server
+`python3 ~/tools/taskandtool.py request-database`. The server
 comes up without it and sets its tables up the moment `DATABASE_URL`
 appears.

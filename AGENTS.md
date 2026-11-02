@@ -37,29 +37,30 @@ Read the skill for what the owner asks before working from memory:
 Use these rather than doing the work by hand; each answers `--help`.
 
 ```bash
-node scripts/leads.mjs list                     # open enquiries, newest first; show, add (a phone call), archive --reason
+node scripts/leads.mjs list                     # open enquiries, newest first; show, add (a phone call), archive --reason, restore
 node scripts/deals.mjs add 18 --lead 5          # convert lead 5 into a deal for its contact, with a call back today
 node scripts/customers.mjs add "Ann Lee" --email ann@example.com   # "customers add: added #12 Ann Lee [Lead]", or "already here, not added"
 node scripts/events.mjs add ann@example.com "Boiler service" --at "next friday 9:30" --host Dana   # on the schedule; --at also "tomorrow 2pm", in the business's zone; say back the date it prints
-node scripts/customers.mjs find "lee"           # customers; also note, status, update, merge
+node scripts/customers.mjs find "lee"           # customers; also note, status, edit, archive, restore, merge
 node scripts/tasks.mjs list                # due today and overdue; --none: nothing planned; add, done, move
 node scripts/tasks.mjs add ann@example.com "Call about the quote" --on friday   # say back the day it prints
 node scripts/deals.mjs add ann@example.com "New furnace" --value 6500   # a deal; list, stage, won, lost --reason
-node scripts/events.mjs list                    # what is scheduled; done, no-show, cancel, update --amount
+node scripts/events.mjs list                    # what is scheduled; done, no-show, cancel, edit --amount
 node scripts/stages.mjs list                    # deal stages (--statuses: a customer's); rename, add, archive --move-to
 node scripts/forms.mjs submissions --form order # a form's submissions with their booking and payment; list, show, save
 node scripts/business.mjs show                  # the business's name, privacy and terms pages and address, as texts, quotes and forms print them; set --name
 node scripts/phone.mjs status                   # the business number, texting, each automatic text on or off; flows, set, threads, send
 node scripts/quotes.mjs proposal 7 --components about,reviews,team   # ticks exactly these; no flag: what it has
 node scripts/quotes.mjs send 7                  # prints the email; --confirm sends it with its link
-node scripts/proposal-read.mjs https://theirsite.com   # their site (homepage, menu, gallery, reviews, about, team) and their Google listing when connected
+tt-crawl brand https://theirsite.com --places      # their site and their Google listing into raw/, for the proposal's words
 node scripts/proposal-font.mjs "Caladea" --for display   # the business's font into the proposal page
-node scripts/proposal-preview.mjs              # the proposal on a made-up quote, as screenshots to read
-node scripts/proposal-photo.mjs raw/site/<host>/images/<file> --crop 0,0,25,0   # a photo into brand/images/ at page size, a logo in a corner cut off
+node scripts/proposal-sample.mjs               # the proposal on a made-up quote, as screenshots to read (a real one: quotes.mjs proposal <id>)
+python3 .claude/skills/brand/web_photos.py raw/site/<host>/images/<file> --width 1600 --crop 0,0,25,0   # a photo into brand/images/ at page size, a logo in a corner cut off
 node scripts/invoices.mjs send 3                # one invoice: what Stripe will do; --confirm does it; --charge: their saved card
 node scripts/recurring.mjs list                 # recurring invoices; add <who> ... --first --every --mode, pause, resume, end
 node scripts/import.mjs file.csv --dry-run      # a list in; the dry run first
 node scripts/export.mjs --out customers.csv     # the list out
+node scripts/migrate.mjs                        # every schema file applied, stages seeded; safe twice (dev and deploy run it)
 ```
 
 ## Where things are

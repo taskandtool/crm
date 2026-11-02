@@ -26,13 +26,13 @@ const HELP = `customers.mjs <command> [...] [--json] [--as <email>]
   add "<name>" [--email e] [--phone p] [--company c] [--address a] [--status s]
                [--source s] [--tag t]... [--owner o] [--notes n] [--field key=value]...
                                        an email or phone already here is reported, not added twice
-  update <who> [--name n] [--email e] [--phone p] [--company c] [--address a] [--source s]
-               [--owner o] [--notes n] [--field key=value]...      "" clears a value
+  edit <who> [--name n] [--email e] [--phone p] [--company c] [--address a] [--source s]
+             [--owner o] [--notes n] [--field key=value]...      "" clears a value
   status <who> <status>                a status key or label (Lead, Customer...)
   tag <who> <tag>... [--remove]
   note <who> "<text>" [--kind ${NOTE_KINDS.join("|")}] [--at "YYYY-MM-DD HH:MM"]
                                        --at is in the business's zone (${cfg.time_zone}), also "today 14:30"; default now
-  archive <who> [--undo]               never deletes
+  archive <who> | restore <who>        never deletes; restore makes them active again
   merge <keep> <other> [--confirm]     <other> into <keep>: what moves; --confirm merges (not undone)
 
 <who> is an id, an email or a phone number. Custom fields (--field):
@@ -45,14 +45,14 @@ nothing. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misus
 const DETAILS = ["email", "phone", "company", "address", "source", "owner", "notes", "field", "as"];
 const FILTERS = ["status", "tag", "owner", "archived", "limit"];
 const FLAGS: Record<string, string[]> = {
-  list: FILTERS, find: FILTERS, show: [], add: [...DETAILS, "status", "tag"], update: [...DETAILS, "name"],
-  status: ["as"], tag: ["remove", "as"], note: ["kind", "at", "as"], archive: ["undo", "as"], merge: ["confirm", "as"],
+  list: FILTERS, find: FILTERS, show: [], add: [...DETAILS, "status", "tag"], edit: [...DETAILS, "name"],
+  status: ["as"], tag: ["remove", "as"], note: ["kind", "at", "as"], archive: ["as"], restore: ["as"], merge: ["confirm", "as"],
 };
 /** The words each command takes at most; the free-text ones (find, add, note, status) are not counted. */
-const WORDS: Record<string, number> = { list: 0, show: 1, update: 1, archive: 1, merge: 2 };
+const WORDS: Record<string, number> = { list: 0, show: 1, edit: 1, archive: 1, restore: 1, merge: 2 };
 
 // Flags that take no value, so `tag 12 --remove vip` keeps vip as the tag.
-const a = parseArgs(process.argv.slice(2), { bare: ["archived", "remove", "undo", "confirm"] });
+const a = parseArgs(process.argv.slice(2), { bare: ["archived", "remove", "confirm"] });
 const [cmd, ...rest] = a._;
 usage(a, cmd, Object.keys(FLAGS), HELP, "customers", FLAGS);
 const at = `customers ${cmd}`;
@@ -150,16 +150,16 @@ await withDb(async (db) => {
         : result(r, `already here, not added: ${line}`, { lines: ["the same email or phone; left alone"], next: show(r.customer.id) });
     }
 
-    case "update": {
+    case "edit": {
       const c = await resolveCustomer(db, rest[0], at);
       const patch: Partial<Details> = {};
       for (const k of ["name", "email", "phone", "company", "address", "source", "owner", "notes"] as const) {
         if (!has(a, k)) continue;
         const v = flag(a, k) ?? "";
         if (k === "email") {
-          if (v && !normalizeEmail(v)) misused(`${at}: --email ${v} is not an email address`, `node scripts/customers.mjs update ${c.id} --email ann@example.com`);
+          if (v && !normalizeEmail(v)) misused(`${at}: --email ${v} is not an email address`, `node scripts/customers.mjs edit ${c.id} --email ann@example.com`);
           patch.email = normalizeEmail(v);
-        } else if (k === "name") patch.name = clean(v, 200) ?? misused(`${at}: --name cannot be empty`, `node scripts/customers.mjs update ${c.id} --name "Ann Lee"`);
+        } else if (k === "name") patch.name = clean(v, 200) ?? misused(`${at}: --name cannot be empty`, `node scripts/customers.mjs edit ${c.id} --name "Ann Lee"`);
         else patch[k] = clean(v, k === "notes" ? 10_000 : 500);
       }
       const fr = fieldFlags(a, cfg.fields, at, "custom field");
@@ -210,9 +210,10 @@ await withDb(async (db) => {
       return result(n, `noted on ${c.name}: ${kind} at ${local(n.happened_at)} (${cfg.time_zone})`, { next: show(c.id) });
     }
 
-    case "archive": {
+    case "archive":
+    case "restore": {
       const c = await resolveCustomer(db, rest[0], at);
-      const archive = !has(a, "undo");
+      const archive = cmd === "archive";
       if (!!c.archived_at === archive) return result(c, `${c.name} is already ${archive ? "archived" : "active"}; left alone`);
       const r = (await setArchived(db, c.id, archive, user)) ?? fail(`${at}: no customer ${c.id}`, "node scripts/customers.mjs list");
       return result(r, `${r.name}: ${r.archived_at ? "archived" : "active again"}`, { next: show(c.id) });

@@ -59,7 +59,7 @@ python3 ~/tools/taskandtool.py schedule-job "Calendar sync" --when "*/15 * * * *
 
 It runs in production once the app is deployed (no machine wakes), on the
 dev server before. It answers 500 with the errors when something failed,
-so `job-runs` shows why.
+so `list-job-runs` shows why.
 
 **A booking reaches the calendar at once.** `pushAfterWrites` (`sync.ts`),
 mounted first in `app.tsx`, pushes after every successful write: only the

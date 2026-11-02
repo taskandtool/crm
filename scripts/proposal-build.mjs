@@ -18,6 +18,8 @@ const STYLE = "src/proposals/style.ts";
 const PHOTOS = "src/proposals/photos.ts";
 const COMPONENTS = "src/proposals/components";
 const MAX_PHOTO = 600 * 1024, MAX_ALL = 8 * 1024 * 1024;
+// The brand skill's command that sizes a photograph for the page.
+const WEB_PHOTOS = "python3 .claude/skills/brand/web_photos.py";
 const TYPES = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".svg": "image/svg+xml" };
 const USAGE = "usage: node scripts/proposal-build.mjs [--check | --watch]";
 const args = process.argv.slice(2);
@@ -72,10 +74,10 @@ function photos() {
   for (const path of [...named].sort()) {
     const type = TYPES[extname(path).toLowerCase()];
     if (!type) { problems.push(`${path}: a photograph is .jpg, .png, .webp or .svg`); continue; }
-    if (!/^brand\/images\/[^/]+$/.test(path)) { problems.push(`${path}: a photograph is a file in brand/images/ (node scripts/proposal-photo.mjs <file> puts one there)`); continue; }
-    if (!existsSync(path)) { problems.push(`${path}: not found (paths are from the app's folder; node scripts/proposal-photo.mjs <file> puts one in brand/images/)`); continue; }
+    if (!/^brand\/images\/[^/]+$/.test(path)) { problems.push(`${path}: a photograph is a file in brand/images/ (${WEB_PHOTOS} <file> puts one there)`); continue; }
+    if (!existsSync(path)) { problems.push(`${path}: not found (paths are from the app's folder; ${WEB_PHOTOS} <file> puts one in brand/images/)`); continue; }
     const size = statSync(path).size;
-    if (size > MAX_PHOTO) { problems.push(`${path}: ${Math.ceil(size / 1024)} KB, over ${MAX_PHOTO / 1024} KB; node scripts/proposal-photo.mjs ${path} writes a smaller ${path.replace(/\.\w+$/, ".webp")}, which the component then names`); continue; }
+    if (size > MAX_PHOTO) { problems.push(`${path}: ${Math.ceil(size / 1024)} KB, over ${MAX_PHOTO / 1024} KB; ${WEB_PHOTOS} ${path} --width 1600 writes a smaller copy, which the component then names`); continue; }
     total += size;
     out[path] = `data:${type};base64,${readFileSync(path).toString("base64")}`;
   }

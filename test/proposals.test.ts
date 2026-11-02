@@ -5,10 +5,6 @@
 // dead link. Skipped without TEST_DATABASE_URL.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import app from "../src/app";
 import { cfg, seeds } from "../src/config";
 import { todayIn } from "../src/invoices/document";
@@ -438,29 +434,6 @@ test("proposal-font: the latin faces, the weights each role uses, the token and 
   assert.deepEqual(rolesFor(sameForBoth, "Caladea", ["display"]), ["display", "body"]);
   assert.deepEqual(chooseFaces(statics, rolesFor(sameForBoth, "Caladea", ["display"])).map((f: { min: number }) => f.min).sort(), [400, 700]);
   assert.match(rewrite(`${START}\n${END}\n--font-display: Georgia, serif;`, "New", ["display"], [])!, /--font-display: "New", serif;/, "an unquoted family too");
-});
-
-test("proposal-photo: a photo cut and sized into brand/images/, the line to name it by", (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "proposal-photo-"));
-  try {
-    const src = join(dir, "crew-on-roof-1a2b3c4d.png");
-    const made = spawnSync("python3", ["-c", "import sys\nfrom PIL import Image\nImage.new('RGB', (3200, 1000), (200, 40, 40)).save(sys.argv[1])", src]);
-    if (made.status !== 0) return t.skip("Pillow is not installed here");
-    const script = join(process.cwd(), "scripts", "proposal-photo.mjs");
-    const r = spawnSync("node", [script, src, "--crop", "0,0,25,0"], { cwd: dir, encoding: "utf8" });
-    assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /wrote brand\/images\/crew-on-roof\.webp from .*: 1600 x 667, \d+ KB, cut 25% right from 3200 x 1000/);
-    assert.match(r.stdout, /photo\("brand\/images\/crew-on-roof\.webp"\)/);
-    assert.ok(statSync(join(dir, "brand", "images", "crew-on-roof.webp")).size <= 600 * 1024);
-    const again = spawnSync("node", [script, src, "--crop", "0,0,25,0"], { cwd: dir, encoding: "utf8" });
-    assert.match(again.stdout, /replaced brand\/images\/crew-on-roof\.webp/, "safe to run twice");
-    const named = spawnSync("node", [script, src, "--as", "Cover House.webp"], { cwd: dir, encoding: "utf8" });
-    assert.match(named.stdout, /wrote brand\/images\/cover-house\.webp/, "--as with an extension names the file once");
-    const bad = spawnSync("node", [script, src, "--crop", "60,0,40,0"], { cwd: dir, encoding: "utf8" });
-    assert.equal(bad.status, 2, "a crop that leaves nothing is misuse");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
 });
 
 test("proposal-copy: a component's words are read, titles and questions too; reviews, empty slots, stars and the quote's own words are not", () => {

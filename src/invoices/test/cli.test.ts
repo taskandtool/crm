@@ -34,6 +34,12 @@ test("quotes and invoices refuse wrong input with exit 2 and a Try line, before 
     ["invoices", ["nope"], /^invoices nope: no such command/],
     ["invoices", ["void", "3", "--yes"], /^invoices void: unknown flag --yes; valid: --confirm, --as/],
     ["invoices", ["list", "extra"], /^invoices list: unexpected extra/],
+    // A flag that takes no value leaves the next word an argument: 3 is the id, so 4 is extra.
+    ["invoices", ["send", "--charge", "3", "4"], /^invoices send: unexpected 4/],
+    ["invoices", ["from-quote", "--rest", "5", "6"], /^invoices from-quote: unexpected 6/],
+    ["recurring", ["list", "--all", "extra"], /^recurring list: unexpected extra/],
+    ["quotes", ["list", "--status", "bogus"], /^quotes list: --status must be one of/],
+    ["invoices", ["list", "--status", "bogus"], /^invoices list: --status must be one of/],
   ] as const) {
     const r = run(which, [...args]);
     assert.equal(r.status, 2, `${which} ${args.join(" ")}: ${r.stderr}`);

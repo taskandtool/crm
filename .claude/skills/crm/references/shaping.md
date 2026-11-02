@@ -18,7 +18,7 @@ infer. Then:
    place rather than archive and re-add: the key stays (`new` labelled
    `Enquiry`), and every script takes the label too.
 3. The proposals, from the business's own website (ask for it when no note
-   names it): `node scripts/proposal-read.mjs <url>` and the `brand` skill
+   names it): `tt-crawl brand <url> --places` and the `brand` skill
    fill the brand record, then write each component from it and set its font
    (`references/money.md`, "A component is its file"). With no website,
    the samples stay and Send says so.

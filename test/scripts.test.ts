@@ -31,14 +31,14 @@ for (const script of scripts) {
 const READ: Record<string, string[]> = {
   "customers.mjs": ["list"], "events.mjs": ["list"], "stages.mjs": ["list"], "forms.mjs": ["list"],
   "quotes.mjs": ["list"], "invoices.mjs": ["list"], "recurring.mjs": ["list"], "import.mjs": ["file.csv"], "export.mjs": [], "migrate.mjs": [],
-  "deals.mjs": ["list"], "tasks.mjs": ["list"], "leads.mjs": ["list"], "proposal-font.mjs": ["Caladea"], "proposal-photo.mjs": ["photo.jpg"], "proposal-read.mjs": ["https://example.com"], "proposal-preview.mjs": [], "phone.mjs": ["status"], "business.mjs": ["show"],
+  "deals.mjs": ["list"], "tasks.mjs": ["list"], "leads.mjs": ["list"], "proposal-font.mjs": ["Caladea"], "proposal-sample.mjs": [], "phone.mjs": ["status"], "business.mjs": ["show"],
 };
 test("every script is in the bad-input table", () => assert.deepEqual(Object.keys(READ).sort(), [...scripts].sort()));
 
 for (const [script, args] of Object.entries(READ)) {
   test(`${script} refuses an unknown flag`, () => refused(run(script, [...args, "--bogus"]), 2, `${script} --bogus`));
   // these take a file or a family, not a command
-  if (args.length && !["import.mjs", "proposal-font.mjs", "proposal-photo.mjs", "proposal-read.mjs"].includes(script)) {
+  if (args.length && !["import.mjs", "proposal-font.mjs"].includes(script)) {
     test(`${script} refuses a command it does not have`, () => refused(run(script, ["nope"]), 2, `${script} nope`));
   }
 }
@@ -125,8 +125,8 @@ test("deals.mjs, tasks.mjs and customers merge, end to end", { skip: !process.en
     const lead = r.stdout.match(/#(\d+)/)![1];
     r = sh("leads.mjs", "archive", lead, "--reason", "Duplicate");
     assert.match(r.stdout, /^leads archive: lead \d+ \(Ann Lee\) archived: Duplicate\n/);
-    r = sh("leads.mjs", "archive", lead, "--undo");
-    assert.match(r.stdout, /is open again/);
+    r = sh("leads.mjs", "restore", lead);
+    assert.match(r.stdout, /^leads restore: lead \d+ \(Ann Lee\) is open again/);
     r = sh("deals.mjs", "add", "ann@example.com", "--lead", lead);
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /^deals add: added #\d+  Boiler service  \[New\]  Ann Lee[^\n]*\n  lead \d+ \(Boiler service\) converted into it\n/);
@@ -204,7 +204,7 @@ test("no database is exit 1 with the ask for one", (t) => {
   if (!r.stderr.includes("DATABASE_URL is not set")) return t.skip("this machine's /home/sprite/.env has a database");
   refused(r, 1, "no DATABASE_URL");
   assert.match(r.stderr, /^customers list: the project has no database yet/);
-  assert.match(r.stderr, /Try: python3 ~\/tools\/taskandtool\.py request-capability postgres/);
+  assert.match(r.stderr, /Try: python3 ~\/tools\/taskandtool\.py request-database/);
 });
 
 test("a database that does not answer is exit 1, not a stack trace", () => {
@@ -285,7 +285,7 @@ test("invoices.mjs bill and migrate.mjs, against a scratch database", { skip: !p
     const r = sh("events.mjs", "add", email, title, "--at", "2026-10-01 09:30", "--json");
     assert.equal(r.status, 0, r.stderr);
     const id = JSON.parse(r.stdout).id;
-    if (amount) assert.equal(sh("events.mjs", "update", id, "--amount", amount).status, 0);
+    if (amount) assert.equal(sh("events.mjs", "edit", id, "--amount", amount).status, 0);
     const done = sh("events.mjs", "done", id);
     assert.equal(done.status, 0, done.stderr);
     return id;

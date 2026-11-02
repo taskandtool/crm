@@ -33,7 +33,7 @@ const at = [script, ["import", "export", "migrate"].includes(script) ? undefined
 export async function withDb<T>(fn: (db: Db, pool: pg.Pool) => Promise<T>, opts: { force?: boolean } = {}): Promise<T> {
   const url = databaseUrl();
   if (!url) {
-    fail(`${at}: the project has no database yet (DATABASE_URL is not set; off Task & Tool, set it in the environment)`, "python3 ~/tools/taskandtool.py request-capability postgres");
+    fail(`${at}: the project has no database yet (DATABASE_URL is not set; off Task & Tool, set it in the environment)`, "python3 ~/tools/taskandtool.py request-database");
   }
   const pool = openPool(url);
   const db = fromPool(pool);

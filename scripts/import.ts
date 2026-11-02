@@ -10,7 +10,7 @@ import { firstOpenStage, listStages, resolveStage } from "../src/crm/stages";
 import { clean, parseTags } from "../src/crm/text";
 import { done, fail, flag, flags, has, misused, noMore, parseArgs, plain, who, withDb } from "./lib";
 
-const HELP = `import.mjs <file.csv|file.xlsx> [--dry-run] [--map field=Header,...] [--status s] [--source s] [--tag t]... [--overwrite]
+const HELP = `import.mjs <file.csv|file.xlsx> [--dry-run] [--map field=Header,...] [--status s] [--source s] [--tag t]... [--overwrite] [--as <email>]
 
 Reads a CSV, or the first sheet of an .xlsx, with a header row. Headers
 are matched to fields by name (${IMPORT_FIELDS.join(", ")},
@@ -29,7 +29,7 @@ Anyone left without a last contact gets the time of their latest form
 submission, booking or payment, by email. All or nothing: one transaction.
 
 --dry-run prints the mapping and what would happen, and writes nothing.
-A second run of the same file changes nothing new. Errors go to stderr with a
+--as records who acted (default CRM_USER, else AI). A second run of the same file changes nothing new. Errors go to stderr with a
 Try: line; exit 1 when refused, 2 when misused.`;
 
 // --dry-run and --overwrite take no value: `--dry-run customers.csv` keeps the file.

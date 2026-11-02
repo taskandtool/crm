@@ -44,7 +44,7 @@ Flow keys: ${FLOWS.map((f) => `${f.key} (${f.name})`).join(", ")}.
 Prints what happened first, then Next:. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`;
 
 export async function phoneCli(argv: string[], cli: PhoneCli): Promise<void> {
-  const a = parseArgs(argv);
+  const a = parseArgs(argv, { bare: ["on", "off", "reset", "check", "unread"] });
   const [cmd, ...rest] = a._;
   usage(a, cmd, ["status", "numbers", "flows", "flow", "set", "registration", "threads", "thread", "send"], HELP, "phone", {
     status: [], numbers: ["area"], flows: [], flow: [], set: ["on", "off", "words", "variant", "timing", "reset"],
@@ -60,6 +60,10 @@ export async function phoneCli(argv: string[], cli: PhoneCli): Promise<void> {
     if (!isFlowKey(k)) misused(`${at}: name a flow: ${FLOWS.map((f) => f.key).join(", ")}`, "node scripts/phone.mjs flows");
     return k;
   };
+  // A wrong word is refused before the database opens: a flow key, send's number and text.
+  if (cmd === "flow" || cmd === "set") keyOf();
+  const to = cmd === "send" ? toE164(rest[0] ?? "") ?? misused(`${at}: name the phone number first, then the text in quotes`, `node scripts/phone.mjs send "(555) 201-0142" "On our way"`) : "";
+  const body = cmd === "send" ? (rest[1] ?? "").trim() || misused(`${at}: the text, in quotes, after the number`, `node scripts/phone.mjs send ${to} "<the text>"`) : "";
 
   await cli.withDb(async (db) => {
     const ctx = await cli.ctx(db);
@@ -174,8 +178,6 @@ export async function phoneCli(argv: string[], cli: PhoneCli): Promise<void> {
           done(at, rows.length ? `${rows.length} texts and calls` : "nothing with that number", { lines: rows.map((m) => `${localTime(m.created_at, cli.timeZone)} ${m.direction === "in" ? "them" : m.sent_by?.startsWith("flow:") ? "automatic" : m.sent_by ?? "us"}: ${m.kind === "call" ? `${m.answered_by ? "call" : "missed call"}${m.transcript ? `, voicemail: ${m.transcript}` : ""}` : m.body ?? ""}`) }));
       }
       case "send": {
-        const to = toE164(rest[0] ?? "") ?? misused(`${at}: name the phone number first, then the text in quotes`, `node scripts/phone.mjs send "(555) 201-0142" "On our way" --confirm`);
-        const body = (rest[1] ?? "").trim() || misused(`${at}: the text, in quotes, after the number`, `node scripts/phone.mjs send ${to} "On our way" --confirm`);
         if (!has(a, "confirm")) return done(at, `would text ${prettyPhone(to)}: ${body}`, { waits: `node scripts/phone.mjs send ${to} ${JSON.stringify(body)}` });
         const r = await sendText(ctx, { to, body, sentBy: "ai" });
         if (!r.ok) fail(`${at}: ${r.why}`, "node scripts/phone.mjs status");

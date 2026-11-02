@@ -17,6 +17,6 @@ a proposal needs.
   what the owner could add.
 
 `npm run check` runs the `tropes` skill on every component's words. For the
-cold read, after `node scripts/proposal-preview.mjs`:
-`node .claude/skills/tropes/tropes.mjs --words uploads/proposal-preview/page.html`
+cold read, after `node scripts/proposal-sample.mjs`:
+`node .claude/skills/tropes/tropes.mjs --words uploads/proposal-sample/page.html`
 gives the sub-agent the page's words alone.

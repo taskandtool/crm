@@ -189,6 +189,8 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
   const at = `quotes ${cmd}`;
   if (QUOTE_ARITY[cmd] !== undefined) noMore(rest, QUOTE_ARITY[cmd], at);
   const limit = cmd === "list" ? limitOf(a, at) : 50;
+  const asked = cmd === "list" ? flag(a, "status") : undefined;
+  if (asked && !QUOTE_STATUSES.includes(asked as QuoteStatus)) misused(`${at}: --status must be one of ${QUOTE_STATUSES.join(", ")}`, "node scripts/quotes.mjs list --status sent");
   const json = has(a, "json");
   const W = cli.word ?? "Quote", word = W.toLowerCase();
   // The name on quotes is the project's (data/business.ts), read once the database is open.
@@ -215,8 +217,6 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
           if (json) return out(true, rows, String);
           return done(at, rows.length ? `${plural(rows.length, "quote")} for ${p.name ?? p.email}` : `no quotes for ${p.name ?? p.email ?? "them"}`, { lines: rows.map(fmt) });
         }
-        const asked = flag(a, "status");
-        if (asked && !QUOTE_STATUSES.includes(asked as QuoteStatus)) misused(`${at}: --status must be one of ${QUOTE_STATUSES.join(", ")}`, "node scripts/quotes.mjs list --status sent");
         const { page, next } = cut(await quotesPage(db, { q: flag(a, "find") ?? null, status: (asked as QuoteStatus) ?? null }, null, limit, todayIn(cli.timeZone)), limit);
         if (json) return out(true, page, String);
         if (!page.length) return done(at, `no quotes${asked ? ` ${asked}` : ""}`, { next: "node scripts/quotes.mjs add --help" });
@@ -419,7 +419,7 @@ invoice on Stripe's page. record-payment is for cash, a check or a transfer; it 
 the invoice stays open until nothing is owed. --as records who acted.
 
 Prints what happened first, then Next:. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`;
-  const a = parseArgs(argv);
+  const a = parseArgs(argv, { bare: ["charge", "rest"] });
   const [cmd, ...rest] = a._;
   if (cli.off && has(a, "help")) console.log(cli.off + "\n");
   const commands = ["list", "show", "owed", "add", "edit", "from-quote", "discard", "send", "charge", "email-page", "record-payment", "void", "uncollectible", ...Object.keys(cli.more?.commands ?? {})];
@@ -428,6 +428,8 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
   const at = `invoices ${cmd}`;
   if (INVOICE_ARITY[cmd] !== undefined) noMore(rest, INVOICE_ARITY[cmd], at);
   const limit = cmd === "list" ? limitOf(a, at) : 50;
+  const asked = cmd === "list" ? flag(a, "status") : undefined;
+  if (asked && asked !== "due" && !INVOICE_STATUSES.includes(asked as InvoiceStatus)) misused(`${at}: --status must be one of ${INVOICE_STATUSES.join(", ")}, due`, "node scripts/invoices.mjs list --status due");
   const json = has(a, "json");
   const local = (d: Date | string) => localTime(d, cli.timeZone);
   const fmt = (r: Invoice) =>
@@ -451,8 +453,6 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
           if (json) return out(true, rows, String);
           return done(at, rows.length ? `${plural(rows.length, "invoice")} for ${p.name ?? p.email}` : `no invoices for ${p.name ?? p.email ?? "them"}`, { lines: rows.map(fmt) });
         }
-        const asked = flag(a, "status");
-        if (asked && asked !== "due" && !INVOICE_STATUSES.includes(asked as InvoiceStatus)) misused(`${at}: --status must be one of ${INVOICE_STATUSES.join(", ")}, due`, "node scripts/invoices.mjs list --status due");
         const status = asked && asked !== "due" ? (asked as InvoiceStatus) : null;
         const { page, next } = cut(await invoicesPage(db, { q: flag(a, "find") ?? null, status, due: asked === "due" }, null, limit, todayIn(cli.timeZone)), limit);
         if (json) return out(true, page, String);
@@ -718,7 +718,7 @@ is the 1st to the 28th. Dates are in ${cli.timeZone}. A daily scheduled job
 ("Recurring invoices") makes each one on its date.
 
 Prints what happened first, then Next:. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`;
-  const a = parseArgs(argv);
+  const a = parseArgs(argv, { bare: ["all"] });
   const [cmd, ...rest] = a._;
   usage(a, cmd, Object.keys(RECURRING_FLAGS), HELP, "recurring", RECURRING_FLAGS);
   if (cli.off) fail(cli.off);

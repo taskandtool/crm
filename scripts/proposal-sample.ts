@@ -1,5 +1,5 @@
 // The proposal as a customer sees it, every component ticked, on a made-up
-// quote: the page written to uploads/proposal-preview/page.html, then
+// quote: the page written to uploads/proposal-sample/page.html, then
 // screenshots at desktop and phone width (tt-crawl shoot, from a server on
 // this machine that lives only as long as the shots). For looking at the
 // components after a change; nothing is stored on a quote.
@@ -14,11 +14,11 @@ import { PICKABLE } from "../src/proposals/components";
 import { fillPage, renderPage } from "../src/proposals/page";
 import { formatMoney } from "../src/payments/money";
 
-const HELP = `usage: node scripts/proposal-preview.mjs
+const HELP = `usage: node scripts/proposal-sample.mjs
 
 Draws the proposal page with every component ticked, on a made-up quote
 (a made-up business, three lines, a deposit invoice on it), into
-uploads/proposal-preview/page.html, and screenshots it at 1280 and 390
+uploads/proposal-sample/page.html, and screenshots it at 1280 and 390
 pixels wide with tt-crawl shoot. Nothing is stored on a quote. Run it after
 npm run css.
 
@@ -26,9 +26,9 @@ Prints the page's path and each width's images (the first to read named),
 then Next:. Exit 1 when the page or the shots fail; 2 when misused.`;
 
 const a = parseArgs(process.argv.slice(2));
-plain(a, HELP, "proposal-preview");
+plain(a, HELP, "proposal-sample");
 
-const OUT = "uploads/proposal-preview";
+const OUT = "uploads/proposal-sample";
 const word = invoicesCfg?.word ?? "Quote";
 const business = "Lakeside Home Repair";
 const now = new Date();
@@ -56,7 +56,7 @@ try {
     beforeSign: `When you sign, the invoice for ${deposit} is due, and you are taken straight to pay it online.`, agreed: "" }, PICKABLE.map((c) => c.key));
   html = fillPage(html, { kind: "open", action: "/q/preview", sha: "0".repeat(64), reasons: ["Price", "Timing"] }, word);
 } catch (e) {
-  fail(`proposal-preview: the page did not draw (${(e as Error).message})`, "npm run css && npm run check");
+  fail(`proposal-sample: the page did not draw (${(e as Error).message})`, "npm run css && npm run check");
 }
 mkdirSync(OUT, { recursive: true });
 const page = join(OUT, "page.html");
@@ -76,11 +76,11 @@ try {
       err ? no(new Error((stderr || err.message).trim().split("\n").pop())) : ok(stdout)));
 } catch (e) {
   server.close();
-  fail(`proposal-preview: the screenshots failed (${(e as Error).message})`, "bash .taskandtool/setup.sh, which installs tt-crawl and its browser");
+  fail(`proposal-sample: the screenshots failed (${(e as Error).message})`, "bash .taskandtool/setup.sh, which installs tt-crawl and its browser");
 }
 server.close();
 const shots = shot.trim().split("\n").filter((l) => l.startsWith("  ")).map((l) => l.trim());
-done("proposal-preview", `${PICKABLE.length} components on a made-up ${word.toLowerCase()}`, {
+done("proposal-sample", `${PICKABLE.length} components on a made-up ${word.toLowerCase()}`, {
   lines: [`the page: ${page}`, ...shots],
   next: "read the images it names; fix a component, npm run css, then this again",
 });

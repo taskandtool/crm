@@ -18,10 +18,10 @@ const HELP = `deals.mjs <command> [...] [--json] [--as <email>]      ${dealsCfg.
   add <who> "<what>" [--value 1200] [--stage s] [--owner o] [--close YYYY-MM-DD] [--notes n] [--lead <id>]
                                        in the first open stage unless --stage; --lead converts that open lead of
                                        theirs into it ("<what>" defaults to the lead's), with a "Call back" task today
-  update <id> [--what w] [--value v] [--owner o] [--close d] [--notes n]   "" clears a value
+  edit <id> [--what w] [--value v] [--owner o] [--close d] [--notes n]   "" clears a value
   stage <id> <stage> [--reason r]      a stage key or label; --reason when it is a lost one
   won <id> | lost <id> [--reason r]    to the first won or lost stage
-  archive <id> [--undo]                never deletes
+  archive <id> | restore <id>          never deletes; restore makes it active again
 
 <who> is a customer's id, email or phone. --value is in ${dealsCfg.currency}; blank, the
 latest quote made for the ${one} stands in. Winning a ${one} moves its customer from an
@@ -33,19 +33,19 @@ nothing. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misus
 
 const FIELDS = ["value", "owner", "close", "notes", "as"];
 const FLAGS: Record<string, string[]> = {
-  list: ["open", "won", "lost", "stage", "owner", "customer", "limit"], show: [], add: [...FIELDS, "stage", "lead"], update: [...FIELDS, "what"],
-  stage: ["reason", "as"], won: ["as"], lost: ["reason", "as"], archive: ["undo", "as"],
+  list: ["open", "won", "lost", "stage", "owner", "customer", "limit"], show: [], add: [...FIELDS, "stage", "lead"], edit: [...FIELDS, "what"],
+  stage: ["reason", "as"], won: ["as"], lost: ["reason", "as"], archive: ["as"], restore: ["as"],
 };
-const WORDS: Record<string, number> = { list: 0, show: 1, update: 1, stage: 2, won: 1, lost: 1, archive: 1 };
+const WORDS: Record<string, number> = { list: 0, show: 1, edit: 1, stage: 2, won: 1, lost: 1, archive: 1, restore: 1 };
 
-const a = parseArgs(process.argv.slice(2), { bare: ["open", "won", "lost", "undo"] });
+const a = parseArgs(process.argv.slice(2), { bare: ["open", "won", "lost"] });
 const [cmd, ...rest] = a._;
 usage(a, cmd, Object.keys(FLAGS), HELP, "deals", FLAGS);
 const at = `deals ${cmd}`;
 if (WORDS[cmd] !== undefined) noMore(rest, WORDS[cmd], at);
 const json = has(a, "json");
 const show = (id: string) => `node scripts/deals.mjs show ${id}`;
-if (["show", "update", "stage", "won", "lost", "archive"].includes(cmd) && !/^#?\d{1,18}$/.test(rest[0] ?? "")) misused(`${at}: name a ${one} by its id (#12 is 12)`, "node scripts/deals.mjs list");
+if (["show", "edit", "stage", "won", "lost", "archive", "restore"].includes(cmd) && !/^#?\d{1,18}$/.test(rest[0] ?? "")) misused(`${at}: name a ${one} by its id (#12 is 12)`, "node scripts/deals.mjs list");
 if (cmd === "stage" && !rest[1]) misused(`${at}: to which stage?`, `node scripts/deals.mjs stage ${rest[0]} won`);
 const kinds = (["open", "won", "lost"] as const).filter((k) => has(a, k));
 if (kinds.length > 1) misused(`${at}: one of --open, --won, --lost`, "node scripts/deals.mjs list --open");
@@ -119,7 +119,7 @@ await withDb(async (db) => {
       const c = await resolveCustomer(db, rest[0], at);
       const lead = has(a, "lead") ? await getLead(db, (flag(a, "lead") ?? "").replace(/^#/, "")) : null;
       if (has(a, "lead") && (!lead || lead.customer_id !== c.id || lead.status === "archived"))
-        fail(`${at}: ${c.name} has no open lead ${flag(a, "lead")}${lead?.status === "archived" ? " (it is archived; leads.mjs archive --undo opens it)" : ""}`, `node scripts/leads.mjs list --find "${c.name}"`);
+        fail(`${at}: ${c.name} has no open lead ${flag(a, "lead")}${lead?.status === "archived" ? " (it is archived; leads.mjs restore opens it)" : ""}`, `node scripts/leads.mjs list --find "${c.name}"`);
       const into = lead?.deal_id ? await getDeal(db, lead.deal_id) : null;
       if (into) return result(into, `lead ${lead!.id} is already converted into ${fmt(into)}; left alone`, { next: show(into.id) });
       const title = clean(rest.slice(1).join(" "), 200) ?? (lead ? dealTitleFor(lead) : null) ?? misused(`${at}: say what the ${one} is`, `node scripts/deals.mjs add ${c.id} "New furnace" --value 6500`);
@@ -137,10 +137,10 @@ await withDb(async (db) => {
       return result(d, `added ${fmt(d)}`, { next: `node scripts/tasks.mjs add ${c.id} "Call ${c.name}" --on tomorrow --deal ${d.id}` });
     }
 
-    case "update": {
+    case "edit": {
       const d = await dealOr(rest[0]);
       if (!FIELDS.concat("what").some((k) => k !== "as" && has(a, k))) misused(`${at}: nothing to change; name a flag such as --value`, "node scripts/deals.mjs --help");
-      const title = has(a, "what") ? clean(flag(a, "what"), 200) ?? misused(`${at}: --what cannot be empty`, `node scripts/deals.mjs update ${d.id} --what "New furnace"`) : d.title;
+      const title = has(a, "what") ? clean(flag(a, "what"), 200) ?? misused(`${at}: --what cannot be empty`, `node scripts/deals.mjs edit ${d.id} --what "New furnace"`) : d.title;
       const input: DealInput = {
         title,
         value_cents: valueFlag(d.value_cents === null ? null : Number(d.value_cents)),
@@ -176,9 +176,10 @@ await withDb(async (db) => {
       return moved(d, st.key, cmd === "lost" ? clean(flag(a, "reason"), 200) : null);
     }
 
-    case "archive": {
+    case "archive":
+    case "restore": {
       const d = await dealOr(rest[0]);
-      const archive = !has(a, "undo");
+      const archive = cmd === "archive";
       if (!!d.archived_at === archive) return result(d, `${d.title} is already ${archive ? "archived" : "active"}; left alone`);
       await setDealArchived(db, d.id, archive, user);
       return result(await getDeal(db, d.id), `${d.title}: ${archive ? "archived" : "active again"}`, { next: show(d.id) });

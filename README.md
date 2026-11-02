@@ -89,7 +89,7 @@ runs anywhere with Node 20 and a Postgres.
   between them, or a select on each card on a phone or without JavaScript.
 - **CSV import** of the list you keep today, matched by email then phone
   so nobody is added twice, with a dry run first.
-- **The AI's hands**: scripts to find, add, update, note, tag, merge,
+- **The AI's hands**: scripts to find, add, edit, note, tag, merge,
   import and export customers from chat, add and move deals, plan and
   tick off tasks, schedule and close events, quote and invoice,
   and read the form submissions. Sending anything to a customer, and a merge,
