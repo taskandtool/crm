@@ -9,23 +9,19 @@
 #   1. makes sure the working copy is a git repo with a commit in it
 #   2. installs the npm dependencies (which vendors htmx and SortableJS) and
 #      builds the CSS once
-#   3. installs tt-crawl (the site reader the brand skill fills brand/ and
-#      public/ with, for the proposal's components) and its browsers, and
-#      Pillow (the brand skill's web_photos.py sizes the photographs with it)
-#   4. registers the `web` service (`npm run dev`) so the CRM runs in dev on
+#   3. registers the `web` service (`npm run dev`) so the CRM runs in dev on
 #      the machine's URL, or restarts it after a replacement
-#   5. schedules the automatic texts' job (the route /jobs/automatic-texts,
+#   4. schedules the automatic texts' job (the route /jobs/automatic-texts,
 #      src/crm/jobs.ts) every 15 minutes, once: the phone skill's follow-ups,
 #      by email until Twilio is connected
 #
 # The database is not this script's business: the platform grants
 # DATABASE_URL, and the server waits for it and sets up its tables when it
-# appears.
+# appears. tt-crawl (the site reader the brand skill fills brand/ and public/
+# with, for the proposal's components) is after-setup.sh's, once the CRM is up.
 set -euo pipefail
 
 APP="$(pwd)"
-CRAWLER_REF="${CRAWLER_REF:-main}"
-CRAWLER="git+https://github.com/taskandtool/crawler@$CRAWLER_REF"
 echo "== crm starter app: setup in $APP"
 
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
@@ -60,18 +56,7 @@ fi
 echo "== building the CSS"
 npm run --silent css
 
-# 3. tt-crawl, as the other Starter Apps install it: the crawler's main every
-# run (the second install replaces its own code even when its version did
-# not move), then the browsers it reads sites with. A failure here leaves the
-# CRM working; only reading a site waits for it.
-echo "== tt-crawl $CRAWLER_REF"
-python3 -m pip install --quiet --upgrade "ttcrawl @ $CRAWLER" 2>&1 | tail -1 || true
-python3 -m pip install --quiet --force-reinstall --no-deps "ttcrawl @ $CRAWLER" 2>&1 | tail -1 || true
-python3 -m ttcrawl setup || echo "tt-crawl setup did not finish every step; its output above says which"
-tt-crawl --version || echo "== warning: tt-crawl is not on the PATH; the brand skill cannot read a site until bash .taskandtool/setup.sh runs clean"
-python3 -c "import PIL" 2>/dev/null || python3 -m pip install --quiet pillow 2>&1 | tail -1 || echo "== warning: Pillow did not install; the brand skill's web_photos.py needs it"
-
-# 4. The web service. `npm run dev` rebuilds the CSS and restarts the server
+# 3. The web service. `npm run dev` rebuilds the CSS and restarts the server
 # on every change; the server applies schema.sql once DATABASE_URL is in
 # /home/sprite/.env, which the service sources at start. This is what the
 # manifest's `ready` check looks for, so a failure here is the one outcome
@@ -81,7 +66,7 @@ if [ -f "$HOME/tools/taskandtool.py" ]; then
   python3 "$HOME/tools/taskandtool.py" serve "npm run dev" --port 3000
 fi
 
-# 5. The automatic texts' job: scheduled once, so a form's follow-ups go (by
+# 4. The automatic texts' job: scheduled once, so a form's follow-ups go (by
 # email until Twilio is connected) from the first day. Never fatal.
 # Matched by its route, so a job the owner renamed is not made again; when
 # the jobs can't be listed, nothing is scheduled (the next run tries again).

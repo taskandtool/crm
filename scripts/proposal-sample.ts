@@ -76,7 +76,7 @@ try {
       err ? no(new Error((stderr || err.message).trim().split("\n").pop())) : ok(stdout)));
 } catch (e) {
   server.close();
-  fail(`proposal-sample: the screenshots failed (${(e as Error).message})`, "bash .taskandtool/setup.sh, which installs tt-crawl and its browser");
+  fail(`proposal-sample: the screenshots failed (${(e as Error).message})`, "bash .taskandtool/after-setup.sh, which installs tt-crawl and its browser");
 }
 server.close();
 const shots = shot.trim().split("\n").filter((l) => l.startsWith("  ")).map((l) => l.trim());

@@ -143,7 +143,8 @@ styles/  static/         the tokens (proposal.css: the proposal's own); the buil
 examples/                hvac, dental, restaurant, plumbing, counselor configs
 test/                    node:test
 .claude/skills/crm/      the skill the AI reads (Claude or Codex)
-.taskandtool/setup.sh    what the machine needs; idempotent
+.taskandtool/setup.sh    what the CRM needs to run; idempotent
+.taskandtool/after-setup.sh  tt-crawl and its browsers, once the CRM is up
 ```
 
 ## Stack
