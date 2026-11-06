@@ -12,7 +12,7 @@ import { addDays, TASK_KINDS, TASK_LABELS, type Task } from "../crm/tasks";
 import { formatTime } from "../booking/slots";
 import { todayIn } from "../reports/sql";
 import { Layout } from "./layout";
-import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, CustomerPicker, primaryClass, telHref, timeText, timeZone, quietClass, ViewLink, viewsClass } from "./ui";
+import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, CustomerPicker, primaryClass, shownPhone, telHref, timeText, timeZone, quietClass, ViewLink, viewsClass } from "./ui";
 import { ownerSuggestions, personName } from "../crm/people";
 
 export type TasksProps = {
@@ -170,7 +170,7 @@ function ForWhom({ p }: { p: TaskItemProps }) {
   return (
     <p class="mt-0.5 text-label text-ink-2">
       {p.showCustomer ? <a href={`/customers/${task.customer_id}`}>{task.customer_name}</a> : null}
-      {p.showCustomer && task.kind === "call" && task.customer_phone ? <> · <a href={telHref(task.customer_phone)}>{task.customer_phone}</a></> : null}
+      {p.showCustomer && task.kind === "call" && task.customer_phone ? <> · <a href={telHref(task.customer_phone)}>{shownPhone(task.customer_phone)}</a></> : null}
       {deal ? <>{p.showCustomer ? " · " : ""}<a href={`/deals/${task.deal_id}`}>{task.deal_title}</a></> : null}
     </p>
   );
@@ -355,7 +355,7 @@ export function TasksSection(p: {
           ))}
         </ol>
       ) : prompt ? (
-        <p class="font-semibold">No task scheduled.</p>
+        <p class="text-ink-3">No task scheduled.</p>
       ) : null}
       <AddToggle label="Add task">
         <TaskForm customerId={p.customerId} deals={p.deals} dealId={p.dealId} owners={p.owners} user={p.user} today={p.today} returnTo={p.returnTo} />

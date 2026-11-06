@@ -28,7 +28,7 @@ import { firstText } from "../crm/leads";
 import type { Lead } from "../crm/leads";
 import { ContactLeads } from "./leads";
 import { Layout } from "./layout";
-import { ArchivedNote, buttonClass, controlClass, menuItemClass, MoreMenu, CustomInput, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, shownField, stageOptions, telHref, timeZone } from "./ui";
+import { ArchivedNote, buttonClass, controlClass, menuItemClass, MoreMenu, CustomInput, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, shownField, shownPhone, stageOptions, telHref, timeZone } from "./ui";
 import { CustomerEvents, scheduledOf, type Choices } from "./events";
 import { CustomerMoney, type Owed } from "./money";
 import type { Quote } from "../invoices/quotes";
@@ -142,7 +142,7 @@ export function CustomerPage(p: {
                   <li class="flex flex-wrap items-baseline justify-between gap-x-3">
                     <span class="min-w-0 break-words">
                       {d.name}
-                      <span class="block text-label text-ink-3">{[d.email, d.phone].filter(Boolean).join(" · ")}</span>
+                      <span class="block text-label text-ink-3">{[d.email, d.phone && shownPhone(d.phone)].filter(Boolean).join(" · ")}</span>
                     </span>
                     <a href={`${self}/merge?other=${d.id}`} class="text-label">Merge</a>
                   </li>
@@ -161,7 +161,7 @@ export function CustomerPage(p: {
 function Reach({ c }: { c: Customer }) {
   const parts = [
     c.company ? <span>{c.company}</span> : null,
-    c.phone ? <a href={telHref(c.phone)} class="whitespace-nowrap text-ink-2">{c.phone}</a> : null,
+    c.phone ? <a href={telHref(c.phone)} class="whitespace-nowrap text-ink-2">{shownPhone(c.phone)}</a> : null,
     c.email ? <a href={`mailto:${c.email}`} class="break-all text-ink-2">{c.email}</a> : null,
   ].filter(Boolean);
   if (!parts.length) return null;

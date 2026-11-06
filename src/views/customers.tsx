@@ -9,7 +9,7 @@ import { cfg, dealsCfg, eventsCfg, ownerLabel, vocab } from "../config";
 import type { Customer, ListFilter } from "../crm/customers";
 import type { Stage } from "../crm/stages";
 import { Layout } from "./layout";
-import { Avatar, controlClass, DueMark, Field, MESSAGES, primaryClass, stageOptions, timeZone, ViewLink, viewsClass } from "./ui";
+import { Avatar, controlClass, DueMark, Field, MESSAGES, primaryClass, shownPhone, stageOptions, timeZone, ViewLink, viewsClass } from "./ui";
 import { ownerOptions, personName } from "../crm/people";
 
 /** Each row's next task (by customer id), who is still in play, and today in the business's zone: what the Next column says. */
@@ -33,7 +33,7 @@ export function customerSpec(stages: Stage[], n: NextOf): TableSpec<Customer> {
             <span class="min-w-0">
               <span class="block break-words font-medium">{r.name}</span>
               {r.company ? <span class="block break-words text-label font-normal text-ink-3">{r.company}</span> : null}
-              {r.phone || r.email ? <span class="block break-words text-label font-normal text-ink-3 sm:hidden">{r.phone || r.email}</span> : null}
+              {r.phone || r.email ? <span class="block break-words text-label font-normal text-ink-3 sm:hidden">{r.phone ? shownPhone(r.phone) : r.email}</span> : null}
             </span>
           </span>
         ),
@@ -42,7 +42,7 @@ export function customerSpec(stages: Stage[], n: NextOf): TableSpec<Customer> {
       { label: "Next task", class: "hidden sm:table-cell", cell: (r) => (n.next.has(r.id) || n.inPlay.has(r.id) ? <DueMark next={n.next.get(r.id)} today={n.today} /> : "") },
       // One line each, so every row is the same height, as Catalyst's and Stripe's tables keep them.
       { label: "Email", class: "hidden md:table-cell", cell: (r) => (r.email ? <span class="block max-w-64 truncate text-ink-2" title={r.email}>{r.email}</span> : "") },
-      { label: "Phone", class: "hidden 2xl:table-cell", cell: (r) => (r.phone ? <span class="whitespace-nowrap text-ink-2 tabular-nums">{r.phone}</span> : "") },
+      { label: "Phone", class: "hidden 2xl:table-cell", cell: (r) => (r.phone ? <span class="whitespace-nowrap text-ink-2 tabular-nums">{shownPhone(r.phone)}</span> : "") },
       { label: ownerLabel, class: "hidden lg:table-cell", cell: (r) => (r.owner ? <span class="flex items-center gap-2 whitespace-nowrap"><Avatar name={personName(r.owner)} size="sm" />{personName(r.owner)}</span> : "") },
       { label: "Last contact", class: "hidden lg:table-cell", cell: (r) => <span class="whitespace-nowrap">{r.last_contact_at ? <When at={r.last_contact_at} timeZone={timeZone} day /> : <span class="text-ink-3">Added <When at={r.created_at} timeZone={timeZone} day /></span>}</span> },
     ],

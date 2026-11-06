@@ -149,6 +149,12 @@ export function shownField(f: CustomField, value: unknown): string {
 /** A phone number as a link that dials it. */
 export const telHref = (phone: string) => `tel:${phone.replace(/[^0-9+]/g, "")}`;
 
+/** A US number the one way however it was typed, "(512) 555-0121"; anything else as typed. */
+export function shownPhone(phone: string): string {
+  const m = /^\+?1?(\d{3})(\d{3})(\d{4})$/.exec(phone.replace(/[\s().-]/g, ""));
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : phone;
+}
+
 export function SaveOnChange(p: { action: string; current: string; options: StatusOption[]; label: string; returnTo: string }) {
   return (
     <form method="post" action={p.action} hx-post={p.action} hx-trigger="change" hx-target="main" hx-select="main" hx-swap="outerHTML" class="flex items-center gap-2">
@@ -395,11 +401,19 @@ export function ContactCard({ id, name, phone, email, more = [] }: { id: string;
   return (
     <Section title={vocab.one}>
       <p class="flex items-center gap-3"><Avatar name={name} /><a href={`/customers/${id}`} class="font-medium">{name}</a></p>
-      <FieldList fields={[
-        { label: "Phone", value: phone ? <a href={telHref(phone)}>{phone}</a> : null },
-        { label: "Email", value: email ? <a href={`mailto:${email}`} title={email} class="block truncate">{email}</a> : null },
-        ...more,
-      ]} />
+      {/* A narrow card: a short label column, so an email has room to wrap whole. */}
+      <dl class="mt-3 grid grid-cols-[3.5rem_minmax(0,1fr)] gap-x-3 gap-y-2">
+        {[
+          { label: "Phone", value: phone ? <a href={telHref(phone)}>{shownPhone(phone)}</a> : null },
+          { label: "Email", value: email ? <a href={`mailto:${email}`} class="[overflow-wrap:anywhere]">{email}</a> : null },
+        ].filter((f) => f.value).map((f) => (
+          <>
+            <dt class="text-label text-ink-3">{f.label}</dt>
+            <dd class="min-w-0">{f.value}</dd>
+          </>
+        ))}
+      </dl>
+      {more.some((f) => f.value) ? <div class="mt-3 border-t border-line pt-3"><FieldList fields={more} /></div> : null}
     </Section>
   );
 }

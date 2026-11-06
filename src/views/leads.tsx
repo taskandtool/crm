@@ -204,9 +204,7 @@ export function LeadPage(p: {
           {/* The lead's own details apart from the person's, as Pipedrive's lead view keeps them. */}
           <Section title="Details">
             <ReadThenEdit fields={[
-              { label: "What they need", value: l.title },
-              { label: "Owner", value: l.owner ? personName(l.owner) : null },
-              { label: "Source", value: SOURCE_LABELS[l.source] },
+              { label: "Owner", value: l.owner ? personName(l.owner) : "No one yet" },
             ]}>
               <form method="post" action={self} class="grid gap-3">
                 <Field label="What they need">
