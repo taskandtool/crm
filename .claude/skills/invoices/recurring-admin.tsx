@@ -110,7 +110,7 @@ function RecurringForm({ action, v, errors, rates, cancel, submit, taxPage, time
       {problems ? <p role="alert" class={alertClass}>Fix what is marked below. Nothing was saved.</p> : null}
       {errors.status ? <p role="alert" class={alertClass}>{errors.status}</p> : null}
       {timeZone === "UTC" ? (
-        <p role="status" class={alertClass}>Dates are in UTC. Set your time zone first, so each invoice is made on your date.</p>
+        <p role="status" class={alertClass}>Dates are in UTC. Ask the AI to set your time zone first, so each invoice is made on your date.</p>
       ) : null}
       <input type="hidden" name="quote_id" value={v.quote_id} />
       {v.from_invoice ? <input type="hidden" name="from_invoice" value={v.from_invoice} /> : null}
@@ -290,7 +290,7 @@ export function recurringRoutes(app: Hono<{ Variables: TeamVars }>, h: Recurring
 
   const editor = async (c: Ctx, p: { title: string; action: string; v: RV; errors: Errors; cancel: string; fixed: boolean }, status = 200) => {
     const rates = await taxRates(h.getDb(c));
-    return h.framed(c, base, { title: p.title, back: { href: p.cancel, label: "Back" } }, (
+    return h.framed(c, base, { title: p.title, back: { href: p.cancel, label: p.cancel === base ? "Recurring invoices" : "Back" } }, (
       <>
       {p.action === base ? <OneOrRepeats base={h.base} repeats={true} query={new URL(c.req.url).search} /> : null}
       <RecurringForm people={await peopleOf(h.getDb(c))} action={p.action} v={p.v} errors={p.errors} rates={rates} cancel={p.cancel} submit={p.action === base ? "Save recurring invoice" : "Save"}
@@ -315,7 +315,7 @@ export function recurringRoutes(app: Hono<{ Variables: TeamVars }>, h: Recurring
       quote_id: on?.id ?? "", lines: doc ? linesOf(doc) : [], from_invoice: from?.status === "draft" ? from.id : "",
     };
     const cancel = from ? `${h.base}/${from.id}` : on ? `${h.base}/quotes/${on.id}` : base;
-    return editor(c, { title: from ? "Make it repeat" : on ? `New invoice for ${h.word.toLowerCase()} ${on.number}` : "New invoice", action: base, v, errors: {}, cancel, fixed: false });
+    return editor(c, { title: from ? "Make it repeat" : on ? `New recurring invoice for ${h.word.toLowerCase()} ${on.number}` : "New recurring invoice", action: base, v, errors: {}, cancel, fixed: false });
   });
 
   app.post("/recurring", async (c) => {
@@ -324,10 +324,10 @@ export function recurringRoutes(app: Hono<{ Variables: TeamVars }>, h: Recurring
     // A quote still waiting for its answer: this starts at its yes. One already accepted: now.
     const pending = quote && ["draft", "sent", "expired"].includes(quote.status) ? { quoteId: quote.id } : undefined;
     if (quote?.status === "declined") {
-      return editor(c, { title: "New invoice", action: base, v: { ...v, quote_id: "" }, errors: { status: `${h.word} ${quote.number} was declined, so it can't start this invoice. Save again to start this one on its own.` }, cancel: base, fixed: false }, 422);
+      return editor(c, { title: "New recurring invoice", action: base, v: { ...v, quote_id: "" }, errors: { status: `${h.word} ${quote.number} was declined, so it can't start this invoice. Save again to start this one on its own.` }, cancel: base, fixed: false }, 422);
     }
     const r = await createRecurring(h.getDb(c), fields(v), c.get("user"), h.source, { pending });
-    if (!r.ok) return editor(c, { title: "New invoice", action: base, v, errors: r.errors, cancel: quote ? `${h.base}/quotes/${quote.id}` : base, fixed: false }, 422);
+    if (!r.ok) return editor(c, { title: "New recurring invoice", action: base, v, errors: r.errors, cancel: quote ? `${h.base}/quotes/${quote.id}` : base, fixed: false }, 422);
     if (quote?.status === "accepted") await h.getDb(c).sql`update recurring_invoices set quote_id = ${quote.id}::bigint where id = ${r.value.id}::bigint`;
     // Made from a draft (Make it repeat): the draft is replaced, so it is never sent as well.
     const from = idParam(v.from_invoice ?? "") ? await invoiceById(h.getDb(c), v.from_invoice!) : null;

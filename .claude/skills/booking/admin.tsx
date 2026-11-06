@@ -322,9 +322,10 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
                 <ul class="mt-1 flex flex-col gap-0.5">
                   {away.length ? <li class={`truncate ${smallText} text-ink-3`}>{away.map((t) => t.name).join(", ")} off</li> : null}
                   {mine.slice(0, 3).map((r) => (
-                    <li class={`truncate ${smallText}`}>
-                      <span class="tabular-nums text-ink-3">{time(r.starts_at)}</span>{" "}
-                      {opened(r) ? <a href={opened(r)!} class="font-medium text-ink no-underline hover:underline">{r.name}</a> : <span class="font-medium">{r.name}</span>}
+                    <li class={`min-w-0 ${smallText}`}>
+                      {/* Who first, then when and what, as the week's blocks say it. */}
+                      <span class="block truncate">{opened(r) ? <a href={opened(r)!} class="font-medium text-ink no-underline hover:underline">{r.name}</a> : <span class="font-medium">{r.name}</span>}</span>
+                      <span class="block truncate text-ink-3" title={r.what ?? undefined}><span class="tabular-nums">{time(r.starts_at)}</span>{r.what ? ` · ${r.what}` : ""}</span>
                     </li>
                   ))}
                   {mine.length > 3 ? <li><a href={self(day, "day")} class={`${smallText} font-medium text-ink-2 no-underline hover:text-ink`}>+{mine.length - 3} more</a></li> : null}
@@ -784,7 +785,7 @@ function TypeForm({ action, t, errors = {}, submit, publicBase, currency, deals 
           hint="For a video call, leave it blank if you send each person their own link." />
       </div>
       <details open={rulesOpen} class="group rounded-card border border-line sm:col-span-2">
-        <summary class="cursor-pointer list-none px-4 py-3 text-sm/6 font-semibold">
+        <summary class="cursor-pointer px-4 py-3 text-sm/6 font-semibold">
           Scheduling rules <span class="font-normal text-ink-3">· start times, gaps, notice</span>
         </summary>
         <div class="grid gap-x-4 gap-y-5 border-t border-line p-4 sm:grid-cols-2">
