@@ -37,12 +37,13 @@ own copy is marketese.
    contractions, no figures of speech: a request *appears*, it doesn't
    *land*. The tells are the `tropes` skill's; its check names them.
 6. **A heading is one plain sentence or a plain label,** never two
-   fragments joined by a comma or a colon.
+   fragments joined by a comma or a colon, with no period at the end.
 7. **Others' words stay exactly as written,** in quotation marks (a
    `<blockquote>` on a page), shortened only with "…", credited as the
    source gives them, never a heading.
-8. **Vary the rhythm:** a four-word sentence beside a thirty-word one, at
-   most one list of three, the odd aside.
+8. **Vary the rhythm:** a four-word sentence beside a thirty-word one, the
+   odd aside. A list is as long as the real list; at most one list of three
+   a section, and never the same three-part shape on every card.
 9. **One action, named by what the reader gets** ("Book a visit", not
    "Learn more"), worded the same everywhere.
 

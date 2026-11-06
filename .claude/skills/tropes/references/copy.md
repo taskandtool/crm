@@ -10,11 +10,11 @@ The older lists below are mostly 2023's, and people wrote many of them before an
 |---|---|---|
 | Figures of speech `model-tell` | "lands in your inbox", "the report lands every Monday", "replies land in Messages", "where it lands", "surfaces the issues", "hands you a brief", "stays yours", "load-bearing", "That matters.", "because it matters", "worth a look", "at its core", "this is where X comes in", "lean into", "trust compounds"; hints: quietly, genuinely, honestly, "lives in one place", "less X, more Y" | The literal verb: appears, arrives, starts in, shows, gives. Or cut the line |
 | Staged reveal `model-tell` | "Here's the real issue:", "Here's the kicker:", "The real problem is…", "That's the whole point." | Say the point |
-| "X, not Y" `negation-tail` | "Fill your chairs, not your phone", "progress every week, not just at the end" (none in the 2020 pages; four in 1,300 words of a current model's) | State X. Keep a "not" a customer needs: "Cash only, not cards." |
+| "X, not Y" `negation-tail` | "Fill your chairs, not your phone", "progress every week, not just at the end" | State X. Keep a "not" a customer needs: "Cash only, not cards." |
 | Pivot `negation-pivot` | "It's not a builder, it's a growth engine", "This isn't about software. It's about your time.", "Not a template. A real site.", "is more than a CRM, it's…" | State Y |
 | "With" rider `with-rider` | "Your site runs on Cloudflare, with its SEO and design done professionally." | End at the comma; say the rest with its own subject |
 | Even rhythm (by ear) | every lede one clause long, every line starting "We…" or with the company's name | Vary who acts and how long the sentences run |
-| Comma tails (by ear) | "Yards that look looked-after, all season", "built for salons and barbershops" after a comma | Twice as common in model copy as in people's, too common in both to fail: rewrite the ones that read as an afterthought |
+| Comma tails (by ear) | "Yards that look looked-after, all season", "built for salons and barbershops" after a comma | Common in people's copy too, so it never fails: rewrite the ones that read as an afterthought |
 
 ## Today's sentence shapes
 
@@ -32,10 +32,10 @@ Found by reading model-written pages line by line. The script catches two (`orde
 | Safety-net closers | "…and nothing is lost", "…and you're never left without cover" added after every limit or failure | Say it once, where the limit is explained |
 | Tacked-on feeling | "while you sleep", "while you're away", "so you can focus on what matters" | Cut the ending; the sentence already said when or what |
 | Familiarity frames | "the list you keep today", "the accounts your business already uses", "the tools you already love", "however you invoice today" | Name the thing: "your HubSpot export", "Stripe and QuickBooks" |
-| "One" as the selling point | "from one chat", "in one place", "one dashboard for everything", "one workspace" | Say what the reader can do there: "See every client's site and bills" |
+| "One" as the selling point | "in one place", "one dashboard for everything" | Say what the reader can do there: "See every client's bookings and bills" |
 | Ownership and limits as a refrain | "your own Stripe", "each X gets its own Y", "only" and "never" in every section | "Own" only where the reader fears sharing; say a permission once, as what a person can do |
 | Slogan headings | "Everyone starts the day knowing what's due", "Your kitchen, your rules", "Peace of mind, one visit at a time" | A plain fact or a plain label |
-| A closer that echoes the button | the heading "Book your first visit." over a "Book your first visit" button | The last heading says one more thing about the page |
+| A closer that echoes the button | the heading "Book your first visit" over a "Book your first visit" button | The last heading says one more thing about the page |
 | Table stakes as features | "easy online booking", "friendly staff", "HTTPS included", "cancel whenever you like" | Cut, unless the reader would doubt it |
 | Process where the result belongs | a hero that walks through call, quote, schedule | Lead with what the reader gets; the process is a later sentence |
 | Circular or empty lines | "solutions that solve your problems", "services that serve you", "results that matter" | Say what it produces |
@@ -59,7 +59,7 @@ Found by reading model-written pages line by line. The script catches two (`orde
 | Trope | Examples | Fix |
 |---|---|---|
 | **Negation pivot** (strongest tell) `negation-pivot`, `negation-tail` | "It's not X, it's Y", "not just X but Y", "Not because X. Because Y.", "X, not Y."; "Y rather than X" by ear (people write it often) | State Y. Nobody proposed X |
-| Rule of three `triads` (staccato runs fail; two lists in the hero are a hint; the rest by ear) | three adjectives, three bullets, three examples per section; a chain of commands ("Call us, get a quote, and book a time") | Use the number of things there really are. At most one triad a section |
+| Rule of three `triads` (staccato runs fail; two lists in the hero are a hint; the rest by ear) | three adjectives, three bullets, three examples per section; a chain of commands ("Call us, get a quote, and book a time") | Use the number of things there really are. At most one list of three a section, and never the same three-part shape on every card |
 | Staccato triplet `triads` | "No fluff. No filler. No stress." "Fast. Simple. Effective." | One plain sentence with the real claim |
 | Throat-clearing openers | In today's fast-paced world; In a world where; Imagine a world; Welcome to; Are you looking for; When it comes to | Start with the offer |
 | Audience sweep | Whether you're X or Y; Look no further; something for everyone | Name the one reader |
@@ -73,7 +73,7 @@ Found by reading model-written pages line by line. The script catches two (`orde
 | Fit with no facts `vague-fit` | shaped to your work, built around you, your way, tailored to you, for how you work, the work your team really does, built for scale | Name what changes to fit: "your stages and fields", "open till 9 on Thursdays" |
 | Formula headlines | X, reimagined; X, redefined; Where X meets Y; Built for the future; Everything you need, all in one place | A headline a stranger could repeat: what the reader can do here |
 | Echoes | headline restates the company's own tagline/brief; a customer's quote used as a heading | Rewrite from the reader's question; quotes go in quotation marks with a name |
-| Joined heading `joined-heading` | "Fall cleanup in Larkfield, from $90."; "What we do, and what it costs"; "Garden design: a plan in a week, planted in spring." | One plain sentence a stranger could repeat, or a plain label: "Fall cleanup in Larkfield starts at $90.", "What each job costs". A list's commas are fine |
+| Joined heading `joined-heading` | "Fall cleanup in Larkfield, from $90"; "What we do, and what it costs"; "Garden design: a plan in a week, planted in spring" | One plain sentence a stranger could repeat, or a plain label: "Fall cleanup in Larkfield starts at $90", "What each job costs". A list's commas are fine |
 | Restated heading `restates-heading` | the line under "Fast boiler repairs in Leeds" is "We do fast boiler repairs across Leeds" | The line adds the fact the heading could not hold: the price, the area, the wait |
 | Repeated phrase `repeated-phrase` (a hint) | the same four-word phrase in two sections of a page or ad | Say it once, where it matters most. The call to action is the exception: one wording everywhere |
 | Weak call to action `weak-cta` (a hint) | Learn more, Click here, Submit, Read more | Name what the reader gets: "Book a survey", "Check availability". "Get started" is fine for a product people sign up to |
@@ -85,7 +85,7 @@ Found by reading model-written pages line by line. The script catches two (`orde
 |---|---|
 | Long heading `long-heading` (a hint): a heading over 12 words | One thing per heading; the line under it says the rest |
 | Uniform sentence length (by ear): every sentence about as long as the last | Over six or more sentences, the longest is at least 12 words longer than the shortest |
-| Low punctuation variety: long "and"-joined sentences, few commas/semicolons, no parentheses (Economist) | Break at the "and". Let one sentence carry an aside |
+| Low punctuation variety: long "and"-joined sentences, few commas/semicolons, no parentheses | Break at the "and". Let one sentence carry an aside |
 | Paragraph uniformity (claim, example, restatement, repeated) | Vary the order. Some paragraphs are one line |
 | Em dashes `em-dash` doing a comma's or full stop's job (house rule; weak signal) | Comma, colon, or new sentence |
 | Bold list stems, title-case headings, emoji bullets, a heading every 80 words, markdown bleed (`**`, `#`) | Sentence case. Bold only what a skimmer must see |

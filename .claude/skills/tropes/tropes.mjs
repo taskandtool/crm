@@ -58,8 +58,7 @@ const NEGATION = [
   // "Not a template. A real site."
   /(?<=^|[.!?]\s+)Not (a|an|the|just|another|only) [^.!?\n]{1,40}\. (A|An|The|It'?s|Your|Real) /gm,
 ];
-// "Fill your chairs, not your phone." None in 26,000 words of 2020 small-business
-// pages, four in 1,300 words of a current model's. An error in a heading and
+// "Fill your chairs, not your phone." An error in a heading and
 // with "not just"; in a sentence it can be the plain fact a customer needs
 // ("Cash only, not cards."), so there it is a hint.
 const NEGATION_TAIL = /\b\w+(?: \w+){0,3}, not (just |only )?\w+(?: \w+){0,3}(?=[.!]|$)/gim;
@@ -113,7 +112,7 @@ const RHETORICAL = [
 ];
 
 // An order joined to a vague result: "Send it a price list and the site uses
-// it", "Save the brand once and every page uses it". None in the 2020 pages.
+// it", "Save the brand once and every page uses it".
 const ORDER_RESULT = /\band (?:the|every|your|its|their|all|other|each)\b(?:(?!\bnot\b|n't|\bnever\b)[^.!?;\n]){0,40}?\b(?:uses?|gets?) (?:it|them|the new one)\b/gi;
 // "once" as a promise that it takes no effort: "Ask once", "remove her once",
 // "Change a fact once and…". "Once a week", "at once" and "once it reaches $50" pass.
@@ -161,7 +160,7 @@ const FIX = {
   "personal-attribute": "speak about the offer, not the reader's condition (Meta refuses it)",
   "weak-cta": 'name what the reader gets: "Book a survey", "Check availability"',
   "restates-heading": "the line under a heading adds a fact the heading did not say",
-  "joined-heading": 'one plain sentence or a plain label: "Fall cleanup in Larkfield starts at $90.", not "Fall cleanup in Larkfield, from $90." or "Garden design: a plan in a week"',
+  "joined-heading": 'one plain sentence or a plain label: "Fall cleanup in Larkfield starts at $90", not "Fall cleanup in Larkfield, from $90" or "Garden design: a plan in a week"',
   "repeated-phrase": "say it once, where it matters most",
   "model-tell": 'a figure of speech today\'s models overuse: say the literal thing ("appears here", "starts in the first stage") or cut it',
   "with-rider": "end the sentence at the comma; say the rest as its own sentence with a subject, or cut it",
