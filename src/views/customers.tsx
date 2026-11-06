@@ -41,9 +41,9 @@ export function customerSpec(stages: Stage[], n: NextOf): TableSpec<Customer> {
       { label: "Status", cell: (r) => <StatusBadge value={r.stage} options={options} /> },
       { label: "Next task", class: "hidden sm:table-cell", cell: (r) => (n.next.has(r.id) || n.inPlay.has(r.id) ? <DueMark next={n.next.get(r.id)} today={n.today} /> : "") },
       // One line each, so every row is the same height, as Catalyst's and Stripe's tables keep them.
-      { label: "Email", class: "hidden md:table-cell", cell: (r) => (r.email ? <span class="block max-w-64 truncate text-ink-2" title={r.email}>{r.email}</span> : "") },
+      { label: "Email", class: "hidden md:table-cell", cell: (r) => (r.email ? <span class="block max-w-44 truncate text-ink-2 2xl:max-w-64" title={r.email}>{r.email}</span> : "") },
       { label: "Phone", class: "hidden 2xl:table-cell", cell: (r) => (r.phone ? <span class="whitespace-nowrap text-ink-2 tabular-nums">{shownPhone(r.phone)}</span> : "") },
-      { label: ownerLabel, class: "hidden lg:table-cell", cell: (r) => (r.owner ? <span class="flex items-center gap-2 whitespace-nowrap"><Avatar name={personName(r.owner)} size="sm" />{personName(r.owner)}</span> : "") },
+      { label: ownerLabel, class: "hidden lg:table-cell", cell: (r) => (r.owner ? <span class="flex max-w-32 items-center gap-2 2xl:max-w-40" title={personName(r.owner)}><Avatar name={personName(r.owner)} size="sm" /><span class="min-w-0 truncate">{personName(r.owner)}</span></span> : "") },
       { label: "Last contact", class: "hidden lg:table-cell", cell: (r) => <span class="whitespace-nowrap">{r.last_contact_at ? <When at={r.last_contact_at} timeZone={timeZone} day /> : <span class="text-ink-3">Added <When at={r.created_at} timeZone={timeZone} day /></span>}</span> },
     ],
   };
