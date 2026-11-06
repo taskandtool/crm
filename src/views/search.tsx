@@ -58,9 +58,9 @@ export function SearchPage({ user, q, hits }: { user: string; q: string; hits: H
           <input type="search" name="q" value={q} autofocus class={inputClass} />
         </label>
       </form>
-      <div class="grid items-start gap-4 lg:grid-cols-2">
+      <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
         {shown.map((g) => (
-          <section class="rounded-card bg-surface shadow-card ring-1 ring-line">
+          <section class="min-w-0 rounded-card bg-surface shadow-card ring-1 ring-line">
             <div class="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
               <h2 class="text-heading font-semibold">{g.label}</h2>
               {g.all ? <a href={g.all} class="text-label font-medium text-ink-2 no-underline hover:text-ink">All {g.label.toLowerCase()}</a> : null}
