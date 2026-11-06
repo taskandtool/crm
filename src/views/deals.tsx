@@ -167,7 +167,7 @@ export function Board({ data }: { data: BoardData }) {
     const t = key ? totals[key] : { count: strays.length, cents: "0", other: 0 };
     const total = t && BigInt(t.cents) > 0n ? formatWholeMoney(t.cents, dealsCfg.currency) : null;
     return (
-      <section data-stage={key} aria-label={`${label}, ${t?.count ?? 0}`} class="flex w-[85%] shrink-0 snap-start flex-col rounded-card bg-panel p-2 sm:w-auto sm:min-w-52 sm:max-w-80 sm:flex-1 sm:shrink sm:basis-0">
+      <section data-stage={key} aria-label={`${label}, ${t?.count ?? 0}`} class="flex w-[85%] shrink-0 snap-start flex-col rounded-card bg-panel p-2 sm:w-auto sm:min-w-44 sm:max-w-80 sm:flex-1 sm:shrink sm:basis-0">
         <h2 class="mb-2 px-1.5 pt-1">
           <span class="flex items-center justify-between gap-2">
             <span class="font-semibold text-ink">{label}</span>
