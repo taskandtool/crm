@@ -112,7 +112,7 @@ export function HomePage({ user, h, noStripe = false, flash }: { user: string; h
       {/* Two columns that stack on their own, so a short list never leaves an empty box beside a long one. */}
       <div class="grid items-start gap-6 lg:grid-cols-2">
         <div class="flex min-w-0 flex-col gap-6">
-          <Panel title="New leads" href="/leads" link="All leads" n={h.newLeads.length} empty="No new leads.">
+          <Panel title="New leads" href="/leads" link="All leads" n={h.openLeads} empty="No new leads.">
             {h.newLeads.map((l) => (
               <li class={row + " flex items-center gap-3"}>
                 <Avatar name={l.customer_name} />

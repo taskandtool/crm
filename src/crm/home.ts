@@ -9,7 +9,7 @@ import { addDays, todayIn } from "../reports/sql";
 import { dayBounds } from "../booking/slots";
 import { closingBy, dealTotals, type Deal } from "./deals";
 import { eventsBetween, type Event } from "./events";
-import { listLeads, type Lead } from "./leads";
+import { listLeads, openLeadCount, type Lead } from "./leads";
 import { listTasks, taskCounts, type Task } from "./tasks";
 import { present } from "./tables";
 import { callWeek, mainNumber, missedCalls, type Communication } from "../phone/store";
@@ -26,6 +26,8 @@ export type Home = {
   /** In the invoices' own currency; null when the project has no invoices. */
   owed: { count: number; cents: string; currency: string } | null;
   newLeads: Lead[];
+  /** Every open lead, of which `newLeads` is the first few. */
+  openLeads: number;
   events: Event[];
   tasks: Task[];
   closing: Deal[];
@@ -39,7 +41,7 @@ export async function home(db: Db, opts: { timeZone: string; currency: string; i
   const monthStart = `${today.slice(0, 8)}01`;
   const monthEnd = addDays(`${addDays(monthStart, 32).slice(0, 8)}01`, -1);
   const p = await present(db);
-  const [leads, due, deals, owed, newLeads, events, tasks, closing] = await Promise.all([
+  const [leads, due, deals, owed, newLeads, openLeads, events, tasks, closing] = await Promise.all([
     db.sql<{ current: number; previous: number }>`
       select count(*) filter (where created_at >= ${day(addDays(today, -6)).start})::int as current,
              count(*) filter (where created_at < ${day(addDays(today, -6)).start})::int as previous
@@ -50,6 +52,7 @@ export async function home(db: Db, opts: { timeZone: string; currency: string; i
     dealTotals(db, opts.currency, day(monthStart).start),
     p.invoices && opts.invoiceCurrency ? invoiceTotals(db, { today, timeZone: opts.timeZone, currency: opts.invoiceCurrency }) : null,
     listLeads(db, { status: "open" }, HOME_LIST),
+    openLeadCount(db),
     eventsBetween(db, day(today).start, day(today).end),
     listTasks(db, opts.user, HOME_LIST, today),
     closingBy(db, monthEnd, HOME_LIST),
@@ -60,6 +63,6 @@ export async function home(db: Db, opts: { timeZone: string; currency: string; i
     : null;
   return {
     today, leads: leads[0], due, open: deals.open, won: deals.won, owed: owed && opts.invoiceCurrency ? { ...owed.open, currency: opts.invoiceCurrency } : null,
-    newLeads, events, tasks: tasks.slice(0, HOME_LIST), closing, phone,
+    newLeads, openLeads, events, tasks: tasks.slice(0, HOME_LIST), closing, phone,
   };
 }
