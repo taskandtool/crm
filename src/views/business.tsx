@@ -39,7 +39,7 @@ export function BusinessPage(p: { user: string; business: Business; values?: Rec
       <section class="mt-8 max-w-prose">
         <h2 class="mb-2 text-heading font-semibold text-ink">Time zone</h2>
         <p>{zoneName(timeZone)}</p>
-        <p class="mt-1 text-label text-ink-3">Your schedule, due dates and invoices use it.</p>
+        <p class="mt-1 text-label text-ink-3">Automatic texts and recurring invoices run on it. Screens show each person their own time.</p>
         <AskAi class="mt-2" ask="Set our time zone to " />
       </section>
 

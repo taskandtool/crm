@@ -22,7 +22,7 @@ import type { Note } from "../customers/notes";
 import { formatMoney } from "../payments/money";
 import { Layout, ScheduleTabs } from "./layout";
 import { EventMoney } from "./money";
-import { ActivitySection, AddToggle, buttonClass, ContactCard, controlClass, CustomInput, CustomerPicker, Field, menuItemClass, MESSAGES, MoreMenu, primaryClass, ReadThenEdit, RecordLine, shownField, timeZone, ViewLink, viewsClass } from "./ui";
+import { ActivitySection, AddToggle, buttonClass, ContactCard, controlClass, CustomInput, CustomerPicker, Field, menuItemClass, MESSAGES, MoreMenu, primaryClass, ReadThenEdit, RecordLine, shownField, timeZone, viewZone, ViewLink, viewsClass } from "./ui";
 
 /** How many a customer's page shows. */
 export const CUSTOMER_EVENTS = 100;
@@ -96,7 +96,7 @@ function EventFields({ r, choices, where, deals = [], dealId = null }: { r?: Eve
         </select>
       </Field>
       <Field label="When">
-        <input name="at" type="datetime-local" required value={r ? nowIn(timeZone, new Date(r.starts_at)) : ""} class={controlClass} />
+        <input name="at" type="datetime-local" required value={r ? nowIn(viewZone(), new Date(r.starts_at)) : ""} class={controlClass} />
       </Field>
       <Field label="Length">
         <select name="minutes" class={controlClass}>

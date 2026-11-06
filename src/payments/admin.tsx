@@ -38,7 +38,7 @@ export type PaymentsAdminOptions = {
   /** Where it is mounted, e.g. "/admin/payments". */
   base: string;
   css: string;
-  /** The business's IANA zone; times show in it. */
+  /** The business's IANA zone: shown until the reader's own is known. */
   timeZone: string;
   /** The section's tabs, when payments sit among other pages (the CRM's Quotes and invoices), and their name. */
   nav?: NavItem[];

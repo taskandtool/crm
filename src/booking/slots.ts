@@ -85,9 +85,9 @@ function formatter(zone: string): Intl.DateTimeFormat {
   return f;
 }
 
-/** True when `zone` is an IANA zone this runtime knows. */
+/** True when `zone` is an IANA zone this runtime knows. A name only: Intl takes "+05:00" as UTC+5, Postgres as the opposite. */
 export function isValidZone(zone: unknown): zone is string {
-  if (typeof zone !== "string" || !zone || zone.length > 64) return false;
+  if (typeof zone !== "string" || !/^[A-Za-z]/.test(zone) || zone.length > 64) return false;
   try {
     formatter(zone);
     return true;

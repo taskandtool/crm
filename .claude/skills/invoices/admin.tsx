@@ -24,6 +24,7 @@ import { cut, readCursor } from "../admin/keyset";
 import { sectionPages, type Frame, type NavItem } from "../admin/layout";
 import { DataTable, EmptyState, NoMatches, SearchBar, SetupNeeded, TableRows, When, type TableSpec } from "../admin/list";
 import { idParam, isPartial, listUrl, str } from "../admin/query";
+import { viewerZone } from "../admin/viewer";
 import { buttonClass, controlClass, fieldClass, primaryClass, Select, StatusBadge, type StatusOption } from "../admin/status";
 import { businessOf } from "../data/business";
 import type { GetDb } from "../data/db";
@@ -473,7 +474,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
                       <form method="post" action={`${self}/attach`} class="flex flex-wrap items-center gap-2">
                         <span class="w-full text-label text-ink-3">Or one of their drafts</span>
                         <Select name="invoice" aria-label="One of their drafts">
-                          {drafts.map((d) => <option value={d.id}>Draft, {money(d.total_cents, d.currency)}, made {shortDay(todayIn(opts.timeZone, d.created_at))}</option>)}
+                          {drafts.map((d) => <option value={d.id}>Draft, {money(d.total_cents, d.currency)}, made {shortDay(todayIn(viewerZone(c, opts.timeZone), d.created_at))}</option>)}
                         </Select>
                         <button class={buttonClass}>Attach</button>
                       </form>
@@ -486,7 +487,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
               <FieldList fields={[
                 { label: "Customer", value: <Party doc={qt} href={linked.customer} /> },
                 { label: "Address", value: qt.address },
-                { label: "Valid until", value: qt.valid_until ? <When at={`${qt.valid_until}T00:00:00Z`} timeZone="UTC" day /> : null },
+                { label: "Valid until", value: qt.valid_until ? <When at={`${qt.valid_until}T00:00:00Z`} timeZone="UTC" pin day /> : null },
                 { label: "Sent", value: qt.sent_at ? <When at={qt.sent_at} timeZone={opts.timeZone} /> : null },
                 { label: "Opened", value: qt.viewed_at ? <When at={qt.viewed_at} timeZone={opts.timeZone} /> : null },
                 { label: QUOTE_STATUS_LABELS[qt.status], value: qt.decided_at ? <><When at={qt.decided_at} timeZone={opts.timeZone} />{qt.decided_by ? ` by ${qt.decided_by}` : ""}</> : null },
@@ -753,7 +754,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       { label: "Total", cell: (r) => money(r.total_cents, r.currency), class: "text-right" },
       { label: "Status", cell: (r) => <><StatusBadge value={r.past_due ? "due" : r.status} options={SHOWN_INVOICE} />{r.livemode === false ? <span class="ml-1 text-label text-ink-3">test</span> : null}</> },
       // When it was paid once it is; when it is due while it is open; nothing for a draft or a void.
-      { label: "Due", cell: (r) => (r.status === "paid" && r.paid_at ? <>Paid <When at={r.paid_at} timeZone={opts.timeZone} day /></> : r.status === "open" && r.due_date ? <When at={`${r.due_date}T00:00:00Z`} timeZone="UTC" day /> : ""), class: "hidden sm:table-cell" },
+      { label: "Due", cell: (r) => (r.status === "paid" && r.paid_at ? <>Paid <When at={r.paid_at} timeZone={opts.timeZone} day /></> : r.status === "open" && r.due_date ? <When at={`${r.due_date}T00:00:00Z`} timeZone="UTC" pin day /> : ""), class: "hidden sm:table-cell" },
     ],
   };
 
@@ -942,7 +943,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             <Section title="Details">
               <FieldList fields={[
                 { label: "Bill to", value: <Party doc={inv} href={linked.customer} /> },
-                inv.due_date ? { label: "Due", value: <When at={`${inv.due_date}T00:00:00Z`} timeZone="UTC" day /> } : { label: "Payment due", value: `${inv.days_until_due} ${inv.days_until_due === 1 ? "day" : "days"} after it is sent` },
+                inv.due_date ? { label: "Due", value: <When at={`${inv.due_date}T00:00:00Z`} timeZone="UTC" pin day /> } : { label: "Payment due", value: `${inv.days_until_due} ${inv.days_until_due === 1 ? "day" : "days"} after it is sent` },
                 { label: "Sent", value: inv.sent_at ? <When at={inv.sent_at} timeZone={opts.timeZone} /> : null },
                 { label: "Paid by", value: inv.sent_at && inv.collect === "charge" ? "Their card on file" : null },
                 { label: "Paid", value: inv.paid_at ? <When at={inv.paid_at} timeZone={opts.timeZone} /> : null },

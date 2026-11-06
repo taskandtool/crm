@@ -25,6 +25,7 @@ import { cut, everyPage, readCursor, type Cursor, type Keyed } from "../admin/ke
 import { sectionPages, SectionTabs, type Frame, type Head, type NavItem } from "../admin/layout";
 import { DataTable, EmptyCard, NoMatches, rowClick, rowLink, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { formIds, idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
+import { viewerZone } from "../admin/viewer";
 import { buttonClass, controlClass, FieldError, fieldClass, pickStatus, primaryClass, quietClass, SELECTED_ONLY, Select, smallText, StatusBadge, type StatusOption } from "../admin/status";
 import { customerByEmail, savePerson } from "../customers/customer";
 import { NoteForm } from "../customers/note-form";
@@ -617,7 +618,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     if (!sub) return c.notFound();
     const customer = await savePerson(db, { ...sub, at: sub.created_at, answers: sub.data }, c.get("user"));
     if (!customer) return c.notFound();
-    await addNote(db, customer.id, { kind: pickNoteKind(body.kind) ?? "note", body: text, at: wallTime(body.at), timeZone: tz }, c.get("user"));
+    await addNote(db, customer.id, { kind: pickNoteKind(body.kind) ?? "note", body: text, at: wallTime(body.at), timeZone: viewerZone(c, tz) }, c.get("user"));
     return c.redirect(withFlash(subUrl(id), "note"), 303);
   });
 

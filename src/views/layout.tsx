@@ -9,6 +9,7 @@ import { personName } from "../crm/people";
 import { Icon } from "./icons";
 import { UnreadBadge } from "../phone/admin";
 import { inputClass } from "../admin/status";
+import { ViewerZoneScript } from "../admin/viewer";
 import { Avatar, buttonClass } from "./ui";
 
 /** The New menu: everything that can be made, each its own page. */
@@ -126,6 +127,7 @@ export function Layout(props: {
         {drag ? <script dangerouslySetInnerHTML={{ __html: 'document.documentElement.classList.add("js")' }}></script> : null}
         {drag ? <script src="/vendor/Sortable.min.js" defer></script> : null}
         <script src="/crm.js" defer></script>
+        <ViewerZoneScript />
       </head>
       <body class="min-h-screen bg-canvas font-body text-copy text-ink">
         <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded-control focus:bg-accent focus:px-3 focus:py-1 focus:text-accent-ink">

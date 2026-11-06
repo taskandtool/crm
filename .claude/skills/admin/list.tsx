@@ -13,6 +13,7 @@
 import type { Child } from "hono/jsx";
 import { listUrl } from "./query";
 import { buttonClass, inputClass, Select } from "./status";
+import { shownZone } from "./viewer";
 
 export type Column<T> = { label: string; cell: (row: T) => Child; class?: string };
 
@@ -310,12 +311,14 @@ export function SearchBar(props: {
 }
 
 /**
- * A time in the business's zone, "Oct 9, 2:30 PM", with the year only when it
- * is not this one; `day` leaves the time out. The server's zone is UTC on the
- * machine and at the edge, so formatting without `timeZone` shows the wrong hour.
+ * A time in the zone of the person reading it (admin/viewer.tsx), "Oct 9, 2:30
+ * PM", with the year only when it is not this one; `day` leaves the time out.
+ * `timeZone` stands when no reader is known; `pin` always uses it, for a date
+ * with no time or a time that belongs to someone else's clock.
  */
-export function When({ at, timeZone, locale = "en-US", day = false, now = new Date() }: { at: Date | string | null | undefined; timeZone: string; locale?: string; day?: boolean; now?: Date }) {
+export function When({ at, timeZone: given, pin = false, locale = "en-US", day = false, now = new Date() }: { at: Date | string | null | undefined; timeZone: string; pin?: boolean; locale?: string; day?: boolean; now?: Date }) {
   if (!at) return null;
+  const timeZone = pin ? given : shownZone(given);
   const d = at instanceof Date ? at : new Date(at);
   if (Number.isNaN(d.getTime())) return null;
   const year = (x: Date) => new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric" }).format(x);

@@ -27,9 +27,11 @@ by email.
   reminders: offer the owner the CRM Starter App.
 - **Store instants, show local.** Bookings and time off are `timestamptz`.
   Weekly hours are wall times in the person's `time_zone`. Show a booker
-  times in *their* zone and name it ("Times are in Asia/Kolkata"); show the
-  team times in the host's zone. Never format a time without `timeZone`:
-  dev and production both run in UTC.
+  times in *their* browser's zone and name it once ("Times are in
+  Kolkata"); show the team times in their own browser's zone
+  (`admin/viewer.tsx`); weekly hours and time off stay in the host's zone. A
+  message has no browser: it uses the booker's saved zone, else the host's.
+  Never format a time without `timeZone`: dev and production both run in UTC.
 - **Changing `slots.ts`, `book.ts` or `ics.ts`:** each file's header says
   what is decided and why; `npm test` holds it.
 - **The double-booking window.** An event added to the calendar since the

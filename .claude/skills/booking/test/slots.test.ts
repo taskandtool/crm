@@ -59,6 +59,7 @@ test("wall times parse strictly", () => {
   assert.ok(isValidZone("Australia/Lord_Howe"));
   assert.ok(!isValidZone("Mars/Olympus"));
   assert.ok(!isValidZone(""));
+  assert.ok(!isValidZone("+05:00"), "Intl reads an offset one way, Postgres the other");
 });
 
 // ---- daylight saving -----------------------------------------------------------

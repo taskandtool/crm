@@ -11,6 +11,7 @@ import type { Child } from "hono/jsx";
 import { csvResponse } from "./admin/csv";
 import { withFlash } from "./admin/flash";
 import { teamOnly } from "./admin/guard";
+import { viewerZone } from "./admin/viewer";
 import { cut, everyPage } from "./admin/keyset";
 import { TableRows } from "./admin/list";
 import { idParam, isPartial, listUrl, localPath, str } from "./admin/query";
@@ -321,8 +322,8 @@ function closeAfter(c: C, close: () => Promise<void>) {
 }
 
 const flashOf = (c: C) => ({ code: c.req.query("saved"), n: c.req.query("n") });
-/** Today in the business's zone, YYYY-MM-DD: what "due" and "overdue" are judged against. */
-const today = () => todayInZone(cfg.time_zone);
+/** Today where the reader is, YYYY-MM-DD: what "due" and "overdue" are judged against on their screen. */
+const today = (c: C) => todayInZone(viewerZone(c, cfg.time_zone));
 // withFlash resolves dot segments, so a `return` of "/.//evil.example" that
 // passed localPath comes out as "//evil.example": another site. Only a path
 // that is still this app's own after resolving is followed.
@@ -335,7 +336,7 @@ const back = (c: C, path: string, code: string) => c.redirect(backTo(path, code)
 // ---- home -----------------------------------------------------------------
 
 app.get("/", async (c) => {
-  const h = await home(c.var.db, { timeZone: cfg.time_zone, currency: dealsCfg.currency, invoiceCurrency: invoicesCfg?.currency ?? null, user: c.var.user });
+  const h = await home(c.var.db, { timeZone: viewerZone(c, cfg.time_zone), currency: dealsCfg.currency, invoiceCurrency: invoicesCfg?.currency ?? null, user: c.var.user });
   // Nothing owed with no Stripe to send invoices is not "$0 owed": Home asks for Stripe instead. Only a sure no (null: not reachable just now).
   const noStripe = !!h.owed && Number(h.owed.cents) === 0 && (await stripeConnected(envOf(c))) === false;
   return c.html(<HomePage user={c.var.user} h={h} noStripe={noStripe} flash={flashOf(c)} />);
@@ -379,7 +380,7 @@ app.get("/customers", async (c) => {
   const { page, next } = cut(rows, PAGE);
   const ids = page.map((r) => r.id);
   const [dues, playing] = await Promise.all([nextTasks(db, ids), inPlay(db, ids)]);
-  const nextOf = { next: dues, inPlay: playing, today: today() };
+  const nextOf = { next: dues, inPlay: playing, today: today(c) };
   if (isPartial(c) && after) {
     const more = (cur: string) => listUrl("/customers", { ...filterParams(f), after: cur });
     return c.html(<TableRows spec={customerSpec(stages, nextOf)} rows={page} next={next} more={more} />);
@@ -487,7 +488,7 @@ app.get("/customers/:id", async (c) => {
   const texting = number?.texting === "approved";
   return c.html(
     <CustomerPage user={c.var.user} customer={customer} leads={leads} stages={stages} notes={notes} events={events} choices={choices} history={history.items} present={history.present} owners={owners}
-      deals={deals} dealStages={dealStages} tasks={tasks} today={today()}
+      deals={deals} dealStages={dealStages} tasks={tasks} today={today(c)}
       money={money} duplicates={duplicates} flash={flashOf(c)}
       texts={number && (comms.length || key) ? <ContactTexts rows={comms} phone={customer.phone} messagesBase="/messages" timeZone={cfg.time_zone} canText={texting} off={off} offAction={`/customers/${customer.id}/texts-off`} /> : null}
       textHref={texting && key && !off ? `/messages/${key}` : null} />,
@@ -582,7 +583,7 @@ app.post("/customers/:id/notes", async (c) => {
   const self = `/customers/${id}`;
   const text = str(body.body);
   if (!text.trim()) return back(c, self, "note-empty");
-  const note = await addNote(c.var.db, id, { kind: pickNoteKind(body.kind) ?? "note", body: text, at: wallTime(body.at), timeZone: cfg.time_zone }, c.var.user);
+  const note = await addNote(c.var.db, id, { kind: pickNoteKind(body.kind) ?? "note", body: text, at: wallTime(body.at), timeZone: viewerZone(c, cfg.time_zone) }, c.var.user);
   return note ? back(c, self, "note") : c.notFound();
 });
 
@@ -642,11 +643,11 @@ const choicesOf = async (db: Db): Promise<Choices> => {
  * left as it was and flagged. Null when it names neither a title nor a
  * service, or no time.
  */
-function readEventForm(body: Record<string, unknown>, current?: Event): { event: EventInput; unset: string[]; invalid: boolean } | null {
+function readEventForm(body: Record<string, unknown>, zone: string, current?: Event): { event: EventInput; unset: string[]; invalid: boolean } | null {
   const ev = eventsCfg!;
   let invalid = false;
   const at = str(body.at).trim();
-  const wall = (at ? wallTime(at) : null) ?? (current ? startWall(current, cfg.time_zone) : null);
+  const wall = (at ? wallTime(at) : null) ?? (current ? startWall(current, zone) : null);
   if (at && !wallTime(at)) invalid = true;
   const title = clean(body.title, 200);
   // A form with no Service choice (no services offered) leaves the one it has.
@@ -662,7 +663,7 @@ function readEventForm(body: Record<string, unknown>, current?: Event): { event:
   if (fr.errors.length) invalid = true;
   return {
     event: {
-      title, type_id: type, at: wall, timeZone: cfg.time_zone,
+      title, type_id: type, at: wall, timeZone: zone,
       minutes: Number.isInteger(minutes) && minutes >= 5 && minutes <= 1440 ? minutes : 60,
       resource_id: idParam(str(body.host)), location: clean(body.location, 500),
       amount_cents: amount, currency: (amount !== null && current?.currency) || ev.currency,
@@ -698,7 +699,7 @@ app.get("/events/export.csv", async (c) => {
   const f = readEventFilter(c);
   const ev = eventsCfg!;
   const day = new Date().toISOString().slice(0, 10);
-  const columns = eventCsvColumns(ev.fields, cfg.time_zone, ownerLabel, ev.currency, statusLabel);
+  const columns = eventCsvColumns(ev.fields, viewerZone(c, cfg.time_zone), ownerLabel, ev.currency, statusLabel);
   return csvResponse(`${slugify(ev.many)}-${day}.csv`, columns, everyPage((after, size) => eventsPage(db, f, after, size)));
 });
 
@@ -707,7 +708,7 @@ app.post("/customers/:id/events", async (c) => {
   const id = idParam(c.req.param("id"));
   const customer = id ? await getCustomer(db, id) : null;
   if (!customer) return c.notFound();
-  const form = readEventForm(await c.req.parseBody());
+  const form = readEventForm(await c.req.parseBody(), viewerZone(c, cfg.time_zone));
   if (!form) return back(c, `/customers/${customer.id}`, "event-incomplete");
   const r = await addEvent(db, customer, form.event, c.var.user);
   return r ? back(c, `/events/${r.id}`, form.invalid ? "invalid" : "event-added") : c.notFound();
@@ -723,7 +724,7 @@ app.get("/events/new", async (c) => {
 app.post("/events", async (c) => {
   const db = c.var.db;
   const body = await c.req.parseBody();
-  const form = readEventForm(body);
+  const form = readEventForm(body, viewerZone(c, cfg.time_zone));
   if (!form) return back(c, "/events/new", "event-incomplete");
   const who = await pickedCustomer(c, body);
   if ("error" in who) return back(c, who.error === "last-open" ? "/stages" : "/events/new", who.error);
@@ -756,7 +757,7 @@ app.post("/events/:id", async (c) => {
   const current = id ? await getEvent(db, id) : null;
   if (!current) return c.notFound();
   const self = `/events/${current.id}`;
-  const form = readEventForm(await c.req.parseBody(), current);
+  const form = readEventForm(await c.req.parseBody(), viewerZone(c, cfg.time_zone), current);
   if (!form) return back(c, self, "event-incomplete");
   const r = await saveEvent(db, current.id, { ...form.event, unset: form.unset }, current.customer_id, c.var.user);
   if (!r) return back(c, "/events", "gone");
@@ -1054,7 +1055,7 @@ app.get("/leads/:id", async (c) => {
   const lead = await getLead(db, c.req.param("id"));
   if (!lead) return c.notFound();
   const [tasks, notes, f] = await Promise.all([customerTasks(db, lead.customer_id), listNotes(db, lead.customer_id), facets(db)]);
-  return c.html(<LeadPage user={c.var.user} lead={lead} tasks={tasks} notes={notes} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} flash={flashOf(c)} />);
+  return c.html(<LeadPage user={c.var.user} lead={lead} tasks={tasks} notes={notes} owners={[...new Set([c.var.user, ...f.owners])]} today={today(c)} flash={flashOf(c)} />);
 });
 
 // Its details, from the Details card's Edit: what they need, whose it is, the notes.
@@ -1087,7 +1088,7 @@ app.post("/leads/:id/reopen", async (c) => {
 async function noteFrom(c: C, customerId: string, self: string) {
   const body = await c.req.parseBody();
   if (!str(body.body).trim()) return back(c, self, "note-empty");
-  await addNote(c.var.db, customerId, { kind: pickNoteKind(body.kind) ?? "note", body: str(body.body), at: wallTime(body.at), timeZone: cfg.time_zone }, c.var.user);
+  await addNote(c.var.db, customerId, { kind: pickNoteKind(body.kind) ?? "note", body: str(body.body), at: wallTime(body.at), timeZone: viewerZone(c, cfg.time_zone) }, c.var.user);
   return back(c, self, "note");
 }
 
@@ -1113,12 +1114,12 @@ app.post("/deals/:id/notes", async (c) => {
 app.get("/tasks", async (c) => {
   const view = c.req.query("show") === "done" ? "done" : c.req.query("who") === "everyone" ? "everyone" : "mine";
   const rows = view === "done" ? await doneTasks(c.var.db, PAGE) : await listTasks(c.var.db, view === "mine" ? c.var.user : null, PAGE, null, true);
-  return c.html(<TasksPage user={c.var.user} view={view} today={today()} rows={rows.slice(0, PAGE)} more={rows.length > PAGE} flash={flashOf(c)} />);
+  return c.html(<TasksPage user={c.var.user} view={view} today={today(c)} rows={rows.slice(0, PAGE)} more={rows.length > PAGE} flash={flashOf(c)} />);
 });
 
 app.get("/tasks/new", async (c) => {
   const [f, customers] = await Promise.all([facets(c.var.db), customerChoices(c.var.db)]);
-  return c.html(<NewTaskPage user={c.var.user} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} customers={customers} flash={flashOf(c)} />);
+  return c.html(<NewTaskPage user={c.var.user} owners={[...new Set([c.var.user, ...f.owners])]} today={today(c)} customers={customers} flash={flashOf(c)} />);
 });
 
 // A task from the Tasks page: for the customer picked, or for someone new
@@ -1139,7 +1140,7 @@ app.post("/tasks", async (c) => {
 
 // The nav's count: the viewer's tasks due today and overdue (htmx, after the page loads).
 app.get("/tasks/count", async (c) => {
-  const n = await taskCounts(c.var.db, today(), c.var.user, true);
+  const n = await taskCounts(c.var.db, today(c), c.var.user, true);
   const due = n.overdue + n.today;
   if (!due) return c.html(<span hidden></span>);
   return c.html(
@@ -1160,7 +1161,7 @@ app.post("/tasks/:id/done", async (c) => {
   const ret = localPath(str(body.return), "", `/customers/${r.task.customer_id}`);
   if (isPartial(c)) {
     c.header("HX-Trigger", "tasks-changed");
-    return c.html(<TaskDone {...shownFrom(body, r.task, today(), ret)} />);
+    return c.html(<TaskDone {...shownFrom(body, r.task, today(c), ret)} />);
   }
   return back(c, ret, r.already ? "task-already" : "task-done");
 });
@@ -1176,7 +1177,7 @@ app.post("/tasks/:id/undo", async (c) => {
   const ret = localPath(str(body.return), "", `/customers/${task.customer_id}`);
   if (isPartial(c)) {
     c.header("HX-Trigger", "tasks-changed");
-    return c.html(task.done_at ? <TaskDone {...shownFrom(body, task, today(), ret)} /> : <TaskItem {...shownFrom(body, task, today(), ret)} focus />);
+    return c.html(task.done_at ? <TaskDone {...shownFrom(body, task, today(c), ret)} /> : <TaskItem {...shownFrom(body, task, today(c), ret)} focus />);
   }
   return back(c, ret, opened ? "task-undone" : "task-already");
 });
@@ -1229,7 +1230,7 @@ async function boardData(c: C): Promise<BoardData> {
     board(db, { per: PER_COLUMN, closedDays: CLOSED_DAYS, currency: dealsCfg.currency }),
   ]);
   const [next, archived] = await Promise.all([nextTasks(db, cards.map((d) => d.id), "deal"), archivedCount(db)]);
-  return { stages, cards, totals, next, today: today(), archived };
+  return { stages, cards, totals, next, today: today(c), archived };
 }
 
 app.get("/deals", async (c) => {
@@ -1303,7 +1304,7 @@ app.get("/deals/:id", async (c) => {
   return c.html(
     <DealPage user={c.var.user} deal={deal} leads={leads} stages={stages} tasks={tasks} openDeals={dealChoices(deals, deal.id)}
       customer={customer!} notes={notes} schedule={events && choices ? { events, choices } : null}
-      quotes={quotes} invoices={invoices} owners={[...new Set([c.var.user, ...f.owners])]} today={today()} flash={flashOf(c)} />,
+      quotes={quotes} invoices={invoices} owners={[...new Set([c.var.user, ...f.owners])]} today={today(c)} flash={flashOf(c)} />,
   );
 });
 

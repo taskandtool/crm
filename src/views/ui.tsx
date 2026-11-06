@@ -10,6 +10,7 @@ import { buttonClass, controlClass, fieldClass, primaryClass, quietClass, type S
 import { cfg, dealsCfg, eventsCfg, vocab } from "../config";
 import type { CustomField } from "../config-schema";
 import { When } from "../admin/list";
+import { shownZone } from "../admin/viewer";
 import { FieldList, Section, type Field as Shown } from "../admin/detail";
 import { NoteForm } from "../customers/note-form";
 import { NOTE_LABELS, type Note } from "../customers/notes";
@@ -371,7 +372,10 @@ export const MESSAGES: FlashMessages = {
   "event-incomplete": { error: `Give the ${eventWord.toLowerCase()} a title or a service, and a time.` },
 };
 
+/** The business's zone: texts, scheduled work, and what <When> shows until the reader's zone is known. */
 export const timeZone = cfg.time_zone;
+/** The zone of the person reading this page; call it while rendering. */
+export const viewZone = () => shownZone(cfg.time_zone);
 
 /**
  * A lead's or a deal's Activity: write a note or log a call (it goes on the

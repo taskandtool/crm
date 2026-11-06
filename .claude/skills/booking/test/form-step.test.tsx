@@ -113,6 +113,10 @@ test("a paid intake: questions, a time held inside the form, the price charged, 
     const thanks = await (await app.request(HOST + `/forms/intake/thanks?k=${key}`)).text();
     assert.match(thanks, /Your time is held/);
     assert.match(thanks, /data:text\/calendar/);
+    assert.match(thanks, /resolvedOptions\(\)\.timeZone/, "the browser's zone, if not the one saved");
+    const inKolkata = await (await app.request(HOST + `/forms/intake/thanks?k=${key}&tz=Asia/Kolkata`)).text();
+    assert.match(inKolkata, /GMT\+5:30/);
+    assert.doesNotMatch(inKolkata, /resolvedOptions/);
     assert.match(await (await app.request(HOST + "/forms/intake/thanks")).text(), /Thank you/, "no key, nothing about anyone's booking");
     // Held, it is the visitor's until paid: not on the Schedule, and its submission shows it held with nothing to move or cancel.
     const team = new Hono();

@@ -16,7 +16,7 @@ import { formatWholeMoney } from "../crm/text";
 import { prettyPhone } from "../phone/store";
 import { Layout } from "./layout";
 import { TaskItem } from "./tasks";
-import { Avatar, MESSAGES, dueDayText, timeZone } from "./ui";
+import { Avatar, MESSAGES, dueDayText, timeZone, viewZone } from "./ui";
 
 const CHIP = { good: "bg-good/10 text-good", late: "bg-late/10 text-late", neutral: "bg-panel text-ink-2" };
 type Chip = { text: string; tone: keyof typeof CHIP };
@@ -95,7 +95,7 @@ const row = "py-3";
 
 /** "Good morning", by the hour where the business is. */
 function greeting(now: Date): string {
-  const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" }).format(now));
+  const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: viewZone(), hour: "numeric", hourCycle: "h23" }).format(now));
   return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 }
 
@@ -106,7 +106,7 @@ export function HomePage({ user, h, noStripe = false, flash }: { user: string; h
   const first = name.includes("@") ? null : name.split(" ")[0];
   return (
     <Layout title="Home" heading={first ? `${greeting(now)}, ${first}` : greeting(now)} user={user} section="home"
-      sub={new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long", month: "long", day: "numeric" }).format(now)}>
+      sub={new Intl.DateTimeFormat("en-US", { timeZone: viewZone(), weekday: "long", month: "long", day: "numeric" }).format(now)}>
       <Flash code={flash.code} n={flash.n} messages={MESSAGES} />
       <Numbers h={h} noStripe={noStripe} />
       {/* Two columns that stack on their own, so a short list never leaves an empty box beside a long one. */}
@@ -148,7 +148,7 @@ export function HomePage({ user, h, noStripe = false, flash }: { user: string; h
             <Panel title="Today" href="/schedule" link="Calendar" n={h.events.length} empty={`No ${eventsCfg.many.toLowerCase()} today.`}>
               {h.events.map((e) => (
                 <li class={row + " flex gap-3"}>
-                  <span class="w-20 shrink-0 tabular-nums text-ink-2">{formatTime(e.starts_at, timeZone)}</span>
+                  <span class="w-20 shrink-0 tabular-nums text-ink-2">{formatTime(e.starts_at, viewZone())}</span>
                   <div class="min-w-0 flex-1">
                     <a href={`/events/${e.id}`} class="block truncate font-medium text-ink no-underline hover:underline">{e.what}</a>
                     <p class="truncate text-label text-ink-3">{[e.customer_name ?? e.name, e.host_name, e.location].filter(Boolean).join(" · ")}</p>

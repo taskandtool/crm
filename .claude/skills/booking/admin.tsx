@@ -22,6 +22,7 @@ import { teamOnly, type TeamVars } from "../admin/guard";
 import { sectionPages, type Frame, type NavItem } from "../admin/layout";
 import { When } from "../admin/list";
 import { idParam, listUrl, str } from "../admin/query";
+import { viewerZone } from "../admin/viewer";
 import { buttonClass, FieldError, fieldClass, inputClass, linkClass, pickStatus, primaryClass, Select, smallText, StatusBadge, type StatusOption } from "../admin/status";
 import { book, bookableTypes, hostsOf, LOCATION_KINDS, rescheduleById, resourceById, setStatus, toBooking, typeById, whereText, type Booking, type BookingType, type Resource } from "./book";
 import {
@@ -48,7 +49,7 @@ export type BookingAdminOptions = {
   deals?: boolean;
   /** Where each section is mounted, so one links to another (a service's Book for someone, a person's services). */
   sections: { schedule: string; services: string; team: string };
-  /** The business's zone: the Schedule shows times in it. Absent, the first person's. */
+  /** The business's zone: the Schedule shows it to someone whose own is not known yet. Absent, the first person's. */
   timeZone?: string;
   /**
    * The public booking pages' address, absolute ("https://acme.com/book"), so
@@ -153,7 +154,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
 
   // ---- the calendar (day, week, month), and booking for someone ----------------------
 
-  const zoneOf = async (c: Team) => opts.timeZone ?? (await allPeople(getDb(c)))[0]?.time_zone ?? "UTC";
+  const zoneOf = async (c: Team) => viewerZone(c, opts.timeZone ?? (await allPeople(getDb(c)))[0]?.time_zone ?? "UTC");
 
   app.get("/", async (c) => {
     const d = getDb(c);
@@ -374,7 +375,6 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
         {board ? <>{board}<div class="sm:hidden">{listOf(days)}</div></>
           : month ? <>{month}<div class="sm:hidden">{listOf(days.filter((day) => onDay(day).mine.length || onDay(day).away.length))}</div></>
           : listOf(days)}
-        <p class={`mt-3 ${smallText} text-ink-3`}>Times are in {zoneName(zone)}.</p>
       </>
     ));
   });
@@ -418,7 +418,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     const w = forWhom(c);
     const hosts = await hostsOf(d, t.id);
     const host = hosts.find((h) => h.id === c.req.query("host")) ?? null;
-    const zone = opts.timeZone ?? host?.time_zone ?? hosts[0]?.time_zone ?? "UTC";
+    const zone = viewerZone(c, opts.timeZone ?? host?.time_zone ?? hosts[0]?.time_zone ?? "UTC");
     const days = await upcoming(d, t, zone, 60, host ? { hosts: [host.id] } : {});
     const keys = [...days.keys()];
     const chosen = keys.includes(c.req.query("date") ?? "") ? c.req.query("date")! : keys[0];
@@ -452,7 +452,6 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
             </ul>
           </DayAndTimes>
         ) : <p class="text-ink-2">No open times{host ? ` with ${host.name}` : ""} in the next weeks.</p>}
-        <p class={`mt-5 ${smallText} text-ink-3`}>Times are in {zoneName(zone)}.</p>
       </div>
     ));
   }
@@ -460,7 +459,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
   async function confirmTeam(c: Team, t: BookingType, values: Record<string, string>, errors: Errors = {}, notice?: string) {
     const hosts = await hostsOf(getDb(c), t.id);
     const host = hosts.find((h) => h.id === values.host) ?? null;
-    const zone = opts.timeZone ?? host?.time_zone ?? hosts[0]?.time_zone ?? "UTC";
+    const zone = viewerZone(c, opts.timeZone ?? host?.time_zone ?? hosts[0]?.time_zone ?? "UTC");
     const start = new Date(values.start);
     if (Number.isNaN(start.getTime())) return c.redirect(listUrl(`${base}/new/${t.id}`, forWhom(c)), 303);
     const end = new Date(start.getTime() + t.duration_min * 60_000);
@@ -540,7 +539,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     const current = await resourceById(getDb(c), b.resource_id);
     const host = hosts.find((h) => h.id === (picked ?? c.req.query("host"))) ?? current;
     const home = homeOf(raw);
-    return type && host && current ? { b, type, host, current, hosts, home, zone: opts.timeZone ?? host.time_zone } : null;
+    return type && host && current ? { b, type, host, current, hosts, home, zone: viewerZone(c, opts.timeZone ?? host.time_zone) } : null;
   }
 
   async function reschedulePage(c: Team, m: NonNullable<Awaited<ReturnType<typeof moveable>>>, notice?: string) {
@@ -583,7 +582,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
             </ul>
           </DayAndTimes>
         ) : <p class="text-ink-2">{host.name} has no other open times in the next weeks.</p>}
-        <p class={`mt-5 ${smallText} text-ink-3`}>Times are in {zoneName(zone)}. {b.name} is told the new time.</p>
+        <p class={`mt-5 ${smallText} text-ink-3`}>{b.name} is told the new time.</p>
         <form method="post" action={`${self}/status`} class="mt-5 border-t border-line pt-5" onsubmit={`return confirm(${JSON.stringify("Cancel this booking? They are told, and it cannot be undone.")})`}>
           <input type="hidden" name="status" value="cancelled" />
           <button class={buttonClass}>Cancel booking</button>
@@ -1117,7 +1116,7 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
                 {off.map((t) => (
                   <li class="flex items-start justify-between gap-3 py-2">
                     <span class="min-w-0">
-                      <When at={t.starts_at} timeZone={r.time_zone} /> – <When at={t.ends_at} timeZone={r.time_zone} />
+                      <When at={t.starts_at} timeZone={r.time_zone} pin /> – <When at={t.ends_at} timeZone={r.time_zone} pin />
                       {t.note ? <span class="text-ink-2"> · {t.note}</span> : null}
                     </span>
                     <form method="post" action={`${self}/time-off/${t.id}/delete`}><button class={remove} aria-label="Remove this time off" title="Remove">&times;</button></form>

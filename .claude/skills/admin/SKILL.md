@@ -55,8 +55,11 @@ default, with two locks:
 - **Optional filters are written in the SQL**, never spliced:
   `(${status}::text is null or status = ${status})`. Validate a status
   against its options (`pickStatus`) before it reaches the query.
-- **Times show in the business's zone** (`<When timeZone>`). Dev and
-  production run in UTC.
+- **Times show in the reader's zone.** `<When>` does it by itself; other code
+  on a team page takes `viewerZone(c, business)` in a route or
+  `shownZone(business)` in a component (`viewer.tsx`). `timeZone` is what stands
+  when no reader is known; `pin` keeps it, for a date with no time or a host's
+  own hours. Dev and production run in UTC.
 
 ## Words
 

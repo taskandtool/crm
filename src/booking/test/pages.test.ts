@@ -9,7 +9,7 @@ import { applySchema } from "../../data/migrate";
 import { scratch, why } from "../../data/test/scratch";
 import { bookingAdmin, peopleRoutes, typeRoutes } from "../admin";
 import { addWindow, createPerson, createType, setHosts } from "../hours";
-import { formatShortDate } from "../slots";
+import { formatShortDate, formatTime } from "../slots";
 import { bookingPages, type BookingEvent } from "../public";
 import { makeStamp } from "../../data/spam";
 import type { Scratch } from "../../data/test/scratch";
@@ -117,11 +117,20 @@ test("a visitor books, sees the time in their zone, downloads the invite, and ca
     html = await (await app.request(week, { headers: team })).text();
     // No page of the app's for it: its name opens its Reschedule, where it can be cancelled too.
     assert.match(html, /href="\/admin\/schedule\/\d+\/reschedule"[^>]*>Ann<\/a><span class="text-ink-2"> · Intro call with Pat/);
-    assert.match(html, /Times are in New York/, "the first person's zone");
+    assert.ok(html.includes(formatTime(new Date(start), "America/New_York")), "the first person's zone");
+    assert.doesNotMatch(html, /Times are in/);
     // With the business's zone given, the week shows its times in it, not the host's (Pat is in New York).
     const zoned = new Hono();
     zoned.route("/admin/schedule", bookingAdmin(() => s.db, { base: "/admin/schedule", css: "/site.css", source: "website", timeZone: "Asia/Tokyo", sections }));
-    assert.match(await (await zoned.request(week, { headers: team })).text(), /Times are in Tokyo/);
+    assert.ok((await (await zoned.request(week, { headers: team })).text()).includes(formatTime(new Date(start), "Asia/Tokyo")));
+    // The person reading it comes before either.
+    assert.ok((await (await zoned.request(week, { headers: { ...team, cookie: "tt_zone=Asia/Kolkata" } })).text()).includes(formatTime(new Date(start), "Asia/Kolkata")));
+
+    // Their browser's zone wins on the manage page, over the one they booked in; the zone is named once.
+    const managed = await (await app.request(`/book/manage/${token}?tz=Asia/Tokyo&change=1`)).text();
+    assert.ok(managed.includes(formatTime(new Date(start), "Asia/Tokyo")));
+    assert.doesNotMatch(managed, /Times are in/);
+    assert.match(await (await app.request(`/book/manage/${token}`)).text(), /Asia\/Kolkata[\s\S]*resolvedOptions|resolvedOptions[\s\S]*Asia\/Kolkata/, "the script compares with the zone it shows");
 
     // Nothing changes on one tap: the page has no form until they ask, and then asks again.
     const calm = await (await app.request(`/book/manage/${token}`)).text();
@@ -355,6 +364,19 @@ test("a day for the whole team: a column a person against the hours, the unassig
     const one = await (await app.request(`/schedule?view=day&date=2099-03-10&person=${ana.value.id}`, { headers: team })).text();
     assert.doesNotMatch(one, /grid-template-columns/, "one person picked: the list");
     assert.match(one, /Mei Lin/);
+
+    // A reader's days are their own: 23:00 UTC is the next morning in Kolkata.
+    await s.db.sql`insert into bookings (resource_id, starts_at, ends_at, title, name, location_kind) values (${ana.value.id}::bigint, '2099-03-10T23:00:00Z', '2099-03-10T23:30:00Z', 'Late', 'Nia Late', 'their_place')`;
+    const inKolkata = { ...team, cookie: "tt_zone=Asia/Kolkata" };
+    const day = async (date: string, headers: Record<string, string>) => (await app.request(`/schedule?view=day&date=${date}&person=${ana.value.id}`, { headers })).text();
+    assert.match(await day("2099-03-11", inKolkata), /4:30\sAM[\s\S]*Nia Late/);
+    assert.doesNotMatch(await day("2099-03-10", inKolkata), /Nia Late/);
+    assert.match(await day("2099-03-10", team), /11:00\sPM[\s\S]*Nia Late/);
+    // The Sunday the US clocks change (2099-03-08 here): before and after read an hour's gap apart, and both on that day.
+    await s.db.sql`insert into bookings (resource_id, starts_at, ends_at, title, name, location_kind) values
+      (${ana.value.id}::bigint, '2099-03-08T06:30:00Z', '2099-03-08T07:30:00Z', 'Across', 'Dee Change', 'their_place')`;
+    assert.match(await day("2099-03-08", { ...team, cookie: "tt_zone=America/New_York" }), /1:30\sAM – 3:30\sAM[\s\S]*Dee Change/);
+    assert.match(await day("2099-03-08", inKolkata), /12:00\sPM – 1:00\sPM[\s\S]*Dee Change/);
   } finally {
     await s.drop();
   }

@@ -96,9 +96,9 @@ const valuesOf = (r: Recurring & { lines: SavedLine[] }): RV => ({
   notes: r.notes ?? "", note_for_team: r.note_for_team ?? "", owner: r.owner ?? "", quote_id: r.quote_id ?? "", lines: linesOf(r),
 });
 
-function RecurringForm({ action, v, errors, rates, cancel, submit, taxPage, timeZone, fixed, people }: {
+function RecurringForm({ action, v, errors, rates, cancel, submit, taxPage, fixed, people }: {
   people: Person[];
-  action: string; v: RV; errors: Errors; rates: TaxRate[]; cancel: string; submit: string; taxPage: string; timeZone: string;
+  action: string; v: RV; errors: Errors; rates: TaxRate[]; cancel: string; submit: string; taxPage: string;
   /** Its schedule is set: an invoice is made. */
   fixed: boolean;
 }) {
@@ -109,9 +109,6 @@ function RecurringForm({ action, v, errors, rates, cancel, submit, taxPage, time
     <form method="post" action={action} class="flex flex-col gap-4">
       {problems ? <p role="alert" class={alertClass}>Fix what is marked below. Nothing was saved.</p> : null}
       {errors.status ? <p role="alert" class={alertClass}>{errors.status}</p> : null}
-      {timeZone === "UTC" ? (
-        <p role="status" class={alertClass}>Dates are in UTC. Ask the AI to set your time zone first, so each invoice is made on your date.</p>
-      ) : null}
       <input type="hidden" name="quote_id" value={v.quote_id} />
       {v.from_invoice ? <input type="hidden" name="from_invoice" value={v.from_invoice} /> : null}
       <input type="hidden" name="currency" value={v.currency} />
@@ -294,7 +291,7 @@ export function recurringRoutes(app: Hono<{ Variables: TeamVars }>, h: Recurring
       <>
       {p.action === base ? <OneOrRepeats base={h.base} repeats={true} query={new URL(c.req.url).search} /> : null}
       <RecurringForm people={await peopleOf(h.getDb(c))} action={p.action} v={p.v} errors={p.errors} rates={rates} cancel={p.cancel} submit={p.action === base ? "Save recurring invoice" : "Save"}
-        taxPage={`${h.base}/tax-rates`} timeZone={h.timeZone} fixed={p.fixed} />
+        taxPage={`${h.base}/tax-rates`} fixed={p.fixed} />
       </>
     ), status);
   };

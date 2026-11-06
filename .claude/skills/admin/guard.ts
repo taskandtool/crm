@@ -17,6 +17,7 @@
 // (isLocal below).
 import type { Context, MiddlewareHandler } from "hono";
 import { envVar } from "../data/env";
+import { showInViewerZone } from "./viewer";
 
 export type TeamVars = { user: string };
 
@@ -26,6 +27,8 @@ export function teamOnly(): MiddlewareHandler<{ Variables: TeamVars }> {
   return async (c, next) => {
     const user = whoIs(c);
     if (!user) return c.notFound();
+    // A skill's routes guard themselves inside an app's guard: once is enough.
+    if (!c.get("user")) showInViewerZone(c);
     c.set("user", user);
     c.header("Cache-Control", "no-store");
     c.header("X-Robots-Tag", "noindex");

@@ -29,9 +29,11 @@ Everything a business wants changed is one of these.
      when they sign in to Task & Tool, otherwise their name (`Kim`).
      The list filters by whatever is there, so use one form per person, or
      the filter splits them.
-   - `time_zone`: an IANA name. Every time on a page, and the "when" of a
-     note, is in this zone; it ships as `UTC`, so setting it is part of
-     shaping. The machine's clock never decides.
+   - `time_zone`: an IANA name, the business's zone: automatic texts and
+     their quiet hours, the digest, recurring invoices, dates a script
+     reads. It ships as `UTC`, so setting it is part of shaping. Screens show
+     each person their own browser's zone, and fall back to this one. The
+     machine's clock never decides.
    - `events`: what one event on the schedule is called (`{ "one":
      "Event", "many": "Events" }`; a trade's "Job", a practice's
      "Appointment"), its own custom `fields` (same shape as lever 3), and

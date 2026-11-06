@@ -68,7 +68,7 @@ export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
           <input type="hidden" name="tz" value={zone} />
           <p class="text-ink-2">{t.name}, {t.duration_min} minutes{t.price_cents ? `, ${formatMoney(t.price_cents, t.currency ?? "usd")}` : ""}.</p>
           <ZoneNote zone={zone} business={business} switchHref={zone !== business ? `${ctx.self}&tz=${encodeURIComponent(business)}` : null} />
-          {tz ? null : <ZoneScript business={business} />}
+          {tz ? null : <ZoneScript shown={zone} />}
           <div class="max-w-xs">
             <MonthPicker days={keys} chosen={chosen} href={(d) => withTz(`&date=${d}`)} />
           </div>
@@ -99,7 +99,8 @@ export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
       if (!b) return null;
       const [t, host] = await Promise.all([typeById(getDb(c), b.type_id), resourceById(getDb(c), b.resource_id)]);
       if (!t || !host) return null;
-      const zone = b.booker_time_zone ?? host.time_zone;
+      const tz = c.req.query("tz");
+      const zone = isValidZone(tz) ? tz : b.booker_time_zone ?? host.time_zone;
       const [{ held }] = await getDb(c).sql<{ held: boolean }>`select hold_until is not null as held from bookings where id = ${b.id}::bigint`;
       const file = invite({
         method: "PUBLISH", booking: b, domain: opts.domain ?? new URL(c.req.url).hostname,
@@ -108,6 +109,7 @@ export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
       return (
         <>
           <h1 class="mb-2 text-title font-semibold">{held ? "Your time is held" : "You are booked"}</h1>
+          {tz ? null : <ZoneScript shown={zone} />}
           <p class="mb-1 font-semibold">{formatSlot({ start: b.starts_at, end: b.ends_at }, zone)}</p>
           <p class="mb-1">{t.name}, with {host.name}.</p>
           <p class="mb-4 break-words">{whereText(b, { link: true })}</p>

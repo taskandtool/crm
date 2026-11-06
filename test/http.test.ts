@@ -9,6 +9,7 @@ import { cfg, seeds } from "../src/config";
 import { q, type Db } from "../src/data/db";
 import { applySchema } from "../src/data/migrate";
 import { setup } from "../src/db/setup";
+import { dayBounds, localDate } from "../src/booking/slots";
 import { getCustomer } from "../src/crm/customers";
 import { insertOnce } from "../src/forms/store";
 import { makeStamp } from "../src/data/spam";
@@ -846,9 +847,36 @@ test("the schedule in the CRM: its own frame, a service and a person; an online 
   assert.match(cal, /Mo Job<\/a><span class="text-ink-2"> · Fix the boiler/, "one the team scheduled is there too");
   assert.match(cal, /href="\/events\/new"[^>]*>New event</);
   assert.doesNotMatch(cal, /New booking/);
-  assert.match(cal, /Times are in UTC/, "the CRM's zone");
+  assert.doesNotMatch(cal, /Times are in/);
   // A cancel from its page goes through the booking pages and comes back.
   assert.equal((await post(`/schedule/${b.id}/status`, { status: "cancelled" })).headers.get("location"), `/events/${b.id}?saved=cancelled`);
+});
+
+test("each person reads and types the schedule in their own zone; the database keeps the instant", async (t) => {
+  if (skip) return t.skip(skip);
+  const inZone = (zone: string) => ({ ...ME, cookie: `tt_zone=${zone}` });
+  // Typed in Kolkata at 10:00: the instant is 04:30 UTC.
+  const added = await post("/events", { name: "Zed Zone", email: "zed@example.com", title: "Zone visit", at: "2099-04-02T10:00" }, { ...inZone("Asia/Kolkata"), origin: HOST });
+  const id = added.headers.get("location")!.match(/\/events\/(\d+)/)![1];
+  const [{ at }] = await db.sql<{ at: string }>`select to_char(starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI') as at from bookings where id = ${id}::bigint`;
+  assert.equal(at, "2099-04-02T04:30");
+  assert.match(await (await get(`/events/${id}`, inZone("Asia/Kolkata"))).text(), /Apr 2, 2099, 10:00\sAM/);
+  assert.match(await (await get(`/events/${id}`, inZone("America/New_York"))).text(), /Apr 2, 2099, 12:30\sAM/);
+  assert.match(await (await get(`/events/${id}`)).text(), /Apr 2, 2099, 4:30\sAM/, "UTC, the business's, until theirs is known");
+  // The form shows the time as they read it, so saving it unchanged moves nothing.
+  const form = await (await get(`/events/${id}`, inZone("America/New_York"))).text();
+  assert.match(form, /name="at"[^>]*value="2099-04-02T00:30"/);
+  await post(`/events/${id}`, { title: "Zone visit", at: "2099-04-02T00:30" }, { ...inZone("America/New_York"), origin: HOST });
+  const [{ same }] = await db.sql<{ same: string }>`select to_char(starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI') as same from bookings where id = ${id}::bigint`;
+  assert.equal(same, "2099-04-02T04:30");
+  // Home's today is the reader's: noon there is on their list, at their noon.
+  for (const zone of ["Asia/Kolkata", "America/New_York"]) {
+    const noon = new Date(dayBounds(localDate(new Date(), zone), zone).start.getTime() + 12 * 3600_000);
+    const [r] = await db.sql<{ id: string }>`insert into bookings (starts_at, ends_at, title, name, location_kind) values (${noon.toISOString()}::timestamptz, ${new Date(noon.getTime() + 1800_000).toISOString()}::timestamptz, ${"Noon " + zone}, 'Home Person', 'their_place') returning id::text as id`;
+    const home = await (await get("/", inZone(zone))).text();
+    assert.ok(home.includes("Noon " + zone), zone);
+    await db.sql`delete from bookings where id = ${r.id}::bigint`;
+  }
 });
 
 test("quotes in the CRM: from an event, sent, accepted, invoiced", async (t) => {

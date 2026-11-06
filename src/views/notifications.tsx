@@ -9,7 +9,7 @@ import { isUnread, type Notice } from "../crm/notifications";
 import { formatMoney } from "../payments/money";
 import { todayIn } from "../reports/sql";
 import { Layout } from "./layout";
-import { Avatar, dueDayText, timeZone } from "./ui";
+import { Avatar, dueDayText, timeZone, viewZone } from "./ui";
 
 /** Where it is kept: the event a change moved, the quote, the payment (when this CRM shows those pages). */
 function noticeHref(n: Notice): string | null {
@@ -51,7 +51,7 @@ function Said({ n }: { n: Notice }) {
 function byDay(rows: Notice[], today: string): [string, Notice[]][] {
   const out: [string, Notice[]][] = [];
   for (const n of rows) {
-    const heading = dueDayText(todayIn(timeZone, n.at), today);
+    const heading = dueDayText(todayIn(viewZone(), n.at), today);
     const last = out[out.length - 1];
     if (last && last[0] === heading) last[1].push(n);
     else out.push([heading, [n]]);
@@ -60,7 +60,7 @@ function byDay(rows: Notice[], today: string): [string, Notice[]][] {
 }
 
 export function NotificationsPage({ user, rows, seen }: { user: string; rows: Notice[]; seen: Date | null }) {
-  const today = todayIn(timeZone);
+  const today = todayIn(viewZone());
   return (
     <Layout title="Notifications" user={user} section="notifications">
       {rows.length ? (
@@ -81,7 +81,7 @@ export function NotificationsPage({ user, rows, seen }: { user: string; rows: No
                         {fresh ? <span class="sr-only">Unread: </span> : null}
                         {href ? <a href={href} class="text-inherit no-underline hover:underline"><Said n={n} /></a> : <Said n={n} />}
                       </p>
-                      <span class="shrink-0 text-label tabular-nums text-ink-3">{formatTime(n.at, timeZone)}</span>
+                      <span class="shrink-0 text-label tabular-nums text-ink-3">{formatTime(n.at, viewZone())}</span>
                       <span aria-hidden="true" class={"size-2 shrink-0 rounded-full " + (fresh ? "bg-accent" : "")}></span>
                     </li>
                   );

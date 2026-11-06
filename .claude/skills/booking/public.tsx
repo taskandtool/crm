@@ -97,9 +97,9 @@ export function PlainPage({ title, css, children }: { title: string; css: string
   );
 }
 
-/** Adds ?tz=<browser zone> once, when the page has none and the browser's differs. */
-export function ZoneScript({ business }: { business: string }) {
-  const js = `(function(){try{var z=Intl.DateTimeFormat().resolvedOptions().timeZone,u=new URL(location.href);if(z&&z!==${JSON.stringify(business).replace(/</g, "\\u003c")}&&!u.searchParams.has("tz")){u.searchParams.set("tz",z);location.replace(u.href)}}catch(e){}})()`;
+/** Adds ?tz=<browser zone> once, when the page has none and the browser's differs from the zone it shows. */
+export function ZoneScript({ shown }: { shown: string }) {
+  const js = `(function(){try{var z=Intl.DateTimeFormat().resolvedOptions().timeZone,u=new URL(location.href);if(z&&z!==${JSON.stringify(shown).replace(/</g, "\\u003c")}&&!u.searchParams.has("tz")){u.searchParams.set("tz",z);location.replace(u.href)}}catch(e){}})()`;
   return <script dangerouslySetInnerHTML={{ __html: js }} />;
 }
 
@@ -316,7 +316,6 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
               <h2 class="font-semibold">Pick a new time</h2>
               <a href={here()} class={secondary}>Keep this time</a>
             </div>
-            <ZoneNote zone={zone} business={host.time_zone} switchHref={zone !== host.time_zone ? listUrl(self, { tz: host.time_zone, change: "1" }) : null} />
             {keys.length ? (
               <div class="mb-6">
                 <DayAndTimes days={keys} chosen={chosen} href={(d) => here({ change: "1", date: d })}>
@@ -332,7 +331,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
             )}
           </div>
         ) : null}
-        {c.req.query("tz") ? null : <ZoneScript business={host.time_zone} />}
+        {c.req.query("tz") ? null : <ZoneScript shown={zone} />}
       </>
     ), status);
   }
@@ -460,7 +459,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
         ) : (
           <p class="text-ink-2">There are no open times right now. Please check back soon.</p>
         )}
-        {tzq ? null : <ZoneScript business={business} />}
+        {tzq ? null : <ZoneScript shown={zone} />}
       </>
     ), 200, self);
   });

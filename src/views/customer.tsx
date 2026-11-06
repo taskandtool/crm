@@ -28,7 +28,7 @@ import { firstText } from "../crm/leads";
 import type { Lead } from "../crm/leads";
 import { ContactLeads } from "./leads";
 import { Layout } from "./layout";
-import { ArchivedNote, buttonClass, controlClass, menuItemClass, MoreMenu, CustomInput, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, shownField, shownPhone, stageOptions, telHref, timeZone } from "./ui";
+import { ArchivedNote, buttonClass, controlClass, menuItemClass, MoreMenu, CustomInput, Field, MESSAGES, primaryClass, ReadThenEdit, RecordLine, SaveOnChange, shownField, shownPhone, stageOptions, telHref, timeZone, viewZone } from "./ui";
 import { CustomerEvents, scheduledOf, type Choices } from "./events";
 import { CustomerMoney, type Owed } from "./money";
 import type { Quote } from "../invoices/quotes";
@@ -279,8 +279,9 @@ function Activity({ c, notes, history, missing }: { c: Customer; notes: Note[]; 
 
 /** "October", or "August 2025" outside this year: the month an entry happened in, in the business's zone. */
 function monthOf(at: Date): string {
-  const year = (d: Date) => new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric" }).format(d);
-  return new Intl.DateTimeFormat("en-US", { timeZone, month: "long", year: year(at) === year(new Date()) ? undefined : "numeric" }).format(at);
+  const zone = viewZone();
+  const year = (d: Date) => new Intl.DateTimeFormat("en-US", { timeZone: zone, year: "numeric" }).format(d);
+  return new Intl.DateTimeFormat("en-US", { timeZone: zone, month: "long", year: year(at) === year(new Date()) ? undefined : "numeric" }).format(at);
 }
 
 /** The timeline under month headings, as HubSpot's activity is: newest month first. */

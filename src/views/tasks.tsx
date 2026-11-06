@@ -12,7 +12,7 @@ import { addDays, TASK_KINDS, TASK_LABELS, type Task } from "../crm/tasks";
 import { formatTime } from "../booking/slots";
 import { todayIn } from "../reports/sql";
 import { Layout } from "./layout";
-import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, CustomerPicker, primaryClass, shownPhone, telHref, timeText, timeZone, quietClass, ViewLink, viewsClass } from "./ui";
+import { AddToggle, buttonClass, controlClass, dueDayText, DueMark, Field, MESSAGES, CustomerPicker, primaryClass, shownPhone, telHref, timeText, timeZone, viewZone, quietClass, ViewLink, viewsClass } from "./ui";
 import { ownerSuggestions, personName } from "../crm/people";
 
 export type TasksProps = {
@@ -75,7 +75,7 @@ export function TasksPage(p: TasksProps) {
 function DoneList({ rows, today }: { rows: Task[]; today: string }) {
   const days: [string, Task[]][] = [];
   for (const task of rows) {
-    const heading = dueDayText(todayIn(timeZone, task.done_at!), today);
+    const heading = dueDayText(todayIn(viewZone(), task.done_at!), today);
     const last = days[days.length - 1];
     if (last && last[0] === heading) last[1].push(task);
     else days.push([heading, [task]]);
@@ -97,7 +97,7 @@ function DoneList({ rows, today }: { rows: Task[]; today: string }) {
                     <span>{TASK_LABELS[task.kind]}</span>
                     <a href={`/customers/${task.customer_id}`}>{task.customer_name}</a>
                     {task.deal_id && task.deal_title ? <a href={`/deals/${task.deal_id}`}>{task.deal_title}</a> : null}
-                    <span>Done {formatTime(task.done_at!, timeZone)}{task.done_by ? ` by ${personName(task.done_by)}` : ""}</span>
+                    <span>Done {formatTime(task.done_at!, viewZone())}{task.done_by ? ` by ${personName(task.done_by)}` : ""}</span>
                   </p>
                 </div>
               </li>

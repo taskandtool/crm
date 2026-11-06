@@ -8,6 +8,7 @@ import type { Context } from "hono";
 import type { Child } from "hono/jsx";
 import { Flash, type FlashMessages } from "./flash";
 import type { TeamVars } from "./guard";
+import { ViewerZoneScript } from "./viewer";
 
 export type NavItem = { href: string; label: string };
 
@@ -131,6 +132,7 @@ export function AdminLayout(props: {
         <title>{title}</title>
         <link rel="stylesheet" href={css} />
         <script src={HTMX_SRC} defer></script>
+        <ViewerZoneScript />
         {head}
       </head>
       <body class="min-h-screen bg-canvas font-body text-copy text-ink" style={ADMIN_THEME}>
