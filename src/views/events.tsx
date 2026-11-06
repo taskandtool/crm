@@ -403,7 +403,7 @@ export function EventPage(p: {
         </div>
         <div class="flex flex-col gap-4">
           {r.customer_id ? <ContactCard id={r.customer_id} name={r.customer_name ?? r.name} phone={r.phone} email={r.email} /> : null}
-          {p.money ? <EventMoney {...p.money} /> : null}
+          {p.money ? <EventMoney {...p.money} newQuote={invoicesCfg && r.email && r.status === "confirmed" ? listUrl("/invoices/quotes/new", doc) : null} /> : null}
         </div>
       </div>
       <RecordLine added={r.created_at} addedBy={null} changed={r.updated_at} changedBy={r.updated_by} />

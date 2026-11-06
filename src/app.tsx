@@ -231,11 +231,18 @@ if (!cfg.booking_page && invoicesCfg) {
   for (const p of ["/q/forms/*", "/q/book", "/q/book/*", "/q/unsubscribe"]) app.use(p, publicDb);
   const db = (c: Context) => (c as unknown as C).var.db;
   // A follow-up email's unsubscribe link.
-  app.route("/q", unsubscribeRoutes(db, { page: (_c, title, body) => String(<PlainPage title={title} css="/q/crm.css">{body}</PlainPage>) }));
+  // A customer's plain page says whose it is, from Settings, Business.
+  const customerPage = (title: string, body: Child) => (
+    <PlainPage title={title} css="/q/crm.css">
+      {business().name ? <p class="mb-8 text-heading font-semibold text-ink">{business().name}</p> : null}
+      {body}
+    </PlainPage>
+  );
+  app.route("/q", unsubscribeRoutes(db, { page: (_c, title, body) => String(customerPage(title, body)) }));
   app.route("/q", formRoutes(db, {
     source: "crm", prefix: "/q", notify: false, adminPath: "/forms/submissions",
     background: ownDb,
-    page: (_c, title, body) => <PlainPage title={title} css="/q/crm.css">{body}</PlainPage>,
+    page: (_c, title, body) => customerPage(title, body),
     steps: {
       ...(eventsCfg ? { booking: bookingStep(db, { source: "crm", domain: inviteDomain }) } : {}),
       payment: paymentStep(db, (c) => stripeFrom(envOf(c)), { source: "crm", connected: (c) => stripeConnected(envOf(c)) }),
@@ -731,7 +738,11 @@ app.get("/events/:id", async (c) => {
   const event = id ? await getEvent(db, id) : null;
   if (!event) return c.notFound();
   const [choices, money, deals, notes] = await Promise.all([
-    choicesOf(db), invoicesCfg ? Promise.all([quotesFor(db, { visitId: event.id }), invoicesFor(db, { visitId: event.id })]) : null,
+    choicesOf(db), invoicesCfg ? Promise.all([
+      // Its own, and those on the deal it belongs to.
+      Promise.all([quotesFor(db, { visitId: event.id }), event.deal_id ? quotesFor(db, { dealId: event.deal_id }) : []]).then(([own, onDeal]) => [...own, ...onDeal.filter((q) => !own.some((o) => o.id === q.id))]),
+      invoicesFor(db, { visitId: event.id }),
+    ]) : null,
     event.customer_id ? customerDeals(db, event.customer_id) : [],
     event.customer_id ? listNotes(db, event.customer_id) : [],
   ]);

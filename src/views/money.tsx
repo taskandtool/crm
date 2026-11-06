@@ -81,10 +81,11 @@ export function CustomerMoney({ c, quotes, invoices, owed, recurring, cards }: {
 }
 
 /** An event's quote and invoice. */
-export function EventMoney({ quotes, invoices }: { quotes: Quote[]; invoices: Invoice[] }) {
+export function EventMoney({ quotes, invoices, newQuote }: { quotes: Quote[]; invoices: Invoice[]; newQuote?: string | null }) {
   return (
     <Section title="Quote and invoice">
       <Docs quotes={quotes} invoices={invoices} />
+      {newQuote ? <p class="mt-3"><AddLink href={newQuote}>New quote</AddLink></p> : null}
     </Section>
   );
 }

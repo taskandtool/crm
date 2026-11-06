@@ -2,12 +2,14 @@
 // its postal address, set once for every app in the project (the data skill's `business` row),
 // with where each shows, so the owner sees what customers and carriers read.
 import { alertClass, Flash } from "../admin/flash";
+import { AskAi } from "../admin/list";
+import { zoneName } from "../booking/slots";
 import type { Business } from "../data/business";
 import { ADDRESS_MAX, NAME_MAX } from "../data/business";
 import { consentWords } from "../forms/consent";
 import { fill, WORDS } from "../phone/flows";
 import { Layout, SETTINGS_BACK } from "./layout";
-import { controlClass, Field, primaryClass } from "./ui";
+import { controlClass, Field, primaryClass, timeZone } from "./ui";
 
 const SAVED = { saved: "Saved. Texts, quotes and the texting box use it from now on." };
 
@@ -33,6 +35,13 @@ export function BusinessPage(p: { user: string; business: Business; values?: Rec
         </Field>
         <div><button class={primaryClass}>Save</button></div>
       </form>
+
+      <section class="mt-8 max-w-prose">
+        <h2 class="mb-2 text-heading font-semibold text-ink">Time zone</h2>
+        <p>{zoneName(timeZone)}</p>
+        <p class="mt-1 text-label text-ink-3">Your schedule, due dates and invoices use it.</p>
+        <AskAi class="mt-2" ask="Set our time zone to " />
+      </section>
 
       <section class="mt-8 max-w-prose">
         <h2 class="mb-2 text-heading font-semibold text-ink">Where it shows</h2>
