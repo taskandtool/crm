@@ -100,10 +100,10 @@ export function Accept({ s, word }: { s: AcceptState; word: string }) {
 /** On screen while it is open, a bar that takes them to Accept; never on paper. */
 export function AcceptBar({ word }: { word: string }) {
   return (
-    <div class="sticky bottom-0 z-10 border-t border-line bg-canvas/95 print:hidden">
+    <div class="sticky bottom-0 z-10 border-t border-line bg-canvas/95 print:hidden [main:has(#accept:target)_&]:hidden">
       <div class="mx-auto flex max-w-page items-center justify-between gap-4 px-6 py-3 sm:px-10">
         <span class="text-small text-muted">Ready to go ahead?</span>
-        <a href="#accept" class="inline-flex min-h-10 items-center rounded-control bg-accent px-4 text-small font-semibold text-accent-ink no-underline">Review and accept the {word.toLowerCase()}</a>
+        <a href="#accept" class="inline-flex min-h-10 items-center rounded-control bg-accent px-4 text-small font-semibold text-accent-ink no-underline">Accept {word.toLowerCase()}</a>
       </div>
     </div>
   );

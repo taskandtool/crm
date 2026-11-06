@@ -89,7 +89,7 @@ export async function sampleWarning(db: Db, quoteId: string): Promise<string | n
   const labels = COMPONENTS.filter((c) => (c.always || keys.has(c.key)) && c.sample).map((c) => c.label);
   if (!labels.length) return null;
   const one = labels.length === 1;
-  return `${labels.join(", ")} still ${one ? "shows" : "show"} sample words: ask the AI to write ${one ? "it" : "them"} from your website first, or untick ${one ? "it" : "them"} on the quote.`;
+  return `${labels.join(", ")} still ${one ? "shows" : "show"} sample words: ask the AI to write ${one ? "it" : "them"} from your website first, or untick ${one ? "it" : "them"} under Customize.`;
 }
 
 export type ProposalInput = { title?: unknown; components: string[] };

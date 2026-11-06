@@ -7,12 +7,12 @@
 import { Hono, type Context } from "hono";
 import type { Child } from "hono/jsx";
 import { FieldList, Section } from "../admin/detail";
-import { withFlash, type FlashMessages } from "../admin/flash";
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { sectionPages, type Frame, type NavItem } from "../admin/layout";
 import { AskAi, When } from "../admin/list";
 import { idParam, str } from "../admin/query";
-import { buttonClass, controlClass, fieldClass, inputClass, primaryClass, smallText } from "../admin/status";
+import { alertClass, withFlash, type FlashMessages } from "../admin/flash";
+import { buttonClass, controlClass, fieldClass, inputClass, primaryClass, quietClass, smallText } from "../admin/status";
 import type { GetDb, Db } from "../data/db";
 import { isEditable, quoteById, type Quote } from "../invoices/quotes";
 import type { SavedLine } from "../invoices/lines";
@@ -20,7 +20,7 @@ import { COMPONENTS, PICKABLE } from "./components";
 import { fillPage } from "./page";
 import { signedState } from "./sign";
 import type { Base } from "./link";
-import { chosenKeys, ensureProposal, mintLink, opensOf, proposalOf, saveProposal, storePage, type ProposalOpts } from "./store";
+import { chosenKeys, ensureProposal, mintLink, opensOf, proposalOf, sampleWarning, saveProposal, storePage, type ProposalOpts } from "./store";
 
 type Ctx = Context<{ Variables: TeamVars }>;
 
@@ -64,6 +64,57 @@ export function proposalAdmin(getDb: GetDb, o: ProposalAdminOpts) {
     return c.redirect(withFlash(`${o.quotes}/${qt.id}`, "saved"), 303);
   });
 
+  // What the quote shows: its title and the components ticked.
+  app.get(`${o.quotes}/:id/proposal`, async (c) => {
+    const qt = await loadQuote(c);
+    if (!qt) return c.notFound();
+    const self = `${o.quotes}/${qt.id}`;
+    if (!isEditable(qt)) return c.redirect(self, 303);
+    const db = getDb(c);
+    await ensureProposal(db, qt);
+    const [p, keys] = await Promise.all([proposalOf(db, qt.id), chosenKeys(db, qt.id)]);
+    return framed(c, o.quotes, { title: `Customize ${w} ${qt.number}`, back: { href: self, label: `${W} ${qt.number}` } }, (
+      <Section title={`What this ${w} shows`}>
+        <form method="post" action={`${self}/proposal`} class="flex flex-col gap-5">
+          <label class={fieldClass}>Title<input name="title" value={p?.title ?? ""} maxlength={160} placeholder={`${W} ${qt.number}`} class={inputClass} /></label>
+          <fieldset>
+            <legend class="mb-1 font-semibold">Components</legend>
+            <p class={smallText + " mb-2 text-ink-3"}>A {w} is its price and sign-off; tick what else it shows.</p>
+            <ul class="flex flex-col divide-y divide-line">
+              {PICKABLE.map((cpt) => (
+                <li class="py-2.5">
+                  <label class="flex items-start gap-3">
+                    <input type="checkbox" name="components" value={cpt.key} checked={keys.includes(cpt.key)} class="mt-1 size-4 shrink-0" />
+                    <span>
+                      <span class="font-medium">{cpt.label}</span>{cpt.sample ? <SampleTag /> : null}
+                      <span class={"block " + smallText + " text-ink-3"}>{cpt.shows}</span>
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </fieldset>
+          <div class="flex flex-wrap items-center gap-2">
+            <button class={primaryClass}>Save</button>
+            <a href={`${self}/document`} target="_blank" class={buttonClass}>Preview</a>
+          </div>
+          <div class="rounded-control bg-panel p-4">
+            <p class={smallText + " max-w-prose text-ink-2"}>
+              One marked (sample) still has the starter's words. The AI writes each from your website, or from what you
+              tell it, and can add a section or redesign any of them.
+            </p>
+            <p class={smallText + " mt-3 text-ink-2"}>Ask the AI in this app's chat:</p>
+            <div class="mt-2 flex flex-col gap-2">
+              <AskAi label={false} ask="Read our website and write our proposal sections from it." />
+              <AskAi label={false} ask={`Add a section to our ${w}s about our warranty.`} />
+              <AskAi label={false} ask={`Make our ${w}s look more like our website.`} />
+            </div>
+          </div>
+        </form>
+      </Section>
+    ));
+  });
+
   // A new link: the old one stops working. Shown once, as Copy link shows it.
   app.post(`${o.quotes}/:id/proposal/link`, async (c) => {
     const qt = await loadQuote(c);
@@ -99,7 +150,7 @@ export function proposalAdmin(getDb: GetDb, o: ProposalAdminOpts) {
 /** The proposal's part of a quote's page: its components, its link, who opened it, the answer. */
 export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, o: { opts: ProposalOpts; quotes: string; timeZone: string }): Promise<Child> {
   await ensureProposal(db, qt);
-  const [p, keys, opens] = await Promise.all([proposalOf(db, qt.id), chosenKeys(db, qt.id), opensOf(db, qt.id)]);
+  const [p, keys, opens, warning] = await Promise.all([proposalOf(db, qt.id), chosenKeys(db, qt.id), opensOf(db, qt.id), sampleWarning(db, qt.id)]);
   const [sig] = await db.sql`select name, email::text as email, signed_at, ip from quote_signatures where quote_id = ${qt.id}::bigint`;
   const self = `${o.quotes}/${qt.id}`;
   const shown = COMPONENTS.filter((cpt) => !cpt.always && keys.includes(cpt.key));
@@ -114,7 +165,7 @@ export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, 
         { label: "Title", value: p?.title || null },
         {
           label: "Components",
-          value: isEditable(qt) ? null : shown.length
+          value: shown.length
             ? <>{shown.map((cpt, i) => <>{i ? ", " : ""}{cpt.label}{cpt.sample ? <SampleTag /> : null}</>)}</>
             : "None: a plain quote, its price and sign-off",
         },
@@ -123,48 +174,20 @@ export async function proposalPanel(db: Db, qt: Quote & { lines: SavedLine[] }, 
         { label: "Signed", value: sig ? <>{sig.name}, <When at={new Date(sig.signed_at)} timeZone={o.timeZone} /><span class="block text-label text-ink-3">{sig.email}{sig.ip ? `, from ${sig.ip}` : ""}</span></> : null },
         { label: "Declined", value: p?.decline_reason ? <>{p.decline_reason}{p.decline_note ? <span class="block whitespace-pre-wrap text-ink-2">{p.decline_note}</span> : null}</> : null },
       ]} />
-      {isEditable(qt) ? (
-        <form method="post" action={`${self}/proposal`} class="mt-5 flex flex-col gap-5 border-t border-line pt-5">
-          <fieldset>
-            <legend class="mb-1 font-semibold">Components</legend>
-            <p class={smallText + " mb-2 text-ink-3"}>A {w} is its price and sign-off; tick what else it shows.</p>
-            <ul class="flex flex-col divide-y divide-line">
-              {PICKABLE.map((cpt) => (
-                <li class="py-2.5">
-                  <label class="flex items-start gap-3">
-                    <input type="checkbox" name="components" value={cpt.key} checked={keys.includes(cpt.key)} class="mt-1 size-4" />
-                    <span>
-                      <span class="font-medium">{cpt.label}</span>{cpt.sample ? <SampleTag /> : null}
-                      <span class={"block " + smallText + " text-ink-3"}>{cpt.shows}</span>
-                    </span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-            <div class="mt-3 rounded-control bg-panel p-4">
-              <p class={smallText + " max-w-prose text-ink-2"}>
-                One marked (sample) still has the starter's words. The AI writes each from your website, or from what you
-                tell it, and can add a section or redesign any of them.
-              </p>
-              <p class={smallText + " mt-3 text-ink-2"}>Ask the AI in this app's chat:</p>
-              <div class="mt-2 flex flex-col gap-2">
-                <AskAi label={false} ask="Read our website and write our proposal sections from it." />
-                <AskAi label={false} ask={`Add a section to our ${w}s about our warranty.`} />
-                <AskAi label={false} ask={`Make our ${w}s look more like our website.`} />
-              </div>
-            </div>
-          </fieldset>
-          <label class={fieldClass}>Title<input name="title" value={p?.title ?? ""} maxlength={160} placeholder={`${o.opts.word} ${qt.number}`} class={inputClass} /></label>
-          <div class="flex flex-wrap items-center gap-2">
-            <button class={primaryClass}>Save</button>
-            <a href={`${self}/document`} target="_blank" class={buttonClass}>Preview</a>
-          </div>
-        </form>
-      ) : null}
+      {warning && isEditable(qt) ? <p role="status" class={"mt-4 " + alertClass}>{warning}</p> : null}
       <div class="mt-4 flex flex-wrap gap-2">
+        {isEditable(qt) ? (
+          <>
+            <a href={`${self}/proposal`} class={buttonClass}>Customize</a>
+            <a href={`${self}/document`} target="_blank" class={buttonClass}>Preview</a>
+          </>
+        ) : null}
         {sig ? <a href={`${self}/proposal/signed`} target="_blank" class={buttonClass}>The signed copy</a> : null}
         {qt.status === "sent" && p?.link_made_at ? (
-          <form method="post" action={`${self}/proposal/link`}><button class={buttonClass}>New link</button></form>
+          <form method="post" action={`${self}/proposal/link`} class="sm:ml-auto"
+            onsubmit={`return confirm(${JSON.stringify("Make a new link? The one you sent stops working.")})`}>
+            <button class={quietClass}>New link</button>
+          </form>
         ) : null}
       </div>
     </Section>

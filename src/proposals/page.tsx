@@ -54,13 +54,14 @@ export function renderPage(d: PageData, keys: string[]): string {
         <main>
           {plain ? <Masthead d={view} /> : null}
           {shown.map((c) => c.render(view))}
+          {/* Here, not after the page: it rides the screen's bottom until the sign-off arrives, then scrolls away. */}
+          {raw(BAR_MARK)}
           <section id="accept" class={`${signoff} py-20 sm:py-28 print:break-before-page`}>
             <div class="mx-auto max-w-read px-6 sm:px-10">
               {raw(ACCEPT_MARK)}
             </div>
           </section>
         </main>
-        {raw(BAR_MARK)}
       </body>
     </html>
   );

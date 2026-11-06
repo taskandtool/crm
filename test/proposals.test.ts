@@ -98,8 +98,8 @@ test("a proposal end to end: built, its deposit attached, linked, opened, change
   const { deal } = await customerWithDeal("Ann Lee", "ann@example.com");
   const id = await newQuote("ann@example.com", "Ann Lee", deal);
 
-  // The quote's page: the components by name, with check marks; one not registered is refused.
-  let html = await (await get(`/invoices/quotes/${id}`)).text();
+  // Customize: the components by name, with check marks; one not registered is refused.
+  let html = await (await get(`/invoices/quotes/${id}/proposal`)).text();
   assert.match(html, /name="components" value="about"/);
   assert.match(html, /About us<\/span><span class="text-ink-3"> \(sample\)/, "a component still showing the starter's words says so");
   assert.match(html, /Read our website and write our proposal sections from it\./, "and what to ask the AI");
@@ -155,7 +155,7 @@ test("a proposal end to end: built, its deposit attached, linked, opened, change
   assert.equal(res.headers.get("cache-control"), "no-store, no-transform");
   html = await res.text();
   assert.match(html, /Type your full name/);
-  assert.match(html, /Review and accept the quote/, "the bar to Accept");
+  assert.match(html, /Accept quote<\/a>/, "the bar to Accept");
   assert.ok((await quoteById(db, id))!.viewed_at, "Viewed");
   await get(`/q/${token}`, ME);
   assert.deepEqual((await db.sql`select who from quote_views where quote_id = ${id}::bigint order by id`).map((r) => r.who), ["customer", "team"]);
