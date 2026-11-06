@@ -76,3 +76,62 @@ test("forms save says made, unchanged, then changed; list and submissions lead w
     await t.drop();
   }
 });
+
+test("destinations: a bad definition is refused, a save says made, changed or unchanged, and a test sends nothing without --confirm", async (t) => {
+  const s = await scratch();
+  if (!s) return t.skip(why);
+  try {
+    await applySchema(s.db, readFileSync(fileURLToPath(new URL("../schema.sql", import.meta.url)), "utf8"));
+    await s.db.sql`insert into forms (key, title, fields) values ('contact', 'Contact', '[{"name":"name","label":"Name","type":"text"}]'::jsonb)`;
+    await s.db.sql`insert into submissions (form_key, name, email, data, source) values ('contact', 'Ann Lee', 'ann@example.com', '{}', 'test')`;
+    const dir = mkdtempSync(join(tmpdir(), "dest-"));
+    const file = join(dir, "d.json");
+    const save = (def: unknown) => {
+      writeFileSync(file, JSON.stringify(def));
+      return forms(["destination-save", "zap", "--file", file], s.url);
+    };
+    for (const [args, said] of [
+      [["destination-save", "zap"], /it needs --file/],
+      [["destination-test", "zap", "--submission", "x"], /--submission is a submission's number/],
+      [["destination-test"], /name a destination by its key/],
+    ] as const) {
+      const r = forms([...args]);
+      assert.equal(r.status, 2);
+      assert.equal(r.stdout, "");
+      assert.match(r.stderr, said);
+      assert.match(r.stderr, /Try:/);
+    }
+
+    const bad = save({ title: "Zap", kind: "webhook", target: "https://hooks.example/x" });
+    assert.equal(bad.status, 1);
+    assert.match(bad.stderr, /name of the secret/);
+    assert.match(bad.stderr, /Try:/);
+    assert.match(save({ title: "Zap", kind: "webhook", target: "HOOK_URL", forms: ["nope"] }).stderr, /no form nope/);
+
+    const def = { title: "Zap", kind: "webhook", target: "HOOK_URL", template: { who: "{{first_name}}" } };
+    const made = save(def);
+    assert.equal(made.status, 0, made.stderr);
+    assert.match(made.stdout, /made zap: Zap, webhook, when answered/);
+    assert.match(made.stdout, /request-secret HOOK_URL/);
+    assert.match(save(def).stdout, /unchanged zap/);
+    assert.match(save({ ...def, send_when: "complete" }).stdout, /changed zap/);
+
+    assert.match(forms(["destinations"], s.url).stdout, /zap  Zap  webhook HOOK_URL  when complete  every lead form  0 sent, 0 failed, 0 waiting/);
+    const [{ id: lead }] = await s.db.sql<{ id: string }>`select id::text as id from submissions`;
+    await s.db.sql`insert into lead_deliveries (submission_id, destination_id, status, error) select ${lead}::bigint, id, 'failed', 'Zap refused this lead (400).' from lead_destinations`;
+    assert.match(forms(["destinations"], s.url).stdout, /1 failed, 0 waiting {2}last failure: Zap refused this lead \(400\)\./);
+    await s.db.sql`delete from lead_deliveries`;
+    const preview = forms(["destination-test", "zap"], s.url);
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.match(preview.stdout, /\{"who":"Ann"\}/);
+    assert.match(preview.stdout, /Nothing was sent\. If the owner asked for it: .*--confirm/);
+    const noSecret = forms(["destination-test", "zap", "--confirm"], s.url);
+    assert.equal(noSecret.status, 1);
+    const asJson = forms(["destination-test", "zap", "--confirm", "--json"], s.url);
+    assert.equal(asJson.status, 1, "a failed send is a failure under --json too");
+    assert.match(noSecret.stderr, /secret HOOK_URL/);
+    assert.equal(forms(["destination-test", "gone"], s.url).status, 1);
+  } finally {
+    await s.drop();
+  }
+});

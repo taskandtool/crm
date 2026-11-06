@@ -9,7 +9,7 @@ Report pages are private views (`admin`) with charts in them. The figures
 are computed on the server, in SQL or from Google's rows; the browser only
 draws them.
 
-## Figures that go wrong quietly
+## Figures that are easy to get wrong
 
 - **Bucket in the business's zone, in SQL**: `date_trunc('week', created_at
   at time zone $zone)`. Periods are local dates and become instants only in

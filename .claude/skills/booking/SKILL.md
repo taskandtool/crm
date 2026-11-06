@@ -95,7 +95,7 @@ bookings and payments".
 
 | File | What |
 |---|---|
-| `schema.sql` | The nine tables and their indexes |
+| `schema.sql` | The tables and their indexes |
 | `slots.ts` | The pure slot calculator, zone arithmetic, formatting for a viewer |
 | `book.ts` | Types and hosts, open slots from the database, `book`, `reschedule`, `cancelByToken`, `setStatus`, `releaseLapsedHolds` |
 | `form-step.tsx` | `bookingStep`: a form's booking step |

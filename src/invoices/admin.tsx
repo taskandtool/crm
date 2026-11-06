@@ -291,13 +291,13 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   const emailReady = (c: Ctx) => !!opts.send || emailsCustomers(envOf(c));
   const needStripe = (
     <SetupNeeded title="Connect Stripe to send invoices" ask="Connect my Stripe account so I can send invoices.">
-      Invoices are made in your own Stripe account, which emails them with a Pay button and tells this app when they are paid.
+      Invoices are made in your Stripe account, which emails them with a Pay button and tells this app when they are paid.
       Make sure Stripe is connected to this app in Task & Tool, on the app's Connections tab. You can write drafts now; sending waits for Stripe.
     </SetupNeeded>
   );
   const needEmail = (
     <SetupNeeded title="Connect your email to send quotes" ask="Connect my email so I can send quotes.">
-      Quotes go out from your own email address, so connect Resend or Postmark to this app in Task &amp; Tool, on the app's Connections tab. Task &amp; Tool email reaches only your team.
+      Quotes go out from your email address, so connect Resend or Postmark to this app in Task &amp; Tool, on the app's Connections tab. Task &amp; Tool email reaches only your team.
       You can write and preview quotes now, or send the text yourself and mark them sent.
     </SetupNeeded>
   );
@@ -1015,7 +1015,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       path: "email-page", title: "Email the payment page", button: "Email the payment page", done: "page-emailed",
       allowed: (i) => i.status === "open" && !!i.stripe_invoice_id,
       say: (i) => i.collect === "charge"
-        ? `${i.email} is emailed from your own address this invoice's payment page, where they can pay with any card or confirm the charge their bank asked about. Stripe does not email the page of an invoice it charges.`
+        ? `This emails ${i.email} the invoice's payment page from your address. They can pay with any card there, or confirm the charge their bank asked about. Stripe doesn't send this page when it charges a card.`
         : `Stripe emails ${i.email} this invoice's payment page, where they can pay with any card.`,
       run: async (c, i) => emailPaymentPage(getDb(c), stripeOf(c), i.id, { send: (mail) => send(c, mail), business: (await docOf(c)).business, replyTo: c.get("user") }),
     },

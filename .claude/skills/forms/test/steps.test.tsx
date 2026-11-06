@@ -187,7 +187,7 @@ test("an unfinished form stays a draft; a made-up key starts again; an unwired s
     const list = await (await app.request(HOST + "/admin/submissions", team)).text();
     assert.match(list, /Not finished/);
     const [bo] = await s.db.sql<{ id: string }>`select id::text as id from submissions`;
-    assert.match(await (await app.request(HOST + `/admin/submissions/${bo.id}`, team)).text(), /have not finished booking or paying yet/);
+    assert.match(await (await app.request(HOST + `/admin/submissions/${bo.id}`, team)).text(), /have not picked a time yet/);
 
     // A page of its own for a link.
     const start = await (await app.request(HOST + "/forms/intake/start")).text();

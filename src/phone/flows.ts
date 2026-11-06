@@ -1,4 +1,4 @@
-// The automatic texts: six flows, each a small definition the sender, the
+// The automatic texts: seven flows, each a small definition the sender, the
 // flow's picture (admin.tsx FlowPicture) and the AI's command all read, so
 // what is shown is what is sent. Our words are here; an owner's changes
 // are `text_flows` rows (only what differs), and deleting the row brings
@@ -12,7 +12,7 @@ import type { Db } from "../data/db";
 import { addDays, localDate, wallClock, wallToInstant } from "../booking/slots";
 import { prettyPhone } from "./store";
 
-const FLOW_KEYS = ["missed_call", "thanks", "unbooked", "booked", "reminder", "after_visit"] as const;
+const FLOW_KEYS = ["missed_call", "thanks", "unbooked", "unpaid", "booked", "reminder", "after_visit"] as const;
 export type FlowKey = (typeof FLOW_KEYS)[number];
 
 /** One step of a flow, as its picture shows it and its sender runs it. */
@@ -41,6 +41,8 @@ export type Flow = {
   outcome: "booked" | "replied" | null;
   /** Whether it can go by email when it cannot text. */
   email: boolean;
+  /** It needs a link, which our texts never carry: an email first, its text only for someone with no email. */
+  emailFirst?: boolean;
 };
 
 const minutes = (m: number) => (m < 60 ? `${m} minutes` : m % 60 === 0 ? (m === 60 ? "1 hour" : `${m / 60} hours`) : `${m} minutes`);
@@ -87,7 +89,7 @@ export const FLOWS: Flow[] = [
     name: "Stopped before booking",
     summary: "Someone who leaves a form before booking gets three times to pick from.",
     on: true,
-    where: 'Forms with "Follow up automatically" on and a booking step.',
+    where: 'Forms with "Follow up automatically" on, a booking step and no payment step.',
     fills: ["first_name", "business", "service", "slot1", "slot2", "slot3"],
     timing: { choices: [10, 30, 60], ours: 10, says: (m) => `${minutes(m)} to ${minutes(m + 15)} later` },
     steps: (t) => [
@@ -109,6 +111,29 @@ export const FLOWS: Flow[] = [
     stops: ["they book", "they said STOP", "someone on your team replies"],
     outcome: "booked",
     email: true,
+  },
+  {
+    key: "unpaid",
+    name: "Stopped before paying",
+    summary: "Someone who leaves a form before paying gets an email with a link back to it.",
+    on: true,
+    where: 'Forms with "Follow up automatically" on and a payment step.',
+    fills: ["first_name", "business"],
+    timing: { choices: [60, 240, 1440], ours: 60, says: (m) => `About ${minutes(m)} later` },
+    steps: (t) => [
+      { kind: "start", says: "Someone starts the form and leaves before paying" },
+      { kind: "wait", says: FLOWS_BY().unpaid.timing!.says(t ?? 60) },
+      {
+        kind: "text",
+        variants: [{ key: "reply", label: "If they gave no email, this text", email: "link" }],
+        replies: [{ when: "They reply", then: "it's yours in Messages" }],
+      },
+      { kind: "end", says: "Done. Never a second one." },
+    ],
+    stops: ["they finish", "they unsubscribed or said STOP"],
+    outcome: null,
+    email: true,
+    emailFirst: true,
   },
   {
     key: "booked",
@@ -185,6 +210,9 @@ export const WORDS: Record<FlowKey, Record<string, string>> = {
     nextday: "Hi {first_name}, just checking in from {business}. Still want to get that booked? Reply with a time that works.",
     taken: "Sorry, that time just went! How about 1) {slot1} 2) {slot2} 3) {slot3}? Or reply with a time that suits you.",
   },
+  unpaid: {
+    reply: "Hi {first_name}, it's {business}. Your answers are saved. Reply here and we'll help you finish.",
+  },
   booked: {
     one: "Hi {first_name}, you're booked with {business} for {time}. Reply here if you need to change it.",
   },
@@ -196,7 +224,7 @@ export const WORDS: Record<FlowKey, Record<string, string>> = {
   },
 };
 
-/** The emails flows 2, 3 and 6 send instead when they cannot text. */
+/** The emails flows send when they cannot text, and the one "Stopped before paying" sends first. */
 export const EMAILS: Partial<Record<FlowKey, Record<string, { subject: string; text: string }>>> = {
   thanks: {
     one: {
@@ -212,6 +240,12 @@ export const EMAILS: Partial<Record<FlowKey, Record<string, { subject: string; t
     nextday: {
       subject: "Still want a time?",
       text: "Hi {first_name},\n\nJust checking in. Your request is saved and one step from booked: {form_link}\n\nOr reply with a time that works for you.\n\n{business}",
+    },
+  },
+  unpaid: {
+    link: {
+      subject: "Finish your request",
+      text: "Hi {first_name},\n\nYour answers are saved. Finish here: {form_link}\n\nQuestions? Reply to this email.\n\n{business}",
     },
   },
   after_visit: {

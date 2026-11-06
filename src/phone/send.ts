@@ -215,7 +215,7 @@ export async function deliver(ctx: PhoneCtx, row: SendRow, render: Renderer): Pr
 }
 
 /** Follow-up emails that CAN-SPAM counts as commercial: they carry the business's address and an unsubscribe link. */
-const COMMERCIAL = new Set<FlowKey>(["unbooked", "after_visit"]);
+const COMMERCIAL = new Set<FlowKey>(["unbooked", "unpaid", "after_visit"]);
 
 /** The end of a commercial follow-up email: who sent it, where they are, and how to stop these. */
 async function emailFooter(ctx: PhoneCtx, email: string): Promise<string> {

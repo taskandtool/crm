@@ -85,7 +85,8 @@ Each app makes its handle from the driver it already uses:
   stop before it is sent.
 - **Spam** (`spam.tsx`): every public form carries `<SpamFields
   stamp={await makeStamp(scope)} />` and is checked with `verdict`: `drop`
-  (a bot: thank it and save nothing), `fast` (save it marked spam), or `ok`.
+  (a bot: thank it and save nothing), `spam` (a form keeps it marked spam; the booking
+  page asks them to press again), or `ok`.
 - **The business** (`business.ts`): its name, its privacy and terms
   pages and its postal address, one row for the project. Read it with
   `businessOf(db)` wherever a page, text, email or quote names the business;

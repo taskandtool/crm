@@ -103,7 +103,7 @@ export function CustomerPage(p: {
     >
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       {c.archived_at ? (
-        <ArchivedNote action={`${self}/archive`} fields={{ archived: "0" }}>Archived <When at={c.archived_at} timeZone={timeZone} />. Still here, left out of the lists.</ArchivedNote>
+        <ArchivedNote action={`${self}/archive`} fields={{ archived: "0" }}>Archived <When at={c.archived_at} timeZone={timeZone} />.</ArchivedNote>
       ) : null}
       <div class="grid gap-4 md:grid-cols-3">
         <div class="flex min-w-0 flex-col gap-4 md:col-span-2">

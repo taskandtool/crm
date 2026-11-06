@@ -323,7 +323,7 @@ export function recurringRoutes(app: Hono<{ Variables: TeamVars }>, h: Recurring
     // A quote still waiting for its answer: this starts at its yes. One already accepted: now.
     const pending = quote && ["draft", "sent", "expired"].includes(quote.status) ? { quoteId: quote.id } : undefined;
     if (quote?.status === "declined") {
-      return editor(c, { title: "New invoice", action: base, v: { ...v, quote_id: "" }, errors: { status: `${h.word} ${quote.number} was declined, so nothing starts at its yes. Save again to start this one on its own.` }, cancel: base, fixed: false }, 422);
+      return editor(c, { title: "New invoice", action: base, v: { ...v, quote_id: "" }, errors: { status: `${h.word} ${quote.number} was declined, so it can't start this invoice. Save again to start this one on its own.` }, cancel: base, fixed: false }, 422);
     }
     const r = await createRecurring(h.getDb(c), fields(v), c.get("user"), h.source, { pending });
     if (!r.ok) return editor(c, { title: "New invoice", action: base, v, errors: r.errors, cancel: quote ? `${h.base}/quotes/${quote.id}` : base, fixed: false }, 422);

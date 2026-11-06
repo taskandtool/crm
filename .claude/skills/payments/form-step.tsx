@@ -18,6 +18,8 @@ import { stripeTaxRate, taxRates } from "./tax";
 export type PaymentStepOptions = {
   /** This app's slug, stored on the payment. */
   source: string;
+  /** Whether this app can take payments; false tells the visitor instead of offering a button that can't work. */
+  connected?: (c: Context) => Promise<boolean | null>;
   /** How long a checkout stays open; default 31 minutes (Stripe's least is 30), so a held time is not held long. */
   expiresInMinutes?: number;
 };
@@ -47,6 +49,7 @@ export function paymentStep(getDb: GetDb, stripeOf: (c: Context) => Stripe, opts
       }
       const price = ctx.price;
       const taxed = !!ctx.field.tax_rate_id;
+      if (price && (await opts.connected?.(c)) === false) return <p>Online payment isn't available right now. We have your answers and will contact you.</p>;
       return (
         <form method="post" action={ctx.action} class="grid gap-4">
           {ctx.hidden}

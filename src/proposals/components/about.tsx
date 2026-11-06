@@ -12,9 +12,9 @@ const WORDS = [
 ];
 // Stated figures only, each from a source: years in business, jobs done, a rating with its count.
 const FIGURES = [
-  { figure: "15", label: "years in business" },
-  { figure: "2,400", label: "jobs completed" },
-  { figure: "4.9", label: "average rating" },
+  { figure: "00", label: "years in business" },
+  { figure: "00", label: "jobs completed" },
+  { figure: "0.0", label: "average rating" },
 ];
 
 export const about: ProposalComponent = {

@@ -9,6 +9,7 @@
 import type { Db } from "../data/db";
 import { formatTime, localDate, addDays, wallToInstant } from "../booking/slots";
 import { bookableTypes as bookable, openSlotsFor, toType, type BookingType } from "../booking/book";
+import { emailsCustomers } from "../data/send";
 import { stepsOf, type Field } from "../forms/fields";
 import { phoneKey } from "../customers/customer";
 import { flowOf, flowSettings, type Fill, type FlowSettings } from "./flows";
@@ -136,9 +137,9 @@ async function deliverOne(ctx: PhoneCtx, id: string): Promise<void> {
 
 /**
  * What time brings, for the job every 15 minutes: submissions and bookings
- * another app made in the last hour (flows 2 and 4: the Website's forms),
- * drafts left before booking (flow 3, and its next-morning nudge), visits
- * coming up (5), visits done (6). Each is scheduled once; then every due row goes. Only what
+ * another app made in the last hour (the Website's forms), drafts left
+ * before booking (and its next-morning nudge) or before paying, visits
+ * coming up, visits done. Each is scheduled once; then every due row goes. Only what
  * happened since texting or the flow could start is looked at: connecting
  * Twilio texts nobody about the past.
  */
@@ -179,20 +180,28 @@ export async function scan(ctx: PhoneCtx): Promise<{ scheduled: number; sent: nu
     }
   }
 
-  if (s.unbooked.enabled) {
-    const wait = s.unbooked.timing ?? 10;
-    const drafts = await db.sql<{ id: string; form_key: string; phone: string | null; email: string | null }>`
-      select d.id::text as id, d.form_key, d.phone, d.email::text as email from submission_drafts d join forms f on f.key = d.form_key
-      where d.submission_id is null and not d.spam and d.step >= 1 and (d.phone is not null or d.email is not null)
-        and f.follow_up and f.fields @> '[{"type": "booking"}]'::jsonb
+  // Who stopped partway, by what the form was waiting for: a time (a reply can book it), or money (a reply can't).
+  const stopped = async (flow: "unbooked" | "unpaid", wait: number, since: string) => {
+    const paying = flow === "unpaid";
+    const drafts = await db.sql<{ id: string; phone: string | null; email: string | null }>`
+      select d.id::text as id, d.phone, d.email::text as email from submission_drafts d join forms f on f.key = d.form_key
+      left join submissions sub on sub.id = d.submission_id
+      where (d.submission_id is null or (sub.completed_at is null and sub.status not in ('spam', 'done'))) and not d.spam and d.step >= 1 and (d.phone is not null or d.email is not null)
+        and f.follow_up and (f.fields @> '[{"type": "payment"}]'::jsonb) = ${paying}::boolean
+        and (${paying}::boolean or f.fields @> '[{"type": "booking"}]'::jsonb)
         and d.updated_at < ${now.toISOString()}::timestamptz - make_interval(mins => ${wait})
-        and d.updated_at > ${sinceFor(s.unbooked)}::timestamptz
-        and not exists (select 1 from text_sends t where t.flow = 'unbooked' and t.step = 1 and t.subject_type = 'draft' and t.subject_id = d.id::text)
+        and d.updated_at > ${since}::timestamptz
+        and not exists (select 1 from text_sends t where t.flow = ${flow} and t.step = 1 and t.subject_type = 'draft' and t.subject_id = d.id::text)
       order by d.updated_at
       limit 100`;
     for (const d of drafts) {
-      if (await schedule(db, { flow: "unbooked", subjectType: "draft", subjectId: d.id, phone: d.phone, email: d.email, dueAt: now })) scheduled++;
+      if (await schedule(db, { flow, subjectType: "draft", subjectId: d.id, phone: d.phone, email: d.email, dueAt: now })) scheduled++;
     }
+  };
+
+  if (s.unpaid.enabled) await stopped("unpaid", s.unpaid.timing ?? 60, sinceFor(s.unpaid));
+  if (s.unbooked.enabled) {
+    await stopped("unbooked", s.unbooked.timing ?? 10, sinceFor(s.unbooked));
     // The next morning at 10, once, after a first text that went.
     const firsts = await db.sql<{ subject_id: string; remote_key: string | null; email: string | null; updated_at: Date }>`
       select t.subject_id, t.remote_key, t.email::text as email, t.updated_at from text_sends t
@@ -272,11 +281,12 @@ export async function render(ctx: PhoneCtx, row: SendRow, s: FlowSettings): Prom
       };
     }
     case "unbooked": {
-      const [d] = await db.sql<{ id: string; form_key: string; name: string | null; email: string | null; phone: string | null; submission_id: string | null; text_consent: string | null; created_at: Date }>`
-        select id::text as id, form_key, name, email::text as email, phone, submission_id::text as submission_id, d.text_consent, created_at
+      const [d] = await db.sql<{ id: string; form_key: string; name: string | null; email: string | null; phone: string | null; finished: boolean; text_consent: string | null; created_at: Date }>`
+        select id::text as id, form_key, name, email::text as email, phone, d.text_consent, created_at,
+               exists (select 1 from submissions s where s.id = d.submission_id and s.completed_at is not null) as finished
         from submission_drafts d where id = ${row.subject_id}::bigint`;
       if (!d) return { skip: "the form they started is gone" };
-      if (d.submission_id) return { skip: "they finished the form" };
+      if (d.finished) return { skip: "they finished the form" };
       const key = d.phone ? phoneKey(d.phone) : null;
       const [booked] = await db.sql`
         select 1 from bookings where status = 'confirmed' and created_at > ${new Date(d.created_at).toISOString()}::timestamptz
@@ -307,6 +317,21 @@ export async function render(ctx: PhoneCtx, row: SendRow, s: FlowSettings): Prom
       const emailVariant = offer.length ? "times" : "nextday";
       if (offer.length < 3) return { to: who, variant: "notimes", emailVariant, fill: { ...fillIn, times_list } };
       return { to: who, variant: "times", emailVariant, fill: { ...fillIn, slot1: offer[0].label, slot2: offer[1].label, slot3: offer[2].label, times_list }, offer };
+    }
+    case "unpaid": {
+      const [d] = await db.sql<{ id: string; form_key: string; name: string | null; email: string | null; phone: string | null; finished: boolean; text_consent: string | null }>`
+        select d.id::text as id, d.form_key, d.name, d.email::text as email, d.phone, d.text_consent,
+               exists (select 1 from submissions s where s.id = d.submission_id and s.completed_at is not null) as finished
+        from submission_drafts d where d.id = ${row.subject_id}::bigint`;
+      if (!d) return { skip: "the form they started is gone" };
+      if (d.finished) return { skip: "they finished the form" };
+      const fillIn: Fill = { ...base, first_name: firstName(d.name) };
+      const links = d.email && emailsCustomers(ctx.env) ? await ctx.links() : null;
+      if (links) {
+        const form_link = await draftLink(db, links, d.id, d.form_key);
+        return { to: { phone: null, email: d.email, name: d.name, contactId: null, consent: false }, variant: "reply", emailVariant: "link", fill: { ...fillIn, form_link } };
+      }
+      return { to: { phone: d.phone, email: null, name: d.name, contactId: null, consent: await mayText(db, d.phone, !!d.text_consent, { boxOnly: true }) }, variant: "reply", fill: fillIn };
     }
     case "booked":
     case "reminder":

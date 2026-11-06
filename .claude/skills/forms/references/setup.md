@@ -7,7 +7,7 @@ Read when an app takes its first form, mounts the form pages, or sets up the own
 The Website already has steps 2, 3 and 5 done (`src/business.tsx`, `scripts/forms.mjs`):
 there, make the form with `node scripts/forms.mjs save`, then do steps 4 and 6.
 
-1. Look: `select key, title, fields from forms`. Reuse a form that
+1. Look: `node scripts/forms.mjs list` (`select key, title from forms` until the app has the command). Reuse a form that
    fits; otherwise pick a key (`quote-request`).
 2. Copy `forms/` to `src/forms/` (with `test/`), and `data/`, `admin/`,
    `customers/`, `payments/` and `booking/` if the app lacks them (the

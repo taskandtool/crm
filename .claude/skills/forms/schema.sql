@@ -50,6 +50,11 @@ create table if not exists submissions (
   text_consent_at timestamptz
 );
 
+-- One post of a one-page form, however many times it arrives: a double click
+-- or a retry is the same page's stamp with the same answers (store.ts insertOnce).
+alter table submissions add column if not exists submit_key text;
+create unique index if not exists submissions_submit_key on submissions (form_key, submit_key) where submit_key is not null;
+
 create index if not exists submissions_form_recent on submissions (form_key, created_at desc, id desc);
 create index if not exists submissions_recent on submissions (created_at desc, id desc);
 create index if not exists submissions_email on submissions (email);
@@ -61,7 +66,7 @@ comment on column forms.leads is 'Each submission is a lead (customers skill lea
 comment on table forms is 'One row per form. fields is the ordered definition the renderer and validator read (forms skill).';
 comment on table submissions is 'Every form submission from every app in the project. A person is their email. No IP addresses are stored.';
 comment on column submissions.completed_at is 'When the whole form was done: its questions, then any booking step and any payment (once Stripe reports it paid). Null while a step is still to do.';
-comment on column submissions.data is 'Every answer that is not name, email or phone, keyed by field name. _consent holds the wording of each consent box ticked; _utm (source, medium, campaign) and _referrer (a host) say where the visitor came from.';
+comment on column submissions.data is 'Every answer that is not name, email or phone, keyed by field name. _consent holds the wording of each consent box ticked; _utm, _click, _referrer, _landing and _first say where the visitor came from (origin.ts).';
 comment on column submissions.notified is 'The email telling the team about it, in one line: who it went to, or why it was not sent (forms/store.ts recordNotified). Null when none was tried.';
 
 -- A form with steps, while someone is still answering it. A draft is written
@@ -98,3 +103,53 @@ create unique index if not exists submission_drafts_key on submission_drafts (ke
 create index if not exists submission_drafts_recent on submission_drafts (form_key, updated_at desc, id desc);
 create index if not exists submission_drafts_submission on submission_drafts (submission_id);
 create index if not exists submission_drafts_text_key on submission_drafts (text_key_hash) where text_key_hash is not null;
+alter table submission_drafts add column if not exists submit_key text;
+create unique index if not exists submission_drafts_submit_key on submission_drafts (form_key, submit_key) where submit_key is not null;
+
+-- Where a lead goes besides this database: a webhook, a connection (i360 and the
+-- like) or an email. `forms` empty means every form that makes leads. `send_when`
+-- is the moment it goes: `answered` once the questions are done, `complete` once
+-- the last step is. `needs` names what must be present; `template` shapes the body
+-- with {{placeholders}}, or is null for every field flat. A webhook's `target` is
+-- the name of the app secret holding its address, never the address.
+create table if not exists lead_destinations (
+  id          bigserial primary key,
+  key         text not null unique check (key ~ '^[a-z0-9][a-z0-9-]{0,62}$'),
+  title       text not null,
+  kind        text not null check (kind in ('webhook', 'connection', 'email')),
+  target      text not null,
+  path        text,
+  template    jsonb,
+  forms       text[] not null default '{}',
+  send_when   text not null default 'answered' check (send_when in ('answered', 'complete')),
+  needs       text[] not null default '{}',
+  active      boolean not null default true,
+  source      text,
+  updated_by  citext,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+-- One row per submission per destination, so a lead goes once however many apps
+-- or requests see it; claimed before sending, as text_sends is. It keeps what was
+-- sent and what came back. Never a credential.
+create table if not exists lead_deliveries (
+  id              bigserial primary key,
+  submission_id   bigint not null references submissions (id) on delete cascade,
+  destination_id  bigint not null references lead_destinations (id) on delete cascade,
+  status          text not null check (status in ('waiting', 'due', 'sending', 'sent', 'failed')),
+  attempts        integer not null default 0,
+  body            text,
+  response_status integer,
+  response_body   text,
+  error           text,
+  alerted_at      timestamptz,
+  sent_at         timestamptz,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create unique index if not exists lead_deliveries_once on lead_deliveries (submission_id, destination_id);
+create index if not exists lead_deliveries_failed on lead_deliveries (updated_at desc) where status = 'failed';
+
+comment on table lead_destinations is 'Where a lead goes besides this database (forms/destinations.ts). Changed with node scripts/forms.mjs.';
+comment on table lead_deliveries is 'Each send of a lead to a destination: what went, what came back. Failed sends wait for a person to resend.';

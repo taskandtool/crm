@@ -1,6 +1,6 @@
 ---
 name: forms
-description: "Forms as rows in the project's database: contact forms, surveys and orders, with steps, things to buy, a booking step and a payment step, and every submission in the one table the CRM reads. Use for any form a visitor fills in or an order page."
+description: "Forms as rows in the project's database: contact forms, surveys and orders, with steps, things to buy, a booking step and a payment step, and every submission in the one table the CRM reads, each lead sent on to a CRM, webhook or email if asked. Use for any form a visitor fills in, an order page, or sending leads somewhere."
 ---
 
 # Forms
@@ -30,10 +30,17 @@ form or a new question is a change to a row, never a migration.
   needs the owner's latest definition, a fresh spam stamp and the visit's
   UTM. A pre-rendered page is a static file, served in place of the Worker.
 - **Spam** is a honeypot and a 3-second minimum (`data/spam.tsx`), nothing
-  to set up. A bot is thanked and dropped; a post too fast is kept as spam
-  and nobody is told.
+  to set up. A post with no valid stamp is thanked and dropped; a filled
+  honeypot or a post too fast is kept as spam, since a browser can fill the
+  honeypot for a real person, and nobody is told.
 - **No IP addresses**: store only what the visitor typed, the page, and
-  where they came from (`data._utm`, the referrer's host in `data._referrer`).
+  where they came from (`origin.ts`): the five UTMs, click ids, the
+  referrer's host, the landing page, the first visit. A public site's layout
+  (the Website's) carries `ORIGIN_SCRIPT` inline, so a visitor keeps their tags
+  from page to page.
+- **A failed save keeps the answers**: a form's first post saves once however
+  often it arrives, a failure is tried again while they wait, and after that they
+  get Try again, with their answers kept, and the team gets a copy.
 - **Marketing needs a `consent` field**, unticked; `data._consent` keeps
   the exact words agreed to. A contact form is not permission to market.
 - **The texting box** shows under the phone field of a form with "Follow
@@ -56,7 +63,8 @@ field type with its settings.
 - `page` starts a step; for one question per page, put a `page` before
   each question. Answers wait as a draft and become a submission when the
   questions are done; drafts never finished are listed as not finished,
-  and nobody is emailed about them. A
+  the team is not emailed about them, and a `follow_up` form nudges the
+  person (the phone skill's Stopped before booking or paying). A
   submission is complete (`completed_at`) once its last step is done; one
   that ends in payment completes when Stripe says paid (the webhook's
   `afterPaid` calls `completePaidSubmission`). `onComplete` is what the
@@ -74,18 +82,43 @@ field type with its settings.
 - `priceOf` (`price.ts`) says what a submission costs: items, the fees that
   apply, a booking's price, from the stored definition, never from the page.
 
+## Sending a lead elsewhere
+
+A destination sends each lead to a CRM, a webhook or an email address, after it
+is saved. `node scripts/forms.mjs destination-save <key> --file d.json`, then
+`destination-test <key>` to read what it would send; `--help` lists the fields.
+
+- **A webhook's address is a secret**: `python3 ~/tools/taskandtool.py request-secret
+  LEAD_WEBHOOK_URL`, and `target` names it. A vendor is a `connection`
+  (`request-connection`), so its key stays in Task & Tool: its instructions say its
+  path and field names, and `template` maps ours to theirs. A destination is the
+  project's, but its secret or connection must be on the app that takes the form. An
+  `email` to anyone off the app needs Resend or Postmark.
+- **Default `answered`**, so no lead waits on a calendar. A vendor that takes one
+  create per person gets one moment: a second send can make a duplicate.
+- **A failed send** gets up to three tries over seconds (a timeout gets one, as the
+  vendor may have it), then shows as Failed on the submission with what was sent and
+  what came back, Resend, and one email to the team. Nothing retries later.
+
+The forms routes do this. Anything else that makes a submission calls
+`leadMoment(db, env, id, "complete", { link })` after the response, as the
+Website's booking page does. `formRoutes` takes `adminPath`, which the emails link
+to when it is not `/admin/submissions`, and `background`, for an app whose database
+closes with the response.
+
 ## Files
 
 | File | What |
 |---|---|
-| `schema.sql` | `forms`, `submissions`, `submission_drafts` |
+| `schema.sql` | `forms`, `submissions`, `submission_drafts`, `lead_destinations`, `lead_deliveries` |
 | `fields.ts` | `Field`, `Form`, `validate`, `checkFields` (step order too), `stepsOf` |
 | `routes.tsx` | `formRoutes(getDb, { source, page, steps? })`: POST `/forms/:key`, `/forms/:key/next` (a step), `/forms/:key/start` (a page of its own), `/forms/:key/thanks`; `embedForm` |
 | `render.tsx` | `FormView`: one step of a form, accessible, answers put back |
-| `store.ts` | `loadForm`, `seedForm`, `insertSubmission`, `saveSubmitter`, drafts, `completePaidSubmission`, `CONTACT_FORM` (the name, email, phone and message form, seeded as `contact`) |
+| `destinations.ts` | `leadMoment`, `leadFields`, `fillTemplate`, `deliveriesOf`, `resendDelivery`, `destinationsOf`, `checkDestination` |
+| `store.ts` | `loadForm`, `seedForm`, `insertOnce`, `submitKey`, `saveSubmitter`, drafts, `completePaidSubmission`, `CONTACT_FORM` (the name, email, phone and message form, seeded as `contact`) |
 | `steps.ts` | the contract a booking or payment step implements |
 | `price.ts`, `linked.ts` | what a submission costs; its booking and payment, for showing |
-| `admin.tsx` | `formsAdmin(getDb, { base, css, timeZone, nav?, Frame?, links? })`: the submissions list (Open, Archived, Spam) with each one's booking, payment and the person's notes, so it needs the `booking`, `payments` and `customers` skills' code beside it; `formEditor(getDb, { base, css, timeZone, source, submissions })`: the forms, the editor, CSV, not finished, for an app that lets the team set forms up (the CRM) |
+| `admin.tsx` | `formsAdmin(getDb, { base, css, timeZone, nav?, Frame?, links? })`: the submissions list (Open, Archived, Spam) with each one's booking, payment and the person's notes, so it needs the `booking`, `payments` and `customers` skills' code beside it; `formEditor(getDb, { base, css, timeZone, source, submissions })`: the forms, the editor, not finished; both export CSV, for an app that lets the team set forms up (the CRM) |
 | `files.ts` | `devFiles()`: `/_files` on the dev server (`src/server.ts`) |
 | `consent.ts` | `textingBox`, `consentWords`: the texting box's words, from the business (`data/business.ts`) |
 | `origin.ts`, `cart.js`, `cli.ts` | where the visitor came from; the cart; `formsCli` for `scripts/forms.mjs` |

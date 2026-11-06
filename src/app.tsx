@@ -62,6 +62,7 @@ import { emailSend, emailSender, notifyBooking } from "./booking/notify";
 import { envOf } from "./data/env";
 import { crmJobs } from "./crm/jobs";
 import { sendEmail } from "./data/send";
+import { paymentStep } from "./payments/form-step";
 import { stripeConnected, stripeFrom } from "./payments/stripe";
 import { proposalAdmin, proposalPanel } from "./proposals/admin";
 import { linkBase, readyHere } from "./proposals/link";
@@ -73,6 +74,7 @@ import type { Db } from "./data/db";
 import { primaryClass } from "./views/ui";
 import { invoicesAdmin } from "./invoices/admin";
 import { formEditor, formsAdmin } from "./forms/admin";
+import { leadMoment } from "./forms/destinations";
 import { completePaidSubmission } from "./forms/store";
 import { paymentsAdmin } from "./payments/admin";
 import { invoiceEvents } from "./invoices/webhook";
@@ -119,12 +121,14 @@ const moneySection = (current: string): NavSection =>
 const PAGE = 50;
 const app = new Hono<AppEnv>();
 
-// A booking any write changed reaches its calendar after the response, on a
-// database of its own: the request's closes once the response is sent.
-app.use("*", pushAfterWrites((c) => {
+/** A database for work after the response: the request's closes once the response is sent. */
+const ownDb = (c: Context) => {
   const opened = (c as unknown as C).env.runtime.open();
   return opened.db ? { db: opened.db, close: opened.close } : null;
-}) as unknown as MiddlewareHandler<AppEnv>);
+};
+
+// A booking any write changed reaches its calendar after the response.
+app.use("*", pushAfterWrites(ownDb) as unknown as MiddlewareHandler<AppEnv>);
 
 // The one public path: whether the database is ready. It says nothing else.
 app.get("/healthz", (c) => {
@@ -147,8 +151,9 @@ const publicDb: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (!opened.db) return c.text("waiting for the database", 503);
   c.set("db", opened.db);
   try {
-    // A customer's page (a quote's, the unsubscribe page) names the business.
-    await loadBusiness(opened.db);
+    // A customer's page (a quote's, the unsubscribe page) names the business. Not reading it is
+    // no reason to refuse: a form then gets to keep their answers (forms/routes.tsx notSaved).
+    await loadBusiness(opened.db).catch((e) => console.error("business:", e));
     await next();
   } finally {
     if (opened.close) closeAfter(c, opened.close);
@@ -169,6 +174,9 @@ if (invoicesCfg) {
       const db = (c as unknown as C).var.db;
       const id = await completePaidSubmission(db, paymentId);
       if (!id) return;
+      // Ahead of the confirmation, whose failure makes Stripe deliver again; on a database of its own, so Stripe does not wait on a vendor.
+      const own = ownDb(c);
+      if (own) afterResponse(c, leadMoment(own.db, envOf(c), id, "complete", { link: new URL(`/forms/submissions/${id}`, c.req.url).href }).finally(() => own.close?.()));
       const book = cfg.booking_page ?? null;
       const sent = await confirmFormBooking(db, id, emailSender(envOf(c)), { domain: book ? new URL(book).host : "localhost", manageBase: book });
       if (sent.status === "failed") throw new Error(`booking confirmation for submission ${id}: ${sent.error}`);
@@ -225,9 +233,13 @@ if (!cfg.booking_page && invoicesCfg) {
   // A follow-up email's unsubscribe link.
   app.route("/q", unsubscribeRoutes(db, { page: (_c, title, body) => String(<PlainPage title={title} css="/q/crm.css">{body}</PlainPage>) }));
   app.route("/q", formRoutes(db, {
-    source: "crm", prefix: "/q", notify: false,
+    source: "crm", prefix: "/q", notify: false, adminPath: "/forms/submissions",
+    background: ownDb,
     page: (_c, title, body) => <PlainPage title={title} css="/q/crm.css">{body}</PlainPage>,
-    steps: eventsCfg ? { booking: bookingStep(db, { source: "crm" }) } : undefined,
+    steps: {
+      ...(eventsCfg ? { booking: bookingStep(db, { source: "crm" }) } : {}),
+      payment: paymentStep(db, (c) => stripeFrom(envOf(c)), { source: "crm", connected: (c) => stripeConnected(envOf(c)) }),
+    },
     textConsent: consentHere("request"),
     // The booking is confirmed (and its email sent) first; then its text: Booked, or the thank-you.
     onComplete: async (c, id) => {
@@ -253,10 +265,7 @@ if (!cfg.booking_page && invoicesCfg) {
 if (invoicesCfg) {
   // Public: the token in the link is the customer's key, and the page says nothing without one.
   app.route("/q", proposalPages({
-    db: (c) => {
-      const opened = (c as unknown as C).env.runtime.open();
-      return opened.db ? { db: opened.db, close: opened.close } : { db: null };
-    },
+    db: (c) => ownDb(c) ?? { db: null },
     load: loadBusiness,
     deps: answerDeps,
     reasons: dealsCfg.lost_reasons,
@@ -945,7 +954,7 @@ if (invoicesCfg) {
         ]);
         const more: { label: string; value: Child }[] = [];
         if (deal) {
-          const hint = quote && (quote.status === "draft" || quote.status === "sent") ? <span class="block text-label text-ink-3">A yes wins the {dealsCfg.one.toLowerCase()}.</span> : null;
+          const hint = quote && (quote.status === "draft" || quote.status === "sent") ? <span class="block text-label text-ink-3">Marked won when this quote is accepted.</span> : null;
           more.push({ label: dealsCfg.one, value: <><a href={`/deals/${deal.id}`}>{deal.title}</a>{hint}</> });
         }
         if (eventsCfg && event) more.push({ label: eventsCfg.one, value: <a href={`/events/${event.id}`}>{event.what}</a> });

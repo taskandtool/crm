@@ -25,7 +25,7 @@ export function formCurrency(form: Form): string {
   return form.fields.find((f) => f.type === "items")?.currency ?? form.fields.find((f) => f.type === "payment")?.currency ?? "usd";
 }
 
-const unitText = (unit: string | undefined) => (!unit ? "" : unit === "each" ? ", each" : `, a ${unit}`);
+const unitText = (unit: string | undefined) => (!unit ? "" : unit === "each" ? "" : `, a ${unit}`);
 
 /** One items field's lines at today's prices, for the quantities chosen. */
 export function itemLines(f: Field, chosen: unknown): PriceLine[] {

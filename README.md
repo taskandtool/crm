@@ -46,7 +46,7 @@ runs anywhere with Node 20 and a Postgres.
 - **Deals**: one piece of work being won, for one customer, who may have
   many. Stages you name, a value (a quote's total until one is typed),
   an owner, an expected close; its own tasks and events (a visit to quote
-  it, the job itself); won makes them a customer, a quote's yes wins it, a
+  it, the job itself); won makes them a customer, accepting a quote wins it, a
   lost one keeps why.
 - **Contacts**, everyone the business deals with, keyed by email (a phone
   alone is fine too), each with a status (Lead until they buy, then
@@ -87,9 +87,9 @@ runs anywhere with Node 20 and a Postgres.
   and what they paid.
 - **The deals board**: a column per stage with its count and total, drag
   between them, or a select on each card on a phone or without JavaScript.
-- **CSV import** of the list you keep today, matched by email then phone
+- **CSV import** of a customer list, matched by email then phone
   so nobody is added twice, with a dry run first.
-- **The AI's hands**: scripts to find, add, edit, note, tag, merge,
+- **Scripts the AI runs**: find, add, edit, note, tag, merge,
   import and export customers from chat, add and move deals, plan and
   tick off tasks, schedule and close events, quote and invoice,
   and read the form submissions. Sending anything to a customer, and a merge,
@@ -151,5 +151,5 @@ test/                    node:test
 
 Hono with server-rendered JSX, `pg` on Postgres with plain SQL, Tailwind
 v4 as tokens, htmx for the round trips, SortableJS for the deals board. No
-client framework, no ORM, no login of its own; email only through your
-own sender, money only through your own Stripe. MIT.
+client framework, no ORM, no login of its own. Email goes through the owner's sender and payments
+through Stripe. MIT.

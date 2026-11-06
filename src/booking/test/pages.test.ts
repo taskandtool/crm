@@ -209,7 +209,7 @@ async function firstSlot(app: Hono) {
   return { start: new URL(link, "http://x").searchParams.get("start")!, confirm, stamp: /name="_started" value="([^"]+)"/.exec(confirm)![1] };
 }
 
-test("the confirm form has the spam fields: a filled honeypot or a forged stamp books nothing; too fast asks again", async (t) => {
+test("the confirm form has the spam fields: a forged stamp books nothing; a filled honeypot or too fast asks again, in case it was a person", async (t) => {
   const s = await scratch();
   if (!s) return t.skip(why);
   try {
@@ -223,8 +223,7 @@ test("the confirm form has the spam fields: a filled honeypot or a forged stamp 
     const who = { start, tz: "UTC", name: "Bot", email: "bot@example.com", phone: "555 010 0000" };
     const old = await makeStamp("booking:intro", Date.now() - 10_000);
     let res = await app.request("/book/intro", form({ ...who, _started: old, company_website: "http://spam" }));
-    assert.equal(res.status, 303);
-    assert.equal(res.headers.get("location"), "/book/intro");
+    assert.equal(res.status, 422);
     res = await app.request("/book/intro", form(who)); // no stamp at all
     assert.equal(res.status, 303);
     assert.equal((await s.db.sql`select count(*)::int as n from bookings`)[0].n, 0);

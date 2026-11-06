@@ -10,9 +10,13 @@ import { q, type Db } from "../src/data/db";
 import { applySchema } from "../src/data/migrate";
 import { setup } from "../src/db/setup";
 import { getCustomer } from "../src/crm/customers";
-import { insertSubmission } from "../src/forms/store";
+import { insertOnce } from "../src/forms/store";
+import { makeStamp } from "../src/data/spam";
 import type { Runtime } from "../src/runtime";
 import { scratch, type Scratch } from "./scratch";
+
+/** A submission as a form saves it, each with a key of its own. */
+const insertSubmission = (db: Db, sub: Parameters<typeof insertOnce>[1]) => insertOnce(db, sub, crypto.randomUUID()).then((r) => r.id);
 
 const HOST = "https://crm.example";
 const ME = { "x-tasktool-user": "Ann@Team.Example", host: "crm.example" };
@@ -663,7 +667,7 @@ test("a quote made for a deal: its value stands in, its page names the deal, and
   body.append("description", "Cabinets"); body.append("quantity", "1"); body.append("unit", "8000");
   const res = await app.request(HOST + "/invoices/quotes", { method: "POST", body, headers: { ...ME, origin: HOST, "content-type": "application/x-www-form-urlencoded" } }, { runtime });
   const qid = res.headers.get("location")!.match(/\/invoices\/quotes\/(\d+)/)![1];
-  assert.match(await (await get(`/invoices/quotes/${qid}`)).text(), new RegExp(`<dd[^>]*><a href="/deals/${did}">Kitchen remodel</a><span[^>]*>A yes wins the deal\\.</span>`));
+  assert.match(await (await get(`/invoices/quotes/${qid}`)).text(), new RegExp(`<dd[^>]*><a href="/deals/${did}">Kitchen remodel</a><span[^>]*>Marked won when this quote is accepted\\.</span>`));
   const board = await (await get("/deals")).text();
   assert.match(board.split('<section data-stage="new"')[1].split("</section>")[0], /Kitchen remodel[\s\S]*\$8,000</, "the quote's total stands in for a blank value");
 
@@ -1070,4 +1074,87 @@ test("a form or a service can make each lead a deal straight away, as Pipedrive'
   await db.sql`insert into customer_notes (customer_id, kind, body, author) values (${c.id}::bigint, 'call', 'Gate code 2210', 'hal@team.example')`;
   assert.match(await (await get(`/customers/${c.id}`)).text(), /· Hal Host<\/p>\s*<p[^>]*>Gate code 2210/);
   assert.equal((await db.sql<{ deal_id: string }>`select deal_id::text as deal_id from bookings where id = ${b.id}::bigint`)[0].deal_id !== null, true, "the booking is on the deal");
+});
+
+test("a lead from a customer's form goes to its destination on a database of its own, after the request's has closed", async (t) => {
+  if (skip) return t.skip(skip);
+  const real = globalThis.fetch;
+  const sent: { url: string; body: string }[] = [];
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    sent.push({ url: String(url), body: String(init?.body) });
+    // The vendor answers only after the request's database has closed, so a send on that one would fail.
+    if (String(url).includes("hooks.example")) await until(() => requestClosed());
+    return new Response(JSON.stringify({ id: "x1" }), { status: 200 });
+  }) as typeof fetch;
+  process.env.LEAD_WEBHOOK_URL = "https://hooks.example/lead";
+  // As production: every open is its own handle, and closing one makes it refuse.
+  const opens: { closed: boolean }[] = [];
+  const requestClosed = () => opens[0]?.closed === true;
+  const until = async (ok: () => boolean) => {
+    for (let i = 0; i < 150 && !ok(); i++) await new Promise((r) => setTimeout(r, 20));
+  };
+  const closing: Runtime = {
+    open: () => {
+      const state = { closed: false };
+      opens.push(state);
+      const guard = <T extends (...a: never[]) => unknown>(fn: T) => ((...a: never[]) => {
+        if (state.closed) throw new Error("the pool is closed");
+        return fn(...a);
+      }) as T;
+      return {
+        db: { sql: guard(db.sql.bind(db)), transaction: guard(db.transaction.bind(db)) } as Db,
+        close: async () => {
+          state.closed = true;
+        },
+      };
+    },
+  };
+  try {
+    await db.sql`insert into lead_destinations (key, title, kind, target) values ('crm-zap', 'Zapier', 'webhook', 'LEAD_WEBHOOK_URL')`;
+    await db.sql`insert into forms (key, title, fields) values ('q-lead', 'Quote', '[{"name":"name","label":"Name","type":"text"},{"name":"email","label":"Email","type":"email"}]'::jsonb)`;
+    const page = await app.request(`${HOST}/q/forms/q-lead/start`, { headers: { host: "crm.example" } }, { runtime });
+    assert.equal(page.status, 200);
+    const stamp = await makeStamp("q-lead", Date.now() - 10_000);
+    const res = await app.request(`${HOST}/q/forms/q-lead`, {
+      method: "POST",
+      body: new URLSearchParams({ name: "Quinn Lead", email: "quinn@example.com", _started: stamp }),
+      headers: { host: "crm.example", "content-type": "application/x-www-form-urlencoded" },
+    }, { runtime: closing });
+    assert.equal(res.status, 303);
+    let row: { status: string } | undefined;
+    for (let i = 0; i < 100 && row?.status !== "sent"; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      [row] = await db.sql<{ status: string }>`select l.status from lead_deliveries l join submissions s on s.id = l.submission_id where s.email = 'quinn@example.com'`;
+    }
+    assert.equal(row?.status, "sent");
+    assert.match(sent.find((c) => c.url.includes("hooks.example"))!.body, /Quinn/);
+    assert.ok(opens.length >= 2, "the send opened a database of its own");
+    assert.equal(opens.every((o) => o.closed), true, "and closed it");
+  } finally {
+    globalThis.fetch = real;
+    delete process.env.LEAD_WEBHOOK_URL;
+    await db.sql`delete from lead_destinations where key = 'crm-zap'`;
+  }
+});
+
+test("a form's payment step runs here: with Stripe not connected it says so, and offers no button", async (t) => {
+  if (skip) return t.skip(skip);
+  await db.sql`insert into forms (key, title, fields) values ('q-order', 'Order', '[{"name":"name","label":"Name","type":"text"},{"name":"email","label":"Email","type":"email"},{"name":"what","label":"What","type":"items","currency":"usd","items":[{"key":"a","label":"Bracket","price_cents":450,"unit":"each"}]},{"name":"pay","label":"Pay","type":"payment"}]')`;
+  try {
+    const res = await app.request(`${HOST}/q/forms/q-order`, {
+      method: "POST",
+      body: new URLSearchParams({ name: "Ola Order", email: "ola@example.com", "what[a]": "3", _started: await makeStamp("q-order", Date.now() - 10_000) }),
+      headers: { host: "crm.example", "content-type": "application/x-www-form-urlencoded" },
+    }, { runtime });
+    assert.equal(res.status, 303);
+    const page = await app.request(new URL(res.headers.get("location")!, HOST).href, { headers: { host: "crm.example" } }, { runtime });
+    assert.equal(page.status, 200);
+    const html = await page.text();
+    assert.match(html, /Online payment isn&#39;t available right now|Online payment isn't available right now/);
+    assert.doesNotMatch(html, /Pay securely/);
+  } finally {
+    await db.sql`delete from submission_drafts where form_key = 'q-order'`;
+    await db.sql`delete from submissions where form_key = 'q-order'`;
+    await db.sql`delete from forms where key = 'q-order'`;
+  }
 });

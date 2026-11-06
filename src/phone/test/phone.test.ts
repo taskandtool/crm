@@ -1,3 +1,5 @@
+import { leadMoment } from "../../forms/destinations";
+import { finishDraft } from "../../forms/store";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -382,6 +384,121 @@ test("a form that follows up thanks them by text when they ticked the box, and n
     assert.match(tw.texts[0].body, /^Hi Natalie, it's Acme Plumbing\. Thanks for reaching out/);
     const [skipped] = await s.db.sql<{ why: string }>`select why from text_sends where subject_id = ${no.id}`;
     assert.match(skipped.why, /didn't agree to texts/);
+  }));
+
+test("someone who answered the questions and stopped at the calendar gets the times; finishing stops them", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withDb(async (s) => {
+    const { ctx, tw, post, setNow } = await setup(s);
+    await service(s);
+    await s.db.sql`insert into forms (key, title, fields, follow_up) values ('furnace-form', 'Furnace check request',
+      '[{"name":"name","label":"Name","type":"text"},{"name":"phone","label":"Phone","type":"tel"},{"name":"when","label":"Time","type":"booking","booking_type":"furnace"}]'::jsonb, true)`;
+    const started = async (name: string, phone: string, hash: string) => {
+      const [d] = await s.db.sql<{ id: string }>`insert into submission_drafts (form_key, key_hash, step, name, email, phone, source, text_consent, updated_at, created_at)
+        values ('furnace-form', ${hash}, 1, ${name}, ${hash + "@example.com"}, ${phone}, 'test', 'Text me', '2026-10-20T14:30:00Z', '2026-10-20T14:28:00Z') returning id::text as id`;
+      // The questions are done: this is what the form does before it shows the calendar.
+      const made = (await finishDraft(s.db, d.id, false))!.submissionId;
+      await s.db.sql`update submission_drafts set updated_at = '2026-10-20T14:30:00Z' where id = ${d.id}::bigint`; // the database's clock is real, this test's is pinned
+      return made;
+    };
+    await started("Natalie Ruiz", "512-555-0123", "h1");
+    const done = await started("Omar Diaz", "512-555-0124", "h2");
+    await s.db.sql`update submissions set completed_at = now() where id = ${done}::bigint`;
+    setNow(new Date("2026-10-20T15:00:00Z"));
+    const r = await scan(ctx);
+    assert.equal(r.sent, 1);
+    assert.equal(tw.texts.length, 1);
+    assert.match(tw.texts[0].body, /^Hi Natalie, it's Acme Plumbing\. Reply 1, 2 or 3 to book/);
+
+    // Replying books into the form they stopped in, which is then finished, and the lead goes on.
+    const [{ id: sub }] = await s.db.sql<{ id: string }>`select submission_id::text as id from submission_drafts where name = 'Natalie Ruiz'`;
+    await s.db.sql`insert into lead_destinations (key, title, kind, target, send_when) values ('later', 'Later', 'webhook', 'NOT_SET_HERE', 'complete')`;
+    await leadMoment(s.db, ctx.env, sub, "answered");
+    assert.equal((await s.db.sql<{ status: string }>`select status from lead_deliveries`)[0].status, "waiting");
+    await post("/hooks/twilio/sms", { MessageSid: "SMr", From: "+15125550123", To: "+15125550100", Body: "2" });
+    for (let i = 0; i < 100; i++) {
+      if ((await s.db.sql`select 1 from bookings`).length) break;
+      await new Promise((res) => setTimeout(res, 20));
+    }
+    for (let i = 0; i < 100; i++) {
+      if ((await s.db.sql<{ status: string }>`select status from lead_deliveries`)[0].status !== "waiting") break;
+      await new Promise((res) => setTimeout(res, 20));
+    }
+    const [b] = await s.db.sql<{ submission_id: string }>`select submission_id::text as submission_id from bookings`;
+    assert.equal(b.submission_id, sub);
+    assert.ok((await s.db.sql<{ completed_at: Date | null }>`select completed_at from submissions where id = ${sub}::bigint`)[0].completed_at);
+    assert.equal((await s.db.sql<{ status: string }>`select status from lead_deliveries`)[0].status, "failed", "it went, and with no secret set here it failed");
+  }));
+
+const PAID_FIELDS = '[{"name":"name","label":"Name","type":"text"},{"name":"email","label":"Email","type":"email"},{"name":"phone","label":"Phone","type":"tel"},{"name":"when","label":"Time","type":"booking","booking_type":"furnace"},{"name":"pay","label":"Pay","type":"payment"}]';
+const emailing = (ctx: PhoneCtx) => {
+  const mails: { to: string; subject: string; text: string }[] = [];
+  const realFetch = globalThis.fetch;
+  ctx.env = { NOTIFY_VIA: "resend", PHOENIX_URL: "https://phx", MACHINE_TOKEN: "mt", NOTIFY_FROM: "hi@acme.example" };
+  globalThis.fetch = (async (_u: unknown, init?: RequestInit) => {
+    const m = JSON.parse(String(init?.body ?? "{}"));
+    mails.push({ to: [m.to].flat()[0], subject: m.subject, text: m.text });
+    return new Response(JSON.stringify({ id: "e1" }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+  return { mails, restore: () => void (globalThis.fetch = realFetch) };
+};
+
+test("a form that takes payment is never offered times: after an hour it emails the link back", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withDb(async (s) => {
+    const { ctx, tw, post, setNow } = await setup(s);
+    await service(s);
+    const { mails, restore } = emailing(ctx);
+    try {
+      await s.db.sql`insert into forms (key, title, fields, follow_up) values ('paid', 'Paid visit', ${PAID_FIELDS}::jsonb, true)`;
+      await s.db.sql`insert into submission_drafts (form_key, key_hash, step, name, email, phone, source, text_consent, updated_at, created_at)
+        values ('paid', 'h3', 1, 'Paid Person', 'paid@example.com', '512-555-0125', 'test', 'Text me', '2026-10-20T14:30:00Z', '2026-10-20T14:28:00Z')`;
+      setNow(new Date("2026-10-20T15:00:00Z"));
+      assert.equal((await scan(ctx)).sent, 0, "still within the hour: they may be on the checkout page");
+      setNow(new Date("2026-10-20T15:31:00Z"));
+      assert.equal((await scan(ctx)).sent, 1);
+      assert.equal(tw.texts.length, 0, "no text: a text carries no link");
+      assert.equal(mails.length, 1);
+      assert.match(mails[0].text, /Hi Paid,\n\nYour answers are saved\. Finish here: https:\/\/acme\.example\/forms\/paid\/next\?k=/);
+      const [row] = await s.db.sql<{ flow: string; offer: unknown }>`select flow, offer from text_sends`;
+      assert.equal(row.flow, "unpaid");
+      assert.equal(row.offer, null);
+      setNow(new Date("2026-10-20T17:00:00Z"));
+      assert.equal((await scan(ctx)).sent, 0, "one message, never a second");
+      // A reply offers nothing to book.
+      await post("/hooks/twilio/sms", { MessageSid: "SMp", From: "+15125550125", To: "+15125550100", Body: "2" });
+      assert.equal((await s.db.sql`select id from bookings`).length, 0);
+    } finally { restore(); }
+  }));
+
+test("an order form with no calendar is followed up too, and someone with no email is asked to reply", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withDb(async (s) => {
+    const { ctx, tw, setNow } = await setup(s);
+    await s.db.sql`insert into forms (key, title, fields, follow_up) values ('order', 'Order',
+      '[{"name":"name","label":"Name","type":"text"},{"name":"phone","label":"Phone","type":"tel"},{"name":"pay","label":"Pay","type":"payment"}]', true)`;
+    await s.db.sql`insert into submission_drafts (form_key, key_hash, step, name, phone, source, text_consent, updated_at, created_at)
+      values ('order', 'h4', 1, 'Order Person', '512-555-0126', 'test', 'Text me', '2026-10-20T14:30:00Z', '2026-10-20T14:28:00Z')`;
+    setNow(new Date("2026-10-20T15:31:00Z"));
+    assert.equal((await scan(ctx)).sent, 1);
+    assert.equal(tw.texts.length, 1);
+    assert.equal(tw.texts[0].body.replace(/ Reply STOP.*/, ""), "Hi Order, it's Acme Plumbing. Your answers are saved. Reply here and we'll help you finish.");
+    assert.doesNotMatch(tw.texts[0].body, /https?:/);
+  }));
+
+test("someone who paid gets no nudge, and the flow's switch stops it", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withDb(async (s) => {
+    const { ctx, tw, setNow } = await setup(s);
+    await s.db.sql`insert into forms (key, title, fields, follow_up) values ('order', 'Order', '[{"name":"phone","label":"Phone","type":"tel"},{"name":"pay","label":"Pay","type":"payment"}]', true)`;
+    const [sub] = await s.db.sql<{ id: string }>`insert into submissions (form_key, phone, source, completed_at) values ('order', '512-555-0127', 'test', '2026-10-20T14:35:00Z') returning id::text as id`;
+    await s.db.sql`insert into submission_drafts (form_key, key_hash, step, phone, source, text_consent, submission_id, updated_at, created_at)
+      values ('order', 'h5', 1, '512-555-0127', 'test', 'Text me', ${sub.id}::bigint, '2026-10-20T14:30:00Z', '2026-10-20T14:28:00Z'),
+             ('order', 'h6', 1, '512-555-0128', 'test', 'Text me', null, '2026-10-20T14:30:00Z', '2026-10-20T14:28:00Z')`;
+    setNow(new Date("2026-10-20T15:31:00Z"));
+    assert.equal((await scan(ctx)).sent, 1, "only the one who did not pay");
+    assert.equal(tw.texts.length, 1);
+    assert.match(tw.texts[0].to, /5550128/);
+    await setEnabled(s.db, "unpaid", false, "o@x.com");
+    await s.db.sql`insert into submission_drafts (form_key, key_hash, step, phone, source, text_consent, updated_at, created_at)
+      values ('order', 'h7', 1, '512-555-0129', 'test', 'Text me', '2026-10-20T14:30:00Z', '2026-10-20T14:28:00Z')`;
+    assert.equal((await scan(ctx)).sent, 0, "the switch off");
   }));
 
 test("a form left before booking gets three times, and a reply of 2 books the second", { skip: !process.env.TEST_DATABASE_URL && why }, () =>

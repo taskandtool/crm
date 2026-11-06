@@ -18,6 +18,7 @@
 // booker to pay, and the manage page shows its status from payments. The
 // manage link is the booker's key: only its hash is stored, and its pages
 // send Referrer-Policy: no-referrer.
+import { readOrigin } from "../forms/origin";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { Child } from "hono/jsx";
@@ -496,16 +497,17 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     if (Number.isNaN(start.getTime())) return c.redirect(back, 303);
     const values = { name: s("name"), email: s("email"), phone: s("phone"), address: s("address"), notes: s("notes"), text_consent: s("text_consent") };
     // A bot is sent back to the day's times, as if nothing happened. A person
-    // whose browser filled the form in under the minimum time confirms again.
+    // whose browser filled the hidden field, or the form in under the minimum
+    // time, confirms again.
     const v = await verdict(spamScope(t), { honeypot: body[HONEYPOT] ?? "", stamp: body[STAMP] });
     if (v === "drop") return c.redirect(back, 303);
-    if (v === "fast") return confirmForm(c, t, host, start, zone, await makeStamp(spamScope(t)), values, {}, "Please check your details and press Book it again.");
+    if (v === "spam") return confirmForm(c, t, host, start, zone, await makeStamp(spamScope(t)), values, {}, "Please check your details and press Book it again.");
     const notes = values.notes.trim().slice(0, 2000);
 
     const agreed = values.text_consent === "yes" && values.phone && opts.textConsent ? await opts.textConsent(c) : null;
     const result = await book(getDb(c), {
       typeId: t.id, hostId: host?.id ?? null, start, name: values.name, email: values.email, phone: values.phone || null,
-      address: values.address || null, bookerTimeZone: zone, answers: notes ? { notes } : {}, source: opts.source,
+      address: values.address || null, bookerTimeZone: zone, answers: { ...(notes ? { notes } : {}), ...readOrigin(null, null, c.req.header("cookie")) }, source: opts.source,
       textConsent: agreed,
     });
     if (!result.ok && result.reason === "invalid") return confirmForm(c, t, host, start, zone, s(STAMP), values, result.errors);

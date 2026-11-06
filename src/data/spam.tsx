@@ -5,7 +5,7 @@
 //
 //   <SpamFields stamp={await makeStamp("contact")} />   // inside the <form>
 //   const v = await verdict("contact", { honeypot: body[HONEYPOT], stamp: body[STAMP] });
-//   // "drop": a bot; answer as if it worked. "fast": keep it marked as spam, tell nobody. "ok": a person.
+//   // "drop": a bot; answer as if it worked. "spam": keep it marked as spam, tell nobody. "ok": a person.
 //
 // A stamp older than two days is treated like a fast one: a bot that saved a
 // page cannot post with its stamp forever, and a person who left a tab open
@@ -27,7 +27,7 @@ export const STAMP = "_started";
 export const MIN_FILL_MS = 3000;
 export const MAX_STAMP_AGE_MS = 2 * 24 * 60 * 60 * 1000;
 
-export type Verdict = "ok" | "drop" | "fast";
+export type Verdict = "ok" | "drop" | "spam";
 
 /**
  * The two hidden fields. The honeypot is moved off screen rather than hidden
@@ -54,9 +54,11 @@ export async function makeStamp(scope: string, now = Date.now()): Promise<string
 }
 
 /**
- * What to do with a post: "drop" a bot (honeypot filled, stamp missing,
- * forged or from the future), mark one sent too "fast" (or on a stamp over
- * two days old) as spam, else "ok".
+ * What to do with a post: "drop" a bot (stamp missing, forged or from the
+ * future), keep as "spam" one with the honeypot filled, sent too fast or on a
+ * stamp over two days old, else "ok". A filled honeypot is kept because a
+ * browser or a password manager can fill it for a real person: the team can
+ * still find them in Spam.
  */
 export async function verdict(
   scope: string,
@@ -64,7 +66,6 @@ export async function verdict(
   now = Date.now(),
   minFillMs = MIN_FILL_MS,
 ): Promise<Verdict> {
-  if (typeof body.honeypot === "string" && body.honeypot.trim() !== "") return "drop";
   if (body.honeypot !== undefined && typeof body.honeypot !== "string") return "drop";
   const m = /^(\d{10,16})\.([A-Za-z0-9_-]+)$/.exec(typeof body.stamp === "string" ? body.stamp : "");
   if (!m) return "drop";
@@ -77,7 +78,8 @@ export async function verdict(
   }
   if (!(await crypto.subtle.verify("HMAC", await hmacKey(), sig, enc(`${scope}.${m[1]}`)))) return "drop";
   if (t > now + 60_000) return "drop";
-  return now - t < minFillMs || now - t > MAX_STAMP_AGE_MS ? "fast" : "ok";
+  if (typeof body.honeypot === "string" && body.honeypot.trim() !== "") return "spam";
+  return now - t < minFillMs || now - t > MAX_STAMP_AGE_MS ? "spam" : "ok";
 }
 
 const enc = (s: string) => new TextEncoder().encode(s);

@@ -17,8 +17,8 @@ whatever material arrives, and cite every fact.
 2. **Write the notes the work in hand needs.** A first homepage needs
    `public/business.md`, `public/services.md` and `public/proof.md`; the
    rest wait until the work reaches them.
-   Proof is what others say about the business, and nothing persuades
-   more: get all of it, from everywhere below.
+   Proof is what others say about the business: get all of it, from
+   everywhere below.
    A note that does not exist yet takes its shape from `templates/` beside
    this file; the frontmatter and citation rules are in
    `references/notes.md`. Every page, post and ad copies their wording, so

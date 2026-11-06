@@ -76,7 +76,7 @@ export function Accept({ s, word }: { s: AcceptState; word: string }) {
       </form>
       {open ? (
         <details class="mt-10 border-t border-line pt-6 print:hidden">
-          <summary class="cursor-pointer text-small text-muted">Decline it, and tell us why</summary>
+          <summary class="cursor-pointer text-small text-muted">Decline and tell us why</summary>
           <form method="post" action={`${s.action}/decline`} class="mt-4 flex flex-col gap-4">
             <input type="hidden" name="page" value={s.sha} />
             <label class="block text-small font-semibold">

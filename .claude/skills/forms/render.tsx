@@ -168,7 +168,7 @@ function FieldView({ form, field: f, value, error, values }: { form: Form; field
                 placeholder="0"
                 aria-label={`How many: ${it.label}`}
                 aria-invalid={invalid}
-                class={control + " w-20 text-center"}
+                class={control.replace("w-full", "w-20 shrink-0") + " text-center"}
               />
             </div>
           );

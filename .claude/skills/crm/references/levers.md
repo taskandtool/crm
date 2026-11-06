@@ -103,9 +103,8 @@ The code keeps these; never redo them by hand:
   one to a won stage moves its customer from an open status to the first
   won one; lost and won stages close it.
 - A deal with a blank value shows the latest quote made for it
-  (`quotes.mjs add --deal <id>`, or New quote on the deal's page). That
-  quote's yes wins the deal, whether given on the page, by script or by
-  paying online.
+  (`quotes.mjs add --deal <id>`, or New quote on the deal's page). Accepting
+  that quote wins the deal, whether on the page, by script or by paying online.
 - A done task goes on the timeline as a note of its kind, so a done
   call counts as contact; so does a quote or an invoice that went out.
   "Nothing planned" (the Contacts filter, `tasks.mjs list --none`) is

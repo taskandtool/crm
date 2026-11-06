@@ -20,17 +20,19 @@
 import { Hono, type Context } from "hono";
 import type { Child } from "hono/jsx";
 import type { Db, GetDb } from "../data/db";
+import { normalizeEmail } from "../data/email";
 import { envOf } from "../data/env";
-import { afterResponse, sendEmail } from "../data/send";
+import { afterResponse, sendEmail, teamAddresses } from "../data/send";
 import { HONEYPOT, MIN_FILL_MS, STAMP, makeStamp, verdict } from "../data/spam";
 import { newToken, tokenHash, TOKEN_SHAPE } from "../data/token";
 import { DRAFT_FIELD, FORM_KEY, STEP_FIELD, TEXT_CONSENT_FIELD, sitePath, stepsOf, validate, type Answer, type Errors, type Field, type Form, type Input, type Step, type Submission } from "./fields";
 import type { FormSteps, StepContext } from "./steps";
+import { emailLine, leadMoment, sleep, type Moment } from "./destinations";
 import { cameFrom, originFields, readOrigin, REFERRER_FIELD, UTM_FIELD, type Origin } from "./origin";
 import { FormView, StepFrame } from "./render";
 import { priceOf, withLines, type Price } from "./price";
 import { formatMoney } from "../payments/money";
-import { draftByKey, finishDraft, finishStep, insertSubmission, keepTextConsent, loadForm, recordNotified, rewindDraft, saveStep, startDraft, submissionById, type Draft } from "./store";
+import { draftByKey, finishDraft, finishStep, insertOnce, keepTextConsent, loadForm, recordNotified, rewindDraft, saveStep, startDraft, submissionById, submitKey, type Draft } from "./store";
 
 /** Wraps a body in the app's own page and its content width, so a form with errors looks like the rest of the site. */
 export type PageRenderer = (c: Context, title: string, body: Child) => string | Promise<string>;
@@ -44,6 +46,8 @@ export type FormRoutesOptions = {
   /** Email the form's notify_emails through the connected sender (data/send.ts). Default true. */
   notify?: boolean;
   minFillMs?: number;
+  /** How long a failed save waits before its second try. */
+  retryMs?: number;
   /** What runs a form's `booking` and `payment` steps (steps.ts); a form that has one needs it here. */
   steps?: FormSteps;
   /**
@@ -61,11 +65,18 @@ export type FormRoutesOptions = {
    * leaves it off.
    */
   textConsent?: (c: Context) => string | null | Promise<string | null>;
+  /**
+   * The database for what runs after the response (sending a lead on). Default
+   * getDb; an app whose request's database closes with the response gives it one
+   * of its own, as the CRM does for pushAfterWrites.
+   */
+  background?: (c: Context) => { db: Db; close?: () => Promise<void> } | null;
 };
 
 
 /** A post larger than this is refused before it is read. */
 export const MAX_BODY = 32 * 1024;
+const RETRY_MS = 400;
 
 export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
   const app = new Hono();
@@ -87,7 +98,23 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     const text = await readCapped(c.req.raw, MAX_BODY);
     if (text === null) return c.text("This form is too large to send.", 413);
     const input = readInput(text);
+    try {
+      return await takePost(c, key, input, false);
+    } catch (first) {
+      // Once more while they wait, for a blip: a first post is one submission or draft however
+      // often it arrives (submitKey). A later step is not repeated: it may have booked or charged.
+      if (one(input[DRAFT_FIELD])) return notSaved(c, key, input, first);
+      await sleep(opts.retryMs ?? RETRY_MS);
+      try {
+        return await takePost(c, key, input, true);
+      } catch (e) {
+        return notSaved(c, key, input, e);
+      }
+    }
+  });
 
+  /** `again`: the second try, after a failure that may have come after the row was saved. */
+  async function takePost(c: Context, key: string, input: Input, again: boolean) {
     const db = getDb(c);
     const form = await loadForm(db, key);
     if (!form || !form.active) return c.notFound();
@@ -98,16 +125,16 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     const steps = stepsOf(form.fields);
     if (!steps.length) return c.notFound();
     const stepped = steps.length > 1 || steps[0].kind !== "fields";
-    if (stepped && one(input[DRAFT_FIELD])) return takeStep(c, db, form, steps, input, "ok");
+    if (stepped && one(input[DRAFT_FIELD])) return takeStep(c, db, form, steps, input, "ok", "");
 
     // A bot is told it succeeded, so it learns nothing to adapt to.
     const stamp = one(input[STAMP]);
     const v = await verdict(form.key, { honeypot: one(input[HONEYPOT]), stamp }, Date.now(), opts.minFillMs ?? MIN_FILL_MS);
     if (v === "drop") return thanks();
-    if (stepped) return takeStep(c, db, form, steps, input, v);
+    if (stepped) return takeStep(c, db, form, steps, input, v, stamp);
 
     const page = sitePath(one(input._page));
-    const origin = readOrigin(one(input[UTM_FIELD]), one(input[REFERRER_FIELD]));
+    const origin = readOrigin(one(input[UTM_FIELD]), one(input[REFERRER_FIELD]), c.req.header("cookie"));
     const r = validate(form.fields, input);
     if (!r.ok) {
       // The stamp they were served goes back unchanged, so fixing one answer
@@ -118,19 +145,87 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     }
 
     const data = { ...withLines(form.fields, r.submission.data), ...origin };
-    const id = await insertSubmission(db, { ...r.submission, data, form_key: form.key, source: opts.source, page, status: v === "fast" ? "spam" : "new" });
     const agreed = await ticked(c, form, input);
-    if (agreed) await keepTextConsent(db, "submission", id, agreed);
+    const { id, made } = await insertOnce(db, { ...r.submission, data, form_key: form.key, source: opts.source, page, status: v === "spam" ? "spam" : "new", text_consent: agreed }, await submitKey(stamp, r.submission), again);
+    // A double click: saved, and the team told. Its sending is checked anyway: it costs nothing, and each
+    // destination goes once. On a second try nobody knows how far the first got, so everything runs, and
+    // the team's email may go twice: that is better than the team missing a lead.
+    if (!made && !again) {
+      if (v === "ok") moment(c, String(id), "complete");
+      return thanks();
+    }
     if (v === "ok") {
       keepPhotos(c, form.fields, r.submission.data);
       notifyOwner(c, form, id, r.submission, page, origin);
       await completed(c, String(id));
     }
     return thanks();
-  });
+  }
+
+  /**
+   * Their answers could not be saved. They get them back, a button away from trying
+   * again, and the team gets a copy, since this is the one moment a lead could be
+   * lost. A bot learns nothing and nobody hears of it.
+   */
+  async function notSaved(c: Context, key: string, input: Input, e: unknown) {
+    console.error(`forms: a post to ${key} was not saved: ${(e as Error)?.message ?? e}`);
+    const inStep = TOKEN_SHAPE.test(one(input[DRAFT_FIELD]));
+    const v = inStep ? "ok" : await verdict(key, { honeypot: one(input[HONEYPOT]), stamp: one(input[STAMP]) }, Date.now(), opts.minFillMs ?? MIN_FILL_MS);
+    if (v === "drop") return c.redirect(`${P}/forms/${key}/thanks`, 303);
+    if (v === "ok") {
+      const form = await loadForm(getDb(c), key).catch(() => null);
+      afterResponse(c, tellTeamNotSaved(c, key, form, input));
+    }
+    const body = (
+      <div>
+        <h1 class="text-title font-semibold">That did not go through</h1>
+        <p class="mt-4">Press Try again in a moment. You won't need to type your answers again.</p>
+        <form method="post" action={`${P}/forms/${key}`} class="mt-6">
+          {Object.entries(input).flatMap(([name, value]) => (Array.isArray(value) ? value : [value]).map((v) => <input type="hidden" name={name} value={v} />))}
+          <button type="submit" class="inline-flex min-h-11 items-center justify-center rounded-control bg-accent px-5 font-semibold text-accent-ink">Try again</button>
+        </form>
+      </div>
+    );
+    c.header("Cache-Control", "no-store");
+    return c.html(await opts.page(c, "Try again", body), 503);
+  }
+
+  async function tellTeamNotSaved(c: Context, key: string, form: Form | null, input: Input) {
+    const env = envOf(c);
+    const to = form?.notify_emails.length ? form.notify_emails : await teamAddresses(env);
+    const answers = Object.entries(input)
+      .filter(([name, value]) => !name.startsWith("_") && name !== HONEYPOT && (Array.isArray(value) ? value.length : value))
+      .map(([name, value]) => emailLine(form?.fields.find((f) => f.name === name)?.label ?? name, Array.isArray(value) ? value.join(", ") : value));
+    const sent = await sendEmail(env, {
+      to,
+      subject: `A ${form?.title ?? key} submission could not be saved`,
+      text: [`Someone sent this form but it could not be saved, so they were asked to try again. If they did, it is in your submissions too. Their answers:`, ...answers].join("\n"),
+      // Nothing was validated, and a bad address would stop this email being taken at all.
+      replyTo: normalizeEmail(one(input.email)),
+      team: true,
+    });
+    if (sent.status !== "sent") console.error(`forms: nobody was told a post to ${key} was not saved: ${sent.status === "none" ? sent.why : sent.error}`);
+  }
+
+  /** A moment in a lead's life, after the response: it goes to the destinations waiting for this moment. */
+  function moment(c: Context, submissionId: string, when: Moment) {
+    const link = `${new URL(c.req.url).origin}${opts.adminPath ?? "/admin/submissions"}/${submissionId}`;
+    const env = envOf(c);
+    const run = async () => {
+      const opened = opts.background ? opts.background(c) : { db: getDb(c) };
+      if (!opened) return;
+      try {
+        await leadMoment(opened.db, env, submissionId, when, { link });
+      } finally {
+        await opened.close?.();
+      }
+    };
+    afterResponse(c, run());
+  }
 
   /** The submission is complete: what the app does then (opts.onComplete), never in the visitor's way. */
   async function completed(c: Context, submissionId: string) {
+    moment(c, submissionId, "complete");
     try {
       await opts.onComplete?.(c, submissionId);
     } catch (e) {
@@ -171,10 +266,14 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     if (!questionsDone(steps, draft.step)) return null;
     const complete = draft.step >= steps.length;
     const done = await finishDraft(db, draft.id, complete);
+    if (done && !draft.spam) {
+      // Before anything that can fail: on another try this draft already has its submission.
+      if (done.made && complete) await completed(c, done.submissionId);
+      else moment(c, done.submissionId, complete ? "complete" : "answered");
+    }
     if (done?.made && !draft.spam) {
       const sub = await submissionById(db, done.submissionId);
       if (sub) notifyOwner(c, form, done.submissionId, { name: sub.name, email: sub.email, phone: sub.phone, data: sub.data as Submission["data"] }, sub.page, sub.data as Origin);
-      if (complete) await completed(c, done.submissionId);
     }
     return done?.submissionId ?? null;
   }
@@ -250,7 +349,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
   const RELEASED = "The time you picked was not paid for in time and has been released. Pick a time again.";
 
   /** One step of a form with steps: the first makes the draft, each after it moves it on. */
-  async function takeStep(c: Context, db: Db, form: Form, steps: Step[], input: Input, v: "ok" | "fast") {
+  async function takeStep(c: Context, db: Db, form: Form, steps: Step[], input: Input, v: "ok" | "spam", stamp: string) {
     const posted = one(input[DRAFT_FIELD]);
     let key: string, draft: Draft;
     if (!posted) {
@@ -258,7 +357,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
       const st = steps[0];
       if (st.kind !== "fields") return notWired(c, form, st.kind);
       const page = sitePath(one(input._page));
-      const origin = readOrigin(one(input[UTM_FIELD]), one(input[REFERRER_FIELD]));
+      const origin = readOrigin(one(input[UTM_FIELD]), one(input[REFERRER_FIELD]), c.req.header("cookie"));
       const r = validate(st.fields, input);
       if (!r.ok) {
         const carried = { utm: one(input[UTM_FIELD]), ref: one(input[REFERRER_FIELD]) };
@@ -268,9 +367,9 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
       }
       key = newToken();
       const data = { ...withLines(st.fields, r.submission.data), ...origin };
-      draft = await startDraft(db, { ...r.submission, data, form_key: form.key, key_hash: await tokenHash(key), source: opts.source, page, spam: v === "fast" });
+      draft = await startDraft(db, { ...r.submission, data, form_key: form.key, key_hash: await tokenHash(key), source: opts.source, page, spam: v === "spam", submit_key: await submitKey(stamp, r.submission) });
       const agreed = await ticked(c, form, input);
-      if (agreed) await keepTextConsent(db, "draft", draft.id, agreed);
+      if (agreed) await keepTextConsent(db, draft.id, agreed);
       if (v === "ok") keepPhotos(c, st.fields, r.submission.data);
     } else {
       const found = TOKEN_SHAPE.test(posted) ? await draftByKey(db, form.key, await tokenHash(posted)) : null;
@@ -291,7 +390,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
         const data = withLines(st.fields, r.submission.data);
         if (!(await saveStep(db, draft.id, draft.step, { ...r.submission, data }))) return c.redirect(nextPath(form, key), 303);
         const agreed = await ticked(c, form, input);
-        if (agreed) await keepTextConsent(db, "draft", draft.id, agreed);
+        if (agreed) await keepTextConsent(db, draft.id, agreed);
         if (!draft.spam) keepPhotos(c, st.fields, r.submission.data);
         draft = { ...draft, step: draft.step + 1 };
       } else {

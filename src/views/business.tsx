@@ -15,7 +15,7 @@ export function BusinessPage(p: { user: string; business: Business; values?: Rec
   const v = p.values ?? { name: p.business.name ?? "", privacy_url: p.business.privacyUrl ?? "", terms_url: p.business.termsUrl ?? "", address: p.business.address ?? "" };
   const name = p.business.name;
   return (
-    <Layout title="Business" user={p.user} section="settings" back={SETTINGS_BACK} sub="Your business's name, pages and address, set once. Every text, quote and form uses them.">
+    <Layout title="Business" user={p.user} section="settings" back={SETTINGS_BACK}>
       <Flash code={p.flash} messages={SAVED} />
       {p.error ? <p role="alert" class={"mb-4 " + alertClass}>{p.error.why}</p> : null}
       <form method="post" action="/business" class="grid max-w-lg gap-4">

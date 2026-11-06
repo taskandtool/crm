@@ -68,7 +68,7 @@ export function Results(p: { stages: Stage[]; filter: ListFilter; rows: Customer
         more={(cur) => listUrl("/customers", { ...params, after: cur })}
         empty={
           p.filter.unplanned && !narrowed ? (
-            <EmptyState title="Everyone has something planned.">Every open lead and {dealsCfg.one.toLowerCase()} has a task or a {eventsCfg ? eventsCfg.one.toLowerCase() : "event"} planned.</EmptyState>
+            <EmptyState title="Everyone has something planned." />
           ) : narrowed || p.filter.unplanned ? (
             <NoMatches clear="/customers" />
           ) : p.filter.archived ? (
@@ -172,7 +172,7 @@ export function NewCustomerPage({ user, stages, flash }: { user: string; stages:
         </Field>
         <div class="sm:col-span-2">
           <button class={primaryClass}>Create {vocab.one.toLowerCase()}</button>
-          <span class="ml-3 text-label text-ink-3">A name, email or phone is enough. Someone already here opens their record.</span>
+          <span class="ml-3 text-label text-ink-3">A name, email or phone is enough. If they're already in the CRM, their record opens instead.</span>
         </div>
       </form>
     </Layout>

@@ -5,6 +5,11 @@
 // `npm run vendor`.
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 
+if (process.argv.includes("--help") || process.argv.includes("-h")) {
+  console.log("usage: npm run vendor\n\nCopies htmx and SortableJS from node_modules into static/vendor/. npm install runs it.");
+  process.exit(0);
+}
+
 const files = [
   ["node_modules/htmx.org/dist/htmx.min.js", "static/vendor/htmx.min.js"],
   ["node_modules/sortablejs/Sortable.min.js", "static/vendor/Sortable.min.js"],

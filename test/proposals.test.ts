@@ -325,7 +325,7 @@ test("declined at the link: the quote declined, its deal lost with their reason;
   const id = await newQuote("cy@example.com", "Cy Lo", deal);
   const token = tokenOf(await (await post(`/invoices/quotes/${id}/send`, { how: "link" })).text());
   const html = await (await get(`/q/${token}`, NOBODY)).text();
-  assert.match(html, /Decline it, and tell us why/);
+  assert.match(html, /Decline and tell us why/);
   const res = await post(`/q/${token}/decline`, { reason: "Price", note: "Too much for now.", page: shaOf(html) }, NOBODY);
   assert.equal(res.status, 303);
   const qt = (await quoteById(db, id))!;

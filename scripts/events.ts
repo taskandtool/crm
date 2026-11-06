@@ -27,7 +27,7 @@ const HELP = ((ev) => !ev ? OFF : `events.mjs <command> [...] [--json] [--as <em
                                        "" clears a value
   done <id> | no-show <id> | cancel <id>   completed and no-show only once it has started
 
-A new time, person or a cancel tells the booker of one with a service and a person, as the page does.
+Changing the time or person, or cancelling, tells the booker when the event has a service and a person, as the page does.
 
 <who> is a customer's id, email or phone. --at also takes "next friday 9:30", "tomorrow 2pm"; it is in the business's zone
 (${cfg.time_zone}). --length is minutes (default 60). --host is a Team member (${ownerLabel}) by name or email; --service a

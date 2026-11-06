@@ -6,6 +6,11 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 
+if (process.argv.includes("--help") || process.argv.includes("-h")) {
+  console.log("usage: npm run dev\n\nThe web service's command, running until stopped: Tailwind rebuilding the CSS and the server on\nlocalhost:3000 restarting on every change. Its output is the service log.");
+  process.exit(0);
+}
+
 for (const b of ["node_modules/.bin/tailwindcss", "node_modules/.bin/tsx"]) {
   if (!existsSync(b)) {
     console.error(`${b} is missing: run npm install first`);

@@ -1,6 +1,6 @@
 ---
 name: phone
-description: "A business number on the owner's Twilio: calls that ring their phone, missed-call texts, voicemail, Messages, the US texting registration and six automatic texts. Use for a phone number, texting a customer, missed calls, voicemail, why a text did not go, or changing what a text says."
+description: "A business number on the owner's Twilio: calls that ring their phone, missed-call texts, voicemail, Messages, the US texting registration and seven automatic texts. Use for a phone number, texting a customer, missed calls, voicemail, why a text did not go, or changing what a text says."
 ---
 
 # Phone
@@ -45,7 +45,7 @@ talks to its `Provider`. From chat: `node scripts/phone.mjs` (`--help`).
   review request need the box); never after a STOP, in any words, or to a
   contact marked Don't text; never to a landline; no text from 8pm to 8am in the business's zone but an answer
   within ten minutes of what they just did (emails go at any hour); three a number a day, the booking's confirmation
-  and reminder apart. Where a text can't go, flows 2, 3 and 6 go by email.
+  and reminder apart. Where a text can't go, flows with an email in `flows.ts` send that.
   A send that didn't go says why in `text_sends.why`. A person may text any
   number that hasn't opted out or been marked Don't text (`phone.mjs send`).
 - **Only the CRM texts.** Another app's form or booking page (the
@@ -53,7 +53,11 @@ talks to its `Provider`. From chat: `node scripts/phone.mjs` (`--help`).
   15-minute job finds what came in the hour before. Connecting Twilio, or
   turning a flow on, texts nobody about the past.
 - **The missed-call text goes once the call ends**, at any hour, to every
-  caller but one gone within six seconds.
+  caller but one gone within six seconds or texted about a missed call in the last 24 hours.
+- **A form that stops is followed up by what it was waiting for.** A time:
+  Stopped before booking offers three, and a reply books one. Money: a reply
+  can't pay and our texts carry no link, so Stopped before paying emails the
+  link back, and texts asking for a reply only someone with no email.
 - **Our words are defaults** (`flows.ts`): one text per situation, none
   with a link. A link the owner wants (booking, reviews) goes into the
   words as they type it. Change the words with
@@ -74,7 +78,7 @@ talks to its `Provider`. From chat: `node scripts/phone.mjs` (`--help`).
 | `schema.sql` | `phone_numbers`, `communications` (texts and calls, one table), `text_flows`, `text_sends`, `messages_seen`, `phone_lines`; `customers.texts_off` |
 | `twilio.ts` | `twilioFrom` (through the app's connections), the `Provider`, `twilioConnected`, TwiML |
 | `store.ts` | Numbers, texts and calls, whose number, threads, read state, opt-outs |
-| `flows.ts` | The six flows' definitions, our words, `fill`, `checkWords`, `segments`, quiet hours, the owner's changes |
+| `flows.ts` | The seven flows' definitions, our words, `fill`, `checkWords`, `segments`, quiet hours, the owner's changes |
 | `send.ts` | `sendText`, the claims (`schedule`, `deliver`), `mayText`, an email's link back to its form |
 | `follow.ts` | What starts each flow (`onMissedCall`, `onSubmitted`, `onBooked`, `scan`) and what each says (`render`) |
 | `hooks.ts` | `phoneHooks`: Twilio's webhooks for calls, voicemail, texts, status; booking by a reply of 1, 2 or 3 |

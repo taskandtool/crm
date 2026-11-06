@@ -79,7 +79,7 @@ export function Select(props: Record<string, unknown> & { class?: string; childr
   return (
     <span class={"grid grid-cols-1 " + box}>
       <select {...attrs}
-        class="col-start-1 row-start-1 w-full appearance-none rounded-control bg-surface py-1.5 pr-8 pl-3 text-base text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-2 focus:-outline-offset-2 focus:outline-accent aria-invalid:outline-2 aria-invalid:-outline-offset-2 aria-invalid:outline-ink sm:text-sm/6">
+        class="col-start-1 row-start-1 w-full appearance-none rounded-control bg-surface bg-none py-1.5 pr-8 pl-3 text-base text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-2 focus:-outline-offset-2 focus:outline-accent aria-invalid:outline-2 aria-invalid:-outline-offset-2 aria-invalid:outline-ink sm:text-sm/6">
         {children}
       </select>
       <svg aria-hidden="true" viewBox="0 0 16 16" fill="currentColor" class="pointer-events-none col-start-1 row-start-1 mr-2 size-5 self-center justify-self-end text-ink-3 sm:size-4">

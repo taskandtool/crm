@@ -21,6 +21,8 @@
 // and a voicemail (/dialed), and the missed-call text. A text: /sms keeps
 // it, answers 1, 2 or 3 to a "Stopped before booking" text by booking that
 // time, and tells the owner's cell when nobody has Messages open.
+import { leadMoment } from "../forms/destinations";
+import { finishStep } from "../forms/store";
 import { Hono, type Context } from "hono";
 import type { GetDb } from "../data/db";
 import { tokenHash } from "../data/token";
@@ -328,14 +330,18 @@ export function phoneHooks(getDb: GetDb, opts: HookOpts) {
     if (!offered) return false;
     const slot = offered.offer[Number(pick) - 1];
     if (!slot) return false;
-    const [d] = await db.sql<{ id: string; form_key: string; name: string | null; email: string | null; phone: string | null; submission_id: string | null; created_at: Date }>`
-      select id::text as id, form_key, name, email::text as email, phone, submission_id::text as submission_id, created_at from submission_drafts where id = ${offered.subject_id}::bigint`;
-    if (!d?.email || d.submission_id) return false;
+    const [d] = await db.sql<{ id: string; form_key: string; name: string | null; email: string | null; phone: string | null; submission_id: string | null; step: number; finished: boolean; created_at: Date }>`
+      select d.id::text as id, d.form_key, d.name, d.email::text as email, d.phone, d.submission_id::text as submission_id, d.step, d.created_at,
+             exists (select 1 from submissions s where s.id = d.submission_id and s.completed_at is not null) as finished
+      from submission_drafts d where d.id = ${offered.subject_id}::bigint`;
+    if (!d?.email || d.finished) return false;
     const [already] = await db.sql`
       select 1 from bookings where status = 'confirmed' and email = ${d.email}::citext and created_at > ${new Date(d.created_at).toISOString()}::timestamptz limit 1`;
     if (already) return false;
-    const [f] = await db.sql<{ fields: { type: string; booking_type?: string }[] }>`select fields from forms where key = ${d.form_key}`;
-    const slug = f?.fields.find((x) => x.type === "booking")?.booking_type;
+    const [f] = await db.sql<{ fields: { type: string; name: string; booking_type?: string }[] }>`select fields from forms where key = ${d.form_key}`;
+    if (f?.fields.some((x) => x.type === "payment")) return false; // Booked by a reply, it would never be paid for.
+    const step = f?.fields.find((x) => x.type === "booking");
+    const slug = step?.booking_type;
     const [t] = slug ? await db.sql`select * from booking_types where slug = ${slug}` : [];
     if (!t) return false;
     const type = toType(t);
@@ -344,9 +350,15 @@ export function phoneHooks(getDb: GetDb, opts: HookOpts) {
       // A reply has no address: the team adds it, as for a booking taken by phone.
       addressOptional: true,
       textConsent: "Replied to a text to book",
+      submissionId: d.submission_id,
       now: nowOf(ctx),
     });
     if (r.ok) {
+      // Booked by text, the form they stopped in is finished.
+      if (d.submission_id && step) {
+        await finishStep(db, d.id, d.submission_id, d.step, step.name, null, true, true);
+        await leadMoment(db, ctx.env, d.submission_id, "complete", { tries: 1 }).catch((e) => console.error("lead destinations:", e));
+      }
       await onBooked(ctx, { event: "booked", booking: r.booking });
       return true;
     }

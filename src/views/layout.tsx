@@ -49,7 +49,7 @@ export const SETTINGS = [
   { href: "/stages", label: "Stages and statuses", about: `The ${dealsCfg.one.toLowerCase()} pipeline's stages, and each ${vocab.one.toLowerCase()}'s status.` },
   ...(eventsCfg && showBooking ? [{ href: "/services", label: "Services", about: "What customers book online: how long, where, the price, who takes it, and whether a booking is a deal straight away." }] : []),
   ...(eventsCfg ? [{ href: "/team", label: "Team", about: "Who takes the work: their hours, time off and calendars." }] : []),
-  { href: "/phone", label: "Phone and texts", about: "Your business number: calls that ring your phone, missed-call texts, and the texts that go on their own." },
+  { href: "/phone", label: "Phone and texts", about: "Your business number: calls that ring your phone, missed-call texts and automatic texts." },
   ...(invoicesCfg ? [{ href: "/invoices/tax-rates", label: "Tax rates", about: "The taxes you charge on quotes and invoices." }] : []),
 ];
 export const SETTINGS_BACK = { href: "/settings", label: "Settings" };

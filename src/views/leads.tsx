@@ -258,7 +258,7 @@ export function NewLeadPage(p: { user: string; owners: string[]; flash: { code?:
         </Field>
         <div class="sm:col-span-2 flex flex-wrap items-center gap-3">
           <button class={primaryClass}>Create lead</button>
-          <span class="text-label text-ink-3">An email or phone that is already here adds the lead to that {vocab.one.toLowerCase()}.</span>
+          <span class="text-label text-ink-3">If the email or phone matches a {vocab.one.toLowerCase()}, the lead goes on their record.</span>
         </div>
       </form>
     </Layout>

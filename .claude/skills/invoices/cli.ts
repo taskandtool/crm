@@ -793,7 +793,7 @@ Prints what happened first, then Next:. Errors go to stderr with a Try: line; ex
         if (has(a, "currency")) f.currency = flag(a, "currency");
         if (has(a, "line")) f.lines = lineFlags(a, rates, "recurring");
         const quote = quoteId ? (await quoteById(db, quoteId)) ?? fail(`${at}: no quote ${quoteId}`, "node scripts/quotes.mjs list") : null;
-        if (quote?.status === "declined") fail(`${at}: quote #${quote.id} was declined, so nothing would start at its yes; leave out --quote to start it on its own`, `node scripts/quotes.mjs show ${quote.id}`);
+        if (quote?.status === "declined") fail(`${at}: quote #${quote.id} was declined, so it can't start this invoice; leave out --quote to start it on its own`, `node scripts/quotes.mjs show ${quote.id}`);
         const pending = quote && ["draft", "sent", "expired"].includes(quote.status) ? { quoteId: quote.id } : undefined;
         if (!has(a, "confirm")) {
           // A dry run: checked, then shown in words; nothing saved.

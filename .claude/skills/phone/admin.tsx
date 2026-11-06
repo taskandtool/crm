@@ -1,5 +1,5 @@
 // The team's side of the phone, private (teamOnly): the setup page (the
-// number, its calls, the texting registration, the six automatic texts and
+// number, its calls, the texting registration, the seven automatic texts and
 // each one's picture), and Messages (every number's thread, with the reply
 // box). Built on admin/; every form works without JavaScript; the thread
 // reloads every ten seconds with htmx while it is open.
@@ -204,7 +204,7 @@ export function phoneSettings(getDb: GetDb, opts: PhoneAdminOptions) {
 
   app.get("/", async (c) => {
     const ctx = await opts.ctx(c);
-    return framed(c, base, { title: "Phone and texts", sub: "Your business number, its calls, and the texts that go on their own." }, await page(c, ctx));
+    return framed(c, base, { title: "Phone and texts" }, await page(c, ctx));
   });
 
   app.post("/buy", async (c) => {
@@ -332,10 +332,13 @@ export function phoneSettings(getDb: GetDb, opts: PhoneAdminOptions) {
 
 /** The forms a flow runs on, for its header. */
 async function formsFor(db: ReturnType<GetDb>, key: FlowKey): Promise<{ key: string; title: string }[] | null> {
-  if (key !== "thanks" && key !== "unbooked") return null;
+  if (key !== "thanks" && key !== "unbooked" && key !== "unpaid") return null;
   const rows = await db.sql<{ key: string; title: string; fields: { type: string }[] }>`
     select key, title, fields from forms f where to_jsonb(f)->>'follow_up' = 'true' and active order by title`.catch(() => []);
-  return rows.filter((r) => (key === "unbooked") === (r.fields ?? []).some((f) => f.type === "booking")).map((r) => ({ key: r.key, title: r.title }));
+  const has = (r: (typeof rows)[number], type: string) => (r.fields ?? []).some((f) => f.type === type);
+  return rows
+    .filter((r) => (key === "unpaid" ? has(r, "payment") : key === "unbooked" ? has(r, "booking") && !has(r, "payment") : !has(r, "booking")))
+    .map((r) => ({ key: r.key, title: r.title }));
 }
 
 function NumberSearch({ base, area, offered, owned, label }: { base: string; area: string; offered: AvailableNumber[]; owned: OwnedNumber[]; label: string }) {
@@ -465,7 +468,7 @@ function FlowList({ base, settings, counts, texting }: { base: string; settings:
               <a href={`${base}/flows/${f.key}`} class="font-semibold text-ink no-underline hover:underline">{f.name}</a>
               <p class={smallText + " text-ink-2"}>
                 {f.summary}{n?.sent ? ` ${outcomeText(f, n)}` : ""}
-                {texting ? null : f.email ? " Goes by email until your number can text." : " Starts once your number can text."}
+                {texting || f.emailFirst ? null : f.email ? " Goes by email until your number can text." : " Starts once your number can text."}
               </p>
             </div>
             <Switch action={`${base}/flows/${f.key}`} on={s.enabled} label={f.name} />
@@ -510,7 +513,7 @@ export function FlowPicture(props: {
   const { flow, s, example, nameHref, count, texting, hasNumber, forms, formHref, action, refused } = props;
   const words = (v: string) => fill(s.words[v] ?? WORDS[flow.key][v] ?? "", example);
   const emailOf = (v: string) => EMAILS[flow.key]?.[v];
-  const channel = texting ? "text" : flow.email ? "email" : null;
+  const channel = flow.emailFirst ? "email" : texting ? "text" : flow.email ? "email" : null;
   return (
     <div class="space-y-6">
       <div class="flex flex-wrap items-start justify-between gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
@@ -521,7 +524,7 @@ export function FlowPicture(props: {
             : <p class="mt-1 font-semibold">No form has "Follow up automatically" on yet, so this sends nothing.</p>
           ) : null}
           {!channel ? <p class="mt-1 font-semibold">{hasNumber ? "Starts once your number can text." : "Starts once you have a business number."}</p> : null}
-          {channel === "email" ? <p class="mt-1 text-ink-2">Until your number can text, this goes by email where it can.</p> : null}
+          {channel === "email" && !flow.emailFirst ? <p class="mt-1 text-ink-2">Until your number can text, this goes by email where it can.</p> : null}
         </div>
         <Switch action={action} on={s.enabled} label={flow.name} back="flow" />
       </div>
@@ -540,22 +543,28 @@ export function FlowPicture(props: {
               <div class="mt-1 space-y-3">
                 {st.variants.map((v) => {
                   const mail = channel === "email" ? emailOf(v.email ?? v.key) : undefined;
+                  const letter = mail ? (
+                    <>
+                      <p class="text-label text-ink-3">Subject: {fill(mail.subject, example)}</p>
+                      <p class="mt-1 whitespace-pre-line">{fillEmail(mail.text, { ...example, times_list: [example.slot1, example.slot2, example.slot3].filter(Boolean).join("\n") })}</p>
+                    </>
+                  ) : null;
                   return (
-                    <div class="max-w-lg rounded-card border border-line bg-surface p-3">
-                      {v.label ? <p class="mb-2 font-medium">{v.label}</p> : null}
-                      <p class="rounded-2xl rounded-bl-sm bg-panel px-3 py-2">{words(v.key)}</p>
-                      <WordsEditor action={`${action}/words`} variant={v.key} words={s.words[v.key] ?? WORDS[flow.key][v.key] ?? ""}
-                        ours={WORDS[flow.key][v.key] ?? ""} fills={flow.fills} refused={refused?.variant === v.key ? refused : undefined} />
-                      {mail ? (
-                        <details class="mt-2">
-                          <summary class={smallText + " cursor-pointer text-ink-2"}>Until your number can text, this goes by email</summary>
-                          <div class="mt-2 border-t border-line pt-2">
-                            <p class="text-label text-ink-3">Subject: {fill(mail.subject, example)}</p>
-                            <p class="mt-1 whitespace-pre-line">{fillEmail(mail.text, { ...example, times_list: [example.slot1, example.slot2, example.slot3].filter(Boolean).join("\n") })}</p>
-                          </div>
-                        </details>
-                      ) : null}
-                    </div>
+                    <>
+                      {flow.emailFirst ? <div class="max-w-lg rounded-card border border-line bg-surface p-3">{letter}</div> : null}
+                      <div class="max-w-lg rounded-card border border-line bg-surface p-3">
+                        {v.label ? <p class="mb-2 font-medium">{v.label}</p> : null}
+                        <p class="rounded-2xl rounded-bl-sm bg-panel px-3 py-2">{words(v.key)}</p>
+                        <WordsEditor action={`${action}/words`} variant={v.key} words={s.words[v.key] ?? WORDS[flow.key][v.key] ?? ""}
+                          ours={WORDS[flow.key][v.key] ?? ""} fills={flow.fills} refused={refused?.variant === v.key ? refused : undefined} />
+                        {letter && !flow.emailFirst ? (
+                          <details class="mt-2">
+                            <summary class={smallText + " cursor-pointer text-ink-2"}>Until your number can text, this goes by email</summary>
+                            <div class="mt-2 border-t border-line pt-2">{letter}</div>
+                          </details>
+                        ) : null}
+                      </div>
+                    </>
                   );
                 })}
                 {st.replies?.length ? (

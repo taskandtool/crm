@@ -23,14 +23,15 @@ import { alertClass, withFlash, type FlashMessages } from "../admin/flash";
 import { teamOnly, type TeamVars } from "../admin/guard";
 import { cut, everyPage, readCursor, type Cursor, type Keyed } from "../admin/keyset";
 import { sectionPages, SectionTabs, type Frame, type Head, type NavItem } from "../admin/layout";
-import { DataTable, EmptyCard, rowClick, rowLink, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
+import { DataTable, EmptyCard, NoMatches, rowClick, rowLink, SearchBar, TableRows, When, type TableSpec } from "../admin/list";
 import { formIds, idParam, isPartial, likePattern, listUrl, localPath, str } from "../admin/query";
-import { buttonClass, controlClass, FieldError, fieldClass, pickStatus, primaryClass, SELECTED_ONLY, Select, smallText, StatusBadge, type StatusOption } from "../admin/status";
+import { buttonClass, controlClass, FieldError, fieldClass, pickStatus, primaryClass, quietClass, SELECTED_ONLY, Select, smallText, StatusBadge, type StatusOption } from "../admin/status";
 import { customerByEmail, savePerson } from "../customers/customer";
 import { NoteForm } from "../customers/note-form";
 import { addNote, listNotes, NOTE_LABELS, pickNoteKind, wallTime, type Note } from "../customers/notes";
 import { checkFields, FIELD_TYPES, FORM_KEY, formKeyFrom, PHOTO_PATH, sitePath, type Errors, type Field, type Form } from "./fields";
-import { cameFrom } from "./origin";
+import { deliveriesOf, destinationsOf, leadMoment, resendDelivery, STALE_MINUTES, type Delivery, type Destination } from "./destinations";
+import { cameFrom, CLICK_KEYS, ORIGIN_KEYS, tagWords, token, type Click, type Touch, type Utm } from "./origin";
 import { linkedTo, linkKinds, type Linked } from "./linked";
 import { priceOf } from "./price";
 import { formatMoney } from "../payments/money";
@@ -81,6 +82,8 @@ const MESSAGES: FlashMessages = {
   ...PAYMENT_MESSAGES,
   note: "Added to their notes.",
   "note-empty": { error: "Write something in the note first." },
+  resent: "Sent.",
+  "resend-failed": { error: "That did not send. The reason is on this page." },
 };
 
 type Item = Keyed & {
@@ -101,13 +104,47 @@ type Item = Keyed & {
   linked?: Linked;
   /** A lead's (where the app has leads): its status follows the lead, so it is not moved in bulk. */
   lead?: boolean;
+  /** A send to a destination failed and nobody has resent it. */
+  send_failed?: boolean;
 };
-type Filter = { q: string | null; form: string | null };
+type Filter = { q: string | null; form: string | null; source: string | null; campaign: string | null; content: string | null; days: number | null; failed: boolean };
+
+const PERIODS = [
+  { value: "7", label: "Last 7 days" },
+  { value: "30", label: "Last 30 days" },
+  { value: "90", label: "Last 90 days" },
+  { value: "365", label: "Last year" },
+];
 
 function readFilter(c: Context): Filter {
   const q = (c.req.query("q") ?? "").trim().slice(0, 100);
   const form = c.req.query("form") ?? "";
-  return { q: q || null, form: FORM_KEY.test(form) ? form : null };
+  const days = c.req.query("days") ?? "";
+  return {
+    q: q || null,
+    form: FORM_KEY.test(form) ? form : null,
+    source: token(c.req.query("source")),
+    campaign: token(c.req.query("campaign")),
+    content: token(c.req.query("content")),
+    days: PERIODS.some((p) => p.value === days) ? Number(days) : null,
+    failed: c.req.query("send") === "failed",
+  };
+}
+
+/** The filter as a link's query. */
+const filterQuery = (f: Filter) => ({ q: f.q, form: f.form, source: f.source, campaign: f.campaign, content: f.content, days: f.days === null ? null : String(f.days), send: f.failed ? "failed" : null });
+const filtered = (f: Filter) => !!(f.q || f.form || f.source || f.campaign || f.content || f.days !== null || f.failed);
+
+/** The UTM values in the newest 2,000 submissions, spam left out, for the list's filters: up to 50 of each, in order. */
+async function originOptions(db: Db) {
+  const rows = await db.sql<{ source: string[] | null; campaign: string[] | null; content: string[] | null; failed: boolean }>`
+    with recent as (select data -> '_utm' as utm from submissions where status <> 'spam' and data ? '_utm' order by created_at desc limit 2000)
+    select (select array_agg(distinct v) from (select utm ->> 'source' as v from recent) a where v is not null) as source,
+           (select array_agg(distinct v) from (select utm ->> 'campaign' as v from recent) a where v is not null) as campaign,
+           (select array_agg(distinct v) from (select utm ->> 'content' as v from recent) a where v is not null) as content,
+           exists (select 1 from lead_deliveries where status = 'failed') as failed`;
+  const of = (v: string[] | null | undefined) => (v ?? []).slice(0, 50).map((x) => ({ value: x, label: tagWords(x) }));
+  return { source: of(rows[0]?.source), campaign: of(rows[0]?.campaign), content: of(rows[0]?.content), failed: !!rows[0]?.failed };
 }
 
 /** One page plus one row of a tab, newest first. `data` only when asked (the export). */
@@ -115,11 +152,17 @@ function listPage(db: Db, statuses: string[], f: Filter, after: Cursor | null, s
   const pat = likePattern(f.q);
   return db.sql<Item>`
     select id::text as id, form_key, name, email::text as email, phone, status, page, source, created_at, completed_at,
-           updated_by::text as updated_by, created_at::text as k, case when ${withData} then data end as data
+           updated_by::text as updated_by, created_at::text as k, case when ${withData} then data end as data,
+           exists (select 1 from lead_deliveries d where d.submission_id = s.id and d.status = 'failed') as send_failed
     from submissions s
     where s.status = any(${statuses}::text[])
       and (${f.form}::text is null or s.form_key = ${f.form})
       and (${pat}::text is null or s.name ilike ${pat} or s.email::text ilike ${pat})
+      and (${f.source}::text is null or s.data -> '_utm' ->> 'source' = ${f.source})
+      and (${f.campaign}::text is null or s.data -> '_utm' ->> 'campaign' = ${f.campaign})
+      and (${f.content}::text is null or s.data -> '_utm' ->> 'content' = ${f.content})
+      and (${f.days}::int is null or s.created_at > now() - make_interval(days => ${f.days}::int))
+      and (not ${f.failed}::boolean or exists (select 1 from lead_deliveries d where d.submission_id = s.id and d.status = 'failed'))
       and (${after?.k ?? null}::timestamptz is null
            or (s.created_at, s.id) < (${after?.k ?? null}::timestamptz, ${after?.id ?? null}::bigint))
     order by s.created_at desc, s.id desc
@@ -225,9 +268,10 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
         cell: (r) => (
           <>
             {view === "open" && r.status === "new" ? <span class="mr-2"><StatusBadge value="new" options={STATUSES} /></span> : null}
-            <span class={r.status === "new" ? "font-semibold" : ""}>{who(r)}</span>
+            <span class={"break-words " + (r.status === "new" ? "font-semibold" : "")}>{who(r)}</span>
             {r.name && r.email ? <span class={`block break-all ${smallText} text-ink-2`}>{r.email}</span> : null}
             {r.completed_at ? null : <span class={`block ${smallText} text-ink-2`}>Not finished</span>}
+            {r.send_failed ? <span class={`block ${smallText} font-semibold`}>Send failed</span> : null}
           </>
         ),
       },
@@ -260,8 +304,8 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     const leads = opts.links?.lead ? await leadIds(db, rows.map((r) => r.id)) : new Set<string>();
     const withLinks = rows.map((r) => ({ ...r, linked: linked.get(r.id), lead: leads.has(r.id) }));
     const { forms, titles, fresh } = await formsAndKeys(db);
-    const self = listUrl(here, { q: f.q, form: f.form });
-    const more = (cur: string) => listUrl(here, { q: f.q, form: f.form, after: cur });
+    const self = listUrl(here, filterQuery(f));
+    const more = (cur: string) => listUrl(here, { ...filterQuery(f), after: cur });
     const s = spec(view, !f.form, titles, await leadsTo(db, f.form));
     if (isPartial(c) && after) return c.html(<TableRows spec={s} rows={withLinks} next={next} more={more} />);
 
@@ -275,17 +319,19 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
           ))}
         </form>
         {after ? <p class="mb-3 text-label"><a href={self}>Back to the newest</a></p> : null}
+        <div class="mb-3 flex justify-end"><a href={listUrl(`${base}/export.csv`, { ...filterQuery(f), view })} class={buttonClass}>Export CSV</a></div>
         <DataTable
           spec={s}
           caption={`${v.label}, newest first`}
           rows={withLinks}
           next={next}
           more={more}
-          empty={f.q || f.form ? <>Nothing matches. <a href={here}>Show everything</a></> : v.empty}
+          empty={filtered(f) ? <NoMatches clear={here} /> : v.empty}
         />
       </div>
     );
     if (isPartial(c)) return c.html(results);
+    const origins = await originOptions(db);
     const tabs = (Object.keys(VIEWS) as View[]).map((k) => ({
       href: base + VIEWS[k].path || "/",
       label: k === "open" && fresh ? `Open (${fresh} new)` : VIEWS[k].label,
@@ -301,7 +347,14 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
             target="#results"
             q={f.q}
             placeholder="Name or email"
-            filters={[{ name: "form", label: "Form", options: [...titles].map(([value, label]) => ({ value, label })), value: f.form, any: "All forms" }]}
+            filters={[
+              { name: "form", label: "Form", options: [...titles].map(([value, label]) => ({ value, label })), value: f.form, any: "All forms" },
+              { name: "days", label: "Period", options: PERIODS, value: f.days === null ? null : String(f.days), any: "Any time" },
+              ...(origins.source.length ? [{ name: "source", label: "Source", options: origins.source, value: f.source, any: "Any source" }] : []),
+              ...(origins.campaign.length ? [{ name: "campaign", label: "Campaign", options: origins.campaign, value: f.campaign, any: "Any campaign" }] : []),
+              ...(origins.content.length ? [{ name: "content", label: "Ad", options: origins.content, value: f.content, any: "Any ad" }] : []),
+              ...(origins.failed ? [{ name: "send", label: "Sending", options: [{ value: "failed", label: "Failed sends" }], value: f.failed ? "failed" : null, any: "All sends" }] : []),
+            ]}
           />
           {results}
           <AskNote />
@@ -309,6 +362,8 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
   };
 
   for (const view of Object.keys(VIEWS) as View[]) app.get(VIEWS[view].path || "/", list(view));
+
+  app.get("/export.csv", exportCsv(getDb));
 
   app.post("/bulk", async (c) => {
     const body = await c.req.parseBody({ all: true });
@@ -327,9 +382,16 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       from was where s.id = was.id and s.status <> ${status}
       returning s.id::text as id, was.status as was`;
     // Moved out of spam: their people are saved now, as on the one-at-a-time Not spam.
-    if (status !== "spam") for (const r of changed) if (r.was === "spam") await saveSubmitter(db, r.id, c.get("user"));
+    if (status !== "spam") for (const r of changed) if (r.was === "spam") await notSpam(c, db, r.id);
     return c.redirect(withFlash(ret, "bulk", changed.length), 303);
   });
+
+  /** Not spam after all: their person is saved, and the lead goes where it would have gone. One try: a person is waiting. */
+  const notSpam = async (c: Context<{ Variables: TeamVars }>, db: Db, id: string) => {
+    await saveSubmitter(db, id, c.get("user"));
+    const [s] = await db.sql<{ done: boolean }>`select completed_at is not null as done from submissions where id = ${id}::bigint`;
+    await leadMoment(db, envOf(c), id, s?.done ? "complete" : "answered", { tries: 1, link: new URL(subUrl(id), c.req.url).href }).catch((e) => console.error(`forms: submission ${id} was not sent on:`, e));
+  };
 
   // ---- one submission ----------------------------------------------------
 
@@ -377,7 +439,10 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       });
     const consent = data._consent as Record<string, string> | undefined;
     const from = cameFrom(data);
-    for (const k of ["_consent", "_utm", "_referrer", "_charges", "_lines"]) delete data[k];
+    const utm = (data._utm ?? {}) as Utm;
+    const first = (data._first ?? null) as Touch | null;
+    const landing = typeof data._landing === "string" ? data._landing : null;
+    for (const k of ["_consent", "_charges", "_lines", ...ORIGIN_KEYS]) delete data[k];
     // A booking page's submission: the Booking card shows the service and who; their notes are its one answer.
     if (r.form_key === BOOKING_PAGE.key && !form) {
       const notes = data.notes;
@@ -392,6 +457,8 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     const notes = customer ? await listNotes(db, customer.id) : [];
 
     const self = subUrl(r.id);
+    const sends = await deliveriesOf(db, r.id);
+    const unsent = sends.filter((d) => d.status === "failed");
     const view = viewOf(r.status);
     const lead = opts.links?.lead ? await leadOf(db, r.id) : null;
     const move = (status: string, label: string, primary = false) => (
@@ -410,7 +477,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       back: { href: base + VIEWS[view].path || "/", label: view === "open" ? "Submissions" : VIEWS[view].label },
       sub: (
         <p>
-          {formTitle} · <When at={r.created_at} timeZone={tz} />
+          {title} · <When at={r.created_at} timeZone={tz} />
           {view === "open" ? null : <> · <StatusBadge value={r.status} options={STATUSES} /></>}
         </p>
       ),
@@ -421,7 +488,12 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
         c,
         base || "/", { title: who(r), ...head },
         <>
-          <div class="grid gap-4 md:grid-cols-3">
+          {unsent.length ? (
+            <p role="alert" class={"mb-4 " + alertClass}>
+              {unsent.length === 1 ? `${unsent[0].title} did not get this lead.` : `${unsent.length} destinations did not get this lead.`} <a href="#destinations" class="underline">See why and resend</a>
+            </p>
+          ) : null}
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div class="flex flex-col gap-4 md:col-span-2">
               <Section title="Contact">
                 <FieldList
@@ -462,15 +534,20 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
               {payment ? <PaymentCard p={payment} label={linked.payment!.label} at={opts.links?.payment} /> : null}
               {r.completed_at ? null : (
                 <Section title="Not finished">
-                  <p class="text-ink-2">They answered the questions but have not finished booking or paying yet. It completes on its own when they do.</p>
+                  <p class="text-ink-2">{form?.fields.some((x) => x.type === "booking") && !booking ? "They have not picked a time yet." : form?.fields.some((x) => x.type === "payment") ? "They have not paid yet." : "They have not finished yet."} It completes on its own when they do.</p>
                 </Section>
               )}
+              {sends.length ? <div id="destinations" class="scroll-mt-4"><SentCard rows={sends} self={self} timeZone={tz} /></div> : null}
               <Section title="Where it came from">
                 <FieldList
                   fields={[
                     { label: "Form", value: title },
                     { label: "Page", value: r.page },
                     { label: "Found you through", value: from },
+                    { label: "Keyword", value: utm.term ? tagWords(utm.term) : null },
+                    { label: "Ad", value: utm.content ? tagWords(utm.content) : null },
+                    { label: "Landing page", value: landing },
+                    { label: "First found you through", value: first ? cameFrom({ _utm: first.utm }) : null },
                     { label: "Team email", value: r.notified },
                     { label: "Last changed by", value: r.updated_by ? <>{r.updated_by}, <When at={r.updated_at} timeZone={tz} /></> : null },
                   ]}
@@ -479,6 +556,17 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
             </div>
           </div>
         </>);
+  });
+
+  // Resend: one try while they wait, and what came of it on this page.
+  app.post("/:id{[0-9]+}/deliveries/:did{[0-9]+}/resend", async (c) => {
+    const id = idParam(c.req.param("id"));
+    const did = idParam(c.req.param("did"));
+    if (!id || !did) return c.notFound();
+    const db = getDb(c);
+    if (!(await resendDelivery(db, envOf(c), id, did, { link: new URL(subUrl(id), c.req.url).href }))) return c.notFound();
+    const [row] = await db.sql<{ status: string }>`select status from lead_deliveries where id = ${did}::bigint`;
+    return c.redirect(withFlash(subUrl(id), row?.status === "sent" ? "resent" : "resend-failed"), 303);
   });
 
   // A note is about the person: it goes on their customer (the CRM's tables), made from this submission the first time.
@@ -511,12 +599,137 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       from was where s.id = ${id}::bigint returning was.status as was`;
     if (!row) return c.notFound();
     // Not spam after all: their person is saved now, as on any submission that comes in.
-    if (row.was === "spam" && status !== "spam") await saveSubmitter(getDb(c), id, c.get("user"));
+    if (row.was === "spam" && status !== "spam") await notSpam(c, getDb(c), id);
     // Archiving or marking spam is done with it: back to the list it left. Back to Open stays on it.
     return c.redirect(withFlash(status === "read" ? subUrl(id) : base + VIEWS[viewOf(row.was)].path || "/", status), 303);
   });
 
   return app;
+}
+
+// ---- the export ----------------------------------------------------------------
+
+const utmOf = (r: { data: Record<string, unknown> | null }) => (r.data?._utm ?? {}) as Utm;
+const firstOf = (r: { data: Record<string, unknown> | null }) => (r.data?._first ?? {}) as Touch;
+
+/** The current filter and tab as a CSV, or everything but spam: a column per UTM, and per answer when one form is chosen. */
+const exportCsv = (getDb: GetDb) => async (c: Context) => {
+  const db = getDb(c);
+  const f = readFilter(c);
+  const form = f.form ? (await formRow(db, f.form))?.form : null;
+  // The tab it was asked from, or everything that is not spam.
+  const statuses = VIEWS[c.req.query("view") as View]?.statuses ?? ["new", "read", "done"];
+  const answers: CsvColumn<Item>[] = form
+    ? form.fields
+        .filter((x) => !["name", "email", "phone"].includes(x.name))
+        .map((x) => ({ label: x.label, value: (r: Item) => (r.data && Object.hasOwn(r.data, x.name) ? r.data[x.name] : null) }))
+    : [{ label: "Answers", value: (r: Item) => Object.fromEntries(Object.entries(r.data ?? {}).filter(([k]) => !k.startsWith("_"))) }];
+  const columns: CsvColumn<Item>[] = [
+    { label: "ID", value: (r) => r.id },
+    { label: "Received (UTC)", value: (r) => r.created_at },
+    { label: "Form", value: (r) => r.form_key },
+    { label: "Status", value: (r) => r.status },
+    { label: "Name", value: (r) => r.name },
+    { label: "Email", value: (r) => r.email },
+    { label: "Phone", value: (r) => r.phone },
+    ...answers.map((col) => ({ ...col, value: (r: Item) => flat(col.value(r)) })),
+    { label: "Page", value: (r) => r.page },
+    { label: "Came from", value: (r) => cameFrom(r.data) },
+    { label: "UTM source", value: (r) => utmOf(r).source },
+    { label: "UTM medium", value: (r) => utmOf(r).medium },
+    { label: "UTM campaign", value: (r) => utmOf(r).campaign },
+    { label: "UTM term", value: (r) => utmOf(r).term },
+    { label: "UTM content", value: (r) => utmOf(r).content },
+    { label: "Click ID", value: (r) => CLICK_KEYS.map((k) => ((r.data?._click ?? {}) as Click)[k]).find(Boolean) },
+    { label: "Landing page", value: (r) => r.data?._landing },
+    { label: "First UTM source", value: (r) => firstOf(r).utm?.source },
+    { label: "First UTM campaign", value: (r) => firstOf(r).utm?.campaign },
+    { label: "App", value: (r) => r.source },
+  ];
+  const day = new Date().toISOString().slice(0, 10);
+  return csvResponse(`${f.form ?? "submissions"}-${day}.csv`, columns, everyPage((after, size) => listPage(db, statuses, f, after, size, true)));
+};
+
+// ---- where a lead was sent --------------------------------------------------
+
+const SEND_STATUSES: StatusOption[] = [
+  { value: "waiting", label: "Waiting", tone: "muted" },
+  { value: "due", label: "Not sent", tone: "strong" },
+  { value: "sending", label: "Sending", tone: "muted" },
+  { value: "stuck", label: "Stuck", tone: "strong" },
+  { value: "sent", label: "Sent", tone: "neutral" },
+  { value: "failed", label: "Failed", tone: "strong" },
+];
+
+/** JSON indented so it can be read; anything else as it is. */
+function readable(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
+}
+
+/** Each destination, as a webhook's attempts are shown: how it went, what was sent, what came back, and what can be done. */
+function SentCard({ rows, self, timeZone }: { rows: Delivery[]; self: string; timeZone: string }) {
+  const pre = `mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-control bg-panel p-3 ${smallText}`;
+  const label = `mt-2 ${smallText} font-semibold`;
+  return (
+    <Section title="Destinations">
+      <ul class="flex flex-col gap-4">
+        {rows.map((d) => {
+          const stuck = d.status === "sending" && Date.now() - new Date(d.updated_at).getTime() >= STALE_MINUTES * 60_000;
+          const resend = (
+            <form method="post" action={`${self}/deliveries/${d.id}/resend`} class="mt-2">
+              <button class={d.status === "sent" ? quietClass : buttonClass} aria-label={`Resend to ${d.title}`}>{d.status === "due" ? "Send now" : "Resend"}</button>
+            </form>
+          );
+          return (
+            <li>
+              <p class="flex flex-wrap items-center gap-2">
+                <span class="font-semibold">{d.title}</span>
+                <StatusBadge value={stuck ? "stuck" : d.status} options={SEND_STATUSES} />
+              </p>
+              <p class={`mt-1 ${smallText} text-ink-2`}>
+                {d.status === "waiting" ? "Goes when the form is finished." : d.attempts > 1 ? <>Tried {d.attempts} times, last <When at={d.updated_at} timeZone={timeZone} /></> : <When at={d.sent_at ?? d.updated_at} timeZone={timeZone} />}
+              </p>
+              {d.error ? <p class={`mt-1 ${smallText}`}>{d.error}</p> : null}
+              {d.body || d.response_body ? (
+                <details class="mt-2">
+                  <summary class={`cursor-pointer ${smallText} text-ink-2`}>What was sent</summary>
+                  {d.body ? <><p class={label}>Sent</p><pre class={pre} tabindex={0}>{readable(d.body)}</pre></> : null}
+                  {d.response_body ? <><p class={label}>Came back{d.response_status ? ` (${d.response_status})` : ""}</p><pre class={pre} tabindex={0}>{readable(d.response_body)}</pre></> : null}
+                  {d.status === "sent" ? resend : null}
+                </details>
+              ) : null}
+              {d.status === "due" || d.status === "failed" || stuck ? resend : null}
+            </li>
+          );
+        })}
+      </ul>
+    </Section>
+  );
+}
+
+/** On a form's page: where its leads go besides here. Changed by asking the AI. */
+function DestinationsCard({ list }: { list: Destination[] }) {
+  return (
+    <Section title="Destinations" class="mt-6">
+      {list.length ? (
+        <ul class="flex flex-col gap-2">
+          {list.map((d) => (
+            <li>
+              <span class="font-semibold">{d.title}</span>{" "}
+              <span class={`${smallText} text-ink-2`}>
+                {d.send_when === "complete" ? "when the whole form is done" : "when the questions are answered"}{d.active ? "" : ", switched off"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : <p class="text-ink-2">Leads from this form stay here.</p>}
+      <p class={`mt-3 ${smallText} text-ink-2`}>To send leads to a CRM, a webhook or an email address, ask the AI in Task &amp; Tool.</p>
+    </Section>
+  );
 }
 
 // ---- a submission's booking, payment and the notes on its person ----------
@@ -733,7 +946,8 @@ export function formEditor(getDb: GetDb, opts: {
     const found = await formRow(getDb(c), c.req.param("key"));
     if (!found) return c.notFound();
     const team = await teamOf(envOf(c));
-    return framed(c, base, editorHead(found.form), <Editor base={base} form={found.form} raw={found.raw} version={found.version} team={team} deals={await dealChoices(c)} followUp={opts.followUp} />);
+    const sends = await destinationsOf(getDb(c), found.form.key);
+    return framed(c, base, editorHead(found.form), <><Editor base={base} form={found.form} raw={found.raw} version={found.version} team={team} deals={await dealChoices(c)} followUp={opts.followUp} /><DestinationsCard list={sends} /></>);
   });
 
   app.post("/form/:key", async (c) => {
@@ -791,32 +1005,7 @@ export function formEditor(getDb: GetDb, opts: {
     return c.redirect(withFlash(`${base}/form/${form.key}`, "saved") + `#${draft.focus}`, 303);
   });
 
-  app.get("/export.csv", async (c) => {
-    const db = getDb(c);
-    const f = readFilter(c);
-    const form = f.form ? (await formRow(db, f.form))?.form : null;
-    const statuses = ["new", "read", "done"];
-    const answers: CsvColumn<Item>[] = form
-      ? form.fields
-          .filter((x) => !["name", "email", "phone"].includes(x.name))
-          .map((x) => ({ label: x.label, value: (r: Item) => (r.data && Object.hasOwn(r.data, x.name) ? r.data[x.name] : null) }))
-      : [{ label: "Answers", value: (r: Item) => r.data }];
-    const columns: CsvColumn<Item>[] = [
-      { label: "ID", value: (r) => r.id },
-      { label: "Received (UTC)", value: (r) => r.created_at },
-      { label: "Form", value: (r) => r.form_key },
-      { label: "Status", value: (r) => r.status },
-      { label: "Name", value: (r) => r.name },
-      { label: "Email", value: (r) => r.email },
-      { label: "Phone", value: (r) => r.phone },
-      ...answers.map((col) => ({ ...col, value: (r: Item) => flat(col.value(r)) })),
-      { label: "Page", value: (r) => r.page },
-      { label: "Came from", value: (r) => cameFrom(r.data) },
-      { label: "App", value: (r) => r.source },
-    ];
-    const day = new Date().toISOString().slice(0, 10);
-    return csvResponse(`${f.form ?? "submissions"}-${day}.csv`, columns, everyPage((after, size) => listPage(db, statuses, f, after, size, true)));
-  });
+  app.get("/export.csv", exportCsv(getDb));
 
   // Forms with steps that someone started and has not finished (store.ts drafts): the newest 200.
   app.get("/unfinished", async (c) => {
@@ -834,7 +1023,7 @@ export function formEditor(getDb: GetDb, opts: {
         "Not finished",
         <>
           <p class="mb-4 max-w-prose text-ink-2">
-            People who started a form with steps and stopped before the end. What they answered is kept; nobody was emailed about it.
+            People who started a form with steps and stopped before the end. What they answered is kept.
           </p>
           {rows.length ? (
             <div class="overflow-x-auto rounded-card border border-line bg-surface">
@@ -1114,7 +1303,7 @@ function Editor(props: {
                   Owner
                   <input name="owner" list="form-owners" value={form.owner ?? ""} maxlength={200} placeholder="No one" class={controlClass} aria-describedby="p-owner-help" />
                   <datalist id="form-owners">{props.deals.owners.map((o) => <option value={o} />)}</datalist>
-                  <span id="p-owner-help" class="font-normal text-ink-3">Whose each lead and deal is; their call back task is theirs too.</span>
+                  <span id="p-owner-help" class="font-normal text-ink-3">Each lead, deal and call back task is assigned to this person.</span>
                 </label>
               </div>
             ) : null}
@@ -1125,8 +1314,7 @@ function Editor(props: {
               <span>
                 <span class="font-medium">Follow up automatically</span>
                 <span class="block font-normal text-ink-3">
-                  A thank-you right away, or, on a form with a booking step, the next open times when someone stops before booking. By text where your
-                  number can text, with a box under the phone field to agree; by email where it can't. <a href={followUp.settings} class="font-semibold text-accent no-underline hover:underline">See what it sends</a>
+                  A thank-you when they finish. If they stop before booking, the next open times. If they stop before paying, a link back by email. <a href={followUp.settings} class="font-semibold text-accent no-underline hover:underline">See what it sends</a>
                 </span>
               </span>
             </label>

@@ -88,7 +88,7 @@ export function ArchivedDealsPage(p: { user: string; deals: Deal[] }) {
           ))}
         </ul>
       ) : (
-        <EmptyCard title={`No archived ${many}.`}>Archive takes a {one} off the board; it shows here, and its page brings it back.</EmptyCard>
+        <EmptyCard title={`No archived ${many}.`} />
       )}
     </Layout>
   );
@@ -333,7 +333,7 @@ export function DealPage(p: {
       <Flash code={p.flash.code} n={p.flash.n} messages={MESSAGES} />
       {!closed ? <StageBar stages={p.stages.filter((s) => s.kind === "open")} current={d.stage} self={self} /> : null}
       {d.archived_at ? (
-        <ArchivedNote action={`${self}/archive`} fields={{ archived: "0" }}>Archived <When at={d.archived_at} timeZone={timeZone} />. Off the board; nothing is deleted.</ArchivedNote>
+        <ArchivedNote action={`${self}/archive`} fields={{ archived: "0" }}>Archived <When at={d.archived_at} timeZone={timeZone} />.</ArchivedNote>
       ) : null}
       <div class="grid gap-4 md:grid-cols-3">
         <div class="flex min-w-0 flex-col gap-4 md:col-span-2">

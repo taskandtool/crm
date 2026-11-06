@@ -334,7 +334,9 @@ export function EventPage(p: {
     currency: r.amount_cents === null ? null : r.currency,
   };
   const custom = ev.fields.map((f) => ({ label: f.label, value: shownField(f, r.fields?.[f.key]) || null }));
-  const { notes: theirNote, ...answers } = r.answers as Record<string, unknown>;
+  // Their answers: where they came from (forms/origin.ts) is kept beside them under `_` keys.
+  const { notes: theirNote, ...rest } = r.answers as Record<string, unknown>;
+  const answers = Object.fromEntries(Object.entries(rest).filter(([k]) => !k.startsWith("_")));
   // Invoiced already (a void one does not count): no second Invoice.
   const billed = !!p.money?.invoices.some((i) => i.status !== "void");
   return (

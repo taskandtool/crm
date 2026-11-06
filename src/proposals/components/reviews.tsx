@@ -13,7 +13,7 @@ const MORE = [
   { quote: "A third, ideally about something like this job.", name: "Customer name", where: "Their town", stars: 5 },
 ];
 // The rating, its count and its source, from public/proof.md; null when no source states all three.
-const RATING: { stars: number; count: string; source: string } | null = { stars: 4.9, count: "120 reviews", source: "Google" };
+const RATING = null as { stars: number; count: string; source: string } | null;
 
 export const reviews: ProposalComponent = {
   key: "reviews", label: "Reviews", shows: "What customers say, with their stars", on: false, sample: true,

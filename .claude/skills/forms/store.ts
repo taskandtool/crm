@@ -3,6 +3,7 @@
 import { saveLead, savePerson, type CustomerRef } from "../customers/customer";
 import { q, type Db } from "../data/db";
 import type { Sent } from "../data/send";
+import { tokenHash } from "../data/token";
 import { checkFields, sitePath, type Field, type Form, type Submission } from "./fields";
 import type { Charge } from "./price";
 
@@ -60,17 +61,47 @@ export async function recordNotified(db: Db, id: number | string, to: string[], 
   await db.sql`update submissions set notified = ${line.slice(0, 500)} where id = ${id}::bigint`;
 }
 
-/** A form with no steps, sent whole: complete as it arrives (completed_at's default). */
-export async function insertSubmission(
+/**
+ * The one post of a page, with the texting box's words if they ticked it: `key`
+ * (submitKey) is unique per form, so a double click or a retry saves once. Its id,
+ * and whether this call made it. With `again`, a retry whose first try may have
+ * been saved with the answer lost, the person is saved either way.
+ */
+export async function insertOnce(
   db: Db,
-  s: Omit<Submission, "data"> & { data: Record<string, unknown>; form_key: string; source: string; page: string | null; status: "new" | "spam" },
-): Promise<number> {
-  const [row] = await db.sql<{ id: string }>`
-    insert into submissions (form_key, name, email, phone, data, source, page, status)
-    values (${s.form_key}, ${s.name}, ${s.email}, ${s.phone}, ${JSON.stringify(s.data)}::jsonb, ${s.source}, ${s.page}, ${s.status})
-    returning id`;
-  if (s.status === "new") await saveSubmitter(db, row.id);
-  return Number(row.id);
+  s: Omit<Submission, "data"> & { data: Record<string, unknown>; form_key: string; source: string; page: string | null; status: "new" | "spam"; text_consent?: string | null },
+  key: string,
+  again = false,
+): Promise<{ id: number; made: boolean }> {
+  const consent = s.text_consent ?? null;
+  // Two statements: a post at the same moment waits on this insert, and only a new statement can then see its row.
+  const [ins] = await db.sql<{ id: string }>`
+    insert into submissions (form_key, name, email, phone, data, source, page, status, submit_key, text_consent, text_consent_at)
+    values (${s.form_key}, ${s.name}, ${s.email}, ${s.phone}, ${JSON.stringify(s.data)}::jsonb, ${s.source}, ${s.page}, ${s.status}, ${key}, ${consent}, case when ${consent}::text is null then null else now() end)
+    on conflict (form_key, submit_key) where submit_key is not null do nothing
+    returning id::text as id`;
+  const [row] = ins ? [ins] : await db.sql<{ id: string }>`select id::text as id from submissions where form_key = ${s.form_key} and submit_key = ${key}`;
+  if (s.status === "new" && (ins || again)) await keepPerson(db, row.id);
+  return { id: Number(row.id), made: !!ins };
+}
+
+/** What makes one post one: the page's stamp and exactly what was answered. Going back and changing an answer is a new post. */
+export const submitKey = (stamp: string, sub: Submission) => tokenHash(`${stamp}\n${JSON.stringify([sub.name, sub.email, sub.phone, sub.data])}`);
+
+/**
+ * saveSubmitter for a submission that is already saved: it never fails the
+ * visitor's request, who would only send the form again. Tried twice, then logged.
+ */
+async function keepPerson(db: Db, id: string | number): Promise<void> {
+  try {
+    await saveSubmitter(db, id);
+  } catch {
+    try {
+      await saveSubmitter(db, id);
+    } catch (e) {
+      console.error(`forms: submission ${id} is saved, but not its customer or lead: ${(e as Error).message}`);
+    }
+  }
 }
 
 /**
@@ -116,14 +147,20 @@ const toDraft = (r: Record<string, any>): Draft => ({
   data: r.data ?? {}, spam: !!r.spam, submission_id: r.submission_id == null ? null : String(r.submission_id),
 });
 
-/** The first step's answers, under the key the visitor holds (its hash). */
+/**
+ * The first step's answers, under the key the visitor holds (its hash). The same
+ * post again (submitKey) is the same draft, and its new key opens it too: a browser
+ * that double-clicked follows the last answer it was sent, and an address already
+ * made with the first key (a cancelled checkout's) still works.
+ */
 export async function startDraft(
   db: Db,
-  d: Omit<Submission, "data"> & { data: Record<string, unknown>; form_key: string; key_hash: string; source: string; page: string | null; spam: boolean },
+  d: Omit<Submission, "data"> & { data: Record<string, unknown>; form_key: string; key_hash: string; source: string; page: string | null; spam: boolean; submit_key: string },
 ): Promise<Draft> {
   const [row] = await db.sql`
-    insert into submission_drafts (form_key, key_hash, name, email, phone, data, spam, source, page)
-    values (${d.form_key}, ${d.key_hash}, ${d.name}, ${d.email}, ${d.phone}, ${JSON.stringify(d.data)}::jsonb, ${d.spam}, ${d.source}, ${d.page})
+    insert into submission_drafts (form_key, key_hash, name, email, phone, data, spam, source, page, submit_key)
+    values (${d.form_key}, ${d.key_hash}, ${d.name}, ${d.email}, ${d.phone}, ${JSON.stringify(d.data)}::jsonb, ${d.spam}, ${d.source}, ${d.page}, ${d.submit_key})
+    on conflict (form_key, submit_key) where submit_key is not null do update set text_key_hash = excluded.key_hash
     returning *`;
   return toDraft(row);
 }
@@ -136,10 +173,9 @@ export async function draftByKey(db: Db, formKey: string, keyHash: string): Prom
   return row ? toDraft(row) : null;
 }
 
-/** They ticked the texting box: its words and when, on the draft or the submission. */
-export async function keepTextConsent(db: Db, where: "draft" | "submission", id: string | number, words: string): Promise<void> {
-  if (where === "draft") await db.sql`update submission_drafts set text_consent = ${words}, text_consent_at = now() where id = ${id}::bigint`;
-  else await db.sql`update submissions set text_consent = ${words}, text_consent_at = now() where id = ${id}::bigint`;
+/** They ticked the texting box on a page of a form with steps: its words and when, on the draft. */
+export async function keepTextConsent(db: Db, draftId: string, words: string): Promise<void> {
+  await db.sql`update submission_drafts set text_consent = ${words}, text_consent_at = now() where id = ${draftId}::bigint`;
 }
 
 /**
@@ -185,7 +221,7 @@ export async function finishDraft(db: Db, id: string, complete: boolean): Promis
     q`select submission_id::text from submission_drafts where id = ${id}::bigint`,
   ]);
   if (made[0]) {
-    await saveSubmitter(db, made[0].submission_id);
+    await keepPerson(db, made[0].submission_id);
     return { submissionId: made[0].submission_id, made: true };
   }
   return now[0]?.submission_id ? { submissionId: now[0].submission_id, made: false } : null;

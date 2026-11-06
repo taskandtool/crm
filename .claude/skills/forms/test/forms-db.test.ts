@@ -7,8 +7,11 @@ import { applySchema } from "../../data/migrate";
 import { scratch, why, type Scratch } from "../../data/test/scratch";
 import { embedForm, formRoutes, summary } from "../routes";
 import { formEditor, formsAdmin } from "../admin";
-import { CONTACT_FORM, insertSubmission, loadForm, seedForm } from "../store";
+import { CONTACT_FORM, insertOnce, loadForm, seedForm } from "../store";
 import { makeStamp } from "../../data/spam";
+
+/** A submission as a form saves it, each with a key of its own. */
+const insertSubmission = (db: Scratch["db"], sub: Parameters<typeof insertOnce>[1]) => insertOnce(db, sub, crypto.randomUUID()).then((r) => r.id);
 
 // The inbox shows the customer's notes, so the customers skill's tables come with it.
 const schema = ["../schema.sql", "../../customers/schema.sql"].map((p) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8")).join(";\n");
@@ -131,22 +134,23 @@ test("errors re-render in the app's page with 422 and keep the stamp; nothing is
   }
 });
 
-test("a bot is thanked: the honeypot drops it, a too-fast post is kept as spam", async (t) => {
+test("a bot is thanked: no stamp drops it; a filled honeypot or a too-fast post is kept as spam, in case it was a person", async (t) => {
   const s = await setUp(t);
   if (!s) return;
   try {
     const app = site(s);
     const good = { name: "Bot", email: "bot@example.com" };
-    const trap = await post(app, "/forms/contact", { ...good, company_website: "http://spam", _started: await oldStamp() });
-    assert.equal(trap.status, 303);
     const nostamp = await post(app, "/forms/contact", good);
     assert.equal(nostamp.status, 303);
     assert.equal((await s.db.sql`select count(*)::int as n from submissions`)[0].n, 0);
 
-    const fast = await post(app, "/forms/contact", { ...good, _started: await makeStamp("contact") });
+    const trap = await post(app, "/forms/contact", { ...good, company_website: "http://spam", _started: await oldStamp() });
+    assert.equal(trap.status, 303);
+    const fast = await post(app, "/forms/contact", { ...good, name: "Fast", _started: await makeStamp("contact") });
     assert.equal(fast.status, 303);
     const rows = await s.db.sql`select status from submissions`;
-    assert.deepEqual(rows, [{ status: "spam" }]);
+    assert.deepEqual(rows, [{ status: "spam" }, { status: "spam" }]);
+    assert.equal((await s.db.sql`select count(*)::int as n from leads`)[0].n, 0);
 
     const big = await post(app, "/forms/contact", { ...good, message: "x".repeat(40_000), _started: await oldStamp() });
     assert.equal(big.status, 413);
@@ -361,7 +365,7 @@ test("a submission records where the visitor came from: UTM tokens and the refer
     ).text();
     const utm = hidden(page, "_utm");
     const ref = hidden(page, "_ref");
-    assert.equal(utm, "source=google&medium=cpc&campaign=spring-sale");
+    assert.equal(utm, "source=google&medium=cpc&campaign=spring-sale&term=x");
     assert.equal(ref, "news.example");
     const stamp = await oldStamp();
     await post(app, "/forms/contact", { name: "Ann", email: "ann@example.com", _started: stamp, _utm: utm!, _ref: ref! });
@@ -376,7 +380,7 @@ test("a submission records where the visitor came from: UTM tokens and the refer
 
     const rows = await s.db.sql`select name, data from submissions order by id`;
     assert.deepEqual(rows.map((r) => [r.name, r.data]), [
-      ["Ann", { _utm: { source: "google", medium: "cpc", campaign: "spring-sale" }, _referrer: "news.example" }],
+      ["Ann", { _utm: { source: "google", medium: "cpc", campaign: "spring-sale", term: "x" }, _referrer: "news.example" }],
       ["Bo", { _utm: { medium: "email" } }],
       ["Cy", {}],
     ]);
@@ -384,7 +388,7 @@ test("a submission records where the visitor came from: UTM tokens and the refer
     // The team sees it on the submission, not as raw data.
     const [{ id }] = await s.db.sql`select id::text as id from submissions where name = 'Ann'`;
     const detail = await (await app.request(`https://site.example/admin/submissions/${id}`, { headers: team })).text();
-    assert.match(detail, /google \(cpc, spring-sale\)/);
+    assert.match(detail, /google \(cpc, spring sale\)/);
     assert.doesNotMatch(detail, /_utm/);
   } finally {
     await s.drop();
@@ -600,6 +604,302 @@ test("a form with leads off (a newsletter) saves its person and makes no lead", 
     assert.equal((await s.db.sql`select count(*)::int as n from customers where email = 'reader@example.com'`)[0].n, 1, "the person is saved");
     assert.equal((await s.db.sql`select count(*)::int as n from leads`)[0].n, 0, "no lead");
   } finally {
+    await s.drop();
+  }
+});
+
+test("a double click saves one submission and one lead; going back and changing an answer is a new one", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  try {
+    const app = site(s);
+    const fields = { name: "Ann", email: "ann@example.com", message: "Hi", _started: await oldStamp() };
+    assert.equal((await post(app, "/forms/contact", fields)).status, 303);
+    assert.equal((await post(app, "/forms/contact", fields)).status, 303);
+    assert.equal((await s.db.sql`select count(*)::int as n from submissions`)[0].n, 1);
+    assert.equal((await s.db.sql`select count(*)::int as n from leads`)[0].n, 1);
+    await post(app, "/forms/contact", { ...fields, message: "Actually, this" });
+    assert.equal((await s.db.sql`select count(*)::int as n from submissions`)[0].n, 2);
+  } finally {
+    await s.drop();
+  }
+});
+
+/** A database that fails while `down` says so, and otherwise is the scratch one. */
+function flaky(s: Scratch, down: () => boolean): Scratch["db"] {
+  const check = () => {
+    if (down()) throw new Error("the database is away");
+  };
+  return {
+    sql: ((...a: Parameters<Scratch["db"]["sql"]>) => {
+      check();
+      return s.db.sql(...a);
+    }) as Scratch["db"]["sql"],
+    transaction: ((...a: Parameters<Scratch["db"]["transaction"]>) => {
+      check();
+      return s.db.transaction(...a);
+    }) as Scratch["db"]["transaction"],
+  };
+}
+
+test("a save that fails once is tried again while they wait, and saved once", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  try {
+    let calls = 0;
+    const db = flaky(s, () => ++calls === 1);
+    const app = new Hono();
+    app.route("/", formRoutes(() => db, { source: "website", retryMs: 1, page: (_c, title, body) => `<title>${title}</title>${String(body)}` }));
+    const res = await post(app, "/forms/contact", { name: "Ann", email: "ann@example.com", _started: await oldStamp() });
+    assert.equal(res.status, 303);
+    assert.equal((await s.db.sql`select count(*)::int as n from submissions`)[0].n, 1);
+  } finally {
+    await s.drop();
+  }
+});
+
+test("with the database away they get their answers back and a button, and the team gets a copy", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  const real = globalThis.fetch;
+  const silent = console.error;
+  const sent: string[] = [];
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    const u = String(url);
+    if (u.endsWith("/people")) return new Response(JSON.stringify({ people: [{ name: "Owner", email: "owner@example.com" }] }));
+    sent.push(String(init?.body));
+    return new Response(JSON.stringify({ sent: ["owner@example.com"] }));
+  }) as typeof fetch;
+  process.env.PHOENIX_URL = "https://tt.example";
+  process.env.MACHINE_TOKEN = "m";
+  console.error = () => {};
+  try {
+    let down = true;
+    const db = flaky(s, () => down);
+    const app = new Hono();
+    app.route("/", formRoutes(() => db, { source: "website", retryMs: 1, page: (_c, title, body) => `<title>${title}</title>${String(body)}` }));
+    const stamp = await oldStamp();
+    const res = await post(app, "/forms/contact", { name: "Ann <b>", email: "ann@example.com", message: "Please call", _started: stamp, company_website: "" });
+    assert.equal(res.status, 503);
+    const page = await res.text();
+    assert.match(page, /That did not go through/);
+    assert.match(page, /name="message" value="Please call"/);
+    assert.match(page, /Ann &lt;b&gt;/, "what they typed is escaped");
+    for (let i = 0; i < 50 && !sent.length; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.match(sent[0], /owner@example.com/);
+    assert.match(sent[0], /Please call/);
+    assert.doesNotMatch(sent[0], /_started/);
+
+    // The button posts the same fields; once the database is back it saves.
+    down = false;
+    const again = await post(app, "/forms/contact", { name: "Ann <b>", email: "ann@example.com", message: "Please call", _started: stamp, company_website: "" });
+    assert.equal(again.status, 303);
+    assert.equal((await s.db.sql`select count(*)::int as n from submissions`)[0].n, 1);
+
+    // A bot with no stamp is thanked while the database is away, and nobody hears of it.
+    down = true;
+    sent.length = 0;
+    const bot = await post(app, "/forms/contact", { name: "Bot", email: "bot@example.com" });
+    assert.equal(bot.status, 303);
+    assert.equal(sent.length, 0);
+  } finally {
+    globalThis.fetch = real;
+    console.error = silent;
+    delete process.env.PHOENIX_URL;
+    delete process.env.MACHINE_TOKEN;
+    await s.drop();
+  }
+});
+
+test("the list filters by period and UTM, and its export has a column for each", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  try {
+    const app = site(s);
+    const put = (name: string, data: Record<string, unknown>) => insertSubmission(s.db, { form_key: "contact", name, email: `${name}@example.com`, phone: null, data, source: "website", page: "/", status: "new" });
+    await put("ann", { _utm: { source: "facebook", campaign: "roof", content: "ad-1", term: "set-a" }, _click: { fbclid: "F1" }, _landing: "/roof", _first: { utm: { source: "google", campaign: "brand" } } });
+    await put("bo", { _utm: { source: "google", campaign: "brand" } });
+    await put("old", { _utm: { source: "facebook", campaign: "roof" } });
+    await s.db.sql`update submissions set created_at = now() - interval '40 days' where name = 'old'`;
+    const list = async (q: string) => await (await app.request(`https://site.example/admin/submissions${q}`, { headers: team })).text();
+    const all = await list("");
+    assert.match(all, /Any campaign/);
+    const fb = await list("?source=facebook");
+    assert.match(fb, /ann@example\.com/);
+    assert.doesNotMatch(fb, /bo@example\.com/);
+    assert.match(fb, /old@example\.com/);
+    assert.doesNotMatch(await list("?source=facebook&days=30"), /old@example\.com/);
+    assert.doesNotMatch(await list("?content=ad-1"), /bo@example\.com/);
+
+    const csv = await (await app.request("https://site.example/admin/submissions/export.csv?form=contact&content=ad-1", { headers: team })).text();
+    const [head, row, none] = csv.replace(/^\uFEFF/, "").trim().split("\r\n");
+    assert.equal(none, undefined);
+    const col = (label: string) => row.split(",")[head.split(",").indexOf(label)];
+    assert.equal(col("UTM source"), "facebook");
+    assert.equal(col("UTM term"), "set-a");
+    assert.equal(col("UTM content"), "ad-1");
+    assert.equal(col("Click ID"), "F1");
+    assert.equal(col("Landing page"), "/roof");
+    assert.equal(col("First UTM source"), "google");
+
+    const [{ id }] = await s.db.sql<{ id: string }>`select id::text as id from submissions where name = 'ann'`;
+    const detail = await (await app.request(`https://site.example/admin/submissions/${id}`, { headers: team })).text();
+    assert.match(detail, /First found you through/);
+    assert.doesNotMatch(detail, /fbclid|_first|_landing/);
+  } finally {
+    await s.drop();
+  }
+});
+
+test("the save worked but its answer was lost: the retry saves nothing new, and the lead still goes on", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  const real = globalThis.fetch;
+  const sent: string[] = [];
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    sent.push(String(url));
+    return new Response("{}");
+  }) as typeof fetch;
+  process.env.LEAD_WEBHOOK_URL = "https://hooks.example/lead";
+  try {
+    await s.db.sql`insert into lead_destinations (key, title, kind, target) values ('zap', 'Zap', 'webhook', 'LEAD_WEBHOOK_URL')`;
+    let lost = false;
+    const db = {
+      ...s.db,
+      sql: (async (...a: Parameters<Scratch["db"]["sql"]>) => {
+        const rows = await s.db.sql(...a);
+        if (!lost && String(a[0][0]).includes("with ins as")) {
+          lost = true;
+          throw new Error("the connection dropped after the commit");
+        }
+        return rows;
+      }) as Scratch["db"]["sql"],
+    };
+    const app = new Hono();
+    app.route("/", formRoutes(() => db, { source: "website", retryMs: 1, page: (_c, title, body) => `<title>${title}</title>${String(body)}` }));
+    const res = await post(app, "/forms/contact", { name: "Ann", email: "ann@example.com", _started: await oldStamp() });
+    assert.equal(res.status, 303);
+    assert.equal(lost, true);
+    assert.equal((await s.db.sql`select count(*)::int as n from submissions`)[0].n, 1);
+    assert.equal((await s.db.sql`select count(*)::int as n from leads`)[0].n, 1, "the person and lead were saved on the retry");
+    for (let i = 0; i < 100 && !sent.length; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(sent, ["https://hooks.example/lead"]);
+  } finally {
+    globalThis.fetch = real;
+    delete process.env.LEAD_WEBHOOK_URL;
+    await s.drop();
+  }
+});
+
+test("a bad address on a post that could not be saved does not stop the team's copy", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  const real = globalThis.fetch;
+  const silent = console.error;
+  const bodies: string[] = [];
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).endsWith("/people")) return new Response(JSON.stringify({ people: [{ name: "O", email: "owner@example.com" }] }));
+    bodies.push(String(init?.body));
+    return new Response(JSON.stringify({ sent: ["owner@example.com"] }));
+  }) as typeof fetch;
+  process.env.PHOENIX_URL = "https://tt.example";
+  process.env.MACHINE_TOKEN = "m";
+  console.error = () => {};
+  try {
+    const db = flaky(s, () => true);
+    const app = new Hono();
+    app.route("/", formRoutes(() => db, { source: "website", retryMs: 1, page: (_c, title, body) => `<title>${title}</title>${String(body)}` }));
+    await post(app, "/forms/contact", { name: "Ann", email: "not an address", _started: await oldStamp() });
+    for (let i = 0; i < 50 && !bodies.length; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(JSON.parse(bodies[0]).reply_to, undefined);
+    assert.match(JSON.parse(bodies[0]).text, /not an address/);
+  } finally {
+    globalThis.fetch = real;
+    console.error = silent;
+    delete process.env.PHOENIX_URL;
+    delete process.env.MACHINE_TOKEN;
+    await s.drop();
+  }
+});
+
+test("two identical posts at the same moment make one submission and tell the team once", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  try {
+    await s.db.sql`update forms set notify_emails = '{}'`;
+    const completed: string[] = [];
+    const app = new Hono();
+    app.route("/", formRoutes(() => s.db, { source: "website", retryMs: 1, onComplete: (_c, id) => void completed.push(id), page: (_c, title, body) => `<title>${title}</title>${String(body)}` }));
+    const fields = { name: "Ann", email: "ann@example.com", _started: await oldStamp() };
+    const all = await Promise.all(Array.from({ length: 6 }, () => post(app, "/forms/contact", fields)));
+    assert.deepEqual(all.map((r) => r.status), [303, 303, 303, 303, 303, 303]);
+    assert.equal((await s.db.sql`select count(*)::int as n from submissions`)[0].n, 1);
+    assert.equal(completed.length, 1);
+  } finally {
+    await s.drop();
+  }
+});
+
+test("a stepped form's first page posted twice is one draft, and goes on with the newest key", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  try {
+    await s.db.sql`insert into forms (key, title, fields) values ('two', 'Two', '[{"name":"name","label":"Name","type":"text"},{"name":"more","label":"More","type":"page"},{"name":"message","label":"Message","type":"text"}]'::jsonb)`;
+    const app = site(s);
+    const fields = { name: "Ann", _started: await makeStamp("two", Date.now() - 10_000) };
+    const first = await post(app, "/forms/two", fields);
+    const firstAddress = first.headers.get("location")!;
+    const second = await post(app, "/forms/two", fields);
+    assert.equal((await s.db.sql`select count(*)::int as n from submission_drafts`)[0].n, 1);
+    assert.equal((await app.request(`https://site.example${firstAddress}`, { headers: { host: "site.example" } })).status, 200, "the first key still opens it");
+    const page = await (await app.request(`https://site.example${second.headers.get("location")}`, { headers: { host: "site.example" } })).text();
+    const key = hidden(page, "_draft");
+    assert.ok(key, page.slice(0, 200));
+    assert.equal((await post(app, "/forms/two", { _draft: key!, _step: "1", message: "Hi" })).status, 303);
+    assert.equal((await s.db.sql`select count(*)::int as n from submissions`)[0].n, 1);
+  } finally {
+    await s.drop();
+  }
+});
+
+test("a failure right after the questions become a submission still sends the lead", async (t) => {
+  const s = await setUp(t);
+  if (!s) return;
+  const real = globalThis.fetch;
+  const silent = console.error;
+  const sent: string[] = [];
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    sent.push(String(url));
+    return new Response("{}");
+  }) as typeof fetch;
+  process.env.LEAD_WEBHOOK_URL = "https://hooks.example/lead";
+  console.error = () => {};
+  try {
+    await s.db.sql`insert into lead_destinations (key, title, kind, target) values ('zap', 'Zap', 'webhook', 'LEAD_WEBHOOK_URL')`;
+    await s.db.sql`insert into forms (key, title, fields) values ('one-step', 'Step', '[{"name":"name","label":"Name","type":"text"},{"name":"more","label":"More","type":"page"},{"name":"email","label":"Email","type":"email"}]'::jsonb)`;
+    let broken = false;
+    const db = {
+      ...s.db,
+      sql: (async (...a: Parameters<Scratch["db"]["sql"]>) => {
+        if (broken && /select id::text as id, name, email::text as email, phone, data, page from submissions/.test(a[0].join(""))) {
+          broken = false;
+          throw new Error("the database is away");
+        }
+        return s.db.sql(...a);
+      }) as Scratch["db"]["sql"],
+    };
+    const app = new Hono();
+    app.route("/", formRoutes(() => db, { source: "website", retryMs: 1, page: (_c, title, body) => `<title>${title}</title>${String(body)}` }));
+    const first = await post(app, "/forms/one-step", { name: "Ann", _started: await makeStamp("one-step", Date.now() - 10_000) });
+    const page = await (await app.request(`https://site.example${first.headers.get("location")}`, { headers: { host: "site.example" } })).text();
+    broken = true;
+    await post(app, "/forms/one-step", { _draft: hidden(page, "_draft")!, _step: "1", email: "ann@example.com" });
+    for (let i = 0; i < 100 && !sent.length; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(sent, ["https://hooks.example/lead"]);
+  } finally {
+    globalThis.fetch = real;
+    console.error = silent;
+    delete process.env.LEAD_WEBHOOK_URL;
     await s.drop();
   }
 });

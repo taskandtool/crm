@@ -2,12 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MIN_FILL_MS, SpamFields, makeStamp, verdict } from "../spam";
 
-test("the honeypot and a missing, unsigned or forged stamp drop the post; a fast one is spam", async () => {
+test("a missing, unsigned or forged stamp drops the post; a filled honeypot or a fast one is spam", async () => {
   const now = 1_800_000_000_000;
   const stamp = await makeStamp("contact", now);
   assert.equal(await verdict("contact", { stamp }, now + MIN_FILL_MS), "ok");
-  assert.equal(await verdict("contact", { stamp }, now + 500), "fast");
-  assert.equal(await verdict("contact", { stamp, honeypot: "http://spam" }, now + 60_000), "drop");
+  assert.equal(await verdict("contact", { stamp }, now + 500), "spam");
+  assert.equal(await verdict("contact", { stamp, honeypot: "http://spam" }, now + 60_000), "spam");
   assert.equal(await verdict("contact", { stamp: "" }, now), "drop");
   // an unsigned or re-timed stamp, one from the future, or one for another form
   assert.equal(await verdict("contact", { stamp: String(now - 60_000) }, now), "drop");
@@ -36,6 +36,6 @@ test("a honeypot sent as a file is a bot", async () => {
 test("a stamp over two days old is spam, not a person; one just under is fine", async () => {
   const now = Date.now();
   const day = 24 * 60 * 60 * 1000;
-  assert.equal(await verdict("contact", { stamp: await makeStamp("contact", now - 2 * day - 1000) }, now), "fast");
+  assert.equal(await verdict("contact", { stamp: await makeStamp("contact", now - 2 * day - 1000) }, now), "spam");
   assert.equal(await verdict("contact", { stamp: await makeStamp("contact", now - 2 * day + 60_000) }, now), "ok");
 });

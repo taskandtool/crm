@@ -47,7 +47,7 @@ await quotesCli(process.argv.slice(2), {
     await settings.afterSend?.(db, doc, by);
     if (doc.kind === "quote") await storePage(db, doc.id, opts);
   },
-  // A yes wins the deal the quote is for, and sends and starts what is attached to it.
+  // Accepting it wins the deal the quote is for, and sends and starts what is attached to it.
   afterDecide: async (db, qt, by) => {
     const won = (await winFromQuotes(db, by)).map((d) => `deal #${d.id} ${d.title} won`);
     const after = qt.status === "accepted" ? (await afterAccepted(db, qt, by, deps)).lines : [];

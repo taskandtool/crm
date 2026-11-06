@@ -22,7 +22,7 @@ Read the skill for what the owner asks before working from memory:
 - "Quote this job", "who owes us", "bill them every month", a tax rate, other invoice work: `invoices`.
 - A proposal: its components, sending its link, how it looks: the crm skill's `references/money.md`.
 - The business's look, photographs and facts from their site or what they send: `brand` (into `brand/`, `public/`, `raw/`).
-- "Show me the orders", a form's questions, what someone filled in: `forms`.
+- "Show me the orders", a form's questions, what someone filled in, sending leads to another CRM or a webhook: `forms`.
 - The Stripe key, the webhook, a payment or a refund: `payments`.
 - What can be booked, hours, calendar sync: `booking`. A public booking
   page belongs to the Website app, not this one.
@@ -47,7 +47,7 @@ node scripts/tasks.mjs add ann@example.com "Call about the quote" --on friday   
 node scripts/deals.mjs add ann@example.com "New furnace" --value 6500   # a deal; list, stage, won, lost --reason
 node scripts/events.mjs list                    # what is scheduled; done, no-show, cancel, edit --amount
 node scripts/stages.mjs list                    # deal stages (--statuses: a customer's); rename, add, archive --move-to
-node scripts/forms.mjs submissions --form order # a form's submissions with their booking and payment; list, show, save
+node scripts/forms.mjs submissions --form order # a form's submissions with their booking and payment; list, show, save, destinations
 node scripts/business.mjs show                  # the business's name, privacy and terms pages and address, as texts, quotes and forms print them; set --name
 node scripts/phone.mjs status                   # the business number, texting, each automatic text on or off; flows, set, threads, send
 node scripts/quotes.mjs proposal 7 --components about,reviews,team   # ticks exactly these; no flag: what it has

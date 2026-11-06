@@ -278,7 +278,7 @@ export function SearchBar(props: {
           </summary>
           <div class="mt-2 grid grid-cols-2 gap-2 sm:contents">
             {filters.map((f) => (
-              <label class="min-w-32 flex-1 sm:flex-none">
+              <label class="min-w-32 flex-1 sm:w-40 sm:flex-none">
                 <span class="sr-only">{f.label}</span>
                 <Select name={f.name} hx-get={action} hx-trigger="change" hx-include="closest form" class="w-full">
                   <option value="">{f.any ?? "All"}</option>

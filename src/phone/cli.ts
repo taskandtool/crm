@@ -1,4 +1,4 @@
-// The phone from chat: where it stands, the six automatic texts and their
+// The phone from chat: where it stands, the seven automatic texts and their
 // words, the texting registration, the threads, and a text sent for the
 // owner. The same command in every app that carries this skill; an app's
 // scripts/phone.mjs passes its settings. Machine only.
@@ -27,7 +27,7 @@ const HELP = `phone.mjs <command> [...] [--json]      the business number, its t
   status                               Twilio, the number, the phone it rings, texting, each flow on or off
   numbers [--area 512]                 the numbers in use; with --area, ones Twilio offers to buy
                                        (the owner chooses and buys one in Settings, Phone and texts)
-  flows                                the six automatic texts: on or off, their words and timing
+  flows                                the seven automatic texts: on or off, their words and timing
   flow <key>                           one flow's steps as its page shows them, with an example filled in
   set <key> [--on|--off] [--words "…" --variant <v>] [--timing <minutes>] [--reset]
                                        change a flow; --reset brings back our words, timing and switch.
@@ -108,7 +108,7 @@ export async function phoneCli(argv: string[], cli: PhoneCli): Promise<void> {
             ...Object.entries(s[f.key].words).map(([v, w]) => `  ${v}: ${w}`),
             `  fill-ins: ${f.fills.map((k) => `{${k}}`).join(", ")}`,
           ]);
-          done(at, "the six automatic texts", { lines, next: `node scripts/phone.mjs set <key> --words "…" --variant <v>` });
+          done(at, "the seven automatic texts", { lines, next: `node scripts/phone.mjs set <key> --words "…" --variant <v>` });
         });
       }
       case "flow": {

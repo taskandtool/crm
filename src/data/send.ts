@@ -107,12 +107,28 @@ export type Person = { name: string; email: string };
 export async function teamOf(env: Env, doFetch: typeof fetch = fetch): Promise<Person[] | null> {
   const sender = senderOf(env);
   if (typeof sender === "string" || sender.vendor !== "taskandtool") return null;
+  return peopleVia(env, sender.slug, doFetch);
+}
+
+/** Who a Task & Tool email connection can reach, or null when it cannot be asked. */
+async function peopleVia(env: Env, slug: string, doFetch: typeof fetch): Promise<Person[] | null> {
   try {
-    const res = await gatewayFetch(env, sender.slug, "/people", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(5_000) }, doFetch);
+    const res = await gatewayFetch(env, slug, "/people", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(5_000) }, doFetch);
     return res.ok ? (((await res.json()) as { people?: Person[] }).people ?? null) : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * The addresses of the people on this app, for mail about something going wrong: asked
+ * of Task & Tool whichever sender sends, then the owner. Empty when neither can say.
+ */
+export async function teamAddresses(env: Env, doFetch: typeof fetch = fetch): Promise<string[]> {
+  const people = await peopleVia(env, OURS, doFetch);
+  if (people?.length) return people.map((p) => p.email);
+  const owner = setting(env, "OWNER_EMAIL");
+  return owner ? [owner] : [];
 }
 
 /**

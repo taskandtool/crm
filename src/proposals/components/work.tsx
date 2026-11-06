@@ -5,8 +5,8 @@ import { Band, Heading, Inner, Picture, photo } from "./kit";
 import type { ProposalComponent } from "./types";
 
 const CASES: { client: string; title: string; result?: string; note: string; photo: string | null }[] = [
-  { client: "Client or place", title: "A job like this one", result: "1 day", note: "Sample words: what was done, and what came of it.", photo: photo("") },
-  { client: "Their town", title: "Another job worth showing", result: "30%", note: "A result in their numbers: time, savings, a rating.", photo: photo("") },
+  { client: "Client or place", title: "A job like this one", note: "Sample words: what was done, and what came of it.", photo: photo("") },
+  { client: "Their town", title: "Another job", note: "A result in their numbers: time, savings, a rating.", photo: photo("") },
 ];
 
 export const work: ProposalComponent = {

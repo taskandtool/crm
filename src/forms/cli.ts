@@ -13,7 +13,8 @@ import { linkedTo } from "./linked";
 import { priceOf } from "./price";
 import { formatMoney } from "../payments/money";
 import { percentText, taxRates } from "../payments/tax";
-import { loadForm } from "./store";
+import { bodyFor, checkDestination, destinationsOf, leadFields, missingFields, testSend } from "./destinations";
+import { BOOKING_PAGE, loadForm } from "./store";
 
 export type FormsCli = {
   withDb: <T>(fn: (db: Db) => Promise<T>) => Promise<T>;
@@ -39,7 +40,25 @@ const HELP = `forms.mjs <command> [...] [--json]      the project's forms and wh
                                        newest first, each with what was bought, its booking and payment,
                                        "not complete" while a booking or payment step is still to do,
                                        and who the team email reached
-  unfinished [--form <key>]            forms with steps someone started and did not finish
+  unfinished [--form <key>]            forms with steps someone stopped in before their questions were done;
+                                       stopped at a booking or payment is "not complete" under submissions
+  destinations                         where leads go besides this database, how each has gone, and its last failure
+  destination-save <key> --file <d.json>
+                                       make one, or change it; the file holds { "title", "kind", "target", "path"?,
+                                       "template"?, "forms"?, "send_when"?, "needs"?, "active"? }. "kind" webhook: "target"
+                                       is the secret holding its address; connection: "target" is its slug and "path" the
+                                       vendor's path; email: "target" is the addresses, and a secret or connection is the
+                                       app's that takes the form. "template" shapes the body with {{field}}, or every field
+                                       goes, flat: any answer's name, first_name last_name name email phone id form form_title
+                                       page received_at text_consent utm_source utm_medium utm_campaign utm_term utm_content
+                                       first_utm_* fbclid gclid msclkid ttclid referrer landing_page appointment_start
+                                       appointment_end appointment_service appointment_with appointment_location.
+                                       "send_when": answered (the default: the questions are done) or complete (the last step
+                                       is). "needs": fields that must be present. "forms": form keys, "book" for the booking
+                                       page; left out, every form that makes leads
+  destination-test <key> [--submission <id>] [--confirm]
+                                       what a lead would send, from that submission or the newest; --confirm really sends
+                                       it, each time it is run, and keeps no record
 
 A field is { "name", "label", "type", "required"? }; types: text, email, tel, textarea, select,
 checkbox, radio (with "options"), date, number, consent, photo, items (with "currency" and "items":
@@ -54,15 +73,20 @@ Try: line; exit 1 when refused, 2 when misused.`;
 export async function formsCli(argv: string[], cli: FormsCli): Promise<void> {
   const a = parseArgs(argv);
   const [cmd, ...rest] = a._;
-  usage(a, cmd, ["list", "show", "save", "submissions", "unfinished"], HELP, "forms",
-    { list: [], show: [], save: ["file"], submissions: ["form", "limit"], unfinished: ["form"] });
+  usage(a, cmd, ["list", "show", "save", "submissions", "unfinished", "destinations", "destination-save", "destination-test"], HELP, "forms",
+    { list: [], show: [], save: ["file"], submissions: ["form", "limit"], unfinished: ["form"], destinations: [], "destination-save": ["file"], "destination-test": ["submission", "confirm"] });
   const at = `forms ${cmd}`;
   const json = has(a, "json");
-  const keyOr = (k: string | undefined) => (k && FORM_KEY.test(k) ? k : misused(`${at}: name a form by its key, like contact`, "node scripts/forms.mjs list"));
+  const keyOr = (k: string | undefined) =>
+    k && FORM_KEY.test(k) ? k : cmd.startsWith("destination") ? misused(`${at}: name a destination by its key, like i360`, "node scripts/forms.mjs destinations") : misused(`${at}: name a form by its key, like contact`, "node scripts/forms.mjs list");
   // Everything the command was given is checked before the database is opened.
-  noMore(rest, cmd === "show" || cmd === "save" ? 1 : 0, at);
-  const key = cmd === "show" || cmd === "save" ? keyOr(rest[0]) : "";
-  const file = cmd === "save" ? flag(a, "file") ?? misused("forms save: it needs --file <form.json>", `node scripts/forms.mjs show ${key} > form.json, edit it, then save ${key} --file form.json`) : "";
+  const named = ["show", "save", "destination-save", "destination-test"].includes(cmd);
+  noMore(rest, named ? 1 : 0, at);
+  const key = named ? keyOr(rest[0]) : "";
+  const file = cmd === "save" ? flag(a, "file") ?? misused("forms save: it needs --file <form.json>", `node scripts/forms.mjs show ${key} > form.json, edit it, then save ${key} --file form.json`)
+    : cmd === "destination-save" ? flag(a, "file") ?? misused("forms destination-save: it needs --file <destination.json>", "node scripts/forms.mjs --help, for what the file holds") : "";
+  const submission = cmd === "destination-test" && has(a, "submission") ? flag(a, "submission") ?? "" : null;
+  if (submission !== null && !/^\d{1,18}$/.test(submission)) misused(`${at}: --submission is a submission's number`, "node scripts/forms.mjs submissions");
   const only = has(a, "form") ? keyOr(flag(a, "form")) : null;
   const limit = limitOf(a, at, { fallback: 20, max: 200 });
   /** A --form that names no form is wrong input, never "nothing came in". */
@@ -180,6 +204,79 @@ export async function formsCli(argv: string[], cli: FormsCli): Promise<void> {
             ...(shaped.length === limit && limit < 200 ? [`the newest ${limit}; --limit 200 for more`] : []),
           ],
         });
+      }
+
+      case "destinations": {
+        const list = await destinationsOf(db);
+        const counts = await db.sql<{ destination_id: string; status: string; n: number }>`
+          select destination_id::text as destination_id, status, count(*)::int as n from lead_deliveries group by 1, 2`;
+        const of = (id: string, status: string) => counts.find((r) => r.destination_id === id && r.status === status)?.n ?? 0;
+        const latest = await db.sql<{ destination_id: string; error: string }>`
+          select distinct on (destination_id) destination_id::text as destination_id, error from lead_deliveries
+          where status = 'failed' and error is not null order by destination_id, updated_at desc`;
+        const why = (id: string) => latest.find((r) => r.destination_id === id)?.error ?? null;
+        if (json) return out(true, list.map((d) => ({ ...d, sent: of(d.id, "sent"), failed: of(d.id, "failed"), waiting: of(d.id, "waiting"), last_error: why(d.id) })), String);
+        if (!list.length) return done(at, "leads stay in this database; no destinations", { next: "node scripts/forms.mjs --help, for destination-save" });
+        return done(at, plural(list.length, "destination"), {
+          lines: list.map((d) => `${d.key}  ${d.title}  ${d.kind} ${d.target}${d.path ?? ""}  when ${d.send_when}  ${d.forms.length ? d.forms.join(", ") : "every lead form"}${d.needs.length ? `  needs ${d.needs.join(", ")}` : ""}  ${of(d.id, "sent")} sent, ${of(d.id, "failed")} failed, ${of(d.id, "waiting")} waiting${d.active ? "" : "  (off)"}${why(d.id) ? `  last failure: ${why(d.id)}` : ""}`),
+          next: "node scripts/forms.mjs destination-test <key>",
+        });
+      }
+
+      case "destination-save": {
+        let def: unknown;
+        try {
+          def = JSON.parse(readFileSync(resolve(process.env.CALLER_CWD ?? ".", file), "utf8"));
+        } catch (e) {
+          return fail(`forms destination-save: ${file} is not readable JSON (${(e as Error).message})`, "node scripts/forms.mjs --help, for what the file holds");
+        }
+        const checked = checkDestination(def);
+        if (!checked.ok) return fail(`forms destination-save: ${key} not saved; fix these in ${file}\n` + checked.problems.map((p) => `  ${p}`).join("\n"), `node scripts/forms.mjs destination-save ${key} --file ${file}, once fixed`);
+        const v = checked.value;
+        const unknown = v.forms.length ? (await db.sql<{ key: string }>`select key from unnest(${v.forms}::text[]) as k(key) where key not in (select key from forms) and key <> ${BOOKING_PAGE.key}`).map((r) => r.key) : [];
+        if (unknown.length) return fail(`forms destination-save: ${key} not saved; no form ${unknown.join(", ")}`, "node scripts/forms.mjs list");
+        const [r] = await db.sql<{ made: boolean }>`
+          insert into lead_destinations (key, title, kind, target, path, template, forms, send_when, needs, active, source)
+          values (${key}, ${v.title}, ${v.kind}, ${v.target}, ${v.path}, ${v.template === null ? null : JSON.stringify(v.template)}::jsonb, ${v.forms}::text[], ${v.send_when}, ${v.needs}::text[], ${v.active}, ${cli.source})
+          on conflict (key) do update set title = excluded.title, kind = excluded.kind, target = excluded.target, path = excluded.path, template = excluded.template,
+            forms = excluded.forms, send_when = excluded.send_when, needs = excluded.needs, active = excluded.active, updated_at = now()
+          where (lead_destinations.title, lead_destinations.kind, lead_destinations.target, lead_destinations.path, lead_destinations.template, lead_destinations.forms, lead_destinations.send_when, lead_destinations.needs, lead_destinations.active)
+            is distinct from (excluded.title, excluded.kind, excluded.target, excluded.path, excluded.template, excluded.forms, excluded.send_when, excluded.needs, excluded.active)
+          returning (xmax = 0) as made`;
+        const outcome = !r ? "unchanged" : r.made ? "made" : "changed";
+        if (json) return out(true, { key, outcome }, String);
+        const lines = [
+          ...(r ? [] : ["the file matches what is saved; nothing was written"]),
+          ...(v.kind === "webhook" && !machineEnv()[v.target] ? [`the secret ${v.target} is not on this machine: python3 ~/tools/taskandtool.py request-secret ${v.target}`] : []),
+        ];
+        return done(at, `${outcome} ${key}: ${v.title}, ${v.kind}, when ${v.send_when}`, { lines, next: `node scripts/forms.mjs destination-test ${key}` });
+      }
+
+      case "destination-test": {
+        const d = (await destinationsOf(db)).find((x) => x.key === key);
+        if (!d) return fail(`forms destination-test: no destination ${key}`, "node scripts/forms.mjs destinations");
+        const [row] = await db.sql<{ id: string }>`
+          select s.id::text as id from submissions s left join forms f on f.key = s.form_key
+          where s.status <> 'spam'
+            and (${submission}::bigint is null or s.id = ${submission}::bigint)
+            and (s.form_key = any(${d.forms}::text[]) or (${d.forms}::text[] = '{}' and coalesce(f.leads, true)))
+          order by s.created_at desc, s.id desc limit 1`;
+        if (!row) return fail(`forms destination-test: ${submission ? `submission ${submission} is not one this destination takes` : `nothing has come in that ${key} takes`}`, "node scripts/forms.mjs submissions");
+        const fields = (await leadFields(db, row.id))!;
+        const missing = missingFields(d.needs, fields);
+        const body = bodyFor(d, fields);
+        const missingLine = missing.length ? [`this lead is missing ${missing.join(", ")}, so a real one would wait or fail`] : [];
+        if (!has(a, "confirm")) {
+          if (json) return out(true, { key, submission: row.id, missing, body }, String);
+          return done(at, `${d.title} would get this for submission ${row.id}`, {
+            lines: [body.length > 2000 ? `${body.slice(0, 2000)}\n(the first 2000 of ${body.length} characters; --json for all of it)` : body, ...missingLine],
+            waits: `node scripts/forms.mjs destination-test ${key} --submission ${row.id} --confirm`,
+          });
+        }
+        const r = await testSend(machineEnv(), d, fields);
+        if (json && r.ok) return out(true, { key, submission: row.id, ...r }, String);
+        if (!r.ok) return fail(`forms destination-test: ${d.title} did not take it: ${r.error}${r.response ? `\n  ${r.response.slice(0, 500)}` : ""}`, `node scripts/forms.mjs destination-test ${key}, to read what it sends`);
+        return done(at, `${d.title} took submission ${row.id}${r.status ? ` (${r.status})` : ""}`, { lines: [...(r.response ? [r.response.slice(0, 500)] : []), ...missingLine, "no record kept of this test: running it again sends again, and real leads each go once"] });
       }
 
       case "unfinished": {

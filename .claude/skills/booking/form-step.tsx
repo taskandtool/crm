@@ -72,8 +72,8 @@ export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
               {(days.get(chosen) ?? []).map((s) => {
                 const iso = s.start.toISOString();
                 return (
-                  <label class={chip + " flex items-center justify-center gap-2 has-[:checked]:border-accent has-[:checked]:bg-accent/10 has-[:checked]:font-semibold has-[:checked]:text-accent"}>
-                    <input type="radio" name="start" value={iso} checked={iso === picked} required />
+                  <label class={chip + " flex items-center justify-center gap-2 has-[:checked]:border-accent has-[:checked]:bg-accent/10 has-[:checked]:font-semibold has-[:checked]:text-accent has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent"}>
+                    <input type="radio" name="start" value={iso} checked={iso === picked} required class="sr-only" />
                     {formatTime(s.start, zone)}
                   </label>
                 );
