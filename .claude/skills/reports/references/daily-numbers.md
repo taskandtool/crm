@@ -1,13 +1,13 @@
 # Daily numbers from other systems
 
-For the CRM, whose scripts these are. The lead report reads our Postgres only. Numbers that live elsewhere come in
+For an app with `scripts/reports.mjs` (the CRM, Lander). The lead report reads our Postgres only. Numbers that live elsewhere come in
 through a scheduled job you write for this client, using their connection.
 Never read those systems from a page.
 
 | Number | Save it with | Report |
 |---|---|---|
 | Ad cost, clicks, impressions per day and ad | `node scripts/reports.mjs spend --file rows.json` | Ad cost, Cost per lead |
-| A lead's status in their CRM, its sale | `node scripts/leads.mjs outcome <id> --status sold --sold 1200` | Appointments set, No-shows, Sold, Revenue |
+| A lead's status in their CRM, its sale | `node scripts/reports.mjs outcome <id> --status sold --sold 1200` | Appointments set, No-shows, Sold, Revenue |
 
 Set a job up like this:
 

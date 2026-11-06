@@ -28,6 +28,9 @@ export interface Field {
   required?: boolean;
   /** For select and radio (one of them) and checkbox (any of them; without options a checkbox is one yes or no). */
   options?: string[];
+  /** A radio shown as big answer cards, and the picture or icon (an .svg) on each by option: a step of one card question moves on at a click. */
+  cards?: boolean;
+  option_images?: Record<string, string>;
   /** Most characters accepted; defaults by type (DEFAULT_MAX). */
   maxLength?: number;
   help?: string;
@@ -99,6 +102,8 @@ export type Validated =
 export const RESERVED = ["company_website", "_started", "_page", "_consent", "_utm", "_ref", "_referrer", "_draft", "_step", "_charges", "_lines"];
 /** The hidden inputs that carry a visitor's place in a form with steps: their key, and the step the page was. */
 export const DRAFT_FIELD = "_draft";
+/** The Back button on a step of questions. */
+export const BACK_FIELD = "_back";
 export const STEP_FIELD = "_step";
 /** Names every JavaScript object already answers to; a field named one would read a built-in, not an answer. */
 const BUILT_IN = new Set(Object.getOwnPropertyNames(Object.prototype));
@@ -293,6 +298,12 @@ export function checkFields(input: unknown): { fields: Field[]; problems: Errors
     const f: Field = { name, label, type: type! };
     if (r.required === true) f.required = true;
     if (options.length && (type === "select" || type === "radio" || type === "checkbox")) f.options = options;
+    if (type === "radio" && r.cards === true) {
+      f.cards = true;
+      const images = (r.option_images ?? {}) as Record<string, unknown>;
+      const kept = options.filter((o) => typeof images[o] === "string" && /^(\/|https:\/\/)/.test(images[o] as string)).map((o) => [o, images[o] as string]);
+      if (kept.length) f.option_images = Object.fromEntries(kept);
+    }
     if (typeof r.maxLength === "number" && r.maxLength > 0) f.maxLength = Math.min(Math.floor(r.maxLength), DEFAULT_MAX.textarea);
     if (typeof r.help === "string" && r.help.trim()) f.help = r.help.trim();
     if (typeof r.autocomplete === "string" && /^[a-z0-9 -]{1,60}$/.test(r.autocomplete)) f.autocomplete = r.autocomplete;

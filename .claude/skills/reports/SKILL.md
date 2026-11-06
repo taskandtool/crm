@@ -44,9 +44,9 @@ draws them.
 
 ## The lead report
 
-`leads.tsx` is parts to lay out: `loadLeadReport`, then `LeadKpis`,
-`LeadTrends`, `LeadFunnel`, `LeadBreakdown`. Change a business's report by
-choosing and arranging them, or adding a component beside them. Ad cost and a
+`leads.tsx` is parts to lay out: `loadLeadReport`, then `LeadReportBody` for
+the whole page, or `LeadKpis`, `LeadTrends`, `LeadFunnel`, `LeadBreakdown`.
+Change a business's report by choosing and arranging them, or adding a component beside them. Ad cost and a
 lead's status from another system come from a daily job:
 `references/daily-numbers.md`.
 
@@ -107,8 +107,9 @@ hand-over is a deliverable (`work` skill), and a deliverable is a file:
 | `ops.tsx` | `loadOps` and `OpsReport`: leads (by where they came from, by form), bookings, revenue, the funnel |
 | `seo.ts` | `googleCall`, `fetchSeo`, `saveSnapshot`, `loadSnapshot`. A job fetches; a page reads the snapshot |
 | `schema.sql` | `report_snapshots`, the SEO figures a job saved; `ad_spend`, what ads cost |
-| `leads.tsx` | `loadLeadReport`, `LeadKpis`, `LeadTrends`, `LeadFunnel`, `LeadBreakdown`, `breakdown`, `costPerLead` |
+| `leads.tsx` | `loadLeadReport`, `reportQuery`, `LeadReportBody`, `ReportPeriods`, `LeadKpis`, `LeadTrends`, `LeadFunnel`, `LeadBreakdown`, `breakdown`, `costPerLead` |
 | `ad-spend.ts` | `saveAdSpend`: what a daily job saves |
+| `cli.ts` | `reportsCli`: `reports.mjs` summary, spend, outcome |
 | `seo-report.tsx` | `SeoReport` and `Notes` |
 | `print.ts` | `printToPdf`, `findChrome`, `fileUrl`. Machine only |
 | `test/` | copy with the files and keep green |

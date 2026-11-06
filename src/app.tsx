@@ -79,9 +79,9 @@ import { leadMoment } from "./forms/destinations";
 import { completePaidSubmission } from "./forms/store";
 import { paymentsAdmin } from "./payments/admin";
 import { invoiceEvents } from "./invoices/webhook";
-import { BREAKDOWNS, loadLeadReport, type BreakdownBy, type ReportFilter } from "./reports/leads";
+import { loadLeadReport, reportQuery } from "./reports/leads";
 import { addDays as addReportDays, todayIn as todayInZone } from "./reports/sql";
-import { REPORT_PERIODS, ReportsPage } from "./views/reports";
+import { ReportsPage } from "./views/reports";
 import { stripeWebhook } from "./payments/webhook";
 import { quotesFor } from "./invoices/quotes";
 import { invoicesFor, owed } from "./invoices/invoices";
@@ -988,14 +988,8 @@ if (invoicesCfg) {
 // ---- leads ------------------------------------------------------------------
 // The lead report (views/reports.tsx): figures and charts narrowed by the query string.
 app.get("/reports", async (c) => {
-  const days = REPORT_PERIODS.find((p) => String(p) === c.req.query("days")) ?? 30;
-  const by = (Object.keys(BREAKDOWNS) as BreakdownBy[]).find((k) => k === c.req.query("by")) ?? "source";
+  const { days, by, filter } = reportQuery((k) => c.req.query(k));
   const lastDay = todayInZone(cfg.time_zone);
-  const filter: ReportFilter = {};
-  for (const k of Object.keys(BREAKDOWNS) as BreakdownBy[]) {
-    const v = c.req.query(k);
-    if (v) filter[k] = v;
-  }
   const report = await loadLeadReport(c.var.db, { period: { from: addReportDays(lastDay, 1 - days), to: lastDay }, zone: cfg.time_zone, currency: dealsCfg.currency, filter });
   return c.html(<ReportsPage user={c.var.user} report={report} days={days} by={by} />);
 });

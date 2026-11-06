@@ -9,7 +9,8 @@
 // A daily job fills what lives elsewhere: references/daily-numbers.md.
 import type { Db } from "../data/db";
 import { tagWords } from "../forms/origin";
-import { BarChart, bucketLabel, formatNumber, FunnelChart, fromMinor, KpiRow, KpiTile, LineChart } from "./charts";
+import { AskAi } from "../admin/list";
+import { BarChart, bucketLabel, ChartScripts, formatNumber, FunnelChart, fromMinor, KpiRow, KpiTile, LineChart } from "./charts";
 import { addDays, adSpendQuery, days, leadRollupQuery, previousPeriod, run, type Grain, type Period } from "./sql";
 
 export type LeadFigures = { leads: number; /** Those from a source with ad cost in the period: what cost per lead divides by. */ ad_leads: number; appointments: number; no_shows: number; sold: number; sold_cents: number; spend_cents: number; clicks: number; impressions: number };
@@ -244,6 +245,73 @@ export function LeadBreakdown({ report: r, by, href, rowHref, locale = "en-US" }
           ) : null}
         </table>
       </div>
+    </div>
+  );
+}
+
+export const REPORT_PERIODS = [7, 30, 90, 365] as const;
+const periodLabel = (d: number) => (d === 365 ? "1 year" : `${d} days`);
+
+/** What a report page's address asks for: `?days=30&by=campaign&source=facebook`. */
+export function reportQuery(query: (name: string) => string | undefined): { days: number; by: BreakdownBy; filter: ReportFilter } {
+  const filter: ReportFilter = {};
+  for (const k of Object.keys(BREAKDOWNS) as BreakdownBy[]) {
+    const v = query(k);
+    if (v) filter[k] = v;
+  }
+  return {
+    days: REPORT_PERIODS.find((d) => String(d) === query("days")) ?? 30,
+    by: (Object.keys(BREAKDOWNS) as BreakdownBy[]).find((k) => k === query("by")) ?? "source",
+    filter,
+  };
+}
+
+/** The period's switch, for the page's header. */
+export function ReportPeriods({ base, days, by, filter }: { base: string; days: number; by: BreakdownBy; filter: ReportFilter }) {
+  return (
+    <nav aria-label="Period" class="inline-flex flex-wrap gap-0.5 rounded-control bg-panel p-1">
+      {REPORT_PERIODS.map((d) => (
+        <a href={`${base}?${new URLSearchParams({ days: String(d), by, ...filter })}`} aria-current={d === days ? "true" : undefined}
+          class={"inline-flex min-h-9 items-center rounded-control px-3 text-label font-medium no-underline " + (d === days ? "bg-surface text-ink shadow-card" : "text-ink-2 hover:text-ink")}>
+          {periodLabel(d)}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
+/**
+ * The whole report, laid out: what's filtered, the figures, the charts, the table. A row narrows the
+ * page and shows what is inside it: a source's campaigns, a campaign's ads. `scripts` is where
+ * client.js is served. To change a business's report, lay the components out in its own page instead.
+ */
+export function LeadReportBody({ report: r, base, scripts, days, by, locale = "en-US" }: { report: LeadReport; base: string; scripts: string; days: number; by: BreakdownBy; locale?: string }) {
+  const here = (o: { by?: BreakdownBy; filter?: ReportFilter }) => `${base}?${new URLSearchParams({ days: String(days), by: o.by ?? by, ...(o.filter ?? r.filter) })}`;
+  const inside: Partial<Record<BreakdownBy, BreakdownBy>> = { source: "campaign", campaign: "content" };
+  const narrowed = (Object.keys(r.filter) as BreakdownBy[]).filter((k) => r.filter[k] !== undefined);
+  return (
+    <div class="space-y-6">
+      <ChartScripts src={scripts} />
+      {narrowed.length ? (
+        <div class="flex flex-wrap items-center gap-2 text-label">
+          {narrowed.map((k) => {
+            const { [k]: _gone, ...rest } = r.filter;
+            return (
+              <a href={here({ filter: rest })} aria-label={`Stop filtering by ${BREAKDOWNS[k].toLowerCase()}`} class="inline-flex min-h-9 items-center gap-1.5 rounded-control border border-line bg-surface px-3 font-medium text-ink no-underline hover:border-line-strong">
+                <span class="text-ink-3">{BREAKDOWNS[k]}:</span> {tagLabel(k, r.filter[k]!)} <span aria-hidden="true" class="text-ink-3">×</span>
+              </a>
+            );
+          })}
+          {narrowed.length > 1 ? <a href={here({ filter: {} })} class="px-2 font-medium text-ink-2 hover:text-ink">Clear all</a> : null}
+        </div>
+      ) : null}
+      <LeadKpis report={r} locale={locale} />
+      {r.total.spend_cents === 0 && !narrowed.length ? <AskAi ask="Each morning, read yesterday's ad costs from our ad account and save them for the lead report" /> : null}
+      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <LeadTrends report={r} locale={locale} />
+        <LeadFunnel report={r} locale={locale} />
+      </div>
+      <LeadBreakdown report={r} by={by} href={(k) => here({ by: k })} rowHref={(k, tag) => here({ by: inside[k] ?? k, filter: { ...r.filter, [k]: tag } })} locale={locale} />
     </div>
   );
 }

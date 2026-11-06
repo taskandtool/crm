@@ -60,6 +60,10 @@ form or a new question is a change to a row, never a migration.
 A form's fields say all of it; `node scripts/forms.mjs --help` lists every
 field type with its settings.
 
+- A `radio` with `"cards": true` draws big answer cards, with a picture on
+  each from `option_images`; a step that is only that question moves on at a
+  click. A picture ending in `.svg` is drawn as an icon. Steps of questions
+  have Back. `embedForm(c, db, key)` puts the first step on your own page.
 - `page` starts a step; for one question per page, put a `page` before
   each question. Answers wait as a draft and become a submission when the
   questions are done; drafts never finished are listed as not finished,

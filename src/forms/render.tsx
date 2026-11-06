@@ -9,7 +9,7 @@
 // Usually reached through embedForm (routes.tsx), which loads the row and
 // makes the stamp.
 import type { Child } from "hono/jsx";
-import { DRAFT_FIELD, isAnswer, phoneField, STEP_FIELD, TEXT_CONSENT_FIELD, type Field, type Form, type Errors, type Input } from "./fields";
+import { BACK_FIELD, DRAFT_FIELD, isAnswer, phoneField, STEP_FIELD, TEXT_CONSENT_FIELD, type Field, type Form, type Errors, type Input } from "./fields";
 import { SpamFields } from "../data/spam";
 import { REFERRER_FIELD, UTM_FIELD } from "./origin";
 import { formatMoney } from "../payments/money";
@@ -21,13 +21,13 @@ export function LinkedText({ text }: { text: string }) {
 }
 
 const control =
-  "w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-copy text-ink aria-[invalid=true]:border-ink aria-[invalid=true]:border-2";
+  "w-full min-h-12 rounded-control border border-line-strong bg-surface px-3.5 py-2.5 text-copy text-ink outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/25 aria-[invalid=true]:border-ink aria-[invalid=true]:border-2";
 const labelCls = "text-label font-semibold text-ink";
 const helpCls = "text-label text-ink-2";
 const errorCls = "text-label font-semibold text-ink";
 
 /** Where a form with steps is: its index, how many, the step's label, and (after the first) the visitor's key. */
-export type StepPlace = { index: number; count: number; label: string | null; key?: string };
+export type StepPlace = { index: number; count: number; label: string | null; key?: string; back?: boolean };
 
 export function FormView(props: {
   form: Form;
@@ -53,9 +53,17 @@ export function FormView(props: {
   const fields = (props.fields ?? form.fields).filter(isAnswer);
   const failed = fields.filter((f) => errors[f.name]);
   const last = !step || step.index === step.count - 1;
+  // One card question on a step needs no button: a click answers it, even the answer already chosen when they
+  // came back with Back. Without JavaScript the button shows.
+  const oneClick = !!step && fields.length === 1 && fields[0].type === "radio" && !!fields[0].cards;
+  const button = (
+    <button type="submit" class="inline-flex min-h-12 w-full items-center justify-center rounded-control bg-accent px-6 font-semibold text-accent-ink transition-colors hover:bg-accent-hover sm:w-auto">
+      {last ? form.submit_label || "Send" : "Continue"}
+    </button>
+  );
   return (
-    <form method="post" action={props.action ?? `${props.prefix ?? ""}/forms/${form.key}`} class="grid max-w-xl gap-6">
-      {step && step.count > 1 ? <StepHeading step={step} /> : null}
+    <form method="post" action={props.action ?? `${props.prefix ?? ""}/forms/${form.key}`} class="grid max-w-xl gap-6" onclick={oneClick ? "if(event.target.type==='radio')this.requestSubmit()" : undefined}>
+      {step && step.count > 1 ? <StepHeading step={oneClick ? { ...step, label: null } : step} /> : null}
       {failed.length ? (
         <div role="alert" class="rounded-card border border-line-strong bg-panel p-4">
           <p class="font-semibold">Some answers need a fix before this can be sent.</p>
@@ -72,9 +80,9 @@ export function FormView(props: {
         <>
           <FieldView form={form} field={f} value={values[f.name]} error={errors[f.name]} values={values} />
           {phone && f.name === phone.name ? (
-            <label class="-mt-3 flex items-start gap-2">
-              <input type="checkbox" name={TEXT_CONSENT_FIELD} value="yes" class="mt-1" checked={values[TEXT_CONSENT_FIELD] === "yes"} />
-              <span class="text-label"><LinkedText text={textConsent ?? ""} /></span>
+            <label class="-mt-2 flex cursor-pointer items-start gap-2.5">
+              <input type="checkbox" name={TEXT_CONSENT_FIELD} value="yes" class="mt-0.5 size-5 shrink-0" checked={values[TEXT_CONSENT_FIELD] === "yes"} />
+              <span class="text-label font-normal text-ink-2"><LinkedText text={textConsent ?? ""} /></span>
             </label>
           ) : null}
         </>
@@ -88,22 +96,26 @@ export function FormView(props: {
       {page ? <input type="hidden" name="_page" value={page} /> : null}
       {origin?.utm ? <input type="hidden" name={UTM_FIELD} value={origin.utm} /> : null}
       {origin?.ref ? <input type="hidden" name={REFERRER_FIELD} value={origin.ref} /> : null}
-      <div>
-        <button
-          type="submit"
-          class="inline-flex min-h-11 items-center justify-center rounded-control bg-accent px-5 font-semibold text-accent-ink"
-        >
-          {last ? form.submit_label || "Send" : "Next"}
-        </button>
+      <div class="flex flex-wrap items-center gap-4">
+        {oneClick ? <noscript>{button}</noscript> : button}
+        {step?.key && step.back ? (
+          <button type="submit" name={BACK_FIELD} value="1" formnovalidate class="min-h-11 text-label font-semibold text-ink-2 underline underline-offset-2 hover:text-ink">Back</button>
+        ) : null}
       </div>
     </form>
   );
 }
 
 function StepHeading({ step }: { step: StepPlace }) {
+  const done = Math.round(((step.index + 1) / step.count) * 100);
   return (
-    <div class="grid gap-1">
-      <p class="text-label text-ink-2">Step {step.index + 1} of {step.count}</p>
+    <div class="grid gap-3">
+      <div>
+        <p class="text-label text-ink-2">Step {step.index + 1} of {step.count}</p>
+        <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-panel" role="progressbar" aria-label="Progress" aria-valuenow={done} aria-valuemin={0} aria-valuemax={100}>
+          <div class="h-full rounded-full bg-accent transition-all" style={`width:${done}%`}></div>
+        </div>
+      </div>
       {step.label ? <h2 class="text-title font-semibold">{step.label}</h2> : null}
     </div>
   );
@@ -194,6 +206,38 @@ function FieldView({ form, field: f, value, error, values }: { form: Form; field
     );
   }
 
+  if (f.type === "radio" && f.cards) {
+    const pictures = (f.options ?? []).some((o) => f.option_images?.[o]);
+    return (
+      <fieldset id={fid} class="grid gap-3" aria-describedby={describedBy} tabindex={-1}>
+        <legend class="mb-4 font-display text-title font-semibold text-ink">{f.label}</legend>
+        {help}
+        {err}
+        <div data-answers class={"grid gap-3 " + (pictures ? "grid-cols-2" : "")}>
+          {(f.options ?? []).map((o, i) => (
+            <label class="group relative flex cursor-pointer flex-col overflow-hidden rounded-card border border-line-strong bg-surface transition-all hover:border-accent hover:shadow-card has-[:checked]:border-2 has-[:checked]:border-accent has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent/40">
+              <input type="radio" name={f.name} value={o} id={`${fid}-${i}`} checked={many.includes(o)} required={f.required ? true : undefined} aria-invalid={invalid} class="sr-only" />
+              {f.option_images?.[o]?.endsWith(".svg") ? (
+                <span class="flex flex-col items-center gap-3 px-3 py-6 text-center font-semibold text-ink">
+                  <img src={f.option_images[o]} alt="" class="h-12 w-auto" />
+                  {o}
+                </span>
+              ) : (
+                <>
+                  {f.option_images?.[o] ? <img src={f.option_images[o]} alt="" loading="lazy" class="aspect-[16/10] w-full object-cover" /> : null}
+                  <span class="flex min-h-12 items-center justify-between gap-2 px-4 py-3 font-semibold text-ink">
+                    {o}
+                    <span aria-hidden="true" class="text-ink-3 transition-transform group-hover:translate-x-0.5 group-hover:text-accent">→</span>
+                  </span>
+                </>
+              )}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+    );
+  }
+
   if (f.type === "radio" || (f.type === "checkbox" && f.options?.length)) {
     const type = f.type === "radio" ? "radio" : "checkbox";
     return (
@@ -205,7 +249,7 @@ function FieldView({ form, field: f, value, error, values }: { form: Form; field
         {help}
         {err}
         {(f.options ?? []).map((o, i) => (
-          <label class="flex items-center gap-2">
+          <label class="flex min-h-12 cursor-pointer items-center gap-3 rounded-control border border-line px-3.5 py-2 transition-colors hover:border-line-strong has-[:checked]:border-accent has-[:checked]:bg-accent/5">
             <input
               type={type}
               name={f.name}
@@ -267,14 +311,17 @@ function FieldView({ form, field: f, value, error, values }: { form: Form; field
           {one}
         </textarea>
       ) : f.type === "select" ? (
-        <select {...common} autocomplete={autocomplete(f)}>
-          <option value="">Choose one</option>
-          {(f.options ?? []).map((o) => (
-            <option value={o} selected={o === one}>
-              {o}
-            </option>
-          ))}
-        </select>
+        <div class="relative">
+          <select {...common} class={control + " cursor-pointer appearance-none pr-11 invalid:text-ink-3"} autocomplete={autocomplete(f)}>
+            <option value="">Choose one</option>
+            {(f.options ?? []).map((o) => (
+              <option value={o} selected={o === one}>
+                {o}
+              </option>
+            ))}
+          </select>
+          <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="pointer-events-none absolute right-3.5 top-1/2 size-5 -translate-y-1/2 text-ink-2"><path d="m5 8 5 5 5-5" /></svg>
+        </div>
       ) : (
         <input
           {...common}

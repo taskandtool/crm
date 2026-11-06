@@ -67,6 +67,41 @@ async function withDb(t: { skip: (m: string) => void }, fn: (s: Scratch) => Prom
   }
 }
 
+test("answer cards move on at a click, and Back returns to the last answers", (t) =>
+  withDb(t, async (s) => {
+    const app = new Hono();
+    app.route("/", formRoutes(() => s.db, { source: "website", page: pageOf }));
+    await s.db.sql`insert into forms (key, title, fields) values ('cards', 'Cards', ${JSON.stringify(checkFields([
+      { name: "p1", label: "Vehicle", type: "page" },
+      { name: "vehicle", label: "What are we detailing?", type: "radio", required: true, cards: true, options: ["Car", "Van"], option_images: { Car: "/car.jpg", Van: "javascript:x" } },
+      { name: "p2", label: "Where", type: "page" },
+      { name: "zip", label: "ZIP", type: "text", required: true },
+      { name: "p3", label: "You", type: "page" },
+      { name: "email", label: "Email", type: "email", required: true },
+    ]).fields)}::jsonb)`;
+    const first = await (await app.request(HOST + "/forms/cards/start")).text();
+    assert.match(first, /this\.requestSubmit\(\)/);
+    assert.match(first, /src="\/car\.jpg"/);
+    assert.doesNotMatch(first, /javascript:x/, "a picture is a path or an https address");
+    assert.match(first, /<noscript><button/, "the button is there without JavaScript");
+    const stamp = /name="_started" value="([^"]+)"/.exec(first)![1];
+    const post = (body: Record<string, string>) => app.request(HOST + "/forms/cards", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(body).toString() });
+    await new Promise((r) => setTimeout(r, 3100));
+    const to = (await post({ vehicle: "Van", _started: stamp })).headers.get("location")!;
+    const k = new URL(to, HOST).searchParams.get("k")!;
+    const second = await (await app.request(HOST + to)).text();
+    assert.match(second, /Step 2 of 3/);
+    assert.match(second, /role="progressbar"/);
+    assert.match(second, /name="_back"/);
+    assert.doesNotMatch(second, /required[^>]*name="_back"/);
+    const back = await post({ _draft: k, _step: "1", _back: "1" });
+    assert.equal(back.status, 303);
+    const again = await (await app.request(HOST + back.headers.get("location")!)).text();
+    assert.match(again, /Step 1 of 3/);
+    assert.match(again, /value="Van"[^>]*checked/, "their answer is still chosen");
+    assert.doesNotMatch(again, /name="_back"/, "nothing before the first step");
+  }));
+
 test("a form with steps: a draft between pages, a submission once the questions are done, then the booking and payment steps", (t) =>
   withDb(t, async (s) => {
     await seedForm(s.db, { key: "intake", title: "Intake", fields: INTAKE }, "website");
@@ -92,7 +127,7 @@ test("a form with steps: a draft between pages, a submission once the questions 
     const first = await (await app.request(HOST + "/intake")).text();
     assert.match(first, /Step 1 of 4/);
     assert.match(first, /name="_started"/);
-    assert.match(first, />Next</);
+    assert.match(first, />Continue</);
     assert.doesNotMatch(first, /What brings you here/);
 
     // Page 1: a draft, no submission yet.

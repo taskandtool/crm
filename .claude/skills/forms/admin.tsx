@@ -37,6 +37,7 @@ import { linkedTo, linkKinds, type Linked } from "./linked";
 import { priceOf } from "./price";
 import { formatMoney } from "../payments/money";
 import { stripeConnected } from "../payments/stripe";
+import { LEAD_OUTCOMES, OUTCOME_LABELS, setLeadOutcome, type LeadOutcome } from "../customers/customer";
 import { PAYMENT_MESSAGES, refundable, type Payment } from "../payments/admin";
 import { BOOKING_MESSAGES, BOOKING_STATUSES } from "../booking/admin";
 import { BOOKING_PAGE, CONTACT_FORM, formTitle, saveSubmitter, toForm } from "./store";
@@ -54,6 +55,8 @@ export type FormsAdminOptions = {
    * where paymentsAdmin is, and a lead's page where the app has leads (the CRM's): a submission that is a lead is
    * archived, converted or marked spam there, so its page here just opens it.
    */
+  /** The app has no lead pages of its own (Lander): a submission's page keeps where its lead got to. */
+  outcomes?: boolean;
   links?: { booking?: (id: string) => string; payment?: (id: string) => string; lead?: (id: string) => string };
 };
 
@@ -85,6 +88,8 @@ const MESSAGES: FlashMessages = {
   note: "Added to their notes.",
   "note-empty": { error: "Write something in the note first." },
   resent: "Sent.",
+  saved: "Saved.",
+  "sold-invalid": { error: "Sold for should be an amount, like 1200.00." },
   "resend-failed": { error: "That did not send. The reason is under Destinations." },
 };
 
@@ -480,6 +485,11 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
 
     const self = subUrl(r.id);
     const sends = await deliveriesOf(db, r.id);
+    const [agreed] = await db.sql<{ text_consent: string | null; text_consent_at: Date | null }>`select text_consent, text_consent_at from submissions where id = ${r.id}::bigint`;
+    const [reached] = opts.outcomes
+      ? await db.sql<{ outcome: LeadOutcome | null; sold_cents: string | null; external_status: string | null; external_url: string | null }>`
+          select outcome, sold_cents::text as sold_cents, external_status, external_url from leads where submission_id = ${r.id}::bigint`
+      : [];
     const unsent = sends.filter((d) => d.status === "failed");
     const view = viewOf(r.status);
     const lead = opts.links?.lead ? await leadOf(db, r.id) : null;
@@ -524,6 +534,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
                     { label: "Name", value: r.name },
                     { label: "Email", value: r.email ? <a href={`mailto:${r.email}`} class="break-all">{r.email}</a> : null },
                     { label: "Phone", value: r.phone ? <a href={`tel:${r.phone.replace(/[^0-9+]/g, "")}`}>{r.phone}</a> : null },
+                    { label: "Calls and texts", value: agreed?.text_consent ? <span title={agreed.text_consent}>Agreed {agreed.text_consent_at ? <When at={agreed.text_consent_at} timeZone={tz} /> : null}</span> : null },
                   ]}
                 />
               </Section>
@@ -572,6 +583,25 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
               )}
               {sends.length ? <div id="destinations" class="scroll-mt-4"><SentCard rows={sends} self={self} timeZone={tz} /></div> : null}
               {r.notified ? <Section title="Team email"><p class={`${smallText} text-ink-2`}>{r.notified}</p></Section> : null}
+              {reached ? (
+                <Section title="Outcome">
+                  {reached.external_status ? (
+                    <p class={`mb-3 ${smallText} text-ink-2`}>In their CRM: {reached.external_url && /^https?:\/\//i.test(reached.external_url) ? <a href={reached.external_url} rel="noreferrer" class="underline">{reached.external_status}</a> : reached.external_status}</p>
+                  ) : null}
+                  <form method="post" action={`${self}/outcome`} class="grid gap-3">
+                    <label class={fieldClass}>Where it got to
+                      <select name="outcome" class={controlClass}>
+                        <option value="">Not yet</option>
+                        {LEAD_OUTCOMES.map((o) => <option value={o} selected={reached.outcome === o}>{OUTCOME_LABELS[o]}</option>)}
+                      </select>
+                    </label>
+                    <label class={fieldClass}>Sold for
+                      <input name="sold" inputmode="decimal" value={reached.sold_cents === null ? "" : (Number(reached.sold_cents) / 100).toFixed(2)} class={controlClass} />
+                    </label>
+                    <div><button class={buttonClass}>Save</button></div>
+                  </form>
+                </Section>
+              ) : null}
               <Section title="Where it came from">
                 <FieldList
                   fields={[
@@ -593,6 +623,20 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
   });
 
   // Resend: one try while they wait, and what came of it on this page.
+  app.post("/:id{[0-9]+}/outcome", async (c) => {
+    if (!opts.outcomes) return c.notFound();
+    const id = c.req.param("id");
+    const db = getDb(c);
+    const f = await c.req.parseBody();
+    const self = `${base}/${id}`;
+    const sold = typeof f.sold === "string" && f.sold.trim() ? Math.round(Number(f.sold.replace(/[$,]/g, "")) * 100) : null;
+    if (sold !== null && (!Number.isSafeInteger(sold) || sold < 0)) return c.redirect(withFlash(self, "sold-invalid"), 303);
+    const [lead] = await db.sql<{ id: string }>`select id::text as id from leads where submission_id = ${id}::bigint`;
+    if (!lead) return c.notFound();
+    await setLeadOutcome(db, lead.id, { outcome: LEAD_OUTCOMES.find((o) => o === f.outcome) ?? null, soldCents: sold }, c.get("user"));
+    return c.redirect(withFlash(self, "saved"), 303);
+  });
+
   app.post("/:id{[0-9]+}/deliveries/:did{[0-9]+}/resend", async (c) => {
     const id = idParam(c.req.param("id"));
     const did = idParam(c.req.param("did"));
@@ -1172,8 +1216,8 @@ type Draft = {
   fields: Record<string, unknown>[];
 };
 
-/** What a field has that this editor does not show (things to buy, fees, the tax rate), carried through a save as it was. */
-const CARRIED = ["items", "currency", "fees", "tax_rate_id"] as const;
+/** What a field has that this editor does not show (things to buy, fees, the tax rate, answer cards), carried through a save as it was. */
+const CARRIED = ["items", "currency", "fees", "tax_rate_id", "cards", "option_images"] as const;
 function carried(json: string): Record<string, unknown> {
   try {
     const v = JSON.parse(json || "{}");

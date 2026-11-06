@@ -25,14 +25,14 @@ import { envOf } from "../data/env";
 import { afterResponse, sendEmail, teamAddresses } from "../data/send";
 import { HONEYPOT, MIN_FILL_MS, STAMP, makeStamp, verdict } from "../data/spam";
 import { newToken, tokenHash, TOKEN_SHAPE } from "../data/token";
-import { DRAFT_FIELD, FORM_KEY, STEP_FIELD, TEXT_CONSENT_FIELD, sitePath, stepsOf, validate, type Answer, type Errors, type Field, type Form, type Input, type Step, type Submission } from "./fields";
+import { BACK_FIELD, DRAFT_FIELD, FORM_KEY, STEP_FIELD, TEXT_CONSENT_FIELD, sitePath, stepsOf, validate, type Answer, type Errors, type Field, type Form, type Input, type Step, type Submission } from "./fields";
 import type { FormSteps, StepContext } from "./steps";
 import { emailLine, leadMoment, sleep, type Moment } from "./destinations";
 import { cameFrom, originFields, readOrigin, REFERRER_FIELD, UTM_FIELD, type Origin } from "./origin";
 import { FormView, StepFrame } from "./render";
 import { priceOf, withLines, type Price } from "./price";
 import { formatMoney } from "../payments/money";
-import { draftByKey, finishDraft, finishStep, insertOnce, keepTextConsent, loadForm, recordNotified, rewindDraft, saveStep, startDraft, submissionById, submitKey, type Draft } from "./store";
+import { draftByKey, finishDraft, finishStep, insertOnce, keepTextConsent, loadForm, recordNotified, rewindDraft, saveStep, stepBack, startDraft, submissionById, submitKey, type Draft } from "./store";
 
 /** Wraps a body in the app's own page and its content width, so a form with errors looks like the rest of the site. */
 export type PageRenderer = (c: Context, title: string, body: Child) => string | Promise<string>;
@@ -324,10 +324,10 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     c.header("Referrer-Policy", "no-referrer"); // the key is in this page's address
     c.header("Cache-Control", "no-store");
     const st = steps[draft.step];
-    const where = { index: draft.step, count: steps.length, label: st.label, key };
+    const where = { index: draft.step, count: steps.length, label: st.label, key, back: canGoBack(steps, draft.step) };
     const notice = shown.notice ? <p role="status" class="rounded-card border border-line-strong bg-panel p-4">{shown.notice}</p> : null;
     if (st.kind === "fields") {
-      const body = <>{notice}<FormView form={form} fields={st.fields} step={where} values={shown.values} errors={shown.errors} prefix={P} textConsent={await consentOf(c, form)} /></>;
+      const body = <>{notice}<FormView form={form} fields={st.fields} step={where} values={shown.values ?? answered(st.fields, draft.data)} errors={shown.errors} prefix={P} textConsent={await consentOf(c, form)} /></>;
       return c.html(await opts.page(c, form.title, body), status as 200);
     }
     const run = opts.steps?.[st.kind];
@@ -386,6 +386,10 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
         return c.redirect(thanksPath(form), 303);
       }
       const st = steps[draft.step];
+      if (one(input[BACK_FIELD]) && canGoBack(steps, draft.step)) {
+        await stepBack(db, draft.id, draft.step);
+        return c.redirect(nextPath(form, key), 303);
+      }
       if (st.kind === "fields") {
         const r = validate(st.fields, input);
         if (!r.ok) return showStep(c, db, form, steps, draft, key, { errors: r.errors, values: r.values }, 422);
@@ -477,11 +481,24 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
   return app;
 }
 
+/** Among the questions, a step can go back to the page before. Once a time or a payment has begun, the form moves forward only. */
+const canGoBack = (steps: Step[], at: number) => at > 0 && steps[at].kind === "fields" && steps[at - 1].kind === "fields";
+
+/** What a step's questions were answered with, to fill its page when they come back to it. */
+function answered(fields: Field[], data: Record<string, unknown>): Input {
+  const out: Input = {};
+  for (const f of fields) {
+    const v = data[f.name];
+    if (typeof v === "string" || (Array.isArray(v) && v.every((x) => typeof x === "string"))) out[f.name] = v as string | string[];
+  }
+  return out;
+}
+
 /** The form for a page, freshly stamped, or null when it does not exist or is switched off. */
-export async function embedForm(c: Context, db: Db, key: string) {
+export async function embedForm(c: Context, db: Db, key: string, o: { textConsent?: string | null } = {}) {
   const form = await loadForm(db, key);
   if (!form || !form.active || !stepsOf(form.fields).length) return null;
-  return firstPage(c, form);
+  return firstPage(c, form, { textConsent: form.follow_up ? o.textConsent : null });
 }
 
 /** A form's first page, freshly stamped, saying where the visitor came from. */

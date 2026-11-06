@@ -82,7 +82,7 @@ else for (const f of JSON.parse(scan.stdout)) findings.push(`${f.file}:${f.line}
 
 // production runs the same app on Cloudflare: Node built-ins only in the
 // files that run in dev alone
-const nodeOnly = new Set(["src/server.ts", "src/db/client.ts", "src/db/setup.ts", "src/pdf.ts", "src/reports/print.ts", "src/data/cli.mjs", "src/invoices/cli.ts", "src/forms/cli.ts", "src/forms/files.ts", "src/crm/xlsx-read.ts", "src/proposals/serving.ts"]);
+const nodeOnly = new Set(["src/server.ts", "src/db/client.ts", "src/db/setup.ts", "src/pdf.ts", "src/reports/print.ts", "src/data/cli.mjs", "src/invoices/cli.ts", "src/forms/cli.ts", "src/reports/cli.ts", "src/forms/files.ts", "src/crm/xlsx-read.ts", "src/proposals/serving.ts"]);
 for (const file of walk("src").filter((f) => /\.tsx?$/.test(f) && !nodeOnly.has(f) && !isTest(f))) {
   // Imports only: a comment that shows a Node import (src/data/migrate.ts) is not one.
   const code = readFileSync(file, "utf8").split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");

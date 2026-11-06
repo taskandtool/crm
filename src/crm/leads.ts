@@ -92,12 +92,6 @@ const leadTexts = (submissions: boolean) =>
   });
 const WITH_SUBMISSIONS = leadTexts(true);
 const WITHOUT_SUBMISSIONS = leadTexts(false);
-/** The lead with this id in another CRM. */
-export async function leadByExternalId(db: Db, externalId: string): Promise<Lead | null> {
-  const [r] = await db.sql<{ id: string }>`select id::text as id from leads where external_id = ${externalId}`;
-  return r ? getLead(db, r.id) : null;
-}
-
 const sqlFor = async (db: Db) => ((await presentTables(db)).submissions ? WITH_SUBMISSIONS : WITHOUT_SUBMISSIONS).sql(db);
 
 /** The first answer worth reading: a message if there is one, else the first text. */

@@ -245,6 +245,12 @@ export async function finishStep(db: Db, draftId: string, submissionId: string, 
 }
 
 /** Back to an earlier step (a held time was released): its charge goes with it, and it is not complete. */
+/** Back a step among the questions, whose answers stay on the draft to fill the page. False when it isn't on that step now. */
+export async function stepBack(db: Db, draftId: string, from: number): Promise<boolean> {
+  const rows = await db.sql`update submission_drafts set step = ${from - 1}, updated_at = now() where id = ${draftId}::bigint and step = ${from} and step > 0 returning id`;
+  return rows.length > 0;
+}
+
 export async function rewindDraft(db: Db, draftId: string, submissionId: string, to: number, step: string): Promise<void> {
   await db.transaction([
     q`update submission_drafts set step = ${to}, updated_at = now() where id = ${draftId}::bigint and step > ${to}`,

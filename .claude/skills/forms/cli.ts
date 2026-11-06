@@ -61,7 +61,7 @@ const HELP = `forms.mjs <command> [...] [--json]      the project's forms and wh
                                        it, each time it is run, and keeps no record
 
 A field is { "name", "label", "type", "required"? }; types: text, email, tel, textarea, select,
-checkbox, radio (with "options"), date, number, consent, photo, items (with "currency" and "items":
+checkbox, radio (with "options"; "cards": true for big answer cards, "option_images": { option: url } for a picture on each; one card question on a step moves on at a click), date, number, consent, photo, items (with "currency" and "items":
 [{ "key", "label", "price_cents", "unit"?, "image"?, "max"? }]), page (starts a new step),
 booking (with "booking_type": a booking type's slug), payment (last; "currency"?, "fees"?: [{ "label",
 "price_cents", "when"?: { "field", "is" } }], "tax_rate_id"?). Name fields name, email and phone
