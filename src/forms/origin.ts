@@ -151,7 +151,7 @@ export function readOrigin(utmField: unknown, refField: unknown, cookieHeader?: 
 export const ORIGIN_SCRIPT = `(function(){try{var q=new URLSearchParams(location.search),o=new URLSearchParams();${JSON.stringify([...UTM_KEYS.map((k) => `utm_${k}`), ...CLICK_KEYS])}.forEach(function(k){var v=q.get(k);if(v)o.set(k,v.slice(0,300))});if(!o.toString())return;o.set("page",location.pathname.slice(0,200));var m=document.cookie.match(/(?:^|; )${TOUCH_COOKIE}=([^;]*)/),c=m?new URLSearchParams(decodeURIComponent(m[1])):null,n=new URLSearchParams();n.set("first",c&&c.get("first")||o.toString());n.set("last",o.toString());document.cookie="${TOUCH_COOKIE}="+encodeURIComponent(n.toString())+"; Path=/; Max-Age=2592000; SameSite=Lax"+(location.protocol==="https:"?"; Secure":"")}catch(e){}})();`;
 
 /** A stored tag as a person reads it: "roof-|-4:5" is "roof | 4:5". */
-export const tagWords = (tag: string) => tag.replace(/-/g, " ");
+export const tagWords = (tag: string) => tag.replace(/[-_]/g, " ");
 
 /** "google (cpc, spring sale)", "news.example", or null: for the team's views and the owner's email. */
 export function cameFrom(data: Record<string, unknown> | null | undefined): string | null {

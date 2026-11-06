@@ -67,7 +67,7 @@ await withDb(async (db) => {
   if (days < 1 || days > 730) misused(`${at}: --days ${days}: 1 to 730`, "node scripts/reports.mjs summary --days 30");
   const today = todayIn(cfg.time_zone);
   const report = await loadLeadReport(db, { period: { from: addDays(today, 1 - days), to: today }, zone: cfg.time_zone, currency: dealsCfg.currency });
-  const line = (name: string, f: Parameters<typeof costPerLead>[0] & { appointments: number; no_shows: number; sold: number }) => {
+  const line = (name: string, f: Parameters<typeof costPerLead>[0] & { leads: number; spend_cents: number; appointments: number; no_shows: number; sold: number }) => {
     const cpl = costPerLead(f);
     return `${name}: ${f.leads} leads, cost ${(f.spend_cents / 100).toFixed(2)}, per lead ${cpl === null ? "n/a" : (cpl / 100).toFixed(2)}, ${f.appointments} appointments, ${f.no_shows} no-shows, ${f.sold} sold`;
   };

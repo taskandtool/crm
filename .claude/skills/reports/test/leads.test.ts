@@ -11,9 +11,9 @@ const read = (f: string) => readFileSync(new URL(`../../${f}`, import.meta.url),
 const html = async (node: unknown) => String(await (node as { toString(): string | Promise<string> }).toString());
 
 test("cost per lead is total over total, and unknown with no cost rather than free", () => {
-  assert.equal(costPerLead({ spend_cents: 1000, leads: 4 }), 250);
-  assert.equal(costPerLead({ spend_cents: 0, leads: 4 }), null);
-  assert.equal(costPerLead({ spend_cents: 1000, leads: 0 }), null);
+  assert.equal(costPerLead({ spend_cents: 1000, ad_leads: 4 }), 250);
+  assert.equal(costPerLead({ spend_cents: 0, ad_leads: 4 }), null);
+  assert.equal(costPerLead({ spend_cents: 1000, ad_leads: 0 }), null);
 });
 
 test("every day, week or month of the period is a bucket, quiet ones too", () => {
@@ -56,7 +56,7 @@ test("the report at the start: all zero, nothing broken", { skip: !process.env.T
     assert.equal(r.total.leads, 0);
     assert.equal(r.total.spend_cents, 0);
     const kpis = await html(LeadKpis({ report: r }));
-    assert.match(kpis, /Cost per lead/);
+    assert.match(kpis, /Cost per ad lead/);
     assert.match(await html(LeadBreakdown({ report: r, by: "source" })), /No leads in this period/);
   }));
 
@@ -80,6 +80,27 @@ test("spend meets the leads its ad brought, by the same tags, and shows even wit
     assert.deepEqual(ads.map((a) => [a.name, a.leads, a.spend_cents]), [["roof-|-4:5", 2, 6000], ["", 1, 0], ["quiet-ad", 0, 700]]);
     assert.equal(costPerLead(ads[0]), 3000);
     assert.match(await html(LeadBreakdown({ report: r, by: "content" })), /Roof \| 4:5/);
+  }));
+
+test("free leads don't make ads look cheap, fb is facebook, and keywords show without cost", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withReport(async (s, load) => {
+    await lead(s, "a@x.example", { source: "fb", term: "roof-repair" });
+    await lead(s, "b@x.example", { source: "facebook" });
+    await lead(s, "c@x.example", { source: "nextdoor.com" });
+    await lead(s, "d@x.example", null);
+    await saveAdSpend(s.db, [{ day: "2026-11-03", source: "facebook", spend_cents: 4000, currency: "usd" }]);
+    const r = await load();
+    assert.equal(r.total.leads, 4);
+    assert.equal(costPerLead(r.total), 2000, "$40 over the two from Facebook, not all four");
+    assert.deepEqual(breakdown(r, "source").map((x) => [x.name, x.leads]), [["facebook", 2], ["direct", 1], ["nextdoor.com", 1]]);
+    const words = await html(LeadBreakdown({ report: r, by: "term" }));
+    assert.match(words, /Roof repair/);
+    assert.doesNotMatch(words, /Ad cost/);
+    // A cost with nothing ads could have brought isn't a cost per lead.
+    await s.db.sql`delete from ad_spend`;
+    await saveAdSpend(s.db, [{ day: "2026-11-03", source: "google", spend_cents: 9000, currency: "usd" }]);
+    await s.db.sql`delete from leads where id in (select l.id from leads l join submissions s on s.id = l.submission_id where s.data->'_utm'->>'source' = 'google')`;
+    assert.equal(costPerLead((await load()).total), null);
   }));
 
 test("how far a lead got counts from its outcome or its booking; spam and other periods do not count", { skip: !process.env.TEST_DATABASE_URL && why }, () =>

@@ -399,7 +399,7 @@ export function leadRollupQuery(p: Period, zone: string, has: { deals: boolean; 
   const value = has.deals ? "(select d.value_cents from deals d where d.id = l.deal_id)" : "null::bigint";
   return {
     text: `with l as (
-  select l.*, ${utm("source")} as utm_source, ${utm("campaign")} as utm_campaign, ${utm("content")} as utm_content,
+  select l.*, ${utm("source")} as utm_source, ${utm("campaign")} as utm_campaign, ${utm("content")} as utm_content, ${utm("term")} as utm_term,
          ${has.submissions ? "nullif(s.data->>'_referrer', '')" : "null::text"} as referrer,
          (l.outcome = 'sold' or ${won}) as is_sold,
          (l.outcome = 'no_show' or ${booked("b.status = 'no_show'")}) as is_no_show
@@ -409,13 +409,13 @@ export function leadRollupQuery(p: Period, zone: string, has: { deals: boolean; 
 )
 select to_char(l.created_at at time zone $3, 'YYYY-MM-DD') as day,
        coalesce(l.utm_source, l.referrer, case when l.source in ('form', 'booking') then 'direct' else l.source end) as source,
-       coalesce(l.utm_campaign, '') as campaign, coalesce(l.utm_content, '') as content,
+       coalesce(l.utm_campaign, '') as campaign, coalesce(l.utm_content, '') as content, coalesce(l.utm_term, '') as term,
        count(*)::float8 as leads,
        count(*) filter (where l.is_sold or l.is_no_show or l.outcome in ('appointment_set', 'showed') or ${booked("b.status <> 'cancelled' and b.hold_until is null")})::float8 as appointments,
        count(*) filter (where l.is_no_show)::float8 as no_shows,
        count(*) filter (where l.is_sold)::float8 as sold,
        coalesce(sum(case when l.is_sold then coalesce(l.sold_cents, ${value}, 0) end), 0)::float8 as sold_cents
-from l group by 1, 2, 3, 4`,
+from l group by 1, 2, 3, 4, 5`,
     values: [p.from, p.to, zone],
   };
 }
