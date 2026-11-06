@@ -89,7 +89,8 @@ on no team list (the Schedule, an app's events) except its submission.
 held booking only when the form is not complete and either no payment was
 started or its checkout expired; the form then sends the person back to
 pick a time again (`stillValid`). How the three link: the payments skill's "Submissions,
-bookings and payments".
+bookings and payments". The thanks page says the time (`thanks`), through the draft's key in its
+address; the manage page changes nothing on one tap: a booker asks to move or cancel, then confirms.
 
 ## Files
 
