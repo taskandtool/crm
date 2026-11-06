@@ -168,9 +168,9 @@ function ForWhom({ p }: { p: TaskItemProps }) {
   const deal = task.deal_title && task.deal_id && task.deal_id !== p.onDeal;
   if (!p.showCustomer && !deal) return null;
   return (
-    <p class="mt-0.5 text-label leading-7 text-ink-2 sm:leading-normal">
-      {p.showCustomer ? <a href={`/customers/${task.customer_id}`}>{task.customer_name}</a> : null}
-      {p.showCustomer && task.kind === "call" && task.customer_phone ? <> · <a href={telHref(task.customer_phone)}>{shownPhone(task.customer_phone)}</a></> : null}
+    <p class="mt-0.5 text-label text-ink-2">
+      {p.showCustomer ? <a href={`/customers/${task.customer_id}`} class="inline-block py-1.5 sm:py-0">{task.customer_name}</a> : null}
+      {p.showCustomer && task.kind === "call" && task.customer_phone ? <> · <a href={telHref(task.customer_phone)} class="inline-block py-1.5 sm:py-0">{shownPhone(task.customer_phone)}</a></> : null}
       {deal ? <>{p.showCustomer ? " · " : ""}<a href={`/deals/${task.deal_id}`}>{task.deal_title}</a></> : null}
     </p>
   );
