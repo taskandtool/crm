@@ -231,11 +231,11 @@ export async function moveTask(db: Db, id: string, dueOn: string, dueTime: strin
  * those due on or before a day (the command's "what is due": today and
  * overdue); `limit` and one more.
  */
-export async function listTasks(db: Db, owner: string | null, limit = 100, dueBy: string | null = null): Promise<Task[]> {
+export async function listTasks(db: Db, owner: string | null, limit = 100, dueBy: string | null = null, orUnowned = false): Promise<Task[]> {
   return sql(db)<Task>`
     select {select} {from}
     where t.done_at is null and c.archived_at is null
-      and (${owner}::text is null or t.owner = any(${owner ? sameAs(owner) : null}::citext[]))
+      and (${owner}::text is null or t.owner = any(${owner ? sameAs(owner) : null}::citext[]) or (${orUnowned}::boolean and t.owner is null))
       and (${dueBy}::date is null or t.due_on <= ${dueBy}::date)
     order by t.due_on, t.due_time nulls last, t.id
     limit ${limit + 1}`;
@@ -251,13 +251,13 @@ export async function doneTasks(db: Db, limit = 100): Promise<Task[]> {
 }
 
 /** How many are overdue and due today: everyone's, or one person's. */
-export async function taskCounts(db: Db, today: string, owner: string | null): Promise<{ overdue: number; today: number }> {
+export async function taskCounts(db: Db, today: string, owner: string | null, orUnowned = false): Promise<{ overdue: number; today: number }> {
   const [r] = await db.sql<{ overdue: number; today: number }>`
     select count(*) filter (where t.due_on < ${today}::date)::int as overdue,
            count(*) filter (where t.due_on = ${today}::date)::int as today
     from follow_ups t join customers c on c.id = t.customer_id
     where t.done_at is null and c.archived_at is null and t.due_on <= ${today}::date
-      and (${owner}::text is null or t.owner = any(${owner ? sameAs(owner) : null}::citext[]))`;
+      and (${owner}::text is null or t.owner = any(${owner ? sameAs(owner) : null}::citext[]) or (${orUnowned}::boolean and t.owner is null))`;
   return r;
 }
 

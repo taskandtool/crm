@@ -152,6 +152,10 @@ test("tasks: due and upcoming, mine and everyone's, done once (even twice at onc
   assert.deepEqual(await theirs(null), ["Call", "Email", "Meet", "Far off"], "every open one, overdue first, however far off");
   assert.deepEqual(await theirs(ME, today), ["Call"], "due by today, mine only");
   assert.deepEqual(await theirs(null, today), ["Call", "Email"], "due by today, everyone's");
+  await addTask(db, customer.id, { kind: "call", title: "From a form", due_on: today, due_time: null, owner: null, deal_id: null }, ME);
+  assert.deepEqual((await listTasks(db, ME, 100, today, true)).filter((f) => f.customer_id === customer.id).map((f) => f.title), ["Call", "From a form"], "mine, and those nobody owns");
+  assert.deepEqual(await theirs(ME, today), ["Call"], "not with mine unless asked");
+  assert.equal((await taskCounts(db, today, ME, true)).today, (await taskCounts(db, today, ME)).today + 1);
   const counts = await taskCounts(db, today, ME);
   assert.ok(counts.overdue >= 1);
   assert.equal((await nextTasks(db, [customer.id])).get(customer.id)?.due_on, "2026-10-01");

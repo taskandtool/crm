@@ -1097,11 +1097,11 @@ app.post("/deals/:id/notes", async (c) => {
 
 // ---- tasks -----------------------------------------------------------
 
-// The viewer's open tasks, as HubSpot's task views are (Assignee: me) and as the sidebar counts them;
+// The viewer's open tasks and those nobody owns yet (a form's call back, so it is never out of sight), as the sidebar counts them;
 // Everyone's on its own view, and Done (HubSpot's Completed) newest first.
 app.get("/tasks", async (c) => {
   const view = c.req.query("show") === "done" ? "done" : c.req.query("who") === "everyone" ? "everyone" : "mine";
-  const rows = view === "done" ? await doneTasks(c.var.db, PAGE) : await listTasks(c.var.db, view === "mine" ? c.var.user : null, PAGE);
+  const rows = view === "done" ? await doneTasks(c.var.db, PAGE) : await listTasks(c.var.db, view === "mine" ? c.var.user : null, PAGE, null, true);
   return c.html(<TasksPage user={c.var.user} view={view} today={today()} rows={rows.slice(0, PAGE)} more={rows.length > PAGE} flash={flashOf(c)} />);
 });
 
@@ -1128,7 +1128,7 @@ app.post("/tasks", async (c) => {
 
 // The nav's count: the viewer's tasks due today and overdue (htmx, after the page loads).
 app.get("/tasks/count", async (c) => {
-  const n = await taskCounts(c.var.db, today(), c.var.user);
+  const n = await taskCounts(c.var.db, today(), c.var.user, true);
   const due = n.overdue + n.today;
   if (!due) return c.html(<span hidden></span>);
   return c.html(

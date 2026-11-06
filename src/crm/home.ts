@@ -48,13 +48,13 @@ export async function home(db: Db, opts: { timeZone: string; currency: string; i
       from leads where created_at >= ${day(addDays(today, -13)).start}
         -- One archived as spam or a duplicate was never a new enquiry.
         and not (status = 'archived' and archived_reason in ('Spam', 'Duplicate'))`,
-    taskCounts(db, today, opts.user),
+    taskCounts(db, today, opts.user, true),
     dealTotals(db, opts.currency, day(monthStart).start),
     p.invoices && opts.invoiceCurrency ? invoiceTotals(db, { today, timeZone: opts.timeZone, currency: opts.invoiceCurrency }) : null,
     listLeads(db, { status: "open" }, HOME_LIST),
     openLeadCount(db),
     eventsBetween(db, day(today).start, day(today).end),
-    listTasks(db, opts.user, HOME_LIST, today),
+    listTasks(db, opts.user, HOME_LIST, today, true),
     closingBy(db, monthEnd, HOME_LIST),
   ]);
   const number = p.communications ? await mainNumber(db) : null;
