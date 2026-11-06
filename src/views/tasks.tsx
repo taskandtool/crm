@@ -168,7 +168,7 @@ function ForWhom({ p }: { p: TaskItemProps }) {
   const deal = task.deal_title && task.deal_id && task.deal_id !== p.onDeal;
   if (!p.showCustomer && !deal) return null;
   return (
-    <p class="mt-0.5 text-label text-ink-2">
+    <p class="mt-0.5 text-label leading-7 text-ink-2 sm:leading-normal">
       {p.showCustomer ? <a href={`/customers/${task.customer_id}`}>{task.customer_name}</a> : null}
       {p.showCustomer && task.kind === "call" && task.customer_phone ? <> · <a href={telHref(task.customer_phone)}>{shownPhone(task.customer_phone)}</a></> : null}
       {deal ? <>{p.showCustomer ? " · " : ""}<a href={`/deals/${task.deal_id}`}>{task.deal_title}</a></> : null}
@@ -196,7 +196,7 @@ export function TaskItem(p: TaskItemProps) {
       <form method="post" action={`/tasks/${task.id}/done`} {...swap} class="pt-0.5">
         <Shown p={p} />
         <button aria-label={`Mark done: ${label}`} title="Mark done" autofocus={p.focus}
-          class="flex size-5 items-center justify-center rounded-full border-2 border-line-strong text-transparent hover:border-accent hover:bg-accent/10 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+          class="tap flex size-5 items-center justify-center rounded-full border-2 border-line-strong text-transparent hover:border-accent hover:bg-accent/10 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
           {check}
         </button>
       </form>
@@ -207,7 +207,7 @@ export function TaskItem(p: TaskItemProps) {
           {!p.grouped ? <DueMark next={task} today={today} /> : overdue ? <span class="font-semibold text-late">{dueDayText(task.due_on, today)}</span> : task.due_time ? <span>{timeText(task.due_time)}</span> : null}
           {overdue && task.due_time ? <span>{timeText(task.due_time)}</span> : null}
           <span>{TASK_LABELS[task.kind]}</span>
-          {p.showOwner && task.owner ? <span>{personName(task.owner)}</span> : null}
+          {!task.owner ? <span>Unassigned</span> : p.showOwner ? <span>{personName(task.owner)}</span> : null}
         </p>
         <ForWhom p={p} />
       </div>
@@ -223,12 +223,12 @@ export function TaskItem(p: TaskItemProps) {
               </form>
             ))}
           </div>
-          {/* A day and a time side by side, then the button: they fit the menu's width. */}
-          <form method="post" action={`/tasks/${task.id}/move`} class="grid grid-cols-2 gap-2">
+          {/* A day and a time side by side where they fit, then the button. */}
+          <form method="post" action={`/tasks/${task.id}/move`} class="grid gap-2 sm:grid-cols-2">
             <input type="hidden" name="return" value={p.returnTo} />
             <input name="on" type="date" required value={task.due_on} aria-label="Day" class={controlClass + " min-w-0"} />
             <input name="at" type="time" value={task.due_time ?? ""} aria-label="Time, or blank for any time" class={controlClass + " min-w-0"} />
-            <button class={buttonClass + " col-span-2"}>Reschedule</button>
+            <button class={buttonClass + " sm:col-span-2"}>Reschedule</button>
           </form>
           <form method="post" action={`/tasks/${task.id}/done`} {...swap} class="flex flex-col gap-2 border-t border-line pt-3">
             <Shown p={p} />

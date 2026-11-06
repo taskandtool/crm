@@ -132,7 +132,7 @@ export const viewsClass = "inline-flex flex-wrap gap-0.5 rounded-control bg-pane
 export function ViewLink({ href, on, children }: { href: string; on: boolean; children: Child }) {
   return (
     <a href={href} aria-current={on ? "page" : undefined}
-      class={"rounded-control px-3 py-1 font-medium no-underline " + (on ? "bg-surface text-ink shadow-card ring-1 ring-line" : "text-ink-2 hover:text-ink")}>
+      class={"rounded-control px-3 py-2.5 font-medium no-underline sm:py-1 " + (on ? "bg-surface text-ink shadow-card ring-1 ring-line" : "text-ink-2 hover:text-ink")}>
       {children}
     </a>
   );

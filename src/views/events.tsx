@@ -253,7 +253,7 @@ export function EventResults(p: { filter: EventFilter; rows: Event[]; next: stri
         }
       />
       <p class="mt-3 text-label">
-        <a href={listUrl("/events/export.csv", params)}>Export CSV</a>
+        <a href={listUrl("/events/export.csv", params)} class="tap">Export CSV</a>
       </p>
     </div>
   );

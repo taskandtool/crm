@@ -52,6 +52,14 @@
   }
 }
 
+/* A small control's tap area on a touch screen, without moving its neighbours. */
+@utility tap {
+  position: relative;
+  @media (pointer: coarse) {
+    &::after { content: ""; position: absolute; inset: -0.75rem; }
+  }
+}
+
 /* Outside the layers, so it outranks the padding utilities on a control:
    room for the chevron. */
 select { padding-right: 1.75rem; }

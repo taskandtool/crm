@@ -196,7 +196,7 @@ export function Layout(props: {
             <div class={"mx-auto px-4 py-6 sm:px-6 lg:px-10 lg:py-10 " + (wide ? "" : "max-w-6xl")}>
               {back ? (
                 <p class="mb-2 text-label">
-                  <a href={back.href} class="text-ink-3 no-underline hover:text-ink">← {back.label}</a>
+                  <a href={back.href} class="tap text-ink-3 no-underline hover:text-ink">← {back.label}</a>
                 </p>
               ) : null}
               <div class="mb-8 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">

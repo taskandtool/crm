@@ -81,7 +81,7 @@ export function Results(p: { stages: Stage[]; filter: ListFilter; rows: Customer
         }
       />
       <p class="mt-3 text-label">
-        <a href={listUrl("/customers/export.csv", params)}>Export CSV</a>
+        <a href={listUrl("/customers/export.csv", params)} class="tap">Export CSV</a>
       </p>
     </div>
   );
