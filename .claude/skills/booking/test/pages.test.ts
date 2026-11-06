@@ -123,6 +123,11 @@ test("a visitor books, sees the time in their zone, downloads the invite, and ca
     zoned.route("/admin/schedule", bookingAdmin(() => s.db, { base: "/admin/schedule", css: "/site.css", source: "website", timeZone: "Asia/Tokyo", sections }));
     assert.match(await (await zoned.request(week, { headers: team })).text(), /Times are in Tokyo/);
 
+    // Nothing changes on one tap: the page has no form until they ask, and then asks again.
+    const calm = await (await app.request(`/book/manage/${token}`)).text();
+    assert.doesNotMatch(calm, /method="post"/);
+    assert.match(await (await app.request(`/book/manage/${token}?cancel=1`)).text(), /Cancel this booking\?[\s\S]*Yes, cancel it/);
+    assert.doesNotMatch(await (await app.request(`/book/manage/${token}?change=1`)).text(), /method="post"/);
     res = await app.request(`/book/manage/${token}/cancel`, form({ tz: "Asia/Kolkata" }));
     assert.equal(res.status, 303);
     assert.match(await (await app.request(`/book/manage/${token}`)).text(), /This booking is cancelled/);

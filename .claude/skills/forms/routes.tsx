@@ -251,7 +251,9 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
 
   // ---- forms with steps ------------------------------------------------------
 
-  const thanksPath = (form: Form) => form.redirect_to ?? `${P}/forms/${form.key}/thanks`;
+  /** With a booking step the thanks page says the time, so it needs to know whose: the draft's key, as the steps carry it. */
+  const thanksPath = (form: Form, key?: string) =>
+    form.redirect_to ?? `${P}/forms/${form.key}/thanks${key && form.fields.some((f) => f.type === "booking") ? `?k=${encodeURIComponent(key)}` : ""}`;
   const nextPath = (form: Form, key: string) => `${P}/forms/${form.key}/next?k=${encodeURIComponent(key)}`;
   /** The questions are all answered once the draft is past the last page of them. */
   const questionsDone = (steps: Step[], step: number) => steps.slice(step).every((st) => st.kind !== "fields");
@@ -293,7 +295,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     return {
       form, field: st.field, submission, action: `${P}/forms/${form.key}`, price,
       hidden: <><input type="hidden" name={DRAFT_FIELD} value={key} /><input type="hidden" name={STEP_FIELD} value={String(at)} /></>,
-      next: origin + (at + 1 < steps.length ? nextPath(form, key) : thanksPath(form)),
+      next: origin + (at + 1 < steps.length ? nextPath(form, key) : thanksPath(form, key)),
       self: origin + nextPath(form, key),
     };
   }
@@ -413,7 +415,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
       }
     }
     if (questionsDone(steps, draft.step)) await submissionOf(c, db, form, steps, draft);
-    return c.redirect(draft.step < steps.length ? nextPath(form, key) : thanksPath(form), 303);
+    return c.redirect(draft.step < steps.length ? nextPath(form, key) : thanksPath(form, key), 303);
   }
 
   app.get("/forms/:key/next", async (c) => {
@@ -429,7 +431,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     if (!steps.length) return c.notFound();
     if (draft.step >= steps.length) {
       await submissionOf(c, db, form, steps, draft);
-      return c.redirect(thanksPath(form), 303);
+      return c.redirect(thanksPath(form, key), 303);
     }
     if (steps[draft.step].kind !== "fields") {
       if (draft.spam) return c.redirect(thanksPath(form), 303);
@@ -445,18 +447,26 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     if (!FORM_KEY.test(formKey)) return c.notFound();
     const form = await loadForm(getDb(c), formKey);
     if (!form || !form.active || !stepsOf(form.fields).length) return c.notFound();
-    return c.html(await opts.page(c, form.title, await firstPage(c, form, { prefix: P, textConsent: await consentOf(c, form) })));
+    return c.html(await opts.page(c, form.title, <><h1 class="mb-6 text-title font-semibold">{form.title}</h1>{await firstPage(c, form, { prefix: P, textConsent: await consentOf(c, form) })}</>));
   });
 
   app.get("/forms/:key/thanks", async (c) => {
     const key = c.req.param("key");
     if (!FORM_KEY.test(key)) return c.notFound();
-    const form = await loadForm(getDb(c), key);
+    const db = getDb(c);
+    const form = await loadForm(db, key);
     if (!form) return c.notFound();
+    const k = c.req.query("k") ?? "";
+    const draft = k && TOKEN_SHAPE.test(k) ? await draftByKey(db, form.key, await tokenHash(k)) : null;
+    const booked = draft?.submission_id ? await opts.steps?.booking?.thanks?.(c, draft.submission_id) : null;
+    if (k) {
+      c.header("Referrer-Policy", "no-referrer");
+      c.header("Cache-Control", "no-store");
+    }
     const body = (
       <div>
-        <h1 class="text-title font-semibold">Thank you</h1>
-        <p class="mt-4">{form.success_message || "Your message has arrived. We will be in touch soon."}</p>
+        {booked ?? <h1 class="text-title font-semibold">Thank you</h1>}
+        {form.success_message || !booked ? <p class="mt-4">{form.success_message || "Your message has arrived. We will be in touch soon."}</p> : null}
         {c.req.query("paid") ? <p class="mt-4">Your payment is being confirmed. You will get a receipt by email.</p> : null}
         <div data-cart-clear={form.key} hidden></div>
       </div>

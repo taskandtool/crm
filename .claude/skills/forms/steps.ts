@@ -48,6 +48,8 @@ export type FormStep = {
    * this step, its charge removed.
    */
   stillValid?(c: Context, ctx: StepContext): Promise<boolean>;
+  /** What the thanks page says about what this step did: a booking's time. Null says nothing. */
+  thanks?(c: Context, submissionId: string): Promise<Child | null>;
 };
 
 export type FormSteps = Partial<Record<"booking" | "payment", FormStep>>;

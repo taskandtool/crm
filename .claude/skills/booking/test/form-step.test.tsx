@@ -92,6 +92,8 @@ test("a paid intake: questions, a time held inside the form, the price charged, 
     const html = await (await app.request(HOST + step)).text();
     assert.match(html, /Step 2 of 3/);
     assert.match(html, /Intake session, 50 minutes, \$120\.00/);
+    // In the booker's own zone, as /book does.
+    assert.match(await (await app.request(HOST + step + "&tz=Asia/Kolkata")).text(), /Times are in Kolkata/);
     const start = /name="start" value="([^"]+)"/.exec(html)![1];
 
     res = await send({ _draft: key });
@@ -108,6 +110,10 @@ test("a paid intake: questions, a time held inside the form, the price charged, 
     assert.equal(b.email, "ann@example.com");
     assert.equal(b.status, "confirmed");
     assert.ok(b.hold_until && new Date(b.hold_until) > new Date(), "held while the payment follows");
+    const thanks = await (await app.request(HOST + `/forms/intake/thanks?k=${key}`)).text();
+    assert.match(thanks, /Your time is held/);
+    assert.match(thanks, /data:text\/calendar/);
+    assert.match(await (await app.request(HOST + "/forms/intake/thanks")).text(), /Thank you/, "no key, nothing about anyone's booking");
     // Held, it is the visitor's until paid: not on the Schedule, and its submission shows it held with nothing to move or cancel.
     const team = new Hono();
     const sections = { schedule: "/admin/schedule", services: "/admin/services", team: "/admin/team" };

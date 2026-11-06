@@ -21,7 +21,7 @@ export function LinkedText({ text }: { text: string }) {
 }
 
 const control =
-  "w-full rounded-control border border-line-strong bg-canvas px-3 py-2 text-copy text-ink aria-[invalid=true]:border-ink aria-[invalid=true]:border-2";
+  "w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-copy text-ink aria-[invalid=true]:border-ink aria-[invalid=true]:border-2";
 const labelCls = "text-label font-semibold text-ink";
 const helpCls = "text-label text-ink-2";
 const errorCls = "text-label font-semibold text-ink";

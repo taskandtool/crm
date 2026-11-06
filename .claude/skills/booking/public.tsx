@@ -98,7 +98,7 @@ export function PlainPage({ title, css, children }: { title: string; css: string
 }
 
 /** Adds ?tz=<browser zone> once, when the page has none and the browser's differs. */
-function ZoneScript({ business }: { business: string }) {
+export function ZoneScript({ business }: { business: string }) {
   const js = `(function(){try{var z=Intl.DateTimeFormat().resolvedOptions().timeZone,u=new URL(location.href);if(z&&z!==${JSON.stringify(business).replace(/</g, "\\u003c")}&&!u.searchParams.has("tz")){u.searchParams.set("tz",z);location.replace(u.href)}}catch(e){}})()`;
   return <script dangerouslySetInnerHTML={{ __html: js }} />;
 }
@@ -176,7 +176,7 @@ export function DayAndTimes({ days, chosen, href, children }: { days: string[]; 
   );
 }
 
-function ZoneNote({ zone, business, switchHref }: { zone: string; business: string; switchHref: string | null }) {
+export function ZoneNote({ zone, business, switchHref }: { zone: string; business: string; switchHref: string | null }) {
   return (
     <p class="mb-4 text-label text-ink-2">
       Times are in {zoneName(zone)}.{" "}
@@ -244,56 +244,93 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     const zone = viewerZone(c, b.booker_time_zone && isValidZone(b.booker_time_zone) ? b.booker_time_zone : host.time_zone);
     const self = `${base}/manage/${token}`;
     const open = b.status === "confirmed" && b.starts_at > new Date();
-    const days = open ? await upcoming(getDb(c), type, zone, maxDays, { hosts: [host.id], exceptBooking: b.id }) : new Map<string, OpenSlot[]>();
+    const tzQuery = c.req.query("tz");
+    const here = (extra: Record<string, string | null | undefined> = {}) => listUrl(self, { tz: tzQuery, ...extra });
+    // One thing at a time: the booking, then choosing a time, then saying yes to it. Nothing changes on a single tap.
+    const step = !open ? null : c.req.query("cancel") === "1" ? "cancel" : c.req.query("change") === "1" ? "change" : null;
+    const picked = step === "change" ? c.req.query("start") ?? null : null;
+    const pickedAt = picked && !Number.isNaN(new Date(picked).getTime()) ? new Date(picked) : null;
+    const days = step === "change" && !pickedAt ? await upcoming(getDb(c), type, zone, maxDays, { hosts: [host.id], exceptBooking: b.id }) : new Map<string, OpenSlot[]>();
+    const current = b.starts_at.getTime();
+    // The time they already have is not a choice.
+    for (const [day, slots] of days) {
+      const others = slots.filter((s) => s.start.getTime() !== current);
+      if (others.length) days.set(day, others);
+      else days.delete(day);
+    }
     const keys = [...days.keys()];
-    const chosen = keys.includes(c.req.query("date") ?? "") ? c.req.query("date")! : keys[0];
-    const heading = c.req.query("new") === "1" ? "You are booked" : b.status === "cancelled" ? "This booking is cancelled" : `${type.name} with ${host.name}`;
+    const bookedDay = localDate(b.starts_at, zone);
+    const asked = c.req.query("date") ?? "";
+    // It opens on the day they are booked for, where they are most likely to want a nearby time.
+    const chosen = keys.includes(asked) ? asked : keys.includes(bookedDay) ? bookedDay : keys.find((k) => k > bookedDay) ?? keys[0];
+    const cancelled = b.status === "cancelled";
+    const heading = c.req.query("new") === "1" ? "You are booked" : cancelled ? "This booking is cancelled" : `${type.name} with ${host.name}`;
     const deposit = await depositStatus(getDb(c), b.id);
+    const moved = c.req.query("moved") === "1" && !notice ? "Your booking has moved. The time below is the new one." : null;
+    const secondary = "font-semibold text-accent underline";
     return page(c, heading, (
       <>
         <h1 class="mb-2 text-title font-semibold">{heading}</h1>
-        {notice ? <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">{notice}</p> : null}
-        <p class="mb-1">{formatSlot({ start: b.starts_at, end: b.ends_at }, zone)}</p>
-        <p class="mb-1">{type.name}, with {host.name}.</p>
-        <p class="mb-4 break-words">{whereText(b, { link: b.status === "confirmed" })}</p>
-        <p class="mb-4 text-label text-ink-2">Booked for {b.name} ({b.email}).</p>
+        {notice || moved ? <p role="status" class="mb-4 rounded-card border border-line-strong bg-panel px-4 py-2">{notice ?? moved}</p> : null}
+        <p class={"mb-1" + (cancelled ? " text-ink-2 line-through" : " font-semibold")}>{formatSlot({ start: b.starts_at, end: b.ends_at }, zone)}</p>
+        {c.req.query("new") === "1" || cancelled ? <p class="mb-1">{type.name}, with {host.name}.</p> : null}
+        {cancelled ? null : <p class="mb-4 break-words">{whereText(b, { link: b.status === "confirmed" })}</p>}
+        {cancelled ? null : <p class="mb-4 text-label text-ink-2">Booked for {b.name} ({b.email}).</p>}
         {deposit ? <p class="mb-4">{DEPOSIT[deposit] ?? `Deposit: ${deposit}.`}</p> : null}
-        {b.status !== "cancelled" ? (
-          <p class="mb-4"><a href={`${self}/invite.ics`}>Add it to your calendar (.ics)</a></p>
+        {!cancelled && !step ? <p class="mb-4"><a href={`${self}/invite.ics`} class={secondary}>Add it to your calendar</a></p> : null}
+        {cancelled ? <p class="mt-4"><a href={listUrl(`${base}/${type.slug}`, { tz: tzQuery })} class={secondary}>Book again</a></p> : null}
+        {c.req.query("new") === "1" && !step ? (
+          <p class="mb-6 text-label text-ink-2">Keep this page's address to change or cancel later. Anyone who has it can do the same.</p>
         ) : null}
-        {c.req.query("new") === "1" ? (
-          <p class="mb-6 text-label text-ink-2">Keep this page's address: it is how you change or cancel this booking. Anyone with it can.</p>
+        {open && !step ? (
+          <div class="mt-6 flex flex-wrap gap-2 border-t border-line pt-4">
+            <a href={here({ change: "1" })} class={chip}>Reschedule</a>
+            <a href={here({ cancel: "1" })} class={chip}>Cancel booking</a>
+          </div>
         ) : null}
-        {open ? (
-          <>
-            <h2 class="mb-2 mt-6 text-label font-semibold">Move to another time</h2>
-            <ZoneNote zone={zone} business={host.time_zone} switchHref={zone !== host.time_zone ? listUrl(self, { tz: host.time_zone }) : null} />
+        {step === "cancel" ? (
+          <form method="post" action={`${self}/cancel`} class="mt-6 border-t border-line pt-4">
+            <h2 class="mb-3 font-semibold">Cancel this booking?</h2>
+            <input type="hidden" name="tz" value={zone} />
+            <div class="flex flex-wrap items-center gap-3">
+              <button class={button}>Yes, cancel it</button>
+              <a href={here()} class={chip}>Keep my booking</a>
+            </div>
+          </form>
+        ) : null}
+        {step === "change" && pickedAt ? (
+          <form method="post" action={`${self}/reschedule`} class="mt-6 border-t border-line pt-4">
+            <h2 class="mb-1 font-semibold">Move to this time?</h2>
+            <p class="mb-3">{formatSlot({ start: pickedAt, end: new Date(pickedAt.getTime() + (b.ends_at.getTime() - current)) }, zone)}</p>
+            <input type="hidden" name="start" value={pickedAt.toISOString()} />
+            <input type="hidden" name="tz" value={zone} />
+            <div class="flex flex-wrap items-center gap-3">
+              <button class={button}>Yes, move it</button>
+              <a href={here({ change: "1" })} class={chip}>Pick another time</a>
+            </div>
+          </form>
+        ) : null}
+        {step === "change" && !pickedAt ? (
+          <div class="mt-6 border-t border-line pt-4">
+            <div class="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 class="font-semibold">Pick a new time</h2>
+              <a href={here()} class={secondary}>Keep this time</a>
+            </div>
+            <ZoneNote zone={zone} business={host.time_zone} switchHref={zone !== host.time_zone ? listUrl(self, { tz: host.time_zone, change: "1" }) : null} />
             {keys.length ? (
-              <>
-                <div class="mb-6">
-                  <DayAndTimes days={keys} chosen={chosen} href={(d) => listUrl(self, { date: d, tz: c.req.query("tz") })}>
-                    <ul class="grid grid-cols-2 gap-2">
-                      {(days.get(chosen) ?? []).map((s) => (
-                        <li>
-                          <form method="post" action={`${self}/reschedule`}>
-                            <input type="hidden" name="start" value={s.start.toISOString()} />
-                            <input type="hidden" name="tz" value={zone} />
-                            <button class={chip + " w-full"}>{formatTime(s.start, zone)}</button>
-                          </form>
-                        </li>
-                      ))}
-                    </ul>
-                  </DayAndTimes>
-                </div>
-              </>
+              <div class="mb-6">
+                <DayAndTimes days={keys} chosen={chosen} href={(d) => here({ change: "1", date: d })}>
+                  <ul class="grid grid-cols-2 gap-2">
+                    {(days.get(chosen) ?? []).map((s) => (
+                      <li><a href={here({ change: "1", start: s.start.toISOString() })} class={chip + " w-full"}>{formatTime(s.start, zone)}</a></li>
+                    ))}
+                  </ul>
+                </DayAndTimes>
+              </div>
             ) : (
               <p class="mb-6 text-ink-2">There are no other open times right now.</p>
             )}
-            <form method="post" action={`${self}/cancel`} class="mt-6 border-t border-line pt-4">
-              <input type="hidden" name="tz" value={zone} />
-              <button class={chip}>Cancel this booking</button>
-            </form>
-          </>
+          </div>
         ) : null}
         {c.req.query("tz") ? null : <ZoneScript business={host.time_zone} />}
       </>
@@ -343,7 +380,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     if (!r.ok) return managePage(c, token, r.reason === "taken" ? "That time was just taken. Pick another." : "This booking can no longer be changed.", 409);
     const type = await typeById(getDb(c), r.booking.type_id);
     if (type) await after(c, token, r.booking, "rescheduled", type);
-    return c.redirect(listUrl(`${base}/manage/${token}`, { tz }), 303);
+    return c.redirect(listUrl(`${base}/manage/${token}`, { tz, moved: "1" }), 303);
   });
 
   // ---- booking ----------------------------------------------------------------------

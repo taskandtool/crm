@@ -237,7 +237,7 @@ if (!cfg.booking_page && invoicesCfg) {
     background: ownDb,
     page: (_c, title, body) => <PlainPage title={title} css="/q/crm.css">{body}</PlainPage>,
     steps: {
-      ...(eventsCfg ? { booking: bookingStep(db, { source: "crm" }) } : {}),
+      ...(eventsCfg ? { booking: bookingStep(db, { source: "crm", domain: inviteDomain }) } : {}),
       payment: paymentStep(db, (c) => stripeFrom(envOf(c)), { source: "crm", connected: (c) => stripeConnected(envOf(c)) }),
     },
     textConsent: consentHere("request"),

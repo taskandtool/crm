@@ -145,7 +145,7 @@ test("a form with steps: a draft between pages, a submission once the questions 
     res = await send(app, "/forms/intake", { _draft: key });
     assert.equal(res.headers.get("location"), "https://checkout.stripe.example/s/1");
     assert.equal(seen.at(-1)!.kind, "payment");
-    assert.equal(seen.at(-1)!.ctx.next, `${HOST}/forms/intake/thanks`);
+    assert.match(seen.at(-1)!.ctx.next, new RegExp(`^${HOST}/forms/intake/thanks\\?k=`), "the thanks page can say the time");
     // Sent to pay, the payment stays their step: a cancelled checkout comes back to it.
     res = await app.request(HOST + `/forms/intake/next?k=${encodeURIComponent(key)}`);
     assert.equal(res.status, 200);

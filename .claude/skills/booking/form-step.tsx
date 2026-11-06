@@ -16,9 +16,10 @@ import type { Context } from "hono";
 import type { GetDb } from "../data/db";
 import type { FormStep } from "../forms/steps";
 import { formatMoney } from "../payments/money";
-import { book, bookingForSubmission, hostsOf, typeBySlug, type Booking, type BookingType } from "./book";
-import { chip, MonthPicker, upcoming } from "./public";
-import { formatDate, formatTime, localDate, zoneName } from "./slots";
+import { book, bookingForSubmission, hostsOf, resourceById, typeById, typeBySlug, whereText, type Booking, type BookingType } from "./book";
+import { invite } from "./ics";
+import { chip, inviteSummary, MonthPicker, upcoming, ZoneNote, ZoneScript } from "./public";
+import { formatDate, formatSlot, formatTime, isValidZone, localDate } from "./slots";
 
 export type BookingStepOptions = {
   /** This app's slug, stored on the booking. */
@@ -27,10 +28,12 @@ export type BookingStepOptions = {
   days?: number;
   /** How long a time is held for the rest of the form and any payment; default 45 minutes (a checkout lasts 31). */
   holdMinutes?: number;
+  /** The site's domain, for the calendar file's id: the same id as the emailed invite, so adding both makes one event. */
+  domain?: string;
 };
 
 const field = "flex flex-col gap-1 text-label font-semibold text-ink";
-const control = "w-full rounded-control border border-line-strong bg-canvas px-3 py-2 text-copy text-ink";
+const control = "w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-copy text-ink";
 const button = "inline-flex min-h-11 items-center justify-center rounded-control bg-accent px-5 font-semibold text-accent-ink";
 
 export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
@@ -46,7 +49,10 @@ export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
       const t = await typeOf(c, ctx.field.booking_type);
       if (!t) return <p>This can no longer be booked here. Please get in touch instead.</p>;
       const hosts = await hostsOf(getDb(c), t.id);
-      const zone = hosts[0]?.time_zone ?? "UTC";
+      const business = hosts[0]?.time_zone ?? "UTC";
+      const tz = c.req.query("tz") ?? shown.values?.tz;
+      const zone = isValidZone(tz) ? String(tz) : business;
+      const withTz = (extra = "") => `${ctx.self}${isValidZone(tz) ? `&tz=${encodeURIComponent(String(tz))}` : ""}${extra}`;
       const days = await upcoming(getDb(c), t, zone, opts.days ?? 60);
       const keys = [...days.keys()];
       const chosen = keys.includes(c.req.query("date") ?? "") ? c.req.query("date")! : keys[0];
@@ -59,11 +65,12 @@ export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
       return (
         <form method="post" action={ctx.action} class="grid gap-4">
           {ctx.hidden}
-          <p class="text-ink-2">
-            {t.name}, {t.duration_min} minutes{t.price_cents ? `, ${formatMoney(t.price_cents, t.currency ?? "usd")}` : ""}. Times are in {zoneName(zone)}.
-          </p>
+          <input type="hidden" name="tz" value={zone} />
+          <p class="text-ink-2">{t.name}, {t.duration_min} minutes{t.price_cents ? `, ${formatMoney(t.price_cents, t.currency ?? "usd")}` : ""}.</p>
+          <ZoneNote zone={zone} business={business} switchHref={zone !== business ? `${ctx.self}&tz=${encodeURIComponent(business)}` : null} />
+          {tz ? null : <ZoneScript business={business} />}
           <div class="max-w-xs">
-            <MonthPicker days={keys} chosen={chosen} href={(d) => `${ctx.self}&date=${d}`} />
+            <MonthPicker days={keys} chosen={chosen} href={(d) => withTz(`&date=${d}`)} />
           </div>
           <fieldset class="grid gap-2">
             <legend class="mb-2 font-semibold">{formatDate(chosen)}</legend>
@@ -84,6 +91,28 @@ export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
           {needPhone ? <label class={field}>Phone, for us to call<input name="phone" type="tel" maxlength={40} required class={control} value={String(shown.values?.phone ?? "")} />{err("phone")}</label> : null}
           <div><button type="submit" class={button}>Book this time</button></div>
         </form>
+      );
+    },
+
+    async thanks(c, submissionId) {
+      const b = await bookingForSubmission(getDb(c), submissionId);
+      if (!b) return null;
+      const [t, host] = await Promise.all([typeById(getDb(c), b.type_id), resourceById(getDb(c), b.resource_id)]);
+      if (!t || !host) return null;
+      const zone = b.booker_time_zone ?? host.time_zone;
+      const [{ held }] = await getDb(c).sql<{ held: boolean }>`select hold_until is not null as held from bookings where id = ${b.id}::bigint`;
+      const file = invite({
+        method: "PUBLISH", booking: b, domain: opts.domain ?? new URL(c.req.url).hostname,
+        organizer: host.email ? { email: host.email, name: host.name } : null, summary: inviteSummary(t, host), location: b.location,
+      });
+      return (
+        <>
+          <h1 class="mb-2 text-title font-semibold">{held ? "Your time is held" : "You are booked"}</h1>
+          <p class="mb-1 font-semibold">{formatSlot({ start: b.starts_at, end: b.ends_at }, zone)}</p>
+          <p class="mb-1">{t.name}, with {host.name}.</p>
+          <p class="mb-4 break-words">{whereText(b, { link: true })}</p>
+          <p><a download="booking.ics" href={`data:text/calendar;charset=utf-8,${encodeURIComponent(file)}`} class="font-semibold text-accent underline">Add it to your calendar</a></p>
+        </>
       );
     },
 
@@ -114,7 +143,7 @@ export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
         typeId: t.id, start, name: ctx.submission.name || email, email,
         phone: ctx.submission.phone || one("phone") || null,
         address: (typeof data.address === "string" && data.address.trim()) || one("address") || null,
-        bookerTimeZone: hosts[0]?.time_zone ?? null, source: opts.source, submissionId: ctx.submission.id,
+        bookerTimeZone: (isValidZone(one("tz")) ? one("tz") : hosts[0]?.time_zone) ?? null, source: opts.source, submissionId: ctx.submission.id,
         holdUntil: new Date(Date.now() + (opts.holdMinutes ?? 45) * 60_000),
       });
       if (!r.ok) {
