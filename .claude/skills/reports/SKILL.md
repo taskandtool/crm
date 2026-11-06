@@ -106,7 +106,9 @@ hand-over is a deliverable (`work` skill), and a deliverable is a file:
 | `client.js` | the browser side: tokens, drawing, htmx, theme changes, print; the data contract is at its top |
 | `ops.tsx` | `loadOps` and `OpsReport`: leads (by where they came from, by form), bookings, revenue, the funnel |
 | `seo.ts` | `googleCall`, `fetchSeo`, `saveSnapshot`, `loadSnapshot`. A job fetches; a page reads the snapshot |
-| `schema.sql` | `report_snapshots`, the SEO figures a job saved |
+| `schema.sql` | `report_snapshots`, the SEO figures a job saved; `ad_spend`, what ads cost |
+| `leads.tsx` | `loadLeadReport`, `LeadKpis`, `LeadTrends`, `LeadFunnel`, `LeadBreakdown`, `breakdown`, `costPerLead` |
+| `ad-spend.ts` | `saveAdSpend`: what a daily job saves |
 | `seo-report.tsx` | `SeoReport` and `Notes` |
 | `print.ts` | `printToPdf`, `findChrome`, `fileUrl`. Machine only |
 | `test/` | copy with the files and keep green |

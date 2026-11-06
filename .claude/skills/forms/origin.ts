@@ -37,12 +37,13 @@ const SAFE = /[^\p{L}\p{N}._+|:()/#%,=~!-]+/gu;
 /**
  * A UTM value as reports group it: lowercase, spaces as hyphens, at most 120
  * characters. Meta's ad names carry `|`, `:` and `(`, which stay. Anything that
- * could be markup or an address is refused, other odd characters become hyphens.
+ * could be markup or an address is refused, an apostrophe is dropped ("Bob's Roof" is a fine ad name), and
+ * other odd characters become hyphens.
  */
 export function token(v: unknown): string | null {
   if (typeof v !== "string") return null;
-  if (/[<>"'`@\u0000-\u001f]/.test(v)) return null;
-  const s = v.trim().toLowerCase().replace(/\s+/g, "-").replace(SAFE, "-").slice(0, MAX_VALUE);
+  if (/[<>"`@\u0000-\u001f]/.test(v)) return null;
+  const s = v.replace(/'/g, "").trim().toLowerCase().replace(/\s+/g, "-").replace(SAFE, "-").slice(0, MAX_VALUE);
   return /[\p{L}\p{N}]/u.test(s) ? s : null;
 }
 

@@ -13,20 +13,23 @@ import { BarChart, bucketLabel, formatNumber, FunnelChart, fromMinor, KpiRow, Kp
 import { addDays, adSpendQuery, days, leadRollupQuery, previousPeriod, run, type Grain, type Period } from "./sql";
 
 export type LeadFigures = { leads: number; /** Those from a source with ad cost in the period: what cost per lead divides by. */ ad_leads: number; appointments: number; no_shows: number; sold: number; sold_cents: number; spend_cents: number; clicks: number; impressions: number };
-export type LeadCell = LeadFigures & { day: string; source: string; campaign: string; content: string; term: string };
+type LeadCell = LeadFigures & { day: string; source: string; campaign: string; content: string; term: string };
 export type LeadReport = {
   period: Period;
   previous: Period;
   grain: Grain;
-  zone: string;
   currency: string;
   /** One row per day and tag. */
   cells: LeadCell[];
   total: LeadFigures;
   earlier: LeadFigures;
-  /** Spend saved in another currency, left out of the figures rather than added. */
-  otherCurrencies: string[];
+  /** What the figures are narrowed to. */
+  filter: ReportFilter;
 };
+/** Narrows the report to one source, campaign, ad or keyword; several narrow together. */
+export type ReportFilter = Partial<Record<BreakdownBy, string>>;
+/** A filter's value for leads with no such tag. */
+export const UNTAGGED = "~none";
 export const BREAKDOWNS = { source: "Source", campaign: "Campaign", content: "Ad", term: "Keyword" } as const;
 export type BreakdownBy = keyof typeof BREAKDOWNS;
 
@@ -48,30 +51,39 @@ export const costPerLead = (f: Pick<LeadFigures, "spend_cents" | "ad_leads">) =>
 const SAME_SOURCE: Record<string, string> = { fb: "facebook", ig: "instagram", yt: "youtube", gads: "google", adwords: "google" };
 
 async function cellsFor(db: Db, p: Period, zone: string, currency: string) {
-  const [has] = await db.sql<{ deals: boolean; spend: boolean; bookings: boolean; submissions: boolean }>`
-    select to_regclass('deals') is not null and to_regclass('deal_stages') is not null as deals, to_regclass('ad_spend') is not null as spend,
-           to_regclass('bookings') is not null as bookings, to_regclass('submissions') is not null as submissions`;
-  const leads = await run<Omit<LeadCell, "spend_cents" | "clicks" | "impressions">>(db, leadRollupQuery(p, zone, has));
+  const [has] = await db.sql<{ deals: boolean; quotes: boolean; spend: boolean; bookings: boolean; bookingCustomers: boolean; submissions: boolean }>`
+    select to_regclass('deals') is not null and to_regclass('deal_stages') is not null as deals, to_regclass('quotes') is not null as quotes,
+           to_regclass('ad_spend') is not null as spend, to_regclass('bookings') is not null as bookings, to_regclass('submissions') is not null as submissions,
+           exists (select 1 from information_schema.columns where table_schema = current_schema() and table_name = 'bookings' and column_name = 'customer_id') as "bookingCustomers"`;
+  const leads = await run<Omit<LeadCell, "ad_leads" | "spend_cents" | "clicks" | "impressions">>(db, leadRollupQuery(p, zone, has));
   const spend = has.spend ? await run<{ day: string; source: string; campaign: string; content: string; currency: string; spend_cents: number; clicks: number; impressions: number }>(db, adSpendQuery(p)) : [];
+  // Amounts in two currencies are never added: the report is in one.
   const here = spend.filter((s) => s.currency === currency.toLowerCase());
   const cells = [...leads.map((l) => ({ ...ZERO, ...l })), ...here.map(({ currency: _c, ...s }) => ({ ...ZERO, ...s, term: "" }))] as LeadCell[];
   for (const c of cells) c.source = SAME_SOURCE[c.source] ?? c.source;
   const paid = new Set(cells.filter((c) => c.spend_cents > 0).map((c) => c.source));
   for (const c of cells) if (paid.has(c.source)) c.ad_leads = c.leads;
-  return { cells, others: [...new Set(spend.map((s) => s.currency).filter((c) => c !== currency.toLowerCase()))] };
+  return cells;
 }
 
 /** A short period by the day, about a quarter by the week, longer by the month. */
 const grainFor = (p: Period): Grain => (days(p) <= 45 ? "day" : days(p) <= 120 ? "week" : "month");
 
-export async function loadLeadReport(db: Db, o: { period: Period; zone: string; currency: string }): Promise<LeadReport> {
+const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// Ad cost isn't by keyword, so a keyword narrows to leads alone.
+const matches = (c: LeadCell, f: ReportFilter) =>
+  (f.term === undefined || c.leads > 0) && (Object.keys(f) as BreakdownBy[]).every((k) => f[k] === undefined || c[k] === (f[k] === UNTAGGED ? "" : f[k]));
+
+export async function loadLeadReport(db: Db, o: { period: Period; zone: string; currency: string; filter?: ReportFilter }): Promise<LeadReport> {
   const previous = previousPeriod(o.period);
-  const [now, then] = await Promise.all([cellsFor(db, o.period, o.zone, o.currency), cellsFor(db, previous, o.zone, o.currency)]);
-  return {
-    period: o.period, previous, grain: grainFor(o.period), zone: o.zone, currency: o.currency.toUpperCase(),
-    cells: now.cells, total: totalOf(now.cells), earlier: totalOf(then.cells), otherCurrencies: now.others,
-  };
+  const filter = o.filter ?? {};
+  const [now, then] = (await Promise.all([cellsFor(db, o.period, o.zone, o.currency), cellsFor(db, previous, o.zone, o.currency)])).map((cells) => cells.filter((c) => matches(c, filter)));
+  return { period: o.period, previous, grain: grainFor(o.period), currency: o.currency.toUpperCase(), cells: now, total: totalOf(now), earlier: totalOf(then), filter };
 }
+
+/** A tag as a person reads it. */
+export const tagLabel = (by: BreakdownBy, tag: string) => (tag && tag !== UNTAGGED ? sentence(tagWords(tag)) : by === "term" ? "No keyword" : "Not tagged");
 
 /** The local date a day's bucket starts on: Monday for a week. */
 function bucketOf(day: string, grain: Grain): string {
@@ -155,15 +167,17 @@ export function LeadFunnel({ report: r, locale = "en-US" }: { report: LeadReport
   );
 }
 
-const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const th = "px-4 py-2.5 text-right font-medium first:text-left";
 const td = "px-4 py-2.5 text-right tabular-nums first:text-left first:font-medium";
 
-/** Leads, cost and how far they got, by source, campaign or ad, with tabs when `href` is given. */
-export function LeadBreakdown({ report: r, by, href, locale = "en-US" }: { report: LeadReport; by: BreakdownBy; href?: (by: BreakdownBy) => string; locale?: string }) {
+/**
+ * Leads, cost and how far they got, by source, campaign, ad or keyword. `href` adds the tabs, and
+ * `rowHref` makes each row a link: the page narrows to it.
+ */
+export function LeadBreakdown({ report: r, by, href, rowHref, locale = "en-US" }: { report: LeadReport; by: BreakdownBy; href?: (by: BreakdownBy) => string; rowHref?: (by: BreakdownBy, tag: string) => string; locale?: string }) {
   const rows = breakdown(r, by);
   const costs = by !== "term";
-  const tabs = (Object.keys(BREAKDOWNS) as BreakdownBy[]).filter((k) => k !== "term" || r.cells.some((c) => c.term));
+  const tabs = (Object.keys(BREAKDOWNS) as BreakdownBy[]).filter((k) => k !== "term" || by === "term" || r.cells.some((c) => c.term));
   const shown = (f: LeadFigures) => (
     <>
       <td class={td}>{formatNumber(f.leads, {}, locale)}</td>
@@ -201,7 +215,7 @@ export function LeadBreakdown({ report: r, by, href, locale = "en-US" }: { repor
               {costs ? (
                 <>
                   <th scope="col" class={th}>Ad cost</th>
-                  <th scope="col" class={th}>Cost per lead</th>
+                  <th scope="col" class={th}>Cost per ad lead</th>
                 </>
               ) : null}
               <th scope="col" class={th}>Appts</th>
@@ -213,7 +227,7 @@ export function LeadBreakdown({ report: r, by, href, locale = "en-US" }: { repor
           <tbody>
             {rows.length ? rows.map((row) => (
               <tr class="border-b border-line last:border-0">
-                <td class={td}>{row.name ? sentence(tagWords(row.name)) : by === "term" ? "No keyword" : "Not tagged"}</td>
+                <td class={td}>{rowHref ? <a href={rowHref(by, row.name || UNTAGGED)} class="underline decoration-line-strong underline-offset-2 hover:text-accent">{tagLabel(by, row.name)}</a> : tagLabel(by, row.name)}</td>
                 {shown(row)}
               </tr>
             )) : (

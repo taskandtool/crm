@@ -28,7 +28,7 @@ Prints what happened first, then Next:. A re-run says "already" and changes
 nothing. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`;
 
 const FLAGS: Record<string, string[]> = {
-  list: ["converted", "archived", "source", "owner", "find", "limit"], show: [], outcome: ["status", "sold", "external-id", "external-status", "external-url"], add: ["source", "notes", "owner", "as"], archive: ["reason", "as"], restore: ["as"],
+  list: ["converted", "archived", "source", "owner", "find", "limit"], show: [], outcome: ["status", "sold", "external-id", "external-status", "external-url", "as"], add: ["source", "notes", "owner", "as"], archive: ["reason", "as"], restore: ["as"],
 };
 const WORDS: Record<string, number> = { list: 0, show: 1, outcome: 1, archive: 1, restore: 1 };
 
@@ -80,6 +80,8 @@ await withDb(async (db) => {
           l.said ? `said: ${l.said}` : "",
           l.open_deal_id ? `open ${deal}: ${l.open_deal_title} (#${l.open_deal_id})` : "",
           l.next_event_at ? `next visit: ${local(l.next_event_at)} (event #${l.next_event_id})` : "",
+          l.outcome ? `outcome: ${l.outcome}${l.sold_cents !== null ? `, sold for ${amountText(l.sold_cents, dealsCfg.currency)}` : ""}` : "",
+          l.external_id || l.external_status ? `in their CRM: ${[l.external_id, l.external_status, l.external_synced_at ? `synced ${local(l.external_synced_at)}` : ""].filter(Boolean).join(", ")}` : "",
         ].filter(Boolean),
         next: l.status === "open" ? convert(l) : undefined,
       });
@@ -109,10 +111,19 @@ await withDb(async (db) => {
       const sold = flag(a, "sold") === undefined ? undefined : parseAmount(flag(a, "sold"), dealsCfg.currency);
       if (sold === "invalid") misused(`${at}: --sold: an amount like 1200.00`, "node scripts/leads.mjs outcome 12 --status sold --sold 1200.00");
       if (status === undefined && !["sold", "external-id", "external-status", "external-url"].some((k) => flag(a, k) !== undefined)) misused(`${at}: say what changed: --status, --sold or --external-status`, "node scripts/leads.mjs outcome 12 --status sold");
-      await setLeadOutcome(db, l.id, {
-        outcome: status === undefined ? undefined : status === "none" ? null : (status as LeadOutcome),
-        soldCents: sold as number | null | undefined, externalId: flag(a, "external-id"), externalStatus: flag(a, "external-status"), externalUrl: flag(a, "external-url"),
-      }, user);
+      const url = flag(a, "external-url");
+      if (url !== undefined && !/^https?:\/\//i.test(url)) misused(`${at}: --external-url ${url}: a web address, http or https`, "node scripts/leads.mjs outcome 12 --external-url https://their-crm.example/lead/9");
+      const externalId = flag(a, "external-id");
+      if (externalId !== undefined) {
+        const other = await leadByExternalId(db, externalId);
+        if (other && other.id !== l.id) fail(`${at}: external id ${externalId} is already lead ${other.id} (${other.customer_name})`, `node scripts/leads.mjs show ${other.id}`);
+      }
+      const outcome = status === undefined ? undefined : status === "none" ? null : (status as LeadOutcome);
+      const given = { outcome, soldCents: sold as number | null | undefined, externalId, externalStatus: flag(a, "external-status"), externalUrl: url };
+      const same = (given.outcome === undefined || given.outcome === l.outcome) && (given.soldCents === undefined || given.soldCents === l.sold_cents)
+        && (externalId === undefined || externalId === l.external_id) && (given.externalStatus === undefined || given.externalStatus === l.external_status) && (url === undefined || url === l.external_url);
+      if (same) return result(l, `lead ${l.id} (${l.customer_name}) already says that; left alone`);
+      await setLeadOutcome(db, l.id, given, user);
       const now = (await getLead(db, l.id))!;
       return result(now, `lead ${l.id} (${l.customer_name}): ${now.outcome ?? "no outcome"}${now.sold_cents !== null ? `, sold for ${amountText(now.sold_cents, dealsCfg.currency)}` : ""}${now.external_status ? `, "${now.external_status}" in their CRM` : ""}`, { next: "node scripts/reports.mjs summary" });
     }

@@ -87,6 +87,7 @@ fragment. The table, history restores, bulk forms and flash messages:
 
 | File | What it is |
 |---|---|
+| `viewer.tsx` | `viewerZone`, `shownZone`, `ViewerZoneScript`: each team member's own time zone |
 | `guard.ts` | `teamOnly()`, `whoIs`, `sameOrigin`: the 404 gate and the cross-site check |
 | `layout.tsx` | `AdminLayout`: the private page frame with nav, `aria-current`, htmx from cdnjs; `sectionPages`: a skill section's page maker (its tabs, or the app's own `Frame`, and its flash); `SectionTabs`; the `Frame` and `Head` types |
 | `keyset.ts` | cursors (`makeCursor`, `readCursor`, `cut`), `everyPage` for exports, and the microsecond rule |

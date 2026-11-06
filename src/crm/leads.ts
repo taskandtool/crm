@@ -46,6 +46,7 @@ export type Lead = {
   external_id: string | null;
   external_status: string | null;
   external_url: string | null;
+  external_synced_at: Date | null;
   deal_id: string | null;
   deal_title: string | null;
   submission_id: string | null;
@@ -71,7 +72,7 @@ export type Lead = {
 const leadTexts = (submissions: boolean) =>
   spliced({
     columns: `l.id::text as id, l.customer_id::text as customer_id, c.name as customer_name, c.company as customer_company, c.email::text as customer_email, c.phone as customer_phone,
-      l.source, l.title, l.notes, l.owner::text as owner, l.status, l.archived_reason, l.outcome, l.sold_cents::float8 as sold_cents, l.external_id, l.external_status, l.external_url, l.deal_id::text as deal_id, d.title as deal_title,
+      l.source, l.title, l.notes, l.owner::text as owner, l.status, l.archived_reason, l.outcome, l.sold_cents::float8 as sold_cents, l.external_id, l.external_status, l.external_url, l.external_synced_at, l.deal_id::text as deal_id, d.title as deal_title,
       l.submission_id::text as submission_id, l.booking_id::text as booking_id, l.created_at, l.created_by::text as created_by,
       l.updated_at, l.updated_by::text as updated_by, ${submissions ? "s.data" : "null::jsonb"} as answers,
       od.id::text as open_deal_id, od.title as open_deal_title, ne.id::text as next_event_id, ne.starts_at as next_event_at`,

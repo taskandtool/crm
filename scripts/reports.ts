@@ -2,9 +2,9 @@
 import { readFileSync } from "node:fs";
 import { cfg, dealsCfg } from "../src/config";
 import { saveAdSpend, type AdSpend } from "../src/reports/ad-spend";
-import { breakdown, costPerLead, loadLeadReport } from "../src/reports/leads";
+import { breakdown, costPerLead, loadLeadReport, type LeadFigures } from "../src/reports/leads";
 import { addDays, todayIn } from "../src/reports/sql";
-import { parseAmount } from "../src/crm/text";
+import { amountText, parseAmount } from "../src/crm/text";
 import { done, fail, flag, has, misused, noMore, out, parseArgs, usage, withDb } from "./lib";
 
 const HELP = `reports.mjs <command> [...] [--json]      the lead report's figures, and the ad costs behind them
@@ -33,7 +33,7 @@ const TRY = `node scripts/reports.mjs spend --day 2026-11-05 --source facebook -
 const whole = (name: string) => {
   const v = flag(a, name);
   if (v === undefined) return undefined;
-  if (!/^\d+$/.test(v)) misused(`${at}: --${name} ${v}: a whole number`, TRY);
+  if (!/^\d+$/.test(v)) misused(`${at}: --${name} ${v}: a whole number`, cmd === "spend" ? TRY : "node scripts/reports.mjs summary --days 30");
   return Number(v);
 };
 
@@ -58,6 +58,8 @@ await withDb(async (db) => {
   if (cmd === "spend") {
     const file = flag(a, "file");
     const rows = file ? rowsFromFile(file) : rowsFromFlags();
+    const other = rows.find((x) => x?.currency && x.currency.toLowerCase() !== dealsCfg.currency.toLowerCase());
+    if (other) return fail(`${at}: ${other.currency} isn't this CRM's currency, ${dealsCfg.currency}; convert it first; nothing saved`, "node scripts/reports.mjs --help");
     const r = await saveAdSpend(db, rows);
     if (!r.ok) return fail(`${at}: ${r.why}; nothing saved`, "node scripts/reports.mjs --help");
     if (json) return out(true, r, String);
@@ -67,9 +69,9 @@ await withDb(async (db) => {
   if (days < 1 || days > 730) misused(`${at}: --days ${days}: 1 to 730`, "node scripts/reports.mjs summary --days 30");
   const today = todayIn(cfg.time_zone);
   const report = await loadLeadReport(db, { period: { from: addDays(today, 1 - days), to: today }, zone: cfg.time_zone, currency: dealsCfg.currency });
-  const line = (name: string, f: Parameters<typeof costPerLead>[0] & { leads: number; spend_cents: number; appointments: number; no_shows: number; sold: number }) => {
+  const line = (name: string, f: LeadFigures) => {
     const cpl = costPerLead(f);
-    return `${name}: ${f.leads} leads, cost ${(f.spend_cents / 100).toFixed(2)}, per lead ${cpl === null ? "n/a" : (cpl / 100).toFixed(2)}, ${f.appointments} appointments, ${f.no_shows} no-shows, ${f.sold} sold`;
+    return `${name}: ${f.leads} leads, cost ${amountText(f.spend_cents, dealsCfg.currency)}, per ad lead ${cpl === null ? "n/a" : amountText(Math.round(cpl), dealsCfg.currency)}, ${f.clicks} clicks, ${f.appointments} appointments, ${f.no_shows} no-shows, ${f.sold} sold`;
   };
   if (json) return out(true, { total: report.total, by_source: breakdown(report, "source") }, String);
   return done(at, line(`last ${days} days`, report.total), { lines: breakdown(report, "source").map((r) => line(r.name || "not tagged", r)) });

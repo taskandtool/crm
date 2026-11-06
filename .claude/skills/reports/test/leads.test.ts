@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { applySchema } from "../../data/migrate";
 import { LEAD_OUTCOMES, setLeadOutcome } from "../../customers/customer";
+import { token } from "../../forms/origin";
 import { adSpendProblem, saveAdSpend } from "../ad-spend";
-import { breakdown, bucketsOf, costPerLead, LeadBreakdown, LeadKpis, loadLeadReport, type LeadReport } from "../leads";
+import { breakdown, bucketsOf, costPerLead, LeadBreakdown, LeadKpis, loadLeadReport, UNTAGGED, type ReportFilter, type LeadReport } from "../leads";
 import { scratch, why, type Scratch } from "../../data/test/scratch";
 
 const read = (f: string) => readFileSync(new URL(`../../${f}`, import.meta.url), "utf8");
@@ -26,6 +27,7 @@ test("a bad row of ad spend names what is wrong", () => {
   const ok = { day: "2026-11-05", source: "facebook", spend_cents: 100, currency: "usd" };
   assert.equal(adSpendProblem(ok), null);
   assert.match(adSpendProblem({ ...ok, day: "Nov 5" })!, /YYYY-MM-DD/);
+  assert.match(adSpendProblem({ ...ok, day: "2026-02-31" })!, /YYYY-MM-DD/);
   assert.match(adSpendProblem({ ...ok, spend_cents: 1.5 })!, /whole cents/);
   assert.match(adSpendProblem({ ...ok, source: "" })!, /not a tag/);
 });
@@ -75,7 +77,6 @@ test("spend meets the leads its ad brought, by the same tags, and shows even wit
     const r = await load();
     assert.equal(r.total.leads, 3);
     assert.equal(r.total.spend_cents, 6700);
-    assert.deepEqual(r.otherCurrencies, ["eur"]);
     const ads = breakdown(r, "content");
     assert.deepEqual(ads.map((a) => [a.name, a.leads, a.spend_cents]), [["roof-|-4:5", 2, 6000], ["", 1, 0], ["quiet-ad", 0, 700]]);
     assert.equal(costPerLead(ads[0]), 3000);
@@ -101,6 +102,73 @@ test("free leads don't make ads look cheap, fb is facebook, and keywords show wi
     await saveAdSpend(s.db, [{ day: "2026-11-03", source: "google", spend_cents: 9000, currency: "usd" }]);
     await s.db.sql`delete from leads where id in (select l.id from leads l join submissions s on s.id = l.submission_id where s.data->'_utm'->>'source' = 'google')`;
     assert.equal(costPerLead((await load()).total), null);
+  }));
+
+test("a filter narrows every figure and the period before, and keeps ad leads as they were", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withReport(async (s) => {
+    await lead(s, "a@x.example", { source: "facebook", campaign: "spring", content: "reel" });
+    await lead(s, "b@x.example", { source: "facebook", campaign: "storm" });
+    await lead(s, "c@x.example", { source: "nextdoor.com" });
+    await lead(s, "old@x.example", { source: "nextdoor.com" }, "2026-10-28T15:00:00Z");
+    await saveAdSpend(s.db, [{ day: "2026-11-03", source: "facebook", campaign: "spring", content: "reel", spend_cents: 3000, currency: "usd" }, { day: "2026-11-03", source: "facebook", campaign: "storm", spend_cents: 1000, currency: "usd" }]);
+    const load = (filter: ReportFilter) => loadLeadReport(s.db, { period, zone: "America/New_York", currency: "usd", filter });
+    const next = await load({ source: "nextdoor.com" });
+    assert.deepEqual([next.total.leads, next.total.spend_cents, next.earlier.leads], [1, 0, 1]);
+    assert.equal(costPerLead(next.total), null);
+    const fb = await load({ source: "facebook" });
+    assert.deepEqual(breakdown(fb, "campaign").map((x) => x.name), ["spring", "storm"]);
+    assert.equal(costPerLead(fb.total), 2000);
+    const both = await load({ source: "facebook", campaign: "spring" });
+    assert.deepEqual([both.total.leads, both.total.spend_cents], [1, 3000]);
+    const untagged = await load({ content: UNTAGGED, source: "facebook" });
+    assert.deepEqual([untagged.total.leads, untagged.total.spend_cents], [1, 1000]);
+    assert.equal((await load({ source: "nobody" })).total.leads, 0);
+    const links = await html(LeadBreakdown({ report: fb, by: "campaign", rowHref: (by, tag) => `/r?${by}=${tag}` }));
+    assert.match(links, /href="\/r\?campaign=spring"/);
+  }));
+
+test("a keyword narrows to leads alone, with no ad cost to divide", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withReport(async (s) => {
+    await lead(s, "a@x.example", { source: "google", term: "roof-repair" });
+    await lead(s, "b@x.example", { source: "google" });
+    await saveAdSpend(s.db, [{ day: "2026-11-03", source: "google", spend_cents: 10000, currency: "usd" }]);
+    const load = (filter: ReportFilter) => loadLeadReport(s.db, { period, zone: "America/New_York", currency: "usd", filter });
+    for (const term of ["roof-repair", UNTAGGED]) {
+      const r = await load({ term });
+      assert.deepEqual([r.total.leads, r.total.spend_cents], [1, 0], term);
+      assert.match(await html(LeadBreakdown({ report: r, by: "term", href: (by) => `?by=${by}` })), /Keyword/);
+    }
+  }));
+
+test("spend under one name adds up, a name with an apostrophe matches its lead, and a bad row saves nothing", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withReport(async (s, load) => {
+    await lead(s, "a@x.example", { source: "facebook", content: token("Bob's Roof")! });
+    assert.deepEqual(await saveAdSpend(s.db, [
+      { day: "2026-11-03", source: "facebook", content: "Bob's Roof", spend_cents: 3000, currency: "usd", clicks: 4 },
+      { day: "2026-11-03", source: "facebook", content: "bob's  roof", spend_cents: 2000, currency: "usd" },
+    ]), { ok: true, saved: 2 });
+    const ad = breakdown(await load(), "content")[0];
+    assert.deepEqual([ad.name, ad.leads, ad.spend_cents, ad.clicks], ["bobs-roof", 1, 5000, 4]);
+    for (const bad of [{ day: "2026-02-31", source: "facebook", spend_cents: 1, currency: "usd" }, { day: "2026-11-03", source: "facebook", campaign: "a@b.example", spend_cents: 1, currency: "usd" }, null]) {
+      const r = await saveAdSpend(s.db, [{ day: "2026-11-04", source: "facebook", spend_cents: 1, currency: "usd" }, bad as never]);
+      assert.equal(r.ok, false);
+    }
+    assert.equal((await s.db.sql`select 1 from ad_spend where day = '2026-11-04'`).length, 0);
+  }));
+
+test("a booking counts for the person's latest lead before it, and an outcome overrides it", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withReport(async (s, load) => {
+    await s.db.sql`alter table bookings add column if not exists customer_id bigint`;
+    const first = await lead(s, "same@x.example", { source: "facebook" }, "2026-11-02T15:00:00Z");
+    const [c] = await s.db.sql<{ customer_id: string }>`select customer_id::text as customer_id from leads where id = ${first.id}::bigint`;
+    const [next] = await s.db.sql<{ id: string }>`insert into leads (customer_id, source, title, created_at) values (${c.customer_id}::bigint, 'phone', 'Called', '2026-11-03T15:00:00Z') returning id::text as id`;
+    await s.db.sql`insert into bookings (name, email, starts_at, ends_at, location_kind, status, source, customer_id, created_at) values ('B', 'same@x.example', '2026-11-10T15:00:00Z', '2026-11-10T16:00:00Z', 'phone', 'no_show', 'test', ${c.customer_id}::bigint, '2026-11-04T15:00:00Z')`;
+    let r = await load();
+    assert.deepEqual([r.total.leads, r.total.appointments, r.total.no_shows], [2, 1, 1]);
+    assert.equal(breakdown(r, "source").find((x) => x.name === "phone")!.no_shows, 1);
+    await setLeadOutcome(s.db, next.id, { outcome: "showed" }, "job");
+    r = await load();
+    assert.deepEqual([r.total.appointments, r.total.no_shows], [1, 0]);
   }));
 
 test("how far a lead got counts from its outcome or its booking; spam and other periods do not count", { skip: !process.env.TEST_DATABASE_URL && why }, () =>

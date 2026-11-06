@@ -1169,7 +1169,7 @@ test("Reports shows zeros at the start, then a lead, its outcome and what its ad
   if (skip) return t.skip(skip);
   const headers = { host: "crm.example", "x-tasktool-user": "owner@example.com" };
   const page = async (q = "") => (await app.request(`${HOST}/reports${q}`, { headers }, { runtime })).text();
-  assert.match(await page(), /Cost per lead/);
+  assert.match(await page(), /Cost per ad lead/);
   const [c] = await db.sql<{ id: string }>`insert into customers (name, email, stage) values ('Rae Report', 'rae.report@example.com', 'lead') returning id::text as id`;
   const [sub] = await db.sql<{ id: string }>`insert into submissions (form_key, email, source, data, completed_at) values ('quote', 'rae.report@example.com', 'crm', '{"_utm":{"source":"facebook","campaign":"spring-roof"}}', now()) returning id::text as id`;
   const [l] = await db.sql<{ id: string }>`insert into leads (customer_id, source, submission_id, title) values (${c.id}::bigint, 'form', ${sub.id}::bigint, 'Quote') returning id::text as id`;

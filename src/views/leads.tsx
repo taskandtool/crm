@@ -210,7 +210,7 @@ export function LeadPage(p: {
               { label: "Owner", value: l.owner ? personName(l.owner) : "No one yet" },
               { label: "Outcome", value: l.outcome ? OUTCOME_LABELS[l.outcome] : null },
               { label: "Sold for", value: l.sold_cents !== null ? formatMoney(l.sold_cents, dealsCfg.currency) : null },
-              { label: "In their CRM", value: l.external_status ? (l.external_url ? <a href={l.external_url} rel="noreferrer">{l.external_status}</a> : l.external_status) : null },
+              { label: "In their CRM", value: l.external_status ? (l.external_url && /^https?:\/\//i.test(l.external_url) ? <a href={l.external_url} rel="noreferrer">{l.external_status}</a> : l.external_status) : null },
             ]}>
               <form method="post" action={self} class="grid gap-3">
                 <Field label="What they need">

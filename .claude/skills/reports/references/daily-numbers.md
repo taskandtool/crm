@@ -1,6 +1,6 @@
 # Daily numbers from other systems
 
-The lead report reads our Postgres only. Numbers that live elsewhere come in
+For the CRM, whose scripts these are. The lead report reads our Postgres only. Numbers that live elsewhere come in
 through a scheduled job you write for this client, using their connection.
 Never read those systems from a page.
 
@@ -13,7 +13,8 @@ Set a job up like this:
 
 1. Ask the connection for its docs, and read a few real rows first. Field
    names vary by account, so match them to our words: `appointment_set`,
-   `showed`, `no_show`, `sold`, `lost`.
+   `showed`, `no_show`, `sold`, `lost`. Each lead has one: someone who had the
+   appointment and didn't buy stays `showed`; `lost` never got that far.
 2. Read only. Yesterday and the last few days, since platforms revise them.
 3. Tags must match. A lead's `utm_content` is the ad's name in Meta when the
    ad's URL parameters are

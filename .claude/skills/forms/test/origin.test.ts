@@ -10,6 +10,7 @@ test("Meta's ad names survive, lowercased; markup and addresses do not", () => {
   assert.equal(token("  Spring   Sale "), "spring-sale");
   assert.equal(token("Ünder 25%"), "ünder-25%");
   assert.equal(token("a&b"), "a-b");
+  assert.equal(token("Bob's Roof"), "bobs-roof");
   assert.equal(token("<script>"), null);
   assert.equal(token("ann@example.com"), null);
   assert.equal(token("!!!"), null);

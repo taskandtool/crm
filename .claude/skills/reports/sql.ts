@@ -385,37 +385,51 @@ group by 1 order by 2 desc, 1 limit $4`,
 /**
  * Leads per local day and tag, with how far each got. A lead counts as an appointment by its
  * outcome (another CRM said so), or a booking here that isn't cancelled or waiting to be paid for;
- * as sold by its outcome or a won deal, so a business can run on either. Spam and duplicates are
- * not leads. `outcome`, `deals` and `customer_id` are read only where this project has them.
+ * as sold by its outcome or a won deal, so a business can run on either. A booking goes to the
+ * person's latest lead before it, never to every lead they ever were. Spam and duplicates are not
+ * leads. `has` says which of the other tables this project has.
  */
-export function leadRollupQuery(p: Period, zone: string, has: { deals: boolean; bookings: boolean; submissions: boolean }): Query {
+export function leadRollupQuery(p: Period, zone: string, has: { deals: boolean; quotes: boolean; bookings: boolean; bookingCustomers: boolean; submissions: boolean }): Query {
   check(p, null, zone);
-  const utm = (k: string) => (has.submissions ? `nullif(s.data->'_utm'->>'${k}', '')` : "null::text");
-  const booked = (extra: string) => has.bookings
-    ? `exists (select 1 from bookings b where ${extra} and (b.id = l.booking_id or (l.submission_id is not null and b.submission_id = l.submission_id)
-        or ((to_jsonb(b)->>'customer_id')::bigint = l.customer_id and b.created_at >= l.created_at)))`
-    : "false";
-  const won = has.deals ? "exists (select 1 from deals d join deal_stages st on st.key = d.stage where d.id = l.deal_id and st.kind = 'won')" : "false";
-  const value = has.deals ? "(select d.value_cents from deals d where d.id = l.deal_id)" : "null::bigint";
+  const utm = (k: "source" | "campaign" | "content" | "term") => (has.submissions ? `nullif(s.data->'_utm'->>'${k}', '')` : "null::text");
+  const quote = has.quotes ? "(select q.total_cents from quotes q where q.deal_id = d.id and q.status <> 'declined' order by q.created_at desc, q.id desc limit 1)" : "null::bigint";
+  const deal = has.deals
+    ? `left join lateral (select st.kind = 'won' as won, coalesce(d.value_cents, ${quote}) as value from deals d left join deal_stages st on st.key = d.stage where d.id = l.deal_id) w on true`
+    : "left join lateral (select false as won, null::bigint as value) w on true";
+  const fields = "x.id as lead_id, b.status, b.hold_until";
+  const bookings = has.bookings
+    ? `select ${fields} from l x join bookings b on b.id = x.booking_id
+       union all select ${fields} from l x join bookings b on b.submission_id = x.submission_id${has.bookingCustomers ? `
+       union all select ${fields} from l x join bookings b on b.customer_id = x.customer_id and b.created_at >= x.created_at
+         and not exists (select 1 from leads later where later.customer_id = x.customer_id and later.created_at > x.created_at and later.created_at <= b.created_at)` : ""}`
+    : "select null::bigint as lead_id, null::text as status, null::timestamptz as hold_until where false";
   return {
     text: `with l as (
   select l.*, ${utm("source")} as utm_source, ${utm("campaign")} as utm_campaign, ${utm("content")} as utm_content, ${utm("term")} as utm_term,
-         ${has.submissions ? "nullif(s.data->>'_referrer', '')" : "null::text"} as referrer,
-         (l.outcome = 'sold' or ${won}) as is_sold,
-         (l.outcome = 'no_show' or ${booked("b.status = 'no_show'")}) as is_no_show
+         ${has.submissions ? "nullif(s.data->>'_referrer', '')" : "null::text"} as referrer
   from leads l ${has.submissions ? "left join submissions s on s.id = l.submission_id" : ""}
   where l.created_at >= ${start("$3")} and l.created_at < ${end("$3")}
     and coalesce(l.archived_reason, '') not in ('Spam', 'Duplicate')${has.submissions ? " and s.status is distinct from 'spam'" : ""}
+),
+booked as (
+  select lead_id, bool_or(status <> 'cancelled' and hold_until is null) as held, bool_or(status = 'no_show') as no_show
+  from (${bookings}) b group by 1
+),
+got as (
+  select l.*, w.value, (l.outcome = 'sold' or coalesce(w.won, false)) as is_sold,
+         (l.outcome = 'no_show' or (l.outcome is null and coalesce(k.no_show, false))) as is_no_show,
+         coalesce(k.held, false) as is_booked
+  from l ${deal} left join booked k on k.lead_id = l.id
 )
-select to_char(l.created_at at time zone $3, 'YYYY-MM-DD') as day,
-       coalesce(l.utm_source, l.referrer, case when l.source in ('form', 'booking') then 'direct' else l.source end) as source,
-       coalesce(l.utm_campaign, '') as campaign, coalesce(l.utm_content, '') as content, coalesce(l.utm_term, '') as term,
+select to_char(g.created_at at time zone $3, 'YYYY-MM-DD') as day,
+       coalesce(g.utm_source, g.referrer, case when g.source in ('form', 'booking') then 'direct' else g.source end) as source,
+       coalesce(g.utm_campaign, '') as campaign, coalesce(g.utm_content, '') as content, coalesce(g.utm_term, '') as term,
        count(*)::float8 as leads,
-       count(*) filter (where l.is_sold or l.is_no_show or l.outcome in ('appointment_set', 'showed') or ${booked("b.status <> 'cancelled' and b.hold_until is null")})::float8 as appointments,
-       count(*) filter (where l.is_no_show)::float8 as no_shows,
-       count(*) filter (where l.is_sold)::float8 as sold,
-       coalesce(sum(case when l.is_sold then coalesce(l.sold_cents, ${value}, 0) end), 0)::float8 as sold_cents
-from l group by 1, 2, 3, 4, 5`,
+       count(*) filter (where g.is_sold or g.is_no_show or g.is_booked or g.outcome in ('appointment_set', 'showed'))::float8 as appointments,
+       count(*) filter (where g.is_no_show)::float8 as no_shows,
+       count(*) filter (where g.is_sold)::float8 as sold,
+       coalesce(sum(case when g.is_sold then coalesce(g.sold_cents, g.value, 0) end), 0)::float8 as sold_cents
+from got g group by 1, 2, 3, 4, 5`,
     values: [p.from, p.to, zone],
   };
 }

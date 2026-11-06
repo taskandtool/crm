@@ -79,7 +79,7 @@ import { leadMoment } from "./forms/destinations";
 import { completePaidSubmission } from "./forms/store";
 import { paymentsAdmin } from "./payments/admin";
 import { invoiceEvents } from "./invoices/webhook";
-import { BREAKDOWNS, loadLeadReport, type BreakdownBy } from "./reports/leads";
+import { BREAKDOWNS, loadLeadReport, type BreakdownBy, type ReportFilter } from "./reports/leads";
 import { addDays as addReportDays, todayIn as todayInZone } from "./reports/sql";
 import { REPORT_PERIODS, ReportsPage } from "./views/reports";
 import { stripeWebhook } from "./payments/webhook";
@@ -986,6 +986,20 @@ if (invoicesCfg) {
 }
 
 // ---- leads ------------------------------------------------------------------
+// The lead report (views/reports.tsx): figures and charts narrowed by the query string.
+app.get("/reports", async (c) => {
+  const days = REPORT_PERIODS.find((p) => String(p) === c.req.query("days")) ?? 30;
+  const by = (Object.keys(BREAKDOWNS) as BreakdownBy[]).find((k) => k === c.req.query("by")) ?? "source";
+  const lastDay = todayInZone(cfg.time_zone);
+  const filter: ReportFilter = {};
+  for (const k of Object.keys(BREAKDOWNS) as BreakdownBy[]) {
+    const v = c.req.query(k);
+    if (v) filter[k] = v;
+  }
+  const report = await loadLeadReport(c.var.db, { period: { from: addReportDays(lastDay, 1 - days), to: lastDay }, zone: cfg.time_zone, currency: dealsCfg.currency, filter });
+  return c.html(<ReportsPage user={c.var.user} report={report} days={days} by={by} />);
+});
+
 // One enquiry each, open until converted to a deal or archived (crm/leads.ts).
 
 function leadFilter(c: C): LeadFilter {
@@ -998,14 +1012,6 @@ function leadFilter(c: C): LeadFilter {
     owner: clean(c.req.query("owner"), 200),
   };
 }
-
-app.get("/reports", async (c) => {
-  const period = REPORT_PERIODS.find((p) => String(p) === c.req.query("days")) ?? 30;
-  const by = (Object.keys(BREAKDOWNS) as BreakdownBy[]).find((k) => k === c.req.query("by")) ?? "source";
-  const today = todayInZone(cfg.time_zone);
-  const report = await loadLeadReport(c.var.db, { period: { from: addReportDays(today, 1 - period), to: today }, zone: cfg.time_zone, currency: dealsCfg.currency });
-  return c.html(<ReportsPage user={c.var.user} report={report} days={period} by={by} />);
-});
 
 app.get("/leads", async (c) => {
   const db = c.var.db;

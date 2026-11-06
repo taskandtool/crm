@@ -138,7 +138,7 @@ src/invoices/            a copy of the invoices skill: quotes, invoices, tax rat
 src/proposals/           a quote as the customer's page: designed components, the link at /q, signing, opens
 src/data/  src/admin/    copies of the data and admin business skills, and what is
 src/payments/ src/reports/   used of payments and reports
-scripts/                 customers, deals, tasks, events, forms, quotes, invoices, stages, import, export, migrate (--help)
+scripts/                 reports, leads, customers, deals, tasks, events, forms, quotes, invoices, stages, import, export, migrate (--help)
 styles/  static/         the tokens (proposal.css: the proposal's own); the built CSS, vendored htmx and SortableJS, crm.js
 examples/                hvac, dental, restaurant, plumbing, counselor configs
 test/                    node:test

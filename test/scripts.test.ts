@@ -80,6 +80,23 @@ test("deals.mjs, tasks.mjs and customers merge, end to end", { skip: !process.en
   try {
     let r = sh("customers.mjs", "add", "Ann Lee", "--email", "ann@example.com");
     assert.equal(r.status, 0, r.stderr);
+    // The lead report: what a daily job saves, as it saves it.
+    r = sh("leads.mjs", "add", "ann@example.com", "New roof", "--source", "phone");
+    assert.equal(r.status, 0, r.stderr);
+    const leadId = r.stdout.match(/#(\d+)/)![1];
+    r = sh("leads.mjs", "outcome", leadId, "--status", "sold", "--sold", "1200", "--external-id", "their-1", "--external-status", "Installed", "--as", "job@team.example");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /sold, sold for 1200\.00, "Installed" in their CRM/);
+    assert.match(sh("leads.mjs", "outcome", "ext:their-1", "--status", "sold").stdout, /already says that; left alone/);
+    assert.equal(sh("leads.mjs", "outcome", leadId, "--external-url", "javascript:alert(1)").status, 2);
+    assert.equal(sh("leads.mjs", "outcome", leadId, "--status", "nope").status, 2);
+    r = sh("reports.mjs", "spend", "--day", "2026-11-05", "--source", "Phone", "--cost", "42.10", "--clicks", "9");
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(sh("reports.mjs", "spend", "--day", "2026-02-31", "--source", "facebook", "--cost", "1").status, 1);
+    r = sh("reports.mjs", "summary", "--days", "365");
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /1 leads, cost 42\.10, per ad lead 42\.10, 9 clicks, 1 appointments, 0 no-shows, 1 sold/);
+    assert.equal(sh("reports.mjs", "summary", "--days", "x").status, 2);
     r = sh("deals.mjs", "add", "ann@example.com", "New furnace", "--value", "6500");
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /^deals add: added #\d+  New furnace  \[New\]  Ann Lee  \$6,500\.00  @ann@team\.example\n\nNext: node scripts\/tasks\.mjs add \d+ "Call Ann Lee" --on tomorrow --deal \d+\n$/);
