@@ -17,7 +17,7 @@ export function NoteForm({ action }: { action: string }) {
         <button class={buttonClass}>Log activity</button>
         {/* Now, unless it happened earlier: the time is there when it is needed. */}
         <details class="open:basis-full">
-          <summary class="w-fit cursor-pointer list-none px-1 text-sm/6 font-semibold text-ink-2 no-underline hover:text-ink">Another time</summary>
+          <summary class="w-fit cursor-pointer list-none px-1 text-sm/6 font-semibold text-ink-2 no-underline hover:text-ink">Set the date</summary>
           <input name="at" type="datetime-local" aria-label="When it happened" class={inputClass + " mt-2"} />
         </details>
       </div>

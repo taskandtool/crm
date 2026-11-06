@@ -34,7 +34,7 @@ import { stripeConnected, stripeFrom, type Stripe } from "../payments/stripe";
 import { invoiceHtml, isDay, quoteHtml, quoteMessage, sendQuote, taxSummary, todayIn } from "./document";
 import { createTaxRate, percentText, setTaxRateActive, taxRates, type TaxRate } from "../payments/tax";
 import { amountInput, type Errors, type SavedLine } from "./lines";
-import { CustomerFields, formLines, LineItems, linesOf, OneOrRepeats } from "./form";
+import { CustomerFields, formLines, LineItems, linesOf, OneOrRepeats, peopleOf, type Person } from "./form";
 import {
   cannotSend, copyQuote, createQuote, decideQuote, expireQuote, isEditable, markSent, QUOTE_STATUS_LABELS, quoteById, quotesPage, saveQuote, SHOWN_QUOTE_STATUSES, shownStatus,
   type Quote, type QuoteRow, type ShownQuoteStatus,
@@ -143,7 +143,7 @@ function Party({ doc, href }: { doc: { name: string | null; email: string; phone
   return (
     <>
       {href ? <a href={href}>{first}</a> : first}
-      {doc.name ? <span class="block truncate" title={doc.email}>{doc.email}</span> : null}
+      {doc.name ? <span class="block break-words">{doc.email}</span> : null}
       {doc.phone ? <span class="block">{doc.phone}</span> : null}
     </>
   );
@@ -352,7 +352,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 
   const editor = async (c: Ctx, p: { title: string; action: string; values: FormValues; errors: Errors; current: string }, status = 200) => {
     const rates = await taxRates(getDb(c));
-    return framed(c, p.current, p.title, <DocForm kind="quote" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === qbase ? `Create ${w}` : "Save"} taxPage={`${base}/tax-rates`} currency={opts.currency} />, status);
+    return framed(c, p.current, p.title, <DocForm people={await peopleOf(getDb(c))} kind="quote" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={p.action === qbase ? `Create ${w}` : "Save"} taxPage={`${base}/tax-rates`} currency={opts.currency} />, status);
   };
 
   // The app keeps its page of the quote current; a failure is logged, the save stands.
@@ -417,7 +417,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             <a href={`${self}/document`} class={menuItem} target="_blank">Preview</a>,
             qt.status === "sent" || qt.status === "expired" ? <a href={`${self}/send`} class={menuItem}>Send again</a> : null,
             // Their answer, by reply or on the phone.
-            open ? (opts.proposal
+            qt.status === "draft" ? (opts.proposal
               ? <a href={`${self}/accept`} class={menuItem}>Mark accepted</a>
               : <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="accepted" /><button class={menuButton}>Mark accepted</button></form>) : null,
             open ? <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="declined" /><button class={menuButton}>Mark declined</button></form> : null,
@@ -426,6 +426,9 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
             <form method="post" action={`${self}/copy`}><button class={menuButton}>Copy to a new {w}</button></form>,
           ]} />
           {qt.status === "draft" ? <a href={`${self}/send`} class={primaryClass}>Send</a>
+            : open ? (opts.proposal
+              ? <a href={`${self}/accept`} class={primaryClass}>Mark accepted</a>
+              : <form method="post" action={`${self}/decide`}><input type="hidden" name="answer" value="accepted" /><button class={primaryClass}>Mark accepted</button></form>)
             : qt.status === "accepted" && !invoices.length ? <InvoiceButton self={self} seen={0} label="New invoice" cls={primaryClass} /> : null}
         </>
       ),
@@ -796,7 +799,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
     return framed(c, base, p.title, (
       <>
         {isNew ? <OneOrRepeats base={base} repeats={false} query={new URL(c.req.url).search} /> : null}
-        <DocForm kind="invoice" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={isNew ? "Create invoice" : "Save"} taxPage={`${base}/tax-rates`} currency={opts.currency} />
+        <DocForm people={await peopleOf(getDb(c))} kind="invoice" action={p.action} v={p.values} errors={p.errors} rates={rates} cancel={p.current} submit={isNew ? "Create invoice" : "Save"} taxPage={`${base}/tax-rates`} currency={opts.currency} />
       </>
     ), status);
   };
@@ -1222,6 +1225,18 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
 }
 
 /** A document's lines and totals, as stored. */
+/** A totals row: the label spans the columns a phone hides, or one where it hides them. */
+const Foot = ({ label, value, strong }: { label: string; value: string; strong?: boolean }) => {
+  const c = "px-2 py-1 align-top text-right " + (strong ? "font-semibold" : "");
+  return (
+    <tr>
+      <td class={c + " sm:hidden" + (strong ? "" : " text-ink-2")}>{label}</td>
+      <td colspan={3} class={c + " hidden sm:table-cell" + (strong ? "" : " text-ink-2")}>{label}</td>
+      <td class={c + " whitespace-nowrap"}>{value}</td>
+    </tr>
+  );
+};
+
 export function Lines({ qt, rates }: { qt: { currency: string; subtotal_cents: string; total_cents: string; lines: SavedLine[] }; rates: TaxRate[] }) {
   const m = (c: string | number) => formatMoney(c, qt.currency);
   const taxes = taxSummary(qt.lines, rates);
@@ -1232,27 +1247,25 @@ export function Lines({ qt, rates }: { qt: { currency: string; subtotal_cents: s
         <thead>
           <tr class="border-b border-line-strong text-left text-label text-ink-3">
             <th scope="col" class={cell}>Description</th>
-            <th scope="col" class={cell + " text-right"}>Qty</th>
-            <th scope="col" class={cell + " text-right"}>Price</th>
+            <th scope="col" class={cell + " hidden text-right sm:table-cell"}>Qty</th>
+            <th scope="col" class={cell + " hidden text-right sm:table-cell"}>Price</th>
             <th scope="col" class={cell + " text-right"}>Amount</th>
           </tr>
         </thead>
         <tbody>
           {qt.lines.map((l) => (
             <tr class="border-b border-line">
-              <td class={cell + " break-words"}>{l.description}</td>
-              <td class={cell + " text-right"}>{l.quantity}</td>
-              <td class={cell + " whitespace-nowrap text-right"}>{m(l.unit_cents)}</td>
+              <td class={cell + " break-words"}>{l.description}<span class="block text-label text-ink-2 sm:hidden">{l.quantity} x {m(l.unit_cents)}</span></td>
+              <td class={cell + " hidden text-right sm:table-cell"}>{l.quantity}</td>
+              <td class={cell + " hidden whitespace-nowrap text-right sm:table-cell"}>{m(l.unit_cents)}</td>
               <td class={cell + " whitespace-nowrap text-right"}>{m(l.amount_cents)}</td>
             </tr>
           ))}
         </tbody>
         <tfoot>
-          {taxes.length ? <tr><td colspan={3} class={cell + " text-right text-ink-2"}>Subtotal</td><td class={cell + " text-right"}>{m(qt.subtotal_cents)}</td></tr> : null}
-          {taxes.map((t) => (
-            <tr><td colspan={3} class={cell + " text-right text-ink-2"}>{t.label}{t.inclusive ? " (included)" : ""}</td><td class={cell + " text-right"}>{m(t.cents)}</td></tr>
-          ))}
-          <tr><td colspan={3} class={cell + " text-right font-semibold"}>Total</td><td class={cell + " whitespace-nowrap text-right font-semibold"}>{m(qt.total_cents)}</td></tr>
+          {taxes.length ? <Foot label="Subtotal" value={m(qt.subtotal_cents)} /> : null}
+          {taxes.map((t) => <Foot label={`${t.label}${t.inclusive ? " (included)" : ""}`} value={m(t.cents)} />)}
+          <Foot label="Total" value={m(qt.total_cents)} strong />
         </tfoot>
       </table>
     </div>
@@ -1264,7 +1277,7 @@ export function Lines({ qt, rates }: { qt: { currency: string; subtotal_cents: s
  * A quote or invoice, new or being edited; `submit` says which: Create quote when it posts to the list (a new one), Save when to its own page.
  * `currency` is the app's own (crm.config.json's): a document in it asks nothing, as Stripe takes it from the account; one in another shows the field.
  */
-function DocForm({ kind, action, v, errors, rates, cancel, submit, taxPage, currency }: { kind: "quote" | "invoice"; action: string; v: FormValues; errors: Errors; rates: TaxRate[]; cancel: string; submit: string; taxPage: string; currency?: string }) {
+function DocForm({ kind, action, v, errors, rates, cancel, submit, taxPage, currency, people }: { people: Person[]; kind: "quote" | "invoice"; action: string; v: FormValues; errors: Errors; rates: TaxRate[]; cancel: string; submit: string; taxPage: string; currency?: string }) {
   const ownCurrency = !!currency && v.currency.toLowerCase() === currency.toLowerCase() && !errors.currency;
   const err = (k: string) => (errors[k] ? <span class="text-ink" id={`err-${k.replace(/\./g, "-")}`}>{errors[k]}</span> : null);
   const problems = Object.keys(errors).length;
@@ -1274,8 +1287,8 @@ function DocForm({ kind, action, v, errors, rates, cancel, submit, taxPage, curr
       {errors.status ? <p role="alert" class={alertClass}>{errors.status}</p> : null}
       <input type="hidden" name="visit_id" value={v.visit_id} />
       {kind === "quote" ? <input type="hidden" name="deal_id" value={v.deal_id} /> : <input type="hidden" name="quote_id" value={v.quote_id ?? ""} />}
-      <CustomerFields v={v} errors={errors} />
-      <LineItems lines={v.lines} errors={errors} rates={rates} taxPage={taxPage} />
+      <CustomerFields v={v} errors={errors} people={people} />
+      <LineItems lines={v.lines} errors={errors} rates={rates} taxPage={taxPage} currency={v.currency} />
       <Section title={kind === "quote" ? "Terms" : "Payment"}>
         <div class="grid gap-3 sm:grid-cols-2">
           {ownCurrency ? <input type="hidden" name="currency" value={v.currency} /> : <label class={fieldClass}>Currency<input name="currency" value={v.currency} maxlength={3} class={controlClass} />{err("currency")}</label>}

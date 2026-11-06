@@ -1,16 +1,27 @@
 // The parts of a document's form that every one shares: who it is for and
 // its line items, with one tax for the whole document. Quotes, invoices and
 // recurring invoices use them (admin.tsx, recurring-admin.tsx).
+import { raw } from "hono/html";
 import { Section } from "../admin/detail";
+import type { Db } from "../data/db";
 import { str } from "../admin/query";
-import { controlClass, FieldError, fieldClass, Select } from "../admin/status";
+import { buttonClass, controlClass, FieldError, fieldClass, Select } from "../admin/status";
 import { percentText, type TaxRate } from "../payments/tax";
 import { amountInput, type Errors, type SavedLine } from "./lines";
 
 export type FormLine = { description: string; quantity: string; unit: string; tax_rate_id: string };
 
-const BLANK_ROWS = 3;
+export type Person = { name: string; email: string; phone: string | null; address: string | null };
 
+/** Who a document can be for, to pick instead of typing; an app without the customers skill has nobody here. */
+export const peopleOf = (db: Db) =>
+  db.sql<Person>`select name, email::text as email, phone, address from customers where email is not null and archived_at is null and merged_into is null order by updated_at desc limit 500`.catch(() => [] as Person[]);
+
+/** Picking an email fills in what is blank. */
+const FILL_PERSON = `(function(){var s=document.currentScript,g=s.closest('[data-people]');var all=JSON.parse(g.dataset.people);var e=g.querySelector('[name=email]');e.addEventListener('input',function(){var p=all.find(function(x){return x.email.toLowerCase()===e.value.trim().toLowerCase()});if(!p)return;['name','phone','address'].forEach(function(k){var i=g.querySelector('[name='+k+']');if(i&&!i.value&&p[k])i.value=p[k]})})})()`;
+
+/** A row more without saving, and the running total, as Stripe's invoice editor has them. Without JavaScript a save brings blank rows. */
+const LINE_EDITING = `(function(){var g=document.currentScript.closest('[data-lines]');var box=g.querySelector('[data-rows]');var out=g.querySelector('[data-total]');var fmt=new Intl.NumberFormat(undefined,{style:'currency',currency:g.dataset.currency});function num(v){var n=parseFloat(String(v).replace(/[^0-9.]/g,''));return isNaN(n)?0:n}function total(){var t=0;box.querySelectorAll('fieldset').forEach(function(f){var u=f.querySelector('[name=unit]').value;if(!u)return;var q=f.querySelector('[name=quantity]').value;t+=num(u)*(q===''?1:num(q))});out.textContent=fmt.format(t)}box.addEventListener('input',total);total();g.querySelector('[data-add]').hidden=false;g.querySelector('[data-add]').addEventListener('click',function(){var rows=box.querySelectorAll('fieldset');var n=rows[rows.length-1].cloneNode(true);n.querySelectorAll('input').forEach(function(i){if(i.type!=='hidden')i.value=''});n.querySelectorAll('[id^=err-]').forEach(function(x){x.remove()});n.querySelectorAll('label > span:first-child').forEach(function(x){x.className='sm:sr-only'});n.classList.add('border-t','border-line','pt-3','sm:border-0','sm:pt-0');box.appendChild(n);n.querySelector('[name=description]').focus()})})()`;
 const errText = (errors: Errors, k: string) => (errors[k] ? <span class="text-ink" id={`err-${k.replace(/\./g, "-")}`}>{errors[k]}</span> : null);
 
 /**
@@ -41,32 +52,35 @@ export function docTax(lines: { tax_rate_id: string }[]): string {
 export const linesOf = (d: { currency: string; lines: SavedLine[] }) =>
   d.lines.map((l) => ({ description: l.description, quantity: l.quantity, unit: amountInput(l.unit_cents, d.currency), tax_rate_id: l.tax_rate_id ?? "" }));
 
-export function CustomerFields({ v, errors }: { v: { email: string; name: string; phone: string; address: string }; errors: Errors }) {
+export function CustomerFields({ v, errors, people = [] }: { v: { email: string; name: string; phone: string; address: string }; errors: Errors; people?: Person[] }) {
   const err = (k: string) => errText(errors, k);
   return (
     <Section title="Customer">
-      <div class="grid gap-3 sm:grid-cols-2">
-        <label class={fieldClass}>Email<input name="email" type="email" required value={v.email} maxlength={254} class={controlClass} />{err("email")}</label>
+      <div class="grid gap-3 sm:grid-cols-2" data-people={people.length ? JSON.stringify(people) : undefined}>
+        {people.length ? <datalist id="doc-people">{people.map((p) => <option value={p.email} label={p.name} />)}</datalist> : null}
+        <label class={fieldClass}>Email<input name="email" type="email" required value={v.email} maxlength={254} list={people.length ? "doc-people" : undefined} autocomplete="off" class={controlClass} />{err("email")}</label>
         <label class={fieldClass}>Name<input name="name" value={v.name} maxlength={200} class={controlClass} />{err("name")}</label>
         <label class={fieldClass}>Phone<input name="phone" type="tel" value={v.phone} maxlength={50} class={controlClass} />{err("phone")}</label>
         <label class={fieldClass}>Address<input name="address" value={v.address} maxlength={500} autocomplete="off" class={controlClass} />{err("address")}</label>
+        {people.length ? <script>{raw(FILL_PERSON)}</script> : null}
       </div>
     </Section>
   );
 }
 
-export function LineItems({ lines, errors, rates, taxPage }: { lines: FormLine[]; errors: Errors; rates: TaxRate[]; taxPage: string }) {
+export function LineItems({ lines, errors, rates, taxPage, currency }: { lines: FormLine[]; errors: Errors; rates: TaxRate[]; taxPage: string; currency: string }) {
   const err = (k: string) => errText(errors, k);
   const offered = rates.filter((r) => r.active || lines.some((l) => l.tax_rate_id === r.id));
-  const rows = [...lines, ...Array.from({ length: Math.max(BLANK_ROWS, 5 - lines.length) }, () => ({ description: "", quantity: "", unit: "", tax_rate_id: "" }))];
+  const rows = [...lines, ...Array.from({ length: 1 }, () => ({ description: "", quantity: "", unit: "", tax_rate_id: "" }))];
   const tax = docTax(lines.filter((l) => l.description || l.unit));
   const mixed = tax === "mixed";
   const taxError = Object.entries(errors).find(([k]) => k.endsWith(".tax_rate_id"))?.[1];
   return (
     <Section title="Line items">
-      <p class="mb-3 text-label text-ink-3">Blank rows are left out. Save to get more rows.</p>
+      <div data-lines data-currency={currency.toUpperCase() || "USD"}>
+      <noscript><p class="mb-3 text-label text-ink-3">Blank rows are left out. Save to get more rows.</p></noscript>
       {err("lines")}
-      <div class="flex flex-col gap-3">
+      <div class="flex flex-col gap-3" data-rows>
         {rows.map((l, i) => {
           // The column names show once, over the first row; each row's own are for a phone and a screen reader.
           const name = (text: string) => <span class={i ? "sm:sr-only" : ""}>{text}</span>;
@@ -81,6 +95,11 @@ export function LineItems({ lines, errors, rates, taxPage }: { lines: FormLine[]
           );
         })}
       </div>
+      <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <button type="button" data-add hidden class={buttonClass}>Add a line</button>
+        <p class="ml-auto font-semibold">Subtotal <output data-total></output></p>
+      </div>
+      <script>{raw(LINE_EDITING)}</script>
       {/* One tax for the whole document, none unless chosen; rates are kept on their own page. */}
       <div class="mt-4 flex flex-wrap items-end gap-3 border-t border-line pt-4">
         <label class={fieldClass}>Tax
@@ -92,6 +111,7 @@ export function LineItems({ lines, errors, rates, taxPage }: { lines: FormLine[]
         </label>
         <a href={taxPage} class="pb-2 text-label text-ink-2">Manage tax rates</a>
         <FieldError id="tax-error" text={taxError} />
+      </div>
       </div>
     </Section>
   );

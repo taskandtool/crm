@@ -139,7 +139,7 @@ export function AdminLayout(props: {
         </a>
         <header class="border-b border-line bg-surface">
           <div class={`${CONTAINER} flex min-h-14 flex-wrap items-center gap-x-6 gap-y-2 py-2`}>
-            <nav aria-label="Private" class="flex flex-wrap items-center gap-1">
+            <nav aria-label="Private" class="flex max-w-full items-center gap-1 overflow-x-auto whitespace-nowrap">
               {nav.map((n) => (
                 <a
                   href={n.href}
@@ -154,7 +154,7 @@ export function AdminLayout(props: {
           </div>
         </header>
         <main id="main" class={`${CONTAINER} py-8`}>
-          {back ? <p class="mb-1 text-label"><a href={back.href} class="text-ink-2 no-underline hover:text-ink hover:underline">← {back.label}</a></p> : null}
+          {back ? <p class="mb-1 text-label"><a href={back.href} class="inline-block py-2 text-ink-2 no-underline hover:text-ink hover:underline sm:py-0">← {back.label}</a></p> : null}
           <div class="mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
             <div class="min-w-0">
               <h1 class="text-title font-semibold">{title}</h1>

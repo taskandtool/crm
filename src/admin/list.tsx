@@ -56,6 +56,7 @@ export function DataTable<T extends { id: string | number | bigint }>(props: {
               <th scope="col" class={cell + " w-10 border-b border-line"}>
                 <input
                   type="checkbox"
+                  class="size-5 sm:size-4"
                   aria-label="Select all shown"
                   onclick={`for (const b of document.querySelectorAll('input[form=${form}][name=id]')) b.checked = this.checked`}
                 />
@@ -185,7 +186,7 @@ export function TableRow<T extends { id: string | number | bigint }>({ spec, row
       {spec.select ? (
         <td class={cell + " border-b border-line group-last:border-b-0"}>
           {spec.select.can && !spec.select.can(row) ? null : (
-            <input type="checkbox" name="id" value={String(row.id)} form={spec.select.form} aria-label={`Select ${spec.select.label(row)}`} />
+            <input type="checkbox" name="id" value={String(row.id)} form={spec.select.form} aria-label={`Select ${spec.select.label(row)}`} class="size-5 sm:size-4" />
           )}
         </td>
       ) : null}

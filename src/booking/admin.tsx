@@ -770,7 +770,7 @@ function TypeForm({ action, t, errors = {}, submit, publicBase, currency, deals 
       </label>
       <Choice label="Length" name="duration_min" value={at("duration_min", "60")} options={LENGTHS} errors={errors} />
       <Input label="Price" name="price" value={v("price") || (t.price_cents != null ? amountText(Number(t.price_cents), String(t.currency ?? "usd")) : "")} errors={errors}
-        before={cur.toUpperCase()} placeholder="Free" hint="Charged only when it is booked through a form with a payment step." />
+        before={cur.toUpperCase()} placeholder="0.00" hint="Blank is free. Charged only when it is booked through a form with a payment step." />
       <label class={fieldClass}>
         Where it happens
         <Select name="location_kind" class="w-full" aria-invalid={errors.location_kind ? "true" : undefined}>
@@ -1075,7 +1075,7 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
     const self = `${base}/${r.id}`;
     const failed = Object.values(problems).some(Boolean);
     const today = localDate(new Date(), r.time_zone);
-    const remove = "rounded-control px-1 text-ink-3 no-underline hover:bg-panel hover:text-ink";
+    const remove = "inline-flex size-10 items-center justify-center rounded-control text-ink-3 no-underline hover:bg-panel hover:text-ink sm:size-6";
     return framed(c, base, {
       title: r.name,
       back: { href: base, label: "Team" },

@@ -344,7 +344,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
   }
 
   async function gone(c: Context, form: Form) {
-    const body = <div><h1 class="text-title font-semibold">Start the form again</h1><p class="mt-4">This form could not be found where you left it. <a href={`${P}/forms/${form.key}/start`}>Start again</a>.</p></div>;
+    const body = <div><h1 class="text-title font-semibold">Start the form again</h1><p class="mt-4">This form could not be found where you left it. <a href={`${P}/forms/${form.key}/start`} class="font-semibold text-accent underline">Start again</a>.</p></div>;
     return c.html(await opts.page(c, form.title, body), 404);
   }
 

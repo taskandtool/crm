@@ -71,7 +71,7 @@ export type PublicOptions = {
 };
 
 const control =
-  "w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-copy text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+  "w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-copy text-ink aria-[invalid=true]:border-2 aria-[invalid=true]:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 const button =
   "rounded-control bg-accent px-4 py-2 font-semibold text-accent-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 const chipBase =
@@ -180,7 +180,7 @@ export function ZoneNote({ zone, business, switchHref }: { zone: string; busines
   return (
     <p class="mb-4 text-label text-ink-2">
       Times are in {zoneName(zone)}.{" "}
-      {switchHref ? <a href={switchHref}>Show them in {zoneName(business)} instead.</a> : null}
+      {switchHref ? <a href={switchHref} class="underline">Show them in {zoneName(business)} instead.</a> : null}
     </p>
   );
 }
@@ -206,7 +206,7 @@ const Field = (p: { label: string; name: string; type?: string; value?: string; 
         class={control}
       />
     )}
-    {p.error ? <span id={`${p.name}-error`} class="text-label text-ink">{p.error}</span> : null}
+    {p.error ? <span id={`${p.name}-error`} class="text-label font-semibold text-ink">{p.error}</span> : null}
   </label>
 );
 
@@ -503,7 +503,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
           <SpamFields stamp={stamp} />
           <div class="flex items-center gap-4">
             <button class={button}>Book it</button>
-            <a href={listUrl(`${base}/${t.slug}`, { date: localDate(start, zone), tz: zone, host: host?.id })}>Pick another time</a>
+            <a href={listUrl(`${base}/${t.slug}`, { date: localDate(start, zone), tz: zone, host: host?.id })} class="font-semibold text-accent underline">Pick another time</a>
           </div>
         </form>
       </>

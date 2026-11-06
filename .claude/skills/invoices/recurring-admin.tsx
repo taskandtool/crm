@@ -19,7 +19,7 @@ import { StripeError, type Stripe } from "../payments/stripe";
 import { taxRates, type TaxRate } from "../payments/tax";
 import { cardName, cardsFor, removeCard, syncCards, useCard, type Card } from "./cards";
 import { addDays, todayIn } from "./document";
-import { CustomerFields, formLines, LineItems, linesOf, OneOrRepeats, type FormLine } from "./form";
+import { CustomerFields, formLines, LineItems, linesOf, OneOrRepeats, peopleOf, type FormLine, type Person } from "./form";
 import { discardInvoice, invoiceById, INVOICE_STATUS_LABELS, type Invoice } from "./invoices";
 import type { Errors, SavedLine } from "./lines";
 import { isEditable, quoteById } from "./quotes";
@@ -96,7 +96,8 @@ const valuesOf = (r: Recurring & { lines: SavedLine[] }): RV => ({
   notes: r.notes ?? "", note_for_team: r.note_for_team ?? "", owner: r.owner ?? "", quote_id: r.quote_id ?? "", lines: linesOf(r),
 });
 
-function RecurringForm({ action, v, errors, rates, cancel, submit, taxPage, timeZone, fixed }: {
+function RecurringForm({ action, v, errors, rates, cancel, submit, taxPage, timeZone, fixed, people }: {
+  people: Person[];
   action: string; v: RV; errors: Errors; rates: TaxRate[]; cancel: string; submit: string; taxPage: string; timeZone: string;
   /** Its schedule is set: an invoice is made. */
   fixed: boolean;
@@ -114,7 +115,7 @@ function RecurringForm({ action, v, errors, rates, cancel, submit, taxPage, time
       <input type="hidden" name="quote_id" value={v.quote_id} />
       {v.from_invoice ? <input type="hidden" name="from_invoice" value={v.from_invoice} /> : null}
       <input type="hidden" name="currency" value={v.currency} />
-      <CustomerFields v={v} errors={errors} />
+      <CustomerFields v={v} errors={errors} people={people} />
       <Section title="Schedule">
         <div class="grid gap-3 sm:grid-cols-2">
           <label class={fieldClass + " sm:col-span-2"}>Name<input name="title" required value={v.title} maxlength={200} placeholder="Maintenance plan" class={controlClass} />{err("title")}</label>
@@ -153,7 +154,7 @@ function RecurringForm({ action, v, errors, rates, cancel, submit, taxPage, time
           </fieldset>
         </div>
       </Section>
-      <LineItems lines={v.lines} errors={errors} rates={rates} taxPage={taxPage} />
+      <LineItems lines={v.lines} errors={errors} rates={rates} taxPage={taxPage} currency={v.currency} />
       <Section title="On each date">
         <fieldset class="flex flex-col gap-2">
           <legend class="sr-only">What happens on each date</legend>
@@ -292,7 +293,7 @@ export function recurringRoutes(app: Hono<{ Variables: TeamVars }>, h: Recurring
     return h.framed(c, base, { title: p.title, back: { href: p.cancel, label: "Back" } }, (
       <>
       {p.action === base ? <OneOrRepeats base={h.base} repeats={true} query={new URL(c.req.url).search} /> : null}
-      <RecurringForm action={p.action} v={p.v} errors={p.errors} rates={rates} cancel={p.cancel} submit={p.action === base ? "Save recurring invoice" : "Save"}
+      <RecurringForm people={await peopleOf(h.getDb(c))} action={p.action} v={p.v} errors={p.errors} rates={rates} cancel={p.cancel} submit={p.action === base ? "Save recurring invoice" : "Save"}
         taxPage={`${h.base}/tax-rates`} timeZone={h.timeZone} fixed={p.fixed} />
       </>
     ), status);

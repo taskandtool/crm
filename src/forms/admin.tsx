@@ -35,6 +35,7 @@ import { cameFrom, CLICK_KEYS, ORIGIN_KEYS, tagWords, token, type Click, type To
 import { linkedTo, linkKinds, type Linked } from "./linked";
 import { priceOf } from "./price";
 import { formatMoney } from "../payments/money";
+import { stripeConnected } from "../payments/stripe";
 import { PAYMENT_MESSAGES, refundable, type Payment } from "../payments/admin";
 import { BOOKING_MESSAGES, BOOKING_STATUSES } from "../booking/admin";
 import { BOOKING_PAGE, CONTACT_FORM, formTitle, saveSubmitter, toForm } from "./store";
@@ -83,7 +84,7 @@ const MESSAGES: FlashMessages = {
   note: "Added to their notes.",
   "note-empty": { error: "Write something in the note first." },
   resent: "Sent.",
-  "resend-failed": { error: "That did not send. The reason is on this page." },
+  "resend-failed": { error: "That did not send. The reason is under Destinations." },
 };
 
 type Item = Keyed & {
@@ -184,6 +185,12 @@ async function formsAndKeys(db: Db): Promise<{ forms: FormInfo[]; titles: Map<st
 }
 
 /** How the team hears of a new submission, in one line, and what to ask the AI when it is nobody. */
+/** A live form asks for money this app can't take. */
+async function paymentsOff(c: Context, db: Db) {
+  const [{ takes }] = await db.sql<{ takes: boolean }>`select exists (select 1 from forms where active and fields @> '[{"type": "payment"}]'::jsonb) as takes`;
+  return takes && (await stripeConnected(envOf(c))) === false;
+}
+
 function EmailNote({ c, forms }: { c: Context; forms: FormInfo[] }) {
   const env = envOf(c);
   const sender = senderOf(env);
@@ -281,7 +288,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
           </>
         ),
       },
-      ...(showForm ? [{ label: "Form", cell: (r: Item) => titles.get(r.form_key) ?? r.form_key, class: "hidden sm:table-cell" }] : []),
+      ...(showForm ? [{ label: "Form", cell: (r: Item) => titles.get(r.form_key) ?? r.form_key, class: "hidden whitespace-nowrap sm:table-cell" }] : []),
       ...(has.bookings ? [{
         label: "Booking",
         class: "hidden md:table-cell",
@@ -350,6 +357,11 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
         <>
           <SectionTabs label="Submissions" links={tabs} current={here} />
           <EmailNote c={c} forms={forms} />
+          {await paymentsOff(c, db) ? (
+            <p class="mb-4 rounded-card border border-line bg-panel/60 px-4 py-3 text-copy text-ink">
+              <strong>Payments are off.</strong> A form takes payment, but Stripe isn't connected, so nobody can pay. Ask the AI to connect Stripe for this app.
+            </p>
+          ) : null}
           <SearchBar
             action={here}
             target="#results"
@@ -516,10 +528,20 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
               </Section>
               {price ? (
                 <Section title="Order">
-                  <FieldList fields={[
-                    ...price.lines.map((l) => ({ label: l.quantity > 1 ? `${l.quantity} x ${l.label}` : l.label, value: formatMoney(l.quantity * l.unit_cents, price!.currency) })),
-                    { label: form?.fields.some((x) => x.type === "payment" && x.tax_rate_id) ? "Total before tax" : "Total", value: <strong>{formatMoney(price.subtotal_cents, price.currency)}</strong> },
-                  ]} />
+                  <table class="w-full border-collapse">
+                    <tbody>
+                      {price.lines.map((l) => (
+                        <tr class="border-b border-line">
+                          <td class="py-1.5 pr-3">{l.quantity > 1 ? `${l.quantity} x ${l.label}` : l.label}</td>
+                          <td class="whitespace-nowrap py-1.5 text-right">{formatMoney(l.quantity * l.unit_cents, price!.currency)}</td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <td class="py-1.5 font-semibold">{form?.fields.some((x) => x.type === "payment" && x.tax_rate_id) ? "Total before tax" : "Total"}</td>
+                        <td class="whitespace-nowrap py-1.5 text-right font-semibold">{formatMoney(price.subtotal_cents, price.currency)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </Section>
               ) : null}
               {answers.length || Object.keys(data).length ? (

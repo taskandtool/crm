@@ -43,7 +43,7 @@ export function paymentStep(getDb: GetDb, stripeOf: (c: Context) => Stripe, opts
         return (
           <div class="grid gap-4">
             <p>Paid {formatMoney(done.total, done.currency)}. Thank you.</p>
-            <p><a href={ctx.next}>Continue</a></p>
+            <p><a href={ctx.next} class="font-semibold text-accent underline">Continue</a></p>
           </div>
         );
       }
