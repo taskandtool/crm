@@ -233,9 +233,7 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
             )
           }
         />
-        <p class="mt-3 text-label">
-          <a href={listUrl(`${base}/export.csv`, params(f))}>Export CSV</a>
-        </p>
+        {page.length ? <div class="mt-3 flex justify-end"><a href={listUrl(`${base}/export.csv`, params(f))} class={buttonClass}>Export CSV</a></div> : null}
       </div>
     );
     if (isPartial(c)) return c.html(results);

@@ -426,7 +426,7 @@ export function bookingPages(getDb: GetDb, opts: PublicOptions) {
     const tzq = c.req.query("tz");
     return page(c, t.name, (
       <>
-        <p class="mb-2 text-label"><a href={base}>Everything we offer</a></p>
+        <p class="mb-2 text-label"><a href={base} class="font-semibold text-accent underline">Everything we offer</a></p>
         <h1 class="mb-1 text-title font-semibold">{t.name}</h1>
         <p class="mb-1 text-ink-2">{durationText(t.duration_min)} · {typeWhere(t)}</p>
         {t.description ? <p class="mb-4 text-ink-2">{t.description}</p> : <div class="mb-4" />}
