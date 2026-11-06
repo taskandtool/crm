@@ -27,7 +27,8 @@ export type Registration = {
   brand?: { sid?: string; status?: string; errors?: string[] };
   /** The Messaging Service the number is in. */
   service?: { sid?: string; name?: string | null };
-  campaign?: { sid?: string; status?: string; errors?: string[] };
+  /** `links`: what the campaign told carriers about links, which can't change once it is approved. */
+  campaign?: { sid?: string; status?: string; errors?: string[]; links?: boolean };
   /** `edit_until`: a turned-down verification can be fixed and sent again until then. */
   toll_free?: { sid?: string; status?: string; errors?: string[]; edit_until?: string | null };
   checked_at?: string;

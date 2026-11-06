@@ -41,7 +41,7 @@ export type Flow = {
   outcome: "booked" | "replied" | null;
   /** Whether it can go by email when it cannot text. */
   email: boolean;
-  /** It needs a link, which our texts never carry: an email first, its text only for someone with no email. */
+  /** An email first, its text only for someone with no email. */
   emailFirst?: boolean;
 };
 
@@ -118,14 +118,17 @@ export const FLOWS: Flow[] = [
     summary: "Someone who leaves a form before paying gets an email with a link back to it.",
     on: true,
     where: 'Forms with "Follow up automatically" on and a payment step.',
-    fills: ["first_name", "business"],
+    fills: ["first_name", "business", "form_link"],
     timing: { choices: [60, 240, 1440], ours: 60, says: (m) => `About ${minutes(m)} later` },
     steps: (t) => [
       { kind: "start", says: "Someone starts the form and leaves before paying" },
       { kind: "wait", says: FLOWS_BY().unpaid.timing!.says(t ?? 60) },
       {
         kind: "text",
-        variants: [{ key: "reply", label: "If they gave no email, this text", email: "link" }],
+        variants: [
+          { key: "link_text", label: "If they gave no email, this text", email: "link" },
+          { key: "reply", label: "Or this one, if your texting registration says no links" },
+        ],
         replies: [{ when: "They reply", then: "it's yours in Messages" }],
       },
       { kind: "end", says: "Done. Never a second one." },
@@ -211,6 +214,7 @@ export const WORDS: Record<FlowKey, Record<string, string>> = {
     taken: "Sorry, that time just went! How about 1) {slot1} 2) {slot2} 3) {slot3}? Or reply with a time that suits you.",
   },
   unpaid: {
+    link_text: "Hi {first_name}, it's {business}. Your answers are saved. Finish here: {form_link}",
     reply: "Hi {first_name}, it's {business}. Your answers are saved. Reply here and we'll help you finish.",
   },
   booked: {

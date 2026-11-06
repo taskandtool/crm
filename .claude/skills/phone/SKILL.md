@@ -33,8 +33,9 @@ talks to its `Provider`. From chat: `node scripts/phone.mjs` (`--help`).
   (`phone.mjs registration`): never create a brand or campaign by API,
   which Twilio documents only for software vendors registering others. The
   registration's samples, and its answers on links and phone numbers, are
-  taken from the texts as they are, so a link the owner wants goes into the
-  words before registering. The texting box shows on forms from the day
+  taken from the texts as they are. It answers yes on links once the form
+  page is known, with a sample on the business's own address, since an
+  approved campaign's answer can't be changed afterwards. The texting box shows on forms from the day
   there is a number, because reviewers check it on a live form.
 - **The business's name and its privacy and terms pages** are one row
   (`data/business.ts`; Settings, Business, or `node scripts/business.mjs set`)
@@ -56,11 +57,14 @@ talks to its `Provider`. From chat: `node scripts/phone.mjs` (`--help`).
   caller but one gone within six seconds or texted about a missed call in the last 24 hours.
 - **A form that stops is followed up by what it was waiting for.** A time:
   Stopped before booking offers three, and a reply books one. Money: a reply
-  can't pay and our texts carry no link, so Stopped before paying emails the
-  link back, and texts asking for a reply only someone with no email.
-- **Our words are defaults** (`flows.ts`): one text per situation, none
-  with a link. A link the owner wants (booking, reviews) goes into the
-  words as they type it. Change the words with
+  can't pay, so Stopped before paying emails the link back. Someone with no
+  email gets the link by text, or, where the campaign told carriers no links,
+  a text asking them to reply.
+- **Our words are defaults** (`flows.ts`): one text per situation, with a
+  link only in Stopped before paying's. A link the owner wants (booking,
+  reviews) goes into the words as they type it; the words are theirs, so
+  saving warns about a public shortener or a campaign that said no links, and
+  never refuses. Change the words with
   `phone.mjs set <key> --words "…" --variant <v>` (`flow <key>` lists the
   variants and fill-ins; a missing fill-in drops its sentence): it refuses
   emoji and fill-ins the flow can't fill and says when the words run past

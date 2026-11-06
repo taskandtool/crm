@@ -9,7 +9,7 @@ import { tokenHash } from "../../data/token";
 import { createPerson, createType, setHosts, addWindow } from "../../booking/hours";
 import { checkWords, EMAILS, fill, flowOf, FLOWS, isQuiet, MEASURE, notQuiet, segments, setEnabled, setWords, STOP_LINE, WORDS, flowSettings } from "../flows";
 import { phoneHooks, keyword } from "../hooks";
-import { check, optInPage, steps } from "../registration";
+import { check, optInPage, steps, linkTrouble } from "../registration";
 import { onBooked, onSubmitted, scan } from "../follow";
 import { fillEmail, sendText, type PhoneCtx } from "../send";
 import { addNumber, optedOut, record, setHooks, thread, toE164 } from "../store";
@@ -115,8 +115,9 @@ test("words are straightened, emoji refused, unknown fill-ins named", () => {
   // A fill-in the flow never knows is refused, not left to vanish from every text.
   const elsewhere = checkWords("Thanks! See you {when}", flowOf("missed_call").fills);
   assert.ok(!elsewhere.ok && /\{when\} isn't filled in here\. This text can use \{first_name\}, \{business\}\./.test(elsewhere.why));
-  // A link is typed in the words as it is: no text carries one of ours.
-  assert.ok(FLOWS.every((f) => Object.values(WORDS[f.key]).every((w) => !/_link\}|https?:/.test(w))));
+  // A link is typed in the words as it is: the one text of ours that carries one is for someone who can't pay by replying.
+  const linked = FLOWS.flatMap((f) => Object.entries(WORDS[f.key]).filter(([, w]) => /_link\}|https?:/.test(w)).map(([v]) => `${f.key}.${v}`));
+  assert.deepEqual(linked, ["unpaid.link_text"]);
 });
 
 test("quiet hours are 8pm to 8am in the business's zone, and end at 8am", () => {
@@ -267,11 +268,12 @@ test("the registration is read from Twilio as the owner makes it in the Console,
     await saveBusiness(s.db, business, "o@x.com");
     assert.ok(flow.includes(`'${await textingBox(s.db, "request")}'`));
     assert.equal(paste.find((p) => p.field.startsWith("Opt-in page"))!.words, "https://acme.example/forms/quote");
-    // Our texts carry no link and no number, so the campaign says so, and its three samples agree.
+    // The form page is known, so the campaign says links, and a sample shows one on the business's own address. No number.
     const said = (rows: ReturnType<typeof steps>, field: string) => rows[2].paste!.find((p) => p.field === field)?.words;
-    assert.equal(said(rows, "Messages will include embedded links"), "No");
+    assert.equal(said(rows, "Messages will include embedded links"), "Yes");
     assert.equal(said(rows, "Messages will include phone numbers"), "No");
-    assert.equal(said(rows, "Sample message 4"), undefined);
+    assert.match(said(rows, "Sample message 4")!, /Finish here: https:\/\/acme\.example\/forms\/quote/);
+    assert.equal(said(steps({ ...n, registration: r.reg }, business, null, await flowSettings(s.db)), "Messages will include embedded links"), "No", "no page yet, so no link to show");
     // An owner's review link: the answer turns Yes, and a sample shows it (Twilio 30889).
     await setEnabled(s.db, "after_visit", true, "o@x.com");
     await setWords(s.db, "after_visit", "one", "Hi {first_name}, thanks from {business}! A review helps: https://g.page/r/acme/review", "o@x.com");
@@ -469,7 +471,7 @@ test("a form that takes payment is never offered times: after an hour it emails 
     } finally { restore(); }
   }));
 
-test("an order form with no calendar is followed up too, and someone with no email is asked to reply", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+test("an order form with no calendar is followed up too, and someone with no email gets the link by text", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
   withDb(async (s) => {
     const { ctx, tw, setNow } = await setup(s);
     await s.db.sql`insert into forms (key, title, fields, follow_up) values ('order', 'Order',
@@ -479,9 +481,32 @@ test("an order form with no calendar is followed up too, and someone with no ema
     setNow(new Date("2026-10-20T15:31:00Z"));
     assert.equal((await scan(ctx)).sent, 1);
     assert.equal(tw.texts.length, 1);
-    assert.equal(tw.texts[0].body.replace(/ Reply STOP.*/, ""), "Hi Order, it's Acme Plumbing. Your answers are saved. Reply here and we'll help you finish.");
+    assert.match(tw.texts[0].body, /^Hi Order, it's Acme Plumbing\. Your answers are saved\. Finish here: https:\/\/acme\.example\/forms\/order\/next\?k=/);
+  }));
+
+test("a campaign that told carriers no links gets a text asking for a reply, and no link", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withDb(async (s) => {
+    const { ctx, tw, n, setNow } = await setup(s);
+    await s.db.sql`update phone_numbers set registration = ${JSON.stringify({ campaign: { status: "VERIFIED", links: false } })}::jsonb where id = ${n.id}::bigint`;
+    await s.db.sql`insert into forms (key, title, fields, follow_up) values ('order', 'Order', '[{"name":"phone","label":"Phone","type":"tel"},{"name":"pay","label":"Pay","type":"payment"}]', true)`;
+    await s.db.sql`insert into submission_drafts (form_key, key_hash, step, name, phone, source, text_consent, updated_at, created_at)
+      values ('order', 'h8', 1, 'Order Person', '512-555-0130', 'test', 'Text me', '2026-10-20T14:30:00Z', '2026-10-20T14:28:00Z')`;
+    setNow(new Date("2026-10-20T15:31:00Z"));
+    assert.equal((await scan(ctx)).sent, 1);
+    assert.match(tw.texts[0].body, /Your answers are saved\. Reply here and we'll help you finish\./);
     assert.doesNotMatch(tw.texts[0].body, /https?:/);
   }));
+
+test("saving a text warns about what carriers block, and never refuses", () => {
+  const said = { registration: { campaign: { links: false } } } as never;
+  const allowed = { registration: { campaign: { links: true } } } as never;
+  assert.equal(linkTrouble("Book here: https://acme.example/book", said), "words-no-links");
+  assert.equal(linkTrouble("Finish here: {form_link}", said), "words-no-links");
+  assert.equal(linkTrouble("Book here: https://acme.example/book", allowed), null);
+  assert.equal(linkTrouble("Book here: https://acme.example/book", null), null, "not registered yet: the registration takes it from the words");
+  assert.equal(linkTrouble("Book: https://bit.ly/x1", allowed), "words-shortener");
+  assert.equal(linkTrouble("See you soon", said), null);
+});
 
 test("someone who paid gets no nudge, and the flow's switch stops it", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
   withDb(async (s) => {

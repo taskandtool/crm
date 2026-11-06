@@ -9,7 +9,7 @@ import { businessOf } from "../data/business";
 import type { Db } from "../data/db";
 import { FILL_SAYS, FLOWS, flowOf, flowSettings, isFlowKey, resetFlow, setEnabled, setTiming, setWords, WORDS, fill } from "./flows";
 import { exampleFill } from "./follow";
-import { check, optInPage, steps } from "./registration";
+import { check, linkTrouble, optInPage, steps } from "./registration";
 import { sendText, type PhoneCtx } from "./send";
 import { mainNumber, numbers, prettyPhone, thread, threads, toE164 } from "./store";
 import { phoneKey } from "../customers/customer";
@@ -144,6 +144,8 @@ export async function phoneCli(argv: string[], cli: PhoneCli): Promise<void> {
           const r = await setWords(db, key, variant, flag(a, "words") ?? "", by);
           if (!r.ok) fail(`${at}: ${r.why}`, `node scripts/phone.mjs flow ${key}`);
           said.push(`new "${variant}" words${r.texts > 1 ? `; it sends as ${r.texts} texts with long names (one text is 160 characters)` : ""}`);
+          const trouble = linkTrouble(flag(a, "words") ?? "", await mainNumber(db));
+          if (trouble) said.push(trouble === "words-shortener" ? "carriers block public link shorteners: use the business's own address" : "the Twilio campaign says texts have no links, so carriers may block this: tell the owner, links need a new campaign");
         }
         if (has(a, "timing")) {
           const r = await setTiming(db, key, Number(flag(a, "timing")), by);

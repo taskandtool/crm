@@ -80,7 +80,8 @@ const PHONE = /\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/;
  * one of the samples.
  */
 export function registrationWords(business: string, number: string, pages: Pick<Business, "privacyUrl" | "termsUrl">, optIn: string | null, settings: Record<FlowKey, FlowSettings>) {
-  const filled = (words: string) => fill(words, { ...MEASURE, business });
+  // A link back to a form is shown on the business's own address: reviewers turn down a link that doesn't identify it.
+  const filled = (words: string) => fill(words, { ...MEASURE, business, form_link: optIn });
   const texts = (Object.entries(settings) as [FlowKey, FlowSettings][]).filter(([, s]) => s.enabled).flatMap(([, s]) => Object.values(s.words)).map(filled);
   const withLink = texts.find((t) => LINK.test(t));
   const withPhone = texts.find((t) => PHONE.test(t));
@@ -96,6 +97,17 @@ export function registrationWords(business: string, number: string, pages: Pick<
     phones: !!withPhone,
     keywords,
   };
+}
+
+/** A campaign that told carriers its texts have no links. A toll-free verification has no such answer. */
+export const linksRefused = (n: PhoneNumber | null | undefined) => n?.registration?.campaign?.links === false;
+
+const SHORTENER = /\b(bit\.ly|tinyurl\.com|t\.co|goo\.gl|ow\.ly|is\.gd|buff\.ly|rebrand\.ly|cutt\.ly|tiny\.cc)\b/i;
+
+/** What may stop a text with these words reaching people. The words are the owner's to send, so this warns and never refuses. */
+export function linkTrouble(words: string, n: PhoneNumber | null | undefined): "words-shortener" | "words-no-links" | null {
+  if (SHORTENER.test(words)) return "words-shortener";
+  return (LINK.test(words) || words.includes("{form_link}")) && linksRefused(n) ? "words-no-links" : null;
 }
 
 const errorsOf = (r: any): string[] =>
@@ -143,7 +155,7 @@ async function local(tw: Provider, n: PhoneNumber, reg: Registration): Promise<P
     reg.service = { sid: s.sid, name: s.friendly_name ?? null };
     const campaigns: any[] = (await tw.call("GET", "messaging", `/v1/Services/${s.sid}/Compliance/Usa2p`, { PageSize: 20 })).compliance ?? [];
     const c = campaigns.find((x) => x.campaign_status === "VERIFIED") ?? campaigns[0];
-    if (c) reg.campaign = { sid: c.sid, status: c.campaign_status, errors: errorsOf(c) };
+    if (c) reg.campaign = { sid: c.sid, status: c.campaign_status, errors: errorsOf(c), links: c.has_embedded_links === true };
     break;
   }
 

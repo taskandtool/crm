@@ -23,7 +23,7 @@ import { buttonClass, fieldClass, inputClass, linkClass, primaryClass, quietClas
 import { phoneKey, saveLead, savePerson } from "../customers/customer";
 import { fill, FILL_SAYS, FLOWS, flowOf, flowSettings, isFlowKey, resetWords, setEnabled, setWords, WORDS, EMAILS, type Fill, type FillKey, type Flow, type FlowKey, type FlowSettings, type Step as FlowStep } from "./flows";
 import { exampleFill, flowCounts } from "./follow";
-import { check, optInPage, steps as registrationSteps, type Step as RegStep } from "./registration";
+import { check, linkTrouble, optInPage, steps as registrationSteps, type Step as RegStep } from "./registration";
 import { fillEmail, sendText, type PhoneCtx } from "./send";
 import { adopt, buy, callOut, point, unhook } from "./setup";
 import {
@@ -65,6 +65,8 @@ const MESSAGES: FlashMessages = {
   flow: "Saved.",
   words: "Saved. This is what goes from now on.",
   "words-reset": "Back to our words.",
+  "words-shortener": { error: "Saved, but carriers block public link shorteners like bit.ly. Use your own web address." },
+  "words-no-links": { error: "Saved, but your Twilio registration says your texts have no links, so carriers may block this one. An approved registration can't be changed: links need a new campaign, and deleting the old one stops texting until the new one is approved." },
   removed: "Removed. The number is still yours on Twilio, and its calls ring your phone directly.",
   "no-number": { error: "Choose a number first." },
   "twilio-error": { error: "Twilio didn't do it. The page says why." },
@@ -305,7 +307,7 @@ export function phoneSettings(getDb: GetDb, opts: PhoneAdminOptions) {
     }
     const r = await setWords(getDb(c), key, variant, typeof f.words === "string" ? f.words : "", c.get("user"));
     if (!r.ok) return flowPage(c, key, { variant, words: String(f.words ?? ""), why: r.why });
-    return c.redirect(withFlash(`${base}/flows/${key}`, "words"), 303);
+    return c.redirect(withFlash(`${base}/flows/${key}`, linkTrouble(String(f.words ?? ""), await mainNumber(getDb(c))) ?? "words"), 303);
   });
 
   app.get("/flows/:key", async (c) => {
@@ -551,7 +553,7 @@ export function FlowPicture(props: {
                   ) : null;
                   return (
                     <>
-                      {flow.emailFirst ? <div class="max-w-lg rounded-card border border-line bg-surface p-3">{letter}</div> : null}
+                      {flow.emailFirst && letter ? <div class="max-w-lg rounded-card border border-line bg-surface p-3">{letter}</div> : null}
                       <div class="max-w-lg rounded-card border border-line bg-surface p-3">
                         {v.label ? <p class="mb-2 font-medium">{v.label}</p> : null}
                         <p class="rounded-2xl rounded-bl-sm bg-panel px-3 py-2">{words(v.key)}</p>

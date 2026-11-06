@@ -13,7 +13,8 @@ import { emailsCustomers } from "../data/send";
 import { stepsOf, type Field } from "../forms/fields";
 import { phoneKey } from "../customers/customer";
 import { flowOf, flowSettings, type Fill, type FlowSettings } from "./flows";
-import { communicationById, ownerOf } from "./store";
+import { linksRefused } from "./registration";
+import { communicationById, mainNumber, ownerOf } from "./store";
 import { deliver, draftLink, dueSends, mayText, nowOf, schedule, sendById, type PhoneCtx, type Rendered, type SendRow, type Slot } from "./send";
 
 const firstName = (name: string | null | undefined) => {
@@ -331,7 +332,10 @@ export async function render(ctx: PhoneCtx, row: SendRow, s: FlowSettings): Prom
         const form_link = await draftLink(db, links, d.id, d.form_key);
         return { to: { phone: null, email: d.email, name: d.name, contactId: null, consent: false }, variant: "reply", emailVariant: "link", fill: { ...fillIn, form_link } };
       }
-      return { to: { phone: d.phone, email: null, name: d.name, contactId: null, consent: await mayText(db, d.phone, !!d.text_consent, { boxOnly: true }) }, variant: "reply", fill: fillIn };
+      const to = { phone: d.phone, email: null, name: d.name, contactId: null, consent: await mayText(db, d.phone, !!d.text_consent, { boxOnly: true }) };
+      const textLinks = !linksRefused(await mainNumber(db)) ? await ctx.links() : null;
+      if (!textLinks) return { to, variant: "reply", fill: fillIn };
+      return { to, variant: "link_text", fill: { ...fillIn, form_link: await draftLink(db, textLinks, d.id, d.form_key) } };
     }
     case "booked":
     case "reminder":
