@@ -200,7 +200,12 @@ export async function scan(ctx: PhoneCtx): Promise<{ scheduled: number; sent: nu
     }
   };
 
-  if (s.unpaid.enabled) await stopped("unpaid", s.unpaid.timing ?? 60, sinceFor(s.unpaid));
+  // Hours back at most, past its wait: this flow began on by default, and an update nudges nobody about last week.
+  if (s.unpaid.enabled) {
+    const wait = s.unpaid.timing ?? 60;
+    const since = Math.max(now.getTime() - (wait + 360) * 60_000, s.unpaid.enabledAt?.getTime() ?? 0);
+    await stopped("unpaid", wait, new Date(since).toISOString());
+  }
   if (s.unbooked.enabled) {
     await stopped("unbooked", s.unbooked.timing ?? 10, sinceFor(s.unbooked));
     // The next morning at 10, once, after a first text that went.
@@ -326,6 +331,7 @@ export async function render(ctx: PhoneCtx, row: SendRow, s: FlowSettings): Prom
         from submission_drafts d where d.id = ${row.subject_id}::bigint`;
       if (!d) return { skip: "the form they started is gone" };
       if (d.finished) return { skip: "they finished the form" };
+      if ((await ctx.paying?.()) === false) return { skip: "this app isn't connected to Stripe, so the link couldn't take a payment" };
       const fillIn: Fill = { ...base, first_name: firstName(d.name) };
       const links = d.email && emailsCustomers(ctx.env) ? await ctx.links() : null;
       if (links) {

@@ -29,6 +29,7 @@ export const FORMS_SCHEMA_FILE = fileURLToPath(new URL("../forms/schema.sql", im
 export const PAYMENTS_SCHEMA_FILE = fileURLToPath(new URL("../payments/schema.sql", import.meta.url));
 export const INVOICES_SCHEMA_FILE = fileURLToPath(new URL("../invoices/schema.sql", import.meta.url));
 export const PROPOSALS_SCHEMA_FILE = fileURLToPath(new URL("../proposals/schema.sql", import.meta.url));
+export const REPORTS_SCHEMA_FILE = fileURLToPath(new URL("../reports/schema.sql", import.meta.url));
 export const PHONE_SCHEMA_FILE = fileURLToPath(new URL("../phone/schema.sql", import.meta.url));
 
 export async function setup(db: Db, seeds: Seeds, opts: SetupOpts = { invoices: true, forms: true }): Promise<{ seeded: number }> {
@@ -49,6 +50,8 @@ export async function setup(db: Db, seeds: Seeds, opts: SetupOpts = { invoices: 
   await applySchema(db, readFileSync(BOOKING_SCHEMA_FILE, "utf8"));
   await applySchema(db, readFileSync(CUSTOMERS_SCHEMA_FILE, "utf8"));
   await applySchema(db, readFileSync(SCHEMA_FILE, "utf8"));
+  // What ads cost, for the lead report.
+  await applySchema(db, readFileSync(REPORTS_SCHEMA_FILE, "utf8"));
   // The business number's texts and calls (the phone skill), after the customers it adds a column to.
   await applySchema(db, readFileSync(PHONE_SCHEMA_FILE, "utf8"));
   // Invoices record their payments in the payments skill's table.

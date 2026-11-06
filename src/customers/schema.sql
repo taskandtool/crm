@@ -104,6 +104,15 @@ create table if not exists leads (
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
 );
+-- Where the lead got to, whichever CRM is keeping track: this one, or the client's own, read by a
+-- daily job (references/daily-numbers.md). `outcome` is our word; `external_status` is theirs.
+alter table leads add column if not exists outcome text check (outcome in ('appointment_set', 'showed', 'no_show', 'sold', 'lost'));
+alter table leads add column if not exists sold_cents bigint check (sold_cents >= 0);
+alter table leads add column if not exists external_id text;
+alter table leads add column if not exists external_status text;
+alter table leads add column if not exists external_url text;
+alter table leads add column if not exists external_synced_at timestamptz;
+create unique index if not exists leads_external on leads (external_id) where external_id is not null;
 create unique index if not exists leads_submission on leads (submission_id) where submission_id is not null;
 create unique index if not exists leads_booking on leads (booking_id) where booking_id is not null;
 create index if not exists leads_status_recent on leads (status, created_at desc, id desc);

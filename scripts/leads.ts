@@ -1,8 +1,8 @@
 // Leads from chat: the same as the Leads pages. `node scripts/leads.mjs --help`.
 import { dealsCfg } from "../src/config";
-import { saveLead, type LeadSource } from "../src/customers/customer";
-import { ARCHIVE_REASONS, archiveLead, autoDeals, getLead, listLeads, MANUAL_SOURCES, reopenLead, SOURCE_LABELS, sourceText, type Lead, type LeadStatus } from "../src/crm/leads";
-import { clean } from "../src/crm/text";
+import { LEAD_OUTCOMES, saveLead, setLeadOutcome, type LeadOutcome, type LeadSource } from "../src/customers/customer";
+import { ARCHIVE_REASONS, archiveLead, autoDeals, getLead, leadByExternalId, listLeads, MANUAL_SOURCES, reopenLead, SOURCE_LABELS, sourceText, type Lead, type LeadStatus } from "../src/crm/leads";
+import { amountText, clean, parseAmount } from "../src/crm/text";
 import { done, fail, flag, has, limitOf, local, misused, noMore, out, parseArgs, ownerOf, resolveCustomer, usage, who, withDb } from "./lib";
 
 const deal = dealsCfg.one.toLowerCase();
@@ -13,6 +13,8 @@ const HELP = `leads.mjs <command> [...] [--json] [--as <email>]      enquiries: 
   show <id>                            who, where it came from, what they said, what they already have
   add <who> "<what they need>" [--source ${MANUAL_SOURCES.join("|")}] [--notes n] [--owner o]
                                        a phone call or a walk-in; a form or an online booking makes its own
+  outcome <id|ext:their-id> [--status ${LEAD_OUTCOMES.join("|")}|none] [--sold 1200.00] [--external-id x] [--external-status "Set"] [--external-url u]
+                                       where it got to, here or in the client's own CRM; only what is given changes
   archive <id> [--reason "${ARCHIVE_REASONS.join('" | "')}"]
   restore <id>                         an archived lead, open again
 
@@ -26,9 +28,9 @@ Prints what happened first, then Next:. A re-run says "already" and changes
 nothing. Errors go to stderr with a Try: line; exit 1 when refused, 2 when misused.`;
 
 const FLAGS: Record<string, string[]> = {
-  list: ["converted", "archived", "source", "owner", "find", "limit"], show: [], add: ["source", "notes", "owner", "as"], archive: ["reason", "as"], restore: ["as"],
+  list: ["converted", "archived", "source", "owner", "find", "limit"], show: [], outcome: ["status", "sold", "external-id", "external-status", "external-url"], add: ["source", "notes", "owner", "as"], archive: ["reason", "as"], restore: ["as"],
 };
-const WORDS: Record<string, number> = { list: 0, show: 1, archive: 1, restore: 1 };
+const WORDS: Record<string, number> = { list: 0, show: 1, outcome: 1, archive: 1, restore: 1 };
 
 const a = parseArgs(process.argv.slice(2), { bare: ["converted", "archived"] });
 const [cmd, ...rest] = a._;
@@ -97,6 +99,22 @@ await withDb(async (db) => {
       if (l.status !== "archived") return result(l, `lead ${l.id} is ${l.status}, not archived; left alone`);
       await reopenLead(db, l.id, user);
       return result(await getLead(db, l.id), `lead ${l.id} (${l.customer_name}) is open again`, { next: show(l.id) });
+    }
+
+    case "outcome": {
+      const name = rest[0] ?? misused(`${at}: name a lead by its id, or ext:<their id>`, "node scripts/leads.mjs outcome 12 --status sold");
+      const l = name.startsWith("ext:") ? (await leadByExternalId(db, name.slice(4))) ?? fail(`${at}: no lead with external id ${name.slice(4)}`, "node scripts/leads.mjs outcome <id> --external-id <their id>") : await leadOr(name);
+      const status = flag(a, "status");
+      if (status !== undefined && status !== "none" && !(LEAD_OUTCOMES as readonly string[]).includes(status)) misused(`${at}: --status ${status}: one of ${LEAD_OUTCOMES.join(", ")}, none`, "node scripts/leads.mjs outcome 12 --status sold");
+      const sold = flag(a, "sold") === undefined ? undefined : parseAmount(flag(a, "sold"), dealsCfg.currency);
+      if (sold === "invalid") misused(`${at}: --sold: an amount like 1200.00`, "node scripts/leads.mjs outcome 12 --status sold --sold 1200.00");
+      if (status === undefined && !["sold", "external-id", "external-status", "external-url"].some((k) => flag(a, k) !== undefined)) misused(`${at}: say what changed: --status, --sold or --external-status`, "node scripts/leads.mjs outcome 12 --status sold");
+      await setLeadOutcome(db, l.id, {
+        outcome: status === undefined ? undefined : status === "none" ? null : (status as LeadOutcome),
+        soldCents: sold as number | null | undefined, externalId: flag(a, "external-id"), externalStatus: flag(a, "external-status"), externalUrl: flag(a, "external-url"),
+      }, user);
+      const now = (await getLead(db, l.id))!;
+      return result(now, `lead ${l.id} (${l.customer_name}): ${now.outcome ?? "no outcome"}${now.sold_cents !== null ? `, sold for ${amountText(now.sold_cents, dealsCfg.currency)}` : ""}${now.external_status ? `, "${now.external_status}" in their CRM` : ""}`, { next: "node scripts/reports.mjs summary" });
     }
 
     case "archive": {

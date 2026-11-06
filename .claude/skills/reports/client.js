@@ -76,7 +76,7 @@
       reverse: !!spec.reverse,
       grid: { color: t.line },
       border: { display: false },
-      ticks: { color: t.ink3, font: { family: t.font }, callback: function (v) { return fmt(v); } },
+      ticks: { color: t.ink3, font: { family: t.font }, precision: spec.format && spec.format.digits === 0 ? 0 : undefined, callback: function (v) { return fmt(v); } },
     };
     var category = {
       grid: { display: false },

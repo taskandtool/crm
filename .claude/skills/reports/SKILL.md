@@ -42,6 +42,14 @@ draws them.
   literals there, values are always `$n`. Composed statements run with
   `run(db, query)`.
 
+## The lead report
+
+`leads.tsx` is parts to lay out: `loadLeadReport`, then `LeadKpis`,
+`LeadTrends`, `LeadFunnel`, `LeadBreakdown`. Change a business's report by
+choosing and arranging them, or adding a component beside them. Ad cost and a
+lead's status from another system come from a daily job:
+`references/daily-numbers.md`.
+
 ## Where reports live
 
 - **Under `/reports`, behind `teamOnly()`**, in `AdminLayout` with

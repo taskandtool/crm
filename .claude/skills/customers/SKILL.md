@@ -35,6 +35,13 @@ reads them and adds notes, and both see the same rows.
 - **A customer is archived, never deleted.** A merged duplicate keeps
   `merged_into`.
 
+## Where a lead got to
+
+`setLeadOutcome` keeps our word for it (`appointment_set`, `showed`, `no_show`,
+`sold`, `lost`), what it sold for, and the same lead's id and status in another
+CRM. A CRM's own bookings and won deals count without it. A job that reads
+another CRM: the reports skill's `references/daily-numbers.md`.
+
 ## Files
 
 | File | What |

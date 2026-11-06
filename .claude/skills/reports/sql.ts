@@ -382,6 +382,55 @@ group by 1 order by 2 desc, 1 limit $4`,
   };
 }
 
+/**
+ * Leads per local day and tag, with how far each got. A lead counts as an appointment by its
+ * outcome (another CRM said so), or a booking here that isn't cancelled or waiting to be paid for;
+ * as sold by its outcome or a won deal, so a business can run on either. Spam and duplicates are
+ * not leads. `outcome`, `deals` and `customer_id` are read only where this project has them.
+ */
+export function leadRollupQuery(p: Period, zone: string, has: { deals: boolean; bookings: boolean; submissions: boolean }): Query {
+  check(p, null, zone);
+  const utm = (k: string) => (has.submissions ? `nullif(s.data->'_utm'->>'${k}', '')` : "null::text");
+  const booked = (extra: string) => has.bookings
+    ? `exists (select 1 from bookings b where ${extra} and (b.id = l.booking_id or (l.submission_id is not null and b.submission_id = l.submission_id)
+        or ((to_jsonb(b)->>'customer_id')::bigint = l.customer_id and b.created_at >= l.created_at)))`
+    : "false";
+  const won = has.deals ? "exists (select 1 from deals d join deal_stages st on st.key = d.stage where d.id = l.deal_id and st.kind = 'won')" : "false";
+  const value = has.deals ? "(select d.value_cents from deals d where d.id = l.deal_id)" : "null::bigint";
+  return {
+    text: `with l as (
+  select l.*, ${utm("source")} as utm_source, ${utm("campaign")} as utm_campaign, ${utm("content")} as utm_content,
+         ${has.submissions ? "nullif(s.data->>'_referrer', '')" : "null::text"} as referrer,
+         (l.outcome = 'sold' or ${won}) as is_sold,
+         (l.outcome = 'no_show' or ${booked("b.status = 'no_show'")}) as is_no_show
+  from leads l ${has.submissions ? "left join submissions s on s.id = l.submission_id" : ""}
+  where l.created_at >= ${start("$3")} and l.created_at < ${end("$3")}
+    and coalesce(l.archived_reason, '') not in ('Spam', 'Duplicate')${has.submissions ? " and s.status is distinct from 'spam'" : ""}
+)
+select to_char(l.created_at at time zone $3, 'YYYY-MM-DD') as day,
+       coalesce(l.utm_source, l.referrer, case when l.source in ('form', 'booking') then 'direct' else l.source end) as source,
+       coalesce(l.utm_campaign, '') as campaign, coalesce(l.utm_content, '') as content,
+       count(*)::float8 as leads,
+       count(*) filter (where l.is_sold or l.is_no_show or l.outcome in ('appointment_set', 'showed') or ${booked("b.status <> 'cancelled' and b.hold_until is null")})::float8 as appointments,
+       count(*) filter (where l.is_no_show)::float8 as no_shows,
+       count(*) filter (where l.is_sold)::float8 as sold,
+       coalesce(sum(case when l.is_sold then coalesce(l.sold_cents, ${value}, 0) end), 0)::float8 as sold_cents
+from l group by 1, 2, 3, 4`,
+    values: [p.from, p.to, zone],
+  };
+}
+
+/** Ad spend per day and tag in the period. Days here are the ad platform's, kept as the dates it gave. */
+export function adSpendQuery(p: Period): Query {
+  check(p, null, "UTC");
+  return {
+    text: `select to_char(day, 'YYYY-MM-DD') as day, source, campaign, content, currency, spend_cents::float8 as spend_cents,
+       coalesce(clicks, 0)::float8 as clicks, coalesce(impressions, 0)::float8 as impressions
+from ad_spend where day >= $1::date and day <= $2::date`,
+    values: [p.from, p.to],
+  };
+}
+
 /** The most recently made bookings; `starts_at` is an ISO instant for admin's <When timeZone>. */
 export function recentBookingsQuery(limit = 10): Query {
   return {

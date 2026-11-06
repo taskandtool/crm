@@ -1,0 +1,214 @@
+// The lead report's pieces: load the figures once, then lay out whichever
+// components a business wants. Each takes the loaded report and nothing else.
+//
+//   const r = await loadLeadReport(db, { period, zone, currency: "usd" });
+//   <LeadKpis report={r} /> <LeadTrends report={r} /> <LeadFunnel report={r} /> <LeadBreakdown report={r} by="campaign" href={(by) => `?by=${by}`} />
+//
+// Leads come from the `leads` table with their UTM tags, cost from `ad_spend`,
+// and how far each got from the CRM's bookings and deals or a lead's `outcome`.
+// A daily job fills what lives elsewhere: references/daily-numbers.md.
+import type { Db } from "../data/db";
+import { tagWords } from "../forms/origin";
+import { BarChart, bucketLabel, formatNumber, FunnelChart, fromMinor, KpiRow, KpiTile, LineChart } from "./charts";
+import { addDays, adSpendQuery, days, leadRollupQuery, previousPeriod, run, type Grain, type Period } from "./sql";
+
+export type LeadFigures = { leads: number; appointments: number; no_shows: number; sold: number; sold_cents: number; spend_cents: number; clicks: number; impressions: number };
+export type LeadCell = LeadFigures & { day: string; source: string; campaign: string; content: string };
+export type LeadReport = {
+  period: Period;
+  previous: Period;
+  grain: Grain;
+  zone: string;
+  currency: string;
+  /** One row per day and tag. */
+  cells: LeadCell[];
+  total: LeadFigures;
+  earlier: LeadFigures;
+  /** Spend saved in another currency, left out of the figures rather than added. */
+  otherCurrencies: string[];
+};
+export const BREAKDOWNS = { source: "Source", campaign: "Campaign", content: "Ad" } as const;
+export type BreakdownBy = keyof typeof BREAKDOWNS;
+
+const ZERO: LeadFigures = { leads: 0, appointments: 0, no_shows: 0, sold: 0, sold_cents: 0, spend_cents: 0, clicks: 0, impressions: 0 };
+const add = (a: LeadFigures, b: Partial<LeadFigures>): LeadFigures => {
+  const out = { ...a };
+  for (const k of Object.keys(ZERO) as (keyof LeadFigures)[]) out[k] += b[k] ?? 0;
+  return out;
+};
+const totalOf = (rows: Partial<LeadFigures>[]) => rows.reduce<LeadFigures>(add, ZERO);
+
+/** Cost per lead in minor units: total over total. Null with no cost yet, which is not a cost of nothing. */
+export const costPerLead = (f: Pick<LeadFigures, "spend_cents" | "leads">) => (f.spend_cents > 0 && f.leads > 0 ? f.spend_cents / f.leads : null);
+
+async function cellsFor(db: Db, p: Period, zone: string, currency: string) {
+  const [has] = await db.sql<{ deals: boolean; spend: boolean; bookings: boolean; submissions: boolean }>`
+    select to_regclass('deals') is not null and to_regclass('deal_stages') is not null as deals, to_regclass('ad_spend') is not null as spend,
+           to_regclass('bookings') is not null as bookings, to_regclass('submissions') is not null as submissions`;
+  const leads = await run<Omit<LeadCell, "spend_cents" | "clicks" | "impressions">>(db, leadRollupQuery(p, zone, has));
+  const spend = has.spend ? await run<{ day: string; source: string; campaign: string; content: string; currency: string; spend_cents: number; clicks: number; impressions: number }>(db, adSpendQuery(p)) : [];
+  const here = spend.filter((s) => s.currency === currency.toLowerCase());
+  const cells = [...leads.map((l) => ({ ...ZERO, ...l })), ...here.map(({ currency: _c, ...s }) => ({ ...ZERO, ...s }))] as LeadCell[];
+  return { cells, others: [...new Set(spend.map((s) => s.currency).filter((c) => c !== currency.toLowerCase()))] };
+}
+
+/** A short period by the day, about a quarter by the week, longer by the month. */
+const grainFor = (p: Period): Grain => (days(p) <= 45 ? "day" : days(p) <= 120 ? "week" : "month");
+
+export async function loadLeadReport(db: Db, o: { period: Period; zone: string; currency: string }): Promise<LeadReport> {
+  const previous = previousPeriod(o.period);
+  const [now, then] = await Promise.all([cellsFor(db, o.period, o.zone, o.currency), cellsFor(db, previous, o.zone, o.currency)]);
+  return {
+    period: o.period, previous, grain: grainFor(o.period), zone: o.zone, currency: o.currency.toUpperCase(),
+    cells: now.cells, total: totalOf(now.cells), earlier: totalOf(then.cells), otherCurrencies: now.others,
+  };
+}
+
+/** The local date a day's bucket starts on: Monday for a week. */
+function bucketOf(day: string, grain: Grain): string {
+  if (grain === "day") return day;
+  if (grain === "month") return `${day.slice(0, 8)}01`;
+  return addDays(day, -((new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7));
+}
+
+/** The period's buckets in order, nothing missed where nothing happened. */
+export function bucketsOf(p: Period, grain: Grain): string[] {
+  const out: string[] = [];
+  for (let d = p.from; d <= p.to; d = addDays(d, 1)) {
+    const b = bucketOf(d, grain);
+    if (out[out.length - 1] !== b) out.push(b);
+  }
+  return out;
+}
+
+/** The report rolled up by a tag, most leads first: cost with no leads still shows, under its ad. */
+export function breakdown(r: LeadReport, by: BreakdownBy): (LeadFigures & { name: string })[] {
+  const groups = new Map<string, LeadFigures>();
+  for (const c of r.cells) groups.set(c[by], add(groups.get(c[by]) ?? ZERO, c));
+  return [...groups].map(([name, f]) => ({ name, ...f })).sort((a, b) => b.leads - a.leads || b.spend_cents - a.spend_cents || a.name.localeCompare(b.name));
+}
+
+const money = (r: LeadReport, digits = 0) => ({ style: "currency" as const, currency: r.currency, digits });
+const inMajor = (cents: number | null, r: LeadReport) => (cents === null ? null : fromMinor(cents, r.currency));
+
+export function LeadKpis({ report: r, locale = "en-US" }: { report: LeadReport; locale?: string }) {
+  const against = `the previous ${days(r.previous)} days`;
+  const t = r.total;
+  const e = r.earlier;
+  return (
+    <KpiRow label="Lead figures" class="grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
+      <KpiTile label="Leads" value={t.leads} previous={e.leads} against={against} locale={locale} />
+      <KpiTile label="Ad cost" value={inMajor(t.spend_cents, r)} previous={inMajor(e.spend_cents, r)} format={money(r)} against={against} lowerIsBetter obvious locale={locale} />
+      <KpiTile label="Cost per lead" value={inMajor(costPerLead(t), r)} previous={inMajor(costPerLead(e), r)} format={money(r, 2)} against={against} lowerIsBetter obvious locale={locale} />
+      <KpiTile label="Appointments set" value={t.appointments} previous={e.appointments} against={against} locale={locale} />
+      <KpiTile label="No-shows" value={t.no_shows} previous={e.no_shows} against={against} lowerIsBetter obvious locale={locale} />
+      <KpiTile label="Sold" value={t.sold} previous={e.sold} against={against} locale={locale} />
+    </KpiRow>
+  );
+}
+
+/** Leads and cost over the period: two cards, for the page's own grid. */
+export function LeadTrends({ report: r, locale = "en-US" }: { report: LeadReport; locale?: string }) {
+  const buckets = bucketsOf(r.period, r.grain);
+  const unit = r.grain;
+  const per = (field: "leads" | "spend_cents") => {
+    const sums = new Map<string, number>();
+    for (const c of r.cells) {
+      const b = bucketOf(c.day, r.grain);
+      sums.set(b, (sums.get(b) ?? 0) + c[field]);
+    }
+    return buckets.map((b) => sums.get(b) ?? 0);
+  };
+  const labels = buckets.map((b) => bucketLabel(b, r.grain, locale));
+  return (
+    <>
+      <LineChart title={`Leads per ${unit}`} labels={labels} series={[{ label: "Leads", data: per("leads") }]} format={{ digits: 0 }} locale={locale} />
+      <BarChart title={`Ad cost per ${unit}`} labels={labels} series={[{ label: "Ad cost", data: per("spend_cents").map((c) => fromMinor(c, r.currency)) }]} format={money(r)} locale={locale} />
+    </>
+  );
+}
+
+export function LeadFunnel({ report: r, locale = "en-US" }: { report: LeadReport; locale?: string }) {
+  const t = r.total;
+  return (
+    <FunnelChart
+      title="From lead to sale"
+      steps={[
+        { label: "Leads", value: t.leads },
+        { label: "Appointments set", value: t.appointments },
+        { label: "Showed", value: Math.max(t.appointments - t.no_shows, 0) },
+        { label: "Sold", value: t.sold },
+      ]}
+      locale={locale}
+    />
+  );
+}
+
+const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const th = "px-4 py-2.5 text-right font-medium first:text-left";
+const td = "px-4 py-2.5 text-right tabular-nums first:text-left first:font-medium";
+
+/** Leads, cost and how far they got, by source, campaign or ad, with tabs when `href` is given. */
+export function LeadBreakdown({ report: r, by, href, locale = "en-US" }: { report: LeadReport; by: BreakdownBy; href?: (by: BreakdownBy) => string; locale?: string }) {
+  const rows = breakdown(r, by);
+  const shown = (f: LeadFigures) => (
+    <>
+      <td class={td}>{formatNumber(f.leads, {}, locale)}</td>
+      <td class={td}>{f.spend_cents ? formatNumber(inMajor(f.spend_cents, r), money(r), locale) : "–"}</td>
+      <td class={td}>{formatNumber(inMajor(costPerLead(f), r), money(r, 2), locale)}</td>
+      <td class={td}>{formatNumber(f.appointments, {}, locale)}</td>
+      <td class={td}>{formatNumber(f.no_shows, {}, locale)}</td>
+      <td class={td}>{formatNumber(f.sold, {}, locale)}</td>
+      <td class={td}>{f.sold_cents ? formatNumber(inMajor(f.sold_cents, r), money(r), locale) : "–"}</td>
+    </>
+  );
+  return (
+    <div class="overflow-hidden rounded-card border border-line bg-surface">
+      {href ? (
+        <nav aria-label="Group by" class="flex gap-1 border-b border-line p-2">
+          {(Object.keys(BREAKDOWNS) as BreakdownBy[]).map((k) => (
+            <a href={href(k)} aria-current={k === by ? "true" : undefined}
+              class={"inline-flex min-h-9 items-center rounded-control px-3 text-label font-medium no-underline " + (k === by ? "bg-panel text-ink" : "text-ink-2 hover:text-ink")}>
+              {BREAKDOWNS[k]}
+            </a>
+          ))}
+        </nav>
+      ) : null}
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[42rem] border-collapse text-copy">
+          <caption class="sr-only">Leads by {BREAKDOWNS[by].toLowerCase()}</caption>
+          <thead>
+            <tr class="border-b border-line text-label text-ink-3">
+              <th scope="col" class={th}>{BREAKDOWNS[by]}</th>
+              <th scope="col" class={th}>Leads</th>
+              <th scope="col" class={th}>Ad cost</th>
+              <th scope="col" class={th}>Cost per lead</th>
+              <th scope="col" class={th}>Appts</th>
+              <th scope="col" class={th}>No-shows</th>
+              <th scope="col" class={th}>Sold</th>
+              <th scope="col" class={th}>Revenue</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length ? rows.map((row) => (
+              <tr class="border-b border-line last:border-0">
+                <td class={td}>{row.name ? sentence(tagWords(row.name)) : "Not tagged"}</td>
+                {shown(row)}
+              </tr>
+            )) : (
+              <tr><td colspan={8} class="px-4 py-8 text-center text-ink-2">No leads in this period.</td></tr>
+            )}
+          </tbody>
+          {rows.length > 1 ? (
+            <tfoot>
+              <tr class="border-t border-line-strong font-semibold">
+                <td class={td}>Total</td>
+                {shown(r.total)}
+              </tr>
+            </tfoot>
+          ) : null}
+        </table>
+      </div>
+    </div>
+  );
+}

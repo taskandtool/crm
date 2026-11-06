@@ -16,6 +16,7 @@ import { envOf, type Env } from "../data/env";
 import { linkBase, linkReady, readyHere } from "../proposals/link";
 import type { Production } from "../proposals/serving";
 import type { Links, PhoneCtx } from "../phone/send";
+import { stripeConnected } from "../payments/stripe";
 import { mainNumber } from "../phone/store";
 import { twilioFrom, twilioReachable } from "../phone/twilio";
 import { todayIn } from "../reports/sql";
@@ -88,7 +89,7 @@ async function ctxFor(db: Db, env: Env, links: () => Promise<Links | null>): Pro
   const [n, b] = await Promise.all([mainNumber(db).catch(() => null), businessOf(db)]);
   return {
     db, env, provider: twilioReachable(env) ? twilioFrom(env) : null, business: b.name ?? "us", unnamed: !b.name, zone: cfg.time_zone,
-    links, address: b.address,
+    links, address: b.address, paying: () => stripeConnected(env),
     statusUrl: n?.hooks_url ? `${n.hooks_url}/status?n=${n.id}` : null,
   };
 }

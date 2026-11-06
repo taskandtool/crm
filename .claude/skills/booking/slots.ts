@@ -333,8 +333,11 @@ export function zoneLabel(t: Date, zone: string, locale = "en-US"): string {
 }
 
 /** "Chicago (Central Time)": the place, and the zone's everyday name; for people, where zoneLabel is for a time. */
+const OLD_NAMES: Record<string, string> = { Calcutta: "Kolkata", Saigon: "Ho Chi Minh City", Rangoon: "Yangon", Katmandu: "Kathmandu", Kiev: "Kyiv" };
+
 export function zoneName(zone: string, locale = "en-US"): string {
-  const place = zone.split("/").pop()!.replace(/_/g, " ");
+  const last = zone.split("/").pop()!.replace(/_/g, " ");
+  const place = OLD_NAMES[last] ?? last; // Browsers still report some cities by their old names.
   try {
     const p = shownWith(locale, { timeZone: zone, timeZoneName: "longGeneric" }).formatToParts(new Date()).find((x) => x.type === "timeZoneName");
     return p?.value && p.value !== place ? `${place} (${p.value})` : place;

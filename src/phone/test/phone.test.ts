@@ -508,6 +508,22 @@ test("saving a text warns about what carriers block, and never refuses", () => {
   assert.equal(linkTrouble("See you soon", said), null);
 });
 
+test("nobody is sent to pay where Stripe is off, and an old draft isn't nudged", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
+  withDb(async (s) => {
+    const { ctx, tw, setNow } = await setup(s);
+    await s.db.sql`insert into forms (key, title, fields, follow_up) values ('order', 'Order', '[{"name":"phone","label":"Phone","type":"tel"},{"name":"pay","label":"Pay","type":"payment"}]', true)`;
+    await s.db.sql`insert into submission_drafts (form_key, key_hash, step, phone, source, text_consent, updated_at, created_at)
+      values ('order', 'h9', 1, '512-555-0131', 'test', 'Text me', '2026-10-20T14:30:00Z', '2026-10-20T14:28:00Z'),
+             ('order', 'h10', 1, '512-555-0132', 'test', 'Text me', '2026-10-18T14:30:00Z', '2026-10-18T14:28:00Z')`;
+    setNow(new Date("2026-10-20T15:31:00Z"));
+    ctx.paying = async () => false;
+    assert.equal((await scan(ctx)).sent, 0);
+    assert.equal(tw.texts.length, 0);
+    const rows = await s.db.sql<{ subject_id: string; why: string }>`select subject_id, why from text_sends where flow = 'unpaid'`;
+    assert.equal(rows.length, 1, "the two-day-old draft is left alone");
+    assert.match(rows[0].why, /isn't connected to Stripe/);
+  }));
+
 test("someone who paid gets no nudge, and the flow's switch stops it", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
   withDb(async (s) => {
     const { ctx, tw, setNow } = await setup(s);

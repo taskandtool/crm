@@ -33,7 +33,7 @@ import { home } from "./crm/home";
 import { isUnread, markSeen, NOTICE_LIMIT, notices, seenAt } from "./crm/notifications";
 import { mergeCustomers, mergePreview, possibleDuplicates } from "./crm/merge";
 import { addNote, listNotes, pickNoteKind, wallTime } from "./customers/notes";
-import { phoneKey, saveLead, savePerson } from "./customers/customer";
+import { LEAD_OUTCOMES, phoneKey, saveLead, savePerson, setLeadOutcome } from "./customers/customer";
 import { archiveLead, ARCHIVE_REASONS, autoDeals, contactLeads, convertLead, dealLeads, dealTitleFor, getLead, LEAD_STATUSES, listLeads, MANUAL_SOURCES, openLeadCount, reopenLead, saveLeadDetails, SOURCE_LABELS, type LeadStatus } from "./crm/leads";
 import { LeadPage, LeadResults, LeadsPage, NewLeadPage, type LeadFilter } from "./views/leads";
 import { addEvent, customerEvents, eventCsvColumns, eventsPage, getEvent, inviteDomain, saveEvent, startWall, tellBooker, touchFor, type Event, type EventFilter, type EventInput } from "./crm/events";
@@ -79,7 +79,9 @@ import { leadMoment } from "./forms/destinations";
 import { completePaidSubmission } from "./forms/store";
 import { paymentsAdmin } from "./payments/admin";
 import { invoiceEvents } from "./invoices/webhook";
-import { todayIn as todayInZone } from "./reports/sql";
+import { BREAKDOWNS, loadLeadReport, type BreakdownBy } from "./reports/leads";
+import { addDays as addReportDays, todayIn as todayInZone } from "./reports/sql";
+import { REPORT_PERIODS, ReportsPage } from "./views/reports";
 import { stripeWebhook } from "./payments/webhook";
 import { quotesFor } from "./invoices/quotes";
 import { invoicesFor, owed } from "./invoices/invoices";
@@ -179,7 +181,8 @@ if (invoicesCfg) {
       const own = ownDb(c);
       if (own) afterResponse(c, leadMoment(own.db, envOf(c), id, "complete", { link: new URL(`/forms/submissions/${id}`, c.req.url).href }).finally(() => own.close?.()));
       const book = cfg.booking_page ?? null;
-      const sent = await confirmFormBooking(db, id, emailSender(envOf(c)), { domain: book ? new URL(book).host : "localhost", manageBase: book });
+      const links = book ? null : await (await phoneOf(c)).links().catch(() => null);
+      const sent = await confirmFormBooking(db, id, emailSender(envOf(c)), { domain: book ? new URL(book).host : "localhost", manageBase: book ?? (links ? `${links.base}${links.prefix}/book` : null) });
       if (sent.status === "failed") throw new Error(`booking confirmation for submission ${id}: ${sent.error}`);
       // Before the answer: the request's database closes once it is sent (production).
       await phoneOf(c).then((ctx) => onSubmitted(ctx, id)).catch((err) => console.error("phone:", err));
@@ -996,6 +999,14 @@ function leadFilter(c: C): LeadFilter {
   };
 }
 
+app.get("/reports", async (c) => {
+  const period = REPORT_PERIODS.find((p) => String(p) === c.req.query("days")) ?? 30;
+  const by = (Object.keys(BREAKDOWNS) as BreakdownBy[]).find((k) => k === c.req.query("by")) ?? "source";
+  const today = todayInZone(cfg.time_zone);
+  const report = await loadLeadReport(c.var.db, { period: { from: addReportDays(today, 1 - period), to: today }, zone: cfg.time_zone, currency: dealsCfg.currency });
+  return c.html(<ReportsPage user={c.var.user} report={report} days={period} by={by} />);
+});
+
 app.get("/leads", async (c) => {
   const db = c.var.db;
   const filter = leadFilter(c);
@@ -1064,7 +1075,11 @@ app.post("/leads/:id", async (c) => {
   const body = await c.req.parseBody();
   const title = clean(body.title, 200);
   if (!id || !title) return back(c, `/leads/${id ?? ""}`, "lead-needs");
-  const ok = await saveLeadDetails(c.var.db, id, { title, owner: clean(body.owner, 200), notes: clean(body.notes, 10_000) }, c.var.user);
+  const sold = parseAmount(body.sold ?? "", dealsCfg.currency);
+  if (sold === "invalid") return back(c, `/leads/${id}`, "lead-sold");
+  const outcome = LEAD_OUTCOMES.find((o) => o === body.outcome) ?? null;
+  const ok = await saveLeadDetails(c.var.db, id, { title, owner: clean(body.owner, 200), notes: clean(body.notes, 10_000) }, c.var.user)
+    && await setLeadOutcome(c.var.db, id, { outcome, soldCents: sold }, c.var.user);
   return ok ? back(c, `/leads/${id}`, "saved") : c.notFound();
 });
 

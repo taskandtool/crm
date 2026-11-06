@@ -41,6 +41,8 @@ export type PhoneCtx = {
   business: string;
   /** No business name set yet, so `business` is the stand-in "us": the pages say so. */
   unnamed?: boolean;
+  /** Whether this app can take payments; false holds back "Stopped before paying", whose link couldn't. */
+  paying?: () => Promise<boolean | null>;
   /** The business's time zone: quiet hours and "tomorrow". */
   zone: string;
   /** Where customers' pages are, asked only when an email needs one (finding out can take a request). */
@@ -289,7 +291,11 @@ export async function mayText(db: Db, phone: string | null, ticked: boolean, o: 
 
 // ---- the link an email carries ----------------------------------------------------
 
-/** A draft's link back, at the step they stopped on, for its emails: a second key, so the page they have open keeps working. */
+/**
+ * A draft's link back, at the step they stopped on: the second key, so the page they have open keeps
+ * working. A double-click on the form's first page used that key too (forms/store.ts startDraft); its
+ * page then says to start again, and this link still works.
+ */
 export async function draftLink(db: Db, links: Links, draftId: string, formKey: string): Promise<string> {
   const key = newToken();
   await db.sql`update submission_drafts set text_key_hash = ${await tokenHash(key)} where id = ${draftId}::bigint`;

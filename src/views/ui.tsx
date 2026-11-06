@@ -354,6 +354,7 @@ export const MESSAGES: FlashMessages = {
   "lead-added": "Lead added.",
   "lead-archived": "Lead archived.",
   "lead-reopened": "Lead unarchived.",
+  "lead-sold": { error: "Sold for should be an amount, like 1200.00." },
   "lead-needs": { error: "Add who it is (a name, email or phone) and what they need." },
   "email-taken": { error: `Another ${one} already has that email. Nothing was saved.` },
   "name-needed": { error: "A name, an email or a phone number is needed." },

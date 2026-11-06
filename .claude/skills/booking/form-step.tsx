@@ -68,7 +68,7 @@ export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
           <input type="hidden" name="tz" value={zone} />
           <p class="text-ink-2">{t.name}, {t.duration_min} minutes{t.price_cents ? `, ${formatMoney(t.price_cents, t.currency ?? "usd")}` : ""}.</p>
           <ZoneNote zone={zone} business={business} switchHref={zone !== business ? `${ctx.self}&tz=${encodeURIComponent(business)}` : null} />
-          {tz ? null : <ZoneScript shown={zone} />}
+          {tz || c.req.method !== "GET" ? null : <ZoneScript shown={zone} />}
           <div class="max-w-xs">
             <MonthPicker days={keys} chosen={chosen} href={(d) => withTz(`&date=${d}`)} />
           </div>
@@ -109,7 +109,7 @@ export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
       return (
         <>
           <h1 class="mb-2 text-title font-semibold">{held ? "Your time is held" : "You are booked"}</h1>
-          {tz ? null : <ZoneScript shown={zone} />}
+          {tz || c.req.method !== "GET" ? null : <ZoneScript shown={zone} />}
           <p class="mb-1 font-semibold">{formatSlot({ start: b.starts_at, end: b.ends_at }, zone)}</p>
           <p class="mb-1">{t.name}, with {host.name}.</p>
           <p class="mb-4 break-words">{whereText(b, { link: true })}</p>

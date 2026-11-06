@@ -7,10 +7,13 @@ import { Flash } from "../admin/flash";
 import { EmptyState, rowClick, SearchBar, When } from "../admin/list";
 import { listUrl } from "../admin/query";
 import { StatusBadge, type StatusOption } from "../admin/status";
+import { LEAD_OUTCOMES, OUTCOME_LABELS } from "../customers/customer";
 import type { Note } from "../customers/notes";
 import { dealsCfg, vocab } from "../config";
 import { ARCHIVE_REASONS, MANUAL_SOURCES, SOURCE_LABELS, sourceText, type Lead, type LeadStatus } from "../crm/leads";
 import { ownerOptions, ownerSuggestions, personName } from "../crm/people";
+import { amountText } from "../crm/text";
+import { formatMoney } from "../payments/money";
 import type { Task } from "../crm/tasks";
 import { Layout } from "./layout";
 import { TasksSection } from "./tasks";
@@ -205,6 +208,9 @@ export function LeadPage(p: {
           <Section title="Details">
             <ReadThenEdit fields={[
               { label: "Owner", value: l.owner ? personName(l.owner) : "No one yet" },
+              { label: "Outcome", value: l.outcome ? OUTCOME_LABELS[l.outcome] : null },
+              { label: "Sold for", value: l.sold_cents !== null ? formatMoney(l.sold_cents, dealsCfg.currency) : null },
+              { label: "In their CRM", value: l.external_status ? (l.external_url ? <a href={l.external_url} rel="noreferrer">{l.external_status}</a> : l.external_status) : null },
             ]}>
               <form method="post" action={self} class="grid gap-3">
                 <Field label="What they need">
@@ -213,6 +219,15 @@ export function LeadPage(p: {
                 <Field label="Owner">
                   <input name="owner" list="lead-owners" value={l.owner ? personName(l.owner) : ""} maxlength={200} class={controlClass} />
                   <datalist id="lead-owners">{ownerSuggestions(p.owners).map((o) => <option value={o} />)}</datalist>
+                </Field>
+                <Field label="Outcome">
+                  <select name="outcome" class={controlClass}>
+                    <option value="">Not yet</option>
+                    {LEAD_OUTCOMES.map((o) => <option value={o} selected={l.outcome === o}>{OUTCOME_LABELS[o]}</option>)}
+                  </select>
+                </Field>
+                <Field label="Sold for">
+                  <input name="sold" inputmode="decimal" value={l.sold_cents !== null ? amountText(l.sold_cents, dealsCfg.currency) : ""} class={controlClass} />
                 </Field>
                 <Field label="Notes">
                   <textarea name="notes" rows={3} maxlength={10000} class={controlClass}>{l.notes ?? ""}</textarea>

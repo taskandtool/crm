@@ -37,6 +37,7 @@ Read the skill for what the owner asks before working from memory:
 Use these rather than doing the work by hand; each answers `--help`.
 
 ```bash
+node scripts/reports.mjs summary                # the lead report's figures; spend saves ad costs (.claude/skills/reports/references/daily-numbers.md)
 node scripts/leads.mjs list                     # open enquiries, newest first; show, add (a phone call), archive --reason, restore
 node scripts/deals.mjs add 18 --lead 5          # convert lead 5 into a deal for its contact, with a call back today
 node scripts/customers.mjs add "Ann Lee" --email ann@example.com   # "customers add: added #12 Ann Lee [Lead]", or "already here, not added"

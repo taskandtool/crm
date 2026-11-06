@@ -116,9 +116,9 @@ export const TREND_CLASS: Record<Trend, string> = {
   none: "text-ink-3",
 };
 
-export function KpiRow(props: { label?: string; children?: Child }) {
+export function KpiRow(props: { label?: string; class?: string; children?: Child }) {
   return (
-    <dl aria-label={props.label} class="grid grid-cols-2 gap-3 md:grid-cols-4">
+    <dl aria-label={props.label} class={"grid gap-3 " + (props.class ?? "grid-cols-2 md:grid-cols-4")}>
       {props.children}
     </dl>
   );
@@ -131,6 +131,8 @@ export function KpiTile(props: {
   format?: NumberFormat;
   change?: ChangeAs;
   lowerIsBetter?: boolean;
+  /** A figure everyone knows is better low, such as a cost: no "(lower is better)". */
+  obvious?: boolean;
   /** what the change is measured against, for the sentence: "the previous 28 days" */
   against?: string;
   locale?: string;
@@ -161,8 +163,8 @@ export function KpiTile(props: {
       <dd class="mt-1 text-title font-semibold tabular-nums">{shown}</dd>
       <dd class={"mt-1 text-label tabular-nums " + TREND_CLASS[trend]}>
         <span aria-hidden="true">
-          {direction === "none" ? "No comparison" : `${arrow} ${size || (direction === "flat" ? "No change" : "")}`.trim()}
-          {lowerIsBetter && direction !== "none" ? " (lower is better)" : ""}
+          {direction === "none" ? "No comparison" : `${arrow} ${size || (direction === "flat" ? "No change" : "from 0")}`}
+          {lowerIsBetter && !props.obvious && direction !== "none" ? " (lower is better)" : ""}
         </span>
         <span class="sr-only">{`${label} ${shown}, ${words}.`}</span>
       </dd>

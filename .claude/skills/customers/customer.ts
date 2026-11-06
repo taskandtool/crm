@@ -159,6 +159,36 @@ export function answerFields(defs: FieldDef[], answers: Record<string, unknown>)
 
 export type LeadSource = "form" | "booking" | "phone" | "walk_in" | "referral" | "other";
 
+export const LEAD_OUTCOMES = ["appointment_set", "showed", "no_show", "sold", "lost"] as const;
+export type LeadOutcome = (typeof LEAD_OUTCOMES)[number];
+export const OUTCOME_LABELS: Record<LeadOutcome, string> = { appointment_set: "Appointment set", showed: "Showed", no_show: "No-show", sold: "Sold", lost: "Lost" };
+
+/**
+ * Where a lead got to. Only what is given changes, so a daily job can say just the status; null
+ * clears. `external_*` is the same lead in another CRM, and saving any of it stamps the sync time.
+ * False when no lead has that id.
+ */
+export async function setLeadOutcome(
+  db: Db,
+  id: string,
+  o: { outcome?: LeadOutcome | null; soldCents?: number | null; externalId?: string | null; externalStatus?: string | null; externalUrl?: string | null },
+  user: string | null,
+): Promise<boolean> {
+  const keep = (k: keyof typeof o) => o[k] === undefined;
+  const external = !keep("externalId") || !keep("externalStatus") || !keep("externalUrl");
+  const rows = await db.sql`
+    update leads set
+      outcome = case when ${keep("outcome")}::boolean then outcome else ${o.outcome ?? null}::text end,
+      sold_cents = case when ${keep("soldCents")}::boolean then sold_cents else ${o.soldCents ?? null}::bigint end,
+      external_id = case when ${keep("externalId")}::boolean then external_id else ${o.externalId ?? null}::text end,
+      external_status = case when ${keep("externalStatus")}::boolean then external_status else ${o.externalStatus ?? null}::text end,
+      external_url = case when ${keep("externalUrl")}::boolean then external_url else ${o.externalUrl ?? null}::text end,
+      external_synced_at = case when ${external}::boolean then now() else external_synced_at end,
+      updated_at = now(), updated_by = ${user}
+    where id = ${id}::bigint returning id`;
+  return rows.length > 0;
+}
+
 /**
  * A lead for a customer: one enquiry, as Pipedrive's leads and Jobber's
  * requests are, from what came in (a form submission, an online booking)

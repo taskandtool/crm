@@ -25,7 +25,7 @@ const creates = [
 /** The sidebar's name: the business's once it has one (Settings, Business), else what this is. */
 const brand = () => business().name ?? "CRM";
 
-export type Section = "home" | "messages" | "notifications" | "leads" | "tasks" | "deals" | "customers" | "schedule" | "quotes" | "invoices" | "settings" | "search";
+export type Section = "home" | "messages" | "notifications" | "leads" | "tasks" | "deals" | "customers" | "schedule" | "quotes" | "invoices" | "reports" | "settings" | "search";
 
 /**
  * Schedule, as Jobber's: the team's days, as a calendar and as a list. What
@@ -92,6 +92,7 @@ export function Layout(props: {
       { href: "/invoices/quotes", label: `${invoicesCfg.word}s`, section: "quotes" as const },
       { href: "/invoices", label: "Invoices", section: "invoices" as const },
     ] : []),
+    { href: "/reports", label: "Reports", section: "reports" },
   ];
   const link = (n: { href: string; label: string; section: Section }) => {
     const on = section === n.section;

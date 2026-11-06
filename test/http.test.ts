@@ -1165,6 +1165,31 @@ test("a lead from a customer's form goes to its destination on a database of its
   }
 });
 
+test("Reports shows zeros at the start, then a lead, its outcome and what its ad cost", async (t) => {
+  if (skip) return t.skip(skip);
+  const headers = { host: "crm.example", "x-tasktool-user": "owner@example.com" };
+  const page = async (q = "") => (await app.request(`${HOST}/reports${q}`, { headers }, { runtime })).text();
+  assert.match(await page(), /Cost per lead/);
+  const [c] = await db.sql<{ id: string }>`insert into customers (name, email, stage) values ('Rae Report', 'rae.report@example.com', 'lead') returning id::text as id`;
+  const [sub] = await db.sql<{ id: string }>`insert into submissions (form_key, email, source, data, completed_at) values ('quote', 'rae.report@example.com', 'crm', '{"_utm":{"source":"facebook","campaign":"spring-roof"}}', now()) returning id::text as id`;
+  const [l] = await db.sql<{ id: string }>`insert into leads (customer_id, source, submission_id, title) values (${c.id}::bigint, 'form', ${sub.id}::bigint, 'Quote') returning id::text as id`;
+  await db.sql`insert into ad_spend (day, source, campaign, spend_cents, currency) values (current_date, 'facebook', 'spring-roof', 5000, 'usd')`;
+  try {
+    const res = await app.request(`${HOST}/leads/${l.id}`, { method: "POST", body: new URLSearchParams({ title: "Quote", outcome: "sold", sold: "1200.00" }), headers: { ...headers, origin: HOST, "content-type": "application/x-www-form-urlencoded" } }, { runtime });
+    assert.equal(res.status, 303);
+    const shown = await page("?by=campaign");
+    assert.match(shown, /Spring roof/);
+    assert.match(shown, /\$50\.00/);
+    assert.match(shown, /\$1,200/);
+    assert.match(await (await app.request(`${HOST}/leads/${l.id}`, { headers }, { runtime })).text(), /\$1,200\.00/);
+  } finally {
+    await db.sql`delete from ad_spend where campaign = 'spring-roof'`;
+    await db.sql`delete from leads where id = ${l.id}::bigint`;
+    await db.sql`delete from submissions where id = ${sub.id}::bigint`;
+    await db.sql`delete from customers where id = ${c.id}::bigint`;
+  }
+});
+
 test("a form's payment step runs here: with Stripe not connected it says so, and offers no button", async (t) => {
   if (skip) return t.skip(skip);
   await db.sql`insert into forms (key, title, fields) values ('q-order', 'Order', '[{"name":"name","label":"Name","type":"text"},{"name":"email","label":"Email","type":"email"},{"name":"what","label":"What","type":"items","currency":"usd","items":[{"key":"a","label":"Bracket","price_cents":450,"unit":"each"}]},{"name":"pay","label":"Pay","type":"payment"}]')`;

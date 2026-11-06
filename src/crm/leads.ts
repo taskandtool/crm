@@ -6,7 +6,7 @@
 // archived; never deleted.
 import { likePattern } from "../admin/query";
 import type { Db } from "../data/db";
-import type { LeadSource } from "../customers/customer";
+import type { LeadOutcome, LeadSource } from "../customers/customer";
 import { BOOKING_PAGE, saveSubmitter } from "../forms/store";
 import { cfg, dealsCfg, newLeadTask } from "../config";
 import { createDeal } from "./deals";
@@ -41,6 +41,11 @@ export type Lead = {
   owner: string | null;
   status: LeadStatus;
   archived_reason: string | null;
+  outcome: LeadOutcome | null;
+  sold_cents: number | null;
+  external_id: string | null;
+  external_status: string | null;
+  external_url: string | null;
   deal_id: string | null;
   deal_title: string | null;
   submission_id: string | null;
@@ -66,7 +71,7 @@ export type Lead = {
 const leadTexts = (submissions: boolean) =>
   spliced({
     columns: `l.id::text as id, l.customer_id::text as customer_id, c.name as customer_name, c.company as customer_company, c.email::text as customer_email, c.phone as customer_phone,
-      l.source, l.title, l.notes, l.owner::text as owner, l.status, l.archived_reason, l.deal_id::text as deal_id, d.title as deal_title,
+      l.source, l.title, l.notes, l.owner::text as owner, l.status, l.archived_reason, l.outcome, l.sold_cents::float8 as sold_cents, l.external_id, l.external_status, l.external_url, l.deal_id::text as deal_id, d.title as deal_title,
       l.submission_id::text as submission_id, l.booking_id::text as booking_id, l.created_at, l.created_by::text as created_by,
       l.updated_at, l.updated_by::text as updated_by, ${submissions ? "s.data" : "null::jsonb"} as answers,
       od.id::text as open_deal_id, od.title as open_deal_title, ne.id::text as next_event_id, ne.starts_at as next_event_at`,
@@ -86,6 +91,12 @@ const leadTexts = (submissions: boolean) =>
   });
 const WITH_SUBMISSIONS = leadTexts(true);
 const WITHOUT_SUBMISSIONS = leadTexts(false);
+/** The lead with this id in another CRM. */
+export async function leadByExternalId(db: Db, externalId: string): Promise<Lead | null> {
+  const [r] = await db.sql<{ id: string }>`select id::text as id from leads where external_id = ${externalId}`;
+  return r ? getLead(db, r.id) : null;
+}
+
 const sqlFor = async (db: Db) => ((await presentTables(db)).submissions ? WITH_SUBMISSIONS : WITHOUT_SUBMISSIONS).sql(db);
 
 /** The first answer worth reading: a message if there is one, else the first text. */
