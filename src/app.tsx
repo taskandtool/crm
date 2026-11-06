@@ -824,6 +824,12 @@ app.route(
 app.route(
   "/forms",
   formEditor(dbOf, { base: "/forms", css: "/crm.css", timeZone: cfg.time_zone, source: "crm", submissions: "/forms/submissions", nav: FORM_TABS, Frame: frameIn("settings"),
+    publicForm: async (c, key) => {
+      const links = await phoneOf(c).then((ctx) => ctx.links()).catch(() => null);
+      const here = !cfg.booking_page && invoicesCfg ? `/q/forms/${key}/start` : null;
+      const share = links ? `${links.base}${links.prefix}/forms/${key}/start` : null;
+      return here || share ? { preview: share ?? here!, share } : null;
+    },
     // A form can follow up on its own: the phone skill's automatic texts, by email without texting.
     followUp: { settings: "/phone" },
     // A form can make each submission a deal automatically: in the stage it picks, owned by the person it names.

@@ -583,7 +583,7 @@ export function FlowPicture(props: {
       <div class="space-y-2">
         <p class="text-ink-2">Stops early when: {flow.stops.join(" · ")}.</p>
         {count?.sent ? <p>{outcomeText(flow, count)}</p> : null}
-        <AskAi ask={`Change the "${flow.name}" text to say `} />
+        <AskAi ask={`Change the "${flow.name}" text`} />
       </div>
     </div>
   );

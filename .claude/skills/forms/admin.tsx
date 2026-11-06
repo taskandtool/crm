@@ -258,20 +258,26 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
   // ---- the list ----------------------------------------------------------
 
   // Booking and Payment are columns only where a listed form can lead to one (leadsTo).
-  const spec = (view: View, showForm: boolean, titles: Map<string, string>, has: { bookings: boolean; payments: boolean }): TableSpec<Item> => ({
+  const spec = (view: View, showForm: boolean, titles: Map<string, string>, has: { bookings: boolean; payments: boolean }, selectable = true): TableSpec<Item> => ({
     id: "subs",
     href: (r) => subUrl(r.id),
-    select: { form: "bulk", label: who, can: (r) => !r.lead },
+    select: selectable ? { form: "bulk", label: who, can: (r) => !r.lead } : undefined,
     columns: [
       {
         label: "From",
+        class: "w-full max-w-0",
         cell: (r) => (
           <>
             {view === "open" && r.status === "new" ? <span class="mr-2"><StatusBadge value="new" options={STATUSES} /></span> : null}
             <span class={"break-words " + (r.status === "new" ? "font-semibold" : "")}>{who(r)}</span>
-            {r.name && r.email ? <span class={`block break-all ${smallText} text-ink-2`}>{r.email}</span> : null}
-            {r.completed_at ? null : <span class={`block ${smallText} text-ink-2`}>Not finished</span>}
-            {r.send_failed ? <span class={`block ${smallText} font-semibold`}>Send failed</span> : null}
+            {r.name && r.email ? <span class={`block truncate ${smallText} text-ink-2`}>{r.email}</span> : null}
+            {!r.completed_at || r.send_failed ? (
+              <span class={`block ${smallText} text-ink-2`}>
+                {r.completed_at ? null : "Not finished"}
+                {!r.completed_at && r.send_failed ? " · " : null}
+                {r.send_failed ? <span class="font-semibold text-ink">Send failed</span> : null}
+              </span>
+            ) : null}
           </>
         ),
       },
@@ -305,8 +311,10 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     const withLinks = rows.map((r) => ({ ...r, linked: linked.get(r.id), lead: leads.has(r.id) }));
     const { forms, titles, fresh } = await formsAndKeys(db);
     const self = listUrl(here, filterQuery(f));
-    const more = (cur: string) => listUrl(here, { ...filterQuery(f), after: cur });
-    const s = spec(view, !f.form, titles, await leadsTo(db, f.form));
+    // Every row a lead's (the CRM's usual case): nothing here can be moved, so no checkboxes. Load more keeps to what the page began with.
+    const selectable = c.req.query("sel") !== "0" && withLinks.some((r) => !r.lead);
+    const more = (cur: string) => listUrl(here, { ...filterQuery(f), after: cur, sel: selectable ? null : "0" });
+    const s = spec(view, !f.form, titles, await leadsTo(db, f.form), selectable);
     if (isPartial(c) && after) return c.html(<TableRows spec={s} rows={withLinks} next={next} more={more} />);
 
     const results = (
@@ -319,7 +327,6 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
           ))}
         </form>
         {after ? <p class="mb-3 text-label"><a href={self}>Back to the newest</a></p> : null}
-        <div class="mb-3 flex justify-end"><a href={listUrl(`${base}/export.csv`, { ...filterQuery(f), view })} class={buttonClass}>Export CSV</a></div>
         <DataTable
           spec={s}
           caption={`${v.label}, newest first`}
@@ -328,6 +335,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
           more={more}
           empty={filtered(f) ? <NoMatches clear={here} /> : v.empty}
         />
+        {rows.length ? <div class="mt-3 flex justify-end"><a href={listUrl(`${base}/export.csv`, { ...filterQuery(f), view })} class={buttonClass}>Export CSV</a></div> : null}
       </div>
     );
     if (isPartial(c)) return c.html(results);
@@ -347,6 +355,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
             target="#results"
             q={f.q}
             placeholder="Name or email"
+            hideClear={!rows.length}
             filters={[
               { name: "form", label: "Form", options: [...titles].map(([value, label]) => ({ value, label })), value: f.form, any: "All forms" },
               { name: "days", label: "Period", options: PERIODS, value: f.days === null ? null : String(f.days), any: "Any time" },
@@ -473,12 +482,13 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       : view === "open" ? <>{move("done", "Archive", true)}{move("spam", "Mark as spam")}</>
       : view === "archived" ? <>{move("read", "Move to Open")}{move("spam", "Mark as spam")}</>
       : move("read", "Not spam");
+    // A lead's submission moves with its lead, so "Archived" here would only mean the lead moved on: the lead says where it stands.
     const head = {
-      back: { href: base + VIEWS[view].path || "/", label: view === "open" ? "Submissions" : VIEWS[view].label },
+      back: { href: base + VIEWS[view].path || "/", label: view === "open" || lead ? "Submissions" : VIEWS[view].label },
       sub: (
         <p>
           {title} · <When at={r.created_at} timeZone={tz} />
-          {view === "open" ? null : <> · <StatusBadge value={r.status} options={STATUSES} /></>}
+          {view === "open" || lead ? null : <> · <StatusBadge value={r.status} options={STATUSES} /></>}
         </p>
       ),
       actions,
@@ -508,7 +518,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
                 <Section title="Order">
                   <FieldList fields={[
                     ...price.lines.map((l) => ({ label: l.quantity > 1 ? `${l.quantity} x ${l.label}` : l.label, value: formatMoney(l.quantity * l.unit_cents, price!.currency) })),
-                    { label: "Total before tax", value: <strong>{formatMoney(price.subtotal_cents, price.currency)}</strong> },
+                    { label: form?.fields.some((x) => x.type === "payment" && x.tax_rate_id) ? "Total before tax" : "Total", value: <strong>{formatMoney(price.subtotal_cents, price.currency)}</strong> },
                   ]} />
                 </Section>
               ) : null}
@@ -538,17 +548,18 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
                 </Section>
               )}
               {sends.length ? <div id="destinations" class="scroll-mt-4"><SentCard rows={sends} self={self} timeZone={tz} /></div> : null}
+              {r.notified ? <Section title="Team email"><p class={`${smallText} text-ink-2`}>{r.notified}</p></Section> : null}
               <Section title="Where it came from">
                 <FieldList
                   fields={[
                     { label: "Form", value: title },
-                    { label: "Page", value: r.page },
+                    // The form's own page says nothing the Form line doesn't.
+                    { label: "Page", value: r.page && /\/forms\/[^/]+\/start\/?$/.test(r.page) ? null : r.page },
                     { label: "Found you through", value: from },
                     { label: "Keyword", value: utm.term ? tagWords(utm.term) : null },
                     { label: "Ad", value: utm.content ? tagWords(utm.content) : null },
                     { label: "Landing page", value: landing },
                     { label: "First found you through", value: first ? cameFrom({ _utm: first.utm }) : null },
-                    { label: "Team email", value: r.notified },
                     { label: "Last changed by", value: r.updated_by ? <>{r.updated_by}, <When at={r.updated_at} timeZone={tz} /></> : null },
                   ]}
                 />
@@ -741,7 +752,7 @@ function DestinationsCard({ list }: { list: Destination[] }) {
 function NotesCard({ action, email, notes, timeZone }: { action: string; email: string; notes: Note[]; timeZone: string }) {
   return (
     <Section title="Notes">
-      <p class={`mb-4 ${smallText} text-ink-3`}>About {email}: on every submission from them, and on their customer page in the CRM.</p>
+      <p class={`mb-4 ${smallText} text-ink-3`}>About {email}, on every submission from them.</p>
       <NoteForm action={action} />
       {notes.length ? (
         <ol class="mt-6 flex flex-col gap-4">
@@ -834,7 +845,11 @@ export function formEditor(getDb: GetDb, opts: {
   base: string; css: string; timeZone: string; source: string; submissions: string; nav?: NavItem[]; Frame?: Frame; deals?: FormDeals;
   /** This app follows up on its own (the phone skill): offer "Follow up automatically", with where its texts are set up. */
   followUp?: { settings: string };
+  /** Where customers find a form: `preview` for the team to open now, `share` the address to give out, once there is one. */
+  publicForm?: (c: Context, key: string) => Promise<{ preview: string; share: string | null } | null>;
 }) {
+  /** The services a booking step can take; an app without the booking skill has none. */
+  const servicesOf = (c: Context) => getDb(c).sql<{ slug: string; name: string }>`select slug, name from booking_types where active order by name`.catch(() => []);
   /** The stages and owners a form's deals choose from, where this app has deals. */
   const dealChoices = async (c: Context) => (opts.deals ? { stages: await opts.deals.stages(c), owners: await opts.deals.owners(c) } : undefined);
   const base = opts.base.replace(/\/+$/, "");
@@ -848,12 +863,13 @@ export function formEditor(getDb: GetDb, opts: {
   // ---- forms -------------------------------------------------------------
 
   /** A form's page: back to the forms, its submissions one click away. */
-  const editorHead = (form: Form): Head => ({
+  const editorHead = (form: Form, link?: { preview: string; share: string | null } | null): Head => ({
     title: form.title,
     back: { href: base, label: "Forms" },
     sub: form.active ? null : <StatusBadge value="off" options={FORM_STATES} />,
     actions: (
       <>
+        {link ? <a href={link.preview} target="_blank" rel="noopener" class={buttonClass}>Preview</a> : null}
         <a href={listUrl(subs, { form: form.key })} class={buttonClass}>Submissions</a>
         <a href={listUrl(`${base}/export.csv`, { form: form.key })} class={buttonClass}>Export CSV</a>
       </>
@@ -931,8 +947,8 @@ export function formEditor(getDb: GetDb, opts: {
       for (let n = 1; n <= (given ? 1 : 20); n++) {
         const key = n === 1 ? stem : `${stem}-${n}`;
         const made = await db.sql`
-          insert into forms (key, title, fields, notify_emails, source, updated_by)
-          values (${key}, ${title}, ${JSON.stringify(CONTACT_FORM.fields)}::jsonb, ${[c.get("user")]}::citext[], ${opts.source}, ${c.get("user")})
+          insert into forms (key, title, fields, notify_emails, owner, source, updated_by)
+          values (${key}, ${title}, ${JSON.stringify(CONTACT_FORM.fields)}::jsonb, ${[c.get("user")]}::citext[], ${opts.deals ? c.get("user") : null}, ${opts.source}, ${c.get("user")})
           on conflict (key) do nothing
           returning key`;
         if (made.length) return c.redirect(withFlash(`${base}/form/${key}`, "created"), 303);
@@ -947,7 +963,8 @@ export function formEditor(getDb: GetDb, opts: {
     if (!found) return c.notFound();
     const team = await teamOf(envOf(c));
     const sends = await destinationsOf(getDb(c), found.form.key);
-    return framed(c, base, editorHead(found.form), <><Editor base={base} form={found.form} raw={found.raw} version={found.version} team={team} deals={await dealChoices(c)} followUp={opts.followUp} /><DestinationsCard list={sends} /></>);
+    const link = (await opts.publicForm?.(c, found.form.key)) ?? null;
+    return framed(c, base, editorHead(found.form, link), <>{link?.share ? <ShareLink url={link.share} /> : null}<Editor services={await servicesOf(c)} base={base} form={found.form} raw={found.raw} version={found.version} team={team} deals={await dealChoices(c)} followUp={opts.followUp} /><DestinationsCard list={sends} /></>);
   });
 
   app.post("/form/:key", async (c) => {
@@ -955,6 +972,7 @@ export function formEditor(getDb: GetDb, opts: {
     const found = await formRow(db, c.req.param("key"));
     if (!found) return c.notFound();
     const draft = readEditor(await c.req.parseBody({ all: true }));
+    const services = await servicesOf(c);
     const { fields, problems } = checkFields(draft.fields);
     const formProblems: Errors = {};
     if (!draft.title) formProblems.title = "Give the form a title.";
@@ -987,7 +1005,7 @@ export function formEditor(getDb: GetDb, opts: {
           c,
           base,
           editorHead(found.form),
-          <Editor base={base} form={form} raw={draft.fields} version={version} problems={problems} formProblems={formProblems} note={note} team={team} deals={dealsNow} followUp={opts.followUp} />, status);
+          <Editor services={services} base={base} form={form} raw={draft.fields} version={version} problems={problems} formProblems={formProblems} note={note} team={team} deals={dealsNow} followUp={opts.followUp} />, status);
     if (Object.keys(problems).length || Object.keys(formProblems).length) return again(422);
 
     // Saved only over the version the editor opened, so two people editing at
@@ -1002,10 +1020,27 @@ export function formEditor(getDb: GetDb, opts: {
     if (!saved.length) {
       return again(409, "Someone saved this form after you opened it, so your changes are not saved yet. Check them below and save again to replace theirs.", found.version);
     }
-    return c.redirect(withFlash(`${base}/form/${form.key}`, "saved") + `#${draft.focus}`, 303);
+    return c.redirect(withFlash(`${base}/form/${form.key}`, "saved") + (draft.focus ? `#${draft.focus}` : ""), 303);
   });
 
   app.get("/export.csv", exportCsv(getDb));
+
+  // One of them: what they answered before they stopped.
+  app.get("/unfinished/:id{[0-9]+}", async (c) => {
+    const db = getDb(c);
+    const [d] = await db.sql<{ form_key: string; name: string | null; email: string | null; phone: string | null; step: number; data: Record<string, unknown> | null; updated_at: Date }>`
+      select form_key, name, email::text as email, phone, step, data, updated_at from submission_drafts where id = ${c.req.param("id")}::bigint and submission_id is null and not spam`;
+    if (!d) return c.notFound();
+    const form = (await formRow(db, d.form_key))?.form;
+    const shown = (form?.fields ?? []).filter((x) => !["name", "email", "phone"].includes(x.name) && d.data?.[x.name] != null && d.data[x.name] !== "");
+    return framed(c, base, { title: d.name || d.email || "Not given yet", back: { href: `${base}/unfinished`, label: "Not finished" }, sub: <p>{form?.title ?? d.form_key} · <When at={d.updated_at} timeZone={opts.timeZone} /></p> },
+      <div class="flex max-w-prose flex-col gap-4">
+        <Section title="Contact">
+          <FieldList fields={[{ label: "Name", value: d.name }, { label: "Email", value: d.email }, { label: "Phone", value: d.phone }]} />
+        </Section>
+        {shown.length ? <Section title="Answers"><FieldList fields={shown.map((x) => ({ label: x.label, value: String(d.data![x.name]) }))} /></Section> : null}
+      </div>);
+  });
 
   // Forms with steps that someone started and has not finished (store.ts drafts): the newest 200.
   app.get("/unfinished", async (c) => {
@@ -1023,7 +1058,7 @@ export function formEditor(getDb: GetDb, opts: {
         "Not finished",
         <>
           <p class="mb-4 max-w-prose text-ink-2">
-            People who started a form with steps and stopped before the end. What they answered is kept.
+            People who stopped during a form's questions. Those who stopped at a booking or payment are under Submissions.
           </p>
           {rows.length ? (
             <div class="overflow-x-auto rounded-card border border-line bg-surface">
@@ -1039,7 +1074,7 @@ export function formEditor(getDb: GetDb, opts: {
                 <tbody>
                   {rows.map((d) => (
                     <tr class="border-b border-line">
-                      <td class="px-3 py-2">{d.name || d.email || "Not given yet"}{d.name && d.email ? <span class="block text-label text-ink-2">{d.email}</span> : null}</td>
+                      <td class="px-3 py-2"><a href={`${base}/unfinished/${d.id}`} class="font-semibold text-ink no-underline hover:underline">{d.name || d.email || "Not given yet"}</a>{d.name && d.email ? <span class="block text-label text-ink-2">{d.email}</span> : null}</td>
                       <td class="px-3 py-2">{forms.get(d.form_key) ?? d.form_key}</td>
                       <td class="px-3 py-2">{d.step}</td>
                       <td class="px-3 py-2"><When at={d.updated_at} timeZone={opts.timeZone} /></td>
@@ -1150,7 +1185,7 @@ function readEditor(body: Record<string, unknown>): Draft {
     });
   }
   const op = s("op") || "save";
-  let focus = "fields";
+  let focus = "";
   const m = /^(up|down|remove):(\d+)$/.exec(op);
   if (m) {
     const i = Number(m[2]);
@@ -1209,7 +1244,23 @@ const TYPE_LABELS: Record<Field["type"], string> = {
 };
 
 
+/** The form's address to give out, ready to copy. */
+function ShareLink({ url }: { url: string }) {
+  return (
+    <div class="mb-4 flex flex-wrap items-center gap-2 rounded-card border border-line bg-surface px-4 py-3">
+      <span class="text-label font-semibold">Form link</span>
+      <a href={url} target="_blank" rel="noopener" class="min-w-0 flex-1 truncate text-label text-ink-2">{url}</a>
+      <button type="button" class={buttonClass} onclick={`navigator.clipboard.writeText(${JSON.stringify(url)}).then(() => { this.textContent = "Copied" })`}>Copy</button>
+    </div>
+  );
+}
+
+/** A step has no help text or Required of its own: gone as soon as Type says it is one. */
+const STEP_HIDES = "[fieldset:has(option[value=booking]:checked)_&]:hidden [fieldset:has(option[value=payment]:checked)_&]:hidden [fieldset:has(option[value=page]:checked)_&]:hidden";
+const moveClass = "inline-flex size-10 shrink-0 items-center justify-center rounded-control border border-line bg-surface text-ink-2 hover:bg-panel";
+
 function Editor(props: {
+  services: { slug: string; name: string }[];
   base: string;
   form: Form;
   raw: Record<string, unknown>[];
@@ -1326,10 +1377,21 @@ function Editor(props: {
           {raw.map((f, i) => {
             const pid = `p-field-${i}`;
             const type = text(f.type) as Field["type"];
+            const isStep = type === "booking" || type === "payment" || type === "page";
             return (
               <li id={`field-${i}`}>
-                <fieldset class="rounded-card border border-line p-4" aria-describedby={problems[String(i)] ? pid : undefined}>
-                  <legend class="px-1 text-label font-semibold">Question {i + 1}</legend>
+                <details class="group/q rounded-card border border-line" open={!text(f.label) || !!problems[String(i)]}>
+                <summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-2 sm:px-4">
+                  <span aria-hidden="true" class="text-ink-3 transition-transform group-open/q:rotate-90">›</span>
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate font-semibold">{text(f.label) || "New question"}</span>
+                    <span class={`block ${smallText} text-ink-2`}>{isStep ? `Step: ${TYPE_LABELS[type]}` : TYPE_LABELS[type] ?? type}{!isStep && f.required === true ? " · Required" : ""}</span>
+                  </span>
+                  {i > 0 ? <button name="op" value={`up:${i}`} class={moveClass} aria-label={`Move ${text(f.label) || `question ${i + 1}`} up`}>↑</button> : null}
+                  {i < raw.length - 1 ? <button name="op" value={`down:${i}`} class={moveClass} aria-label={`Move ${text(f.label) || `question ${i + 1}`} down`}>↓</button> : null}
+                </summary>
+                <fieldset class="border-t border-line p-3 sm:p-4" aria-describedby={problems[String(i)] ? pid : undefined}>
+                  <legend class="sr-only">{text(f.label) || `Question ${i + 1}`}</legend>
                   <FieldError id={pid} text={problems[String(i)]} />
                   {typeof f.maxLength === "number" ? <input type="hidden" name={`f.${i}.maxLength`} value={String(f.maxLength)} /> : null}
                   {typeof f.autocomplete === "string" ? <input type="hidden" name={`f.${i}.autocomplete`} value={f.autocomplete} /> : null}
@@ -1344,7 +1406,7 @@ function Editor(props: {
                   {/* As Google Forms lays a question out: what it asks and its type on one line, the rest under it, the moves at its foot. */}
                   <div class="grid gap-3 sm:grid-cols-[2fr_1fr]">
                     <label class={fieldClass}>
-                      Question
+                      {isStep ? "Step title" : "Question"}
                       <input name={`f.${i}.label`} value={text(f.label)} class={controlClass} />
                     </label>
                     <label class={fieldClass}>
@@ -1364,10 +1426,23 @@ function Editor(props: {
                         {Array.isArray(f.options) ? f.options.join("\n") : ""}
                       </textarea>
                     </label>
-                    <label class={fieldClass}>
+                    <label class={fieldClass + " " + STEP_HIDES}>
                       Help text
                       <input name={`f.${i}.help`} value={text(f.help)} placeholder="Optional" class={controlClass} />
                     </label>
+                    {type === "booking" ? (
+                      <label class={fieldClass + " sm:col-span-2"}>
+                        Service
+                        {props.services.length ? (
+                          <Select name={`f.${i}.booking_type`}>
+                            {props.services.some((v) => v.slug === text(f.booking_type)) ? null : <option value={text(f.booking_type)} selected>{text(f.booking_type) || "Choose a service"}</option>}
+                            {props.services.map((v) => <option value={v.slug} selected={v.slug === text(f.booking_type)}>{v.name}</option>)}
+                          </Select>
+                        ) : (
+                          <input name={`f.${i}.booking_type`} value={text(f.booking_type)} pattern="[a-z0-9-]+" class={controlClass} />
+                        )}
+                      </label>
+                    ) : null}
                     {/* Where the answers are kept: the AI and the exports read it; nobody filling the form sees it, so it waits under Advanced (as Google Forms never shows one). */}
                     <details class="sm:col-span-2" open={/\bnamed?\b/.test(problems[String(i)] ?? "")}>
                       <summary class="cursor-pointer text-label text-ink-2">Advanced</summary>
@@ -1377,33 +1452,18 @@ function Editor(props: {
                         <span class={`${smallText} text-ink-3`}>Lowercase letters, digits and underscores. Changing it keeps earlier answers under the old name.</span>
                       </label>
                     </details>
-                    {type === "booking" ? (
-                      <label class={fieldClass + " sm:col-span-2"}>
-                        Booking type (its page address, like intake)
-                        <input name={`f.${i}.booking_type`} value={text(f.booking_type)} pattern="[a-z0-9-]+" class={controlClass} />
-                      </label>
-                    ) : null}
                   </div>
                   <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3">
-                    <label class="mr-auto flex items-center gap-2">
+                    <label class={"flex items-center gap-2 " + STEP_HIDES}>
                       <input type="checkbox" name={`f.${i}.required`} value="yes" checked={f.required === true} class="size-4" />
                       Required
                     </label>
-                    {i > 0 ? (
-                      <button name="op" value={`up:${i}`} class={buttonClass} aria-label={`Move question ${i + 1} up`}>
-                        Move up
-                      </button>
-                    ) : null}
-                    {i < raw.length - 1 ? (
-                      <button name="op" value={`down:${i}`} class={buttonClass} aria-label={`Move question ${i + 1} down`}>
-                        Move down
-                      </button>
-                    ) : null}
-                    <button name="op" value={`remove:${i}`} class={buttonClass} aria-label={`Remove question ${i + 1}`}>
+                    <button name="op" value={`remove:${i}`} class={buttonClass + " ml-auto"} aria-label={`Remove ${text(f.label) || `question ${i + 1}`}`}>
                       Remove
                     </button>
                   </div>
                 </fieldset>
+                </details>
               </li>
             );
           })}

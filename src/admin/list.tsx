@@ -43,8 +43,9 @@ export function DataTable<T extends { id: string | number | bigint }>(props: {
   empty: Child;
 }) {
   const { spec, caption, rows, next, more, empty } = props;
-  const width = spec.columns.length + (spec.select ? 1 : 0);
-  const form = spec.select?.form.replace(/[^\w-]/g, "");
+  // Nothing listed, nothing to select all of.
+  const form = rows.length ? spec.select?.form.replace(/[^\w-]/g, "") : undefined;
+  const width = spec.columns.length + (form ? 1 : 0);
   return (
     <div class="overflow-x-auto rounded-card border border-line bg-surface shadow-card">
       <table id={spec.id} class="w-full border-separate border-spacing-0 text-copy">
@@ -234,9 +235,11 @@ export function SearchBar(props: {
   filters?: Filter[];
   /** Values the search carries unchanged, as a view chosen with tabs above it: { view: "done" }. */
   keep?: Record<string, string | null | undefined>;
+  /** The list below already offers Clear filters (NoMatches). */
+  hideClear?: boolean;
 }) {
-  const { action, target, q, label = "Search", placeholder, filters = [], keep = {} } = props;
-  const active = !!q || filters.some((f) => f.value);
+  const { action, target, q, label = "Search", placeholder, filters = [], keep = {}, hideClear = false } = props;
+  const active = !hideClear && (!!q || filters.some((f) => f.value));
   // Each select's first option ("Any status") says what it filters, so its label is for screen readers.
   return (
     <form
