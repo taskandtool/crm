@@ -4,7 +4,7 @@
 import { buttonClass, inputClass, Select } from "../admin/status";
 import { NOTE_KINDS, NOTE_LABELS } from "./notes";
 
-export function NoteForm({ action }: { action: string }) {
+export function NoteForm({ action, backdate = true }: { action: string; backdate?: boolean }) {
   return (
     <form method="post" action={action} aria-label="Log activity" class="flex flex-col gap-2">
       <textarea name="body" rows={2} required maxlength={10000} placeholder="Add a note, or log a call" aria-label="Note" class={inputClass}></textarea>
@@ -14,12 +14,14 @@ export function NoteForm({ action }: { action: string }) {
             <option value={k}>{NOTE_LABELS[k]}</option>
           ))}
         </Select>
-        <button class={buttonClass}>Log activity</button>
+        <button class={buttonClass}>Save</button>
         {/* Now, unless it happened earlier: the time is there when it is needed. */}
-        <details class="open:basis-full">
-          <summary class="w-fit cursor-pointer list-none px-1 text-sm/6 font-semibold text-ink-2 no-underline hover:text-ink">Set the date</summary>
-          <input name="at" type="datetime-local" aria-label="When it happened" class={inputClass + " mt-2"} />
-        </details>
+        {backdate ? (
+          <details class="open:basis-full">
+            <summary class="w-fit cursor-pointer list-none px-1 text-sm/6 font-semibold text-ink-2 no-underline hover:text-ink">Set the date</summary>
+            <input name="at" type="datetime-local" aria-label="When it happened" class={inputClass + " mt-2"} />
+          </details>
+        ) : null}
       </div>
     </form>
   );

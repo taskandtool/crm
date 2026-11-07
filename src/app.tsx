@@ -828,6 +828,7 @@ app.route(
     css: "/crm.css",
     timeZone: cfg.time_zone,
     nav: FORM_TABS,
+    utmFields: true,
     links: {
       ...(eventsCfg ? { booking: (id: string) => `/schedule/${id}` } : {}),
       ...(invoicesCfg ? { payment: (id: string) => `/invoices/payments/${id}` } : {}),

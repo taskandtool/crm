@@ -4,6 +4,7 @@
 // deal pages share: one task with Done and Reschedule, and the form that adds
 // one. Plain forms; every change is a POST answered with a 303 back to where
 // it came from.
+import { Select } from "../admin/status";
 import { Flash } from "../admin/flash";
 import { EmptyCard, When } from "../admin/list";
 import { listUrl } from "../admin/query";
@@ -301,9 +302,9 @@ function TaskFields(p: { deals: { id: string; title: string }[]; dealId?: string
         <input name="title" required maxlength={200} placeholder="Call back about the quote" class={controlClass} />
       </Field>
       <Field label="Type">
-        <select name="kind" class={controlClass}>
+        <Select name="kind" class="w-full">
           {TASK_KINDS.map((k) => <option value={k}>{TASK_LABELS[k]}</option>)}
-        </select>
+        </Select>
       </Field>
       <Field label="Due date">
         <input name="on" type="date" required value={addDays(p.today, 1)} class={controlClass} />
@@ -319,10 +320,10 @@ function TaskFields(p: { deals: { id: string; title: string }[]; dealId?: string
       </Field>
       {p.deals.length ? (
         <Field label={dealsCfg.one}>
-          <select name="deal" class={controlClass}>
+          <Select name="deal" class="w-full">
             <option value="">None</option>
             {p.deals.map((d) => <option value={d.id} selected={d.id === p.dealId}>{d.title}</option>)}
-          </select>
+          </Select>
         </Field>
       ) : null}
     </>

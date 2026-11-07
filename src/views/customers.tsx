@@ -4,7 +4,7 @@
 import { Flash } from "../admin/flash";
 import { DataTable, EmptyState, NoMatches, SearchBar, When, type TableSpec } from "../admin/list";
 import { listUrl } from "../admin/query";
-import { StatusBadge } from "../admin/status";
+import { StatusBadge, Select } from "../admin/status";
 import { cfg, dealsCfg, eventsCfg, ownerLabel, vocab } from "../config";
 import type { Customer, ListFilter } from "../crm/customers";
 import type { Stage } from "../crm/stages";
@@ -156,11 +156,11 @@ export function NewCustomerPage({ user, stages, flash }: { user: string; stages:
         </Field>
         <Field label="Status">
           {/* Every status, the first open one chosen: someone already a customer can be added as one. */}
-          <select name="stage" class={controlClass}>
+          <Select name="stage" class="w-full">
             {stages.map((s) => (
               <option value={s.key} selected={s.key === (open[0] ?? stages[0])?.key}>{s.label}</option>
             ))}
-          </select>
+          </Select>
         </Field>
         <Field label="Source">
           <input name="source" list="sources" maxlength={100} class={controlClass} />

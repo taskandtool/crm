@@ -7,7 +7,7 @@ import { JsonData, Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { DataTable, EmptyState, NoMatches, SearchBar, When, type TableSpec } from "../admin/list";
 import { listUrl } from "../admin/query";
-import { StatusBadge } from "../admin/status";
+import { StatusBadge, Select } from "../admin/status";
 import { BOOKING_STATUSES } from "../booking/admin";
 import { whereText, type BookingType, type Resource } from "../booking/book";
 import { durationText } from "../booking/slots";
@@ -83,35 +83,35 @@ function EventFields({ r, choices, where, deals = [], dealId = null }: { r?: Eve
       </Field>
       {choices.services.length ? (
         <Field label="Service">
-          <select name="type" class={controlClass}>
+          <Select name="type" class="w-full">
             <option value="">None</option>
             {choices.services.map((t) => <option value={t.id} selected={t.id === r?.type_id}>{t.name}</option>)}
-          </select>
+          </Select>
         </Field>
       ) : null}
       <Field label={ownerLabel}>
-        <select name="host" class={controlClass}>
+        <Select name="host" class="w-full">
           <option value="">Nobody yet</option>
           {choices.team.map((p) => <option value={p.id} selected={p.id === r?.resource_id}>{p.name}</option>)}
-        </select>
+        </Select>
       </Field>
       <Field label="When">
         <input name="at" type="datetime-local" required value={r ? nowIn(viewZone(), new Date(r.starts_at)) : ""} class={controlClass} />
       </Field>
       <Field label="Length">
-        <select name="minutes" class={controlClass}>
+        <Select name="minutes" class="w-full">
           {lengths.map((m) => <option value={String(m)} selected={m === length}>{durationText(m)}</option>)}
-        </select>
+        </Select>
       </Field>
       <Field label="Where" class="sm:col-span-2">
         <input name="location" value={r ? (r.location ?? "") : (where ?? "")} maxlength={500} class={controlClass} />
       </Field>
       {deals.length ? (
         <Field label={dealsCfg.one}>
-          <select name="deal" class={controlClass}>
+          <Select name="deal" class="w-full">
             <option value="">None</option>
             {deals.map((d) => <option value={d.id} selected={d.id === dealId}>{d.title}</option>)}
-          </select>
+          </Select>
         </Field>
       ) : null}
       <Field label={`Amount (${ev.currency})`}>

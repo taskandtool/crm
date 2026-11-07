@@ -82,7 +82,7 @@ export function sectionPages(o: { Frame?: Frame; css: string; label: string; lin
  * site's pages do not. A token renamed in the app's styles/theme.css must be
  * renamed here too.
  */
-const ADMIN_THEME = [
+export const ADMIN_THEME = [
   "--color-canvas: #ffffff", // the page
   "--color-surface: #ffffff", // cards, inputs
   "--color-panel: #f3f4f6", // gray-100: the current nav item, a flash, a chip
@@ -105,6 +105,77 @@ const ADMIN_THEME = [
 
 /** One centered column for the nav and the page, as Tailwind's stacked layout has it, so their edges line up. */
 const CONTAINER = "mx-auto max-w-6xl px-4 sm:px-6 lg:px-8";
+
+const SIDEBAR_ICONS = {
+  leads: "M3 12h5l2 3h4l2-3h5M5 5h14l2 7v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6l2-7Z",
+  reports: "M4 20V10m6 10V4m6 16v-7m5 7H3",
+  appointments: "M8 3v3m8-3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z",
+  site: "M14 4h6v6m0-6-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
+  settings: "M4 7h10m4 0h2M4 17h2m4 0h10M14 5v4h4V5h-4ZM6 15v4h4v-4H6Z",
+  menu: "M4 7h16M4 12h16M4 17h16",
+} as const;
+const SidebarIcon = ({ name }: { name: keyof typeof SIDEBAR_ICONS }) => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="size-5 shrink-0"><path d={SIDEBAR_ICONS[name]} /></svg>
+);
+/** A sidebar entry; `under` is the paths it stays lit on, when it heads more than its own. */
+export type SidebarItem = { href: string; label: string; icon: keyof typeof SIDEBAR_ICONS; under?: string[] };
+
+const SidebarLink = ({ item, current }: { item: SidebarItem; current: string }) => {
+  const on = (item.under ?? [item.href]).some((u) => u !== "/" && current.startsWith(u));
+  return (
+    <a href={item.href} aria-current={on ? "page" : undefined} class={"flex min-h-11 items-center gap-2.5 rounded-control px-2.5 font-medium no-underline " + (on ? "bg-panel text-ink" : "text-ink-2 hover:bg-panel/60 hover:text-ink")}>
+      <SidebarIcon name={item.icon} />{item.label}
+    </a>
+  );
+};
+
+/**
+ * A frame for an app's private pages: a sidebar (the app's sections, then `foot` at its base) and the page. Below lg
+ * the sidebar is a drawer, opened by the bar's menu link through :target, so it needs no script.
+ */
+export const sidebarFrame = (o: { brand: string; logo?: string; css: string; items: SidebarItem[]; foot?: SidebarItem[] }) =>
+  ({ title, back, sub, actions, user, current, children }: Parameters<Frame>[0]) => (
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="robots" content="noindex" />
+        <title>{title}</title>
+        <link rel="stylesheet" href={o.css} />
+        <script src={HTMX_SRC} defer></script>
+        <ViewerZoneScript />
+      </head>
+      <body class="min-h-screen bg-canvas font-body text-copy text-ink" style={ADMIN_THEME}>
+        <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded-control focus:bg-accent focus:px-3 focus:py-1 focus:text-accent-ink">Skip to content</a>
+        <header class="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-surface px-4 lg:hidden">
+          <a href="#nav" aria-label="Open the menu" class="-ml-1.5 inline-flex size-11 items-center justify-center rounded-control text-ink-2"><SidebarIcon name="menu" /></a>
+          <span class="min-w-0 truncate font-semibold">{o.brand}</span>
+        </header>
+        <aside id="nav" aria-label="Menu" class="peer fixed inset-y-0 left-0 z-40 hidden w-72 flex-col overflow-y-auto border-r border-line bg-surface p-3 target:flex lg:flex lg:w-60">
+          <p class="mb-4 flex min-h-12 items-center gap-2.5 px-2.5">{o.logo ? <img src={o.logo} alt="" class="size-9 object-contain" /> : null}<span class="min-w-0 truncate font-semibold text-ink">{o.brand}</span></p>
+          <nav aria-label="Main" class="grid gap-1">{o.items.map((item) => <SidebarLink item={item} current={current} />)}</nav>
+          <div class="mt-auto grid gap-1 pt-6">
+            {(o.foot ?? []).map((item) => <SidebarLink item={item} current={current} />)}
+            <p class="truncate px-2.5 py-2 text-sm text-ink-3">{user}</p>
+          </div>
+        </aside>
+        <a href="#" aria-label="Close the menu" tabindex={-1} class="fixed inset-0 z-30 hidden bg-ink/30 peer-target:block lg:hidden!"></a>
+        <div class="lg:pl-60">
+          <main id="main" class="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
+            {back ? <p class="mb-1 text-label"><a href={back.href} class="inline-block py-2 text-ink-2 no-underline hover:text-ink hover:underline sm:py-0">← {back.label}</a></p> : null}
+            <div class="mb-6 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+              <div class="min-w-0">
+                <h1 class="text-title font-semibold">{title}</h1>
+                {sub ? <div class="mt-1 text-ink-2">{sub}</div> : null}
+              </div>
+              {actions ? <div class="flex flex-wrap items-center gap-2">{actions}</div> : null}
+            </div>
+            {children}
+          </main>
+        </div>
+      </body>
+    </html>
+  );
 
 export const HTMX_SRC = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.6/htmx.min.js";
 

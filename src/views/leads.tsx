@@ -6,10 +6,11 @@ import { FieldList, Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { EmptyState, rowClick, SearchBar, When } from "../admin/list";
 import { listUrl } from "../admin/query";
-import { StatusBadge, type StatusOption } from "../admin/status";
+import { StatusBadge, type StatusOption, Select } from "../admin/status";
 import { LEAD_OUTCOMES, OUTCOME_LABELS } from "../customers/customer";
 import type { Note } from "../customers/notes";
 import { dealsCfg, vocab } from "../config";
+import { sourceRows } from "../forms/origin";
 import { ARCHIVE_REASONS, MANUAL_SOURCES, SOURCE_LABELS, sourceText, type Lead, type LeadStatus } from "../crm/leads";
 import { ownerOptions, ownerSuggestions, personName } from "../crm/people";
 import { amountText } from "../crm/text";
@@ -174,6 +175,7 @@ export function LeadPage(p: {
   today: string;
   flash: { code?: string | null; n?: string | null };
 }) {
+  const source = sourceRows(p.lead.answers).filter((r) => r.value);
   const l = p.lead;
   const self = `/leads/${l.id}`;
   const answers = answersOf(l);
@@ -221,10 +223,10 @@ export function LeadPage(p: {
                   <datalist id="lead-owners">{ownerSuggestions(p.owners).map((o) => <option value={o} />)}</datalist>
                 </Field>
                 <Field label="Outcome">
-                  <select name="outcome" class={controlClass}>
-                    <option value="">Not yet</option>
+                  <Select name="outcome" class="w-full">
+                    <option value="">No status yet</option>
                     {LEAD_OUTCOMES.map((o) => <option value={o} selected={l.outcome === o}>{OUTCOME_LABELS[o]}</option>)}
-                  </select>
+                  </Select>
                 </Field>
                 <Field label="Sold for">
                   <input name="sold" inputmode="decimal" value={l.sold_cents !== null ? amountText(l.sold_cents, dealsCfg.currency) : ""} class={controlClass} />
@@ -236,6 +238,7 @@ export function LeadPage(p: {
               </form>
             </ReadThenEdit>
           </Section>
+          {source.length ? <Section title="Source"><FieldList fields={source} /></Section> : null}
           <ContactCard id={l.customer_id} name={l.customer_name} phone={l.customer_phone} email={l.customer_email} more={[
             { label: `Open ${deal}`, value: l.open_deal_id ? <a href={`/deals/${l.open_deal_id}`}>{l.open_deal_title}</a> : null },
             { label: "Next visit", value: l.next_event_id ? <a href={`/events/${l.next_event_id}`}><When at={l.next_event_at} timeZone={timeZone} /></a> : null },
@@ -258,9 +261,9 @@ export function NewLeadPage(p: { user: string; owners: string[]; flash: { code?:
           <input name="title" required maxlength={200} placeholder="New furnace" class={controlClass} />
         </Field>
         <Field label="Source">
-          <select name="source" class={controlClass}>
+          <Select name="source" class="w-full">
             {MANUAL_SOURCES.map((s) => <option value={s}>{SOURCE_LABELS[s]}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="Owner">
           <input name="owner" list="lead-owners" value={personName(p.user)} maxlength={200} class={controlClass} />
@@ -290,9 +293,9 @@ export function ContactLeads({ customerId, leads }: { customerId: string; leads:
             <input name="title" required maxlength={200} placeholder="New furnace" class={controlClass} />
           </Field>
           <Field label="Source">
-            <select name="source" class={controlClass}>
+            <Select name="source" class="w-full">
               {MANUAL_SOURCES.map((s) => <option value={s}>{SOURCE_LABELS[s]}</option>)}
-            </select>
+            </Select>
           </Field>
           <Field label="Notes">
             <textarea name="notes" rows={2} maxlength={10000} class={controlClass}></textarea>

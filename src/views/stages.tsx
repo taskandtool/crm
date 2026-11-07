@@ -3,7 +3,7 @@
 // somewhere first), restore, add. Plain forms; each answers with a 303 back
 // here and a flash.
 import { Flash } from "../admin/flash";
-import { StatusBadge, type StatusOption } from "../admin/status";
+import { StatusBadge, type StatusOption, Select } from "../admin/status";
 import { dealsCfg, vocab } from "../config";
 import { KIND_LABELS, type Pipeline, type StageWithCount } from "../crm/stages";
 import { STAGE_KINDS } from "../config-schema";
@@ -70,13 +70,13 @@ function StageList(p: { pipeline: Pipeline; heading: string; intro: string; stag
                     <input name="label" value={s.label} required maxlength={60} class={controlClass} />
                   </Field>
                   <Field label="Counts as">
-                    <select name="kind" class={controlClass}>
+                    <Select name="kind" class="w-full">
                       {STAGE_KINDS.map((k) => (
                         <option value={k} selected={k === s.kind}>
                           {KIND_LABELS[k]}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </Field>
                   <button class={primaryClass + " self-start"}>Save</button>
                 </form>
@@ -91,14 +91,14 @@ function StageList(p: { pipeline: Pipeline; heading: string; intro: string; stag
                 <form method="post" action={`${base}/${s.key}/archive`} class="flex flex-col gap-3 border-t border-line pt-3">
                   {s.count > 0 ? (
                     <Field label={`Move its ${count(s.count)} to`}>
-                      <select name="move_to" required class={controlClass}>
+                      <Select name="move_to" required class="w-full">
                         <option value="">Choose a {thing}</option>
                         {active
                           .filter((o) => o.key !== s.key)
                           .map((o) => (
                             <option value={o.key}>{o.label}</option>
                           ))}
-                      </select>
+                      </Select>
                     </Field>
                   ) : null}
                   <button class={buttonClass + " self-start"}>Archive {s.label}</button>
@@ -114,11 +114,11 @@ function StageList(p: { pipeline: Pipeline; heading: string; intro: string; stag
           <input name="label" required maxlength={60} class={controlClass} />
         </Field>
         <Field label="Counts as">
-          <select name="kind" class={controlClass}>
+          <Select name="kind" class="w-full">
             {STAGE_KINDS.map((k) => (
               <option value={k}>{KIND_LABELS[k]}</option>
             ))}
-          </select>
+          </Select>
         </Field>
         <button class={buttonClass}>Add {thing}</button>
       </form>

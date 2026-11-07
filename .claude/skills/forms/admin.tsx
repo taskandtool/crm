@@ -32,7 +32,7 @@ import { NoteForm } from "../customers/note-form";
 import { addNote, listNotes, NOTE_LABELS, pickNoteKind, wallTime, type Note } from "../customers/notes";
 import { checkFields, FIELD_TYPES, FORM_KEY, formKeyFrom, PHOTO_PATH, sitePath, type Errors, type Field, type Form } from "./fields";
 import { deliveriesOf, destinationsOf, leadMoment, resendDelivery, STALE_MINUTES, type Delivery, type Destination } from "./destinations";
-import { cameFrom, CLICK_KEYS, ORIGIN_KEYS, tagWords, token, type Click, type Touch, type Utm } from "./origin";
+import { cameFrom, CLICK_KEYS, ORIGIN_KEYS, tagWords, token, type Click, type Touch, type Utm, sourceRows } from "./origin";
 import { linkedTo, linkKinds, type Linked } from "./linked";
 import { priceOf } from "./price";
 import { formatMoney } from "../payments/money";
@@ -57,6 +57,16 @@ export type FormsAdminOptions = {
    */
   /** The app has no lead pages of its own (Lander): a submission's page keeps where its lead got to. */
   outcomes?: boolean;
+  /** What `utm_term` holds in this app's ads, as a submission's page calls it: Meta's ad set, say. Default "Keyword". */
+  termLabel?: string;
+  /** A submission's source as its UTM fields, each under its own name (Source, Medium, Campaign...), for an app whose leads come from ads. */
+  utmFields?: boolean;
+  /** False: a note is logged as of now, with no way to date it earlier. */
+  noteDates?: boolean;
+  /** What this app calls the list: "Leads", say. Default "Submissions". */
+  label?: string;
+  /** False where the app shows email and sending on a settings page of its own: the lists keep to the work. */
+  setupNotes?: boolean;
   links?: { booking?: (id: string) => string; payment?: (id: string) => string; lead?: (id: string) => string };
 };
 
@@ -197,12 +207,23 @@ async function paymentsOff(c: Context, db: Db) {
   return takes && (await stripeConnected(envOf(c))) === false;
 }
 
-function EmailNote({ c, forms }: { c: Context; forms: FormInfo[] }) {
+/** Who hears of a new submission by email: "off" when the app can't send, else who, and whether it's Task & Tool's own email. */
+function emailState(c: Context, forms: FormInfo[]) {
   const env = envOf(c);
   const sender = senderOf(env);
   const to = [...new Set(forms.filter((f) => f.active).flatMap((f) => f.notify_emails))];
   const ours = typeof sender !== "string" && sender.vendor === "taskandtool";
-  if (typeof sender === "string" || (!ours && !setting(env, "NOTIFY_FROM"))) {
+  return { on: !(typeof sender === "string" || (!ours && !setting(env, "NOTIFY_FROM"))), to, ours };
+}
+
+/** For an app's settings page: the same answer the list's note gives. */
+export async function teamEmailState(c: Context, db: Db) {
+  return emailState(c, (await formsAndKeys(db)).forms);
+}
+
+function EmailNote({ c, forms }: { c: Context; forms: FormInfo[] }) {
+  const { on, to, ours } = emailState(c, forms);
+  if (!on) {
     return (
       <p class="mb-4 rounded-card border border-line bg-panel/60 px-4 py-3 text-copy text-ink">
         <strong>Email is off.</strong> This app's email settings are incomplete, so nobody is emailed about new submissions and
@@ -259,14 +280,17 @@ async function leadsTo(db: Db, form: string | null): Promise<{ bookings: boolean
 export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
   const base = opts.base.replace(/\/+$/, "");
   const size = opts.pageSize ?? 50;
-  const nav = opts.nav ?? [{ href: base || "/", label: "Submissions" }];
+  const label = opts.label ?? "Submissions";
+  const notes = opts.setupNotes !== false;
+  const nav = opts.nav ?? [{ href: base || "/", label }];
   const tz = opts.timeZone;
   const who = (r: Item) => r.name || r.email || `Submission ${r.id}`;
   const subUrl = (id: string) => `${base}/${id}`;
   const app = new Hono<{ Variables: TeamVars }>();
   app.use("*", teamOnly());
 
-  const framed = sectionPages({ Frame: opts.Frame, css: opts.css, label: "Submissions", links: nav, messages: MESSAGES });
+  const one = label.replace(/s$/, "").toLowerCase();
+  const framed = sectionPages({ Frame: opts.Frame, css: opts.css, label, links: nav, messages: { ...MESSAGES, bulk: (n) => (n === 1 ? `Moved 1 ${one}.` : `Moved ${n} ${one}s.`) } });
 
   // ---- the list ----------------------------------------------------------
 
@@ -359,11 +383,11 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
     }));
     return framed(
         c,
-        base || "/", "Submissions",
+        base || "/", label,
         <>
-          <SectionTabs label="Submissions" links={tabs} current={here} />
-          <EmailNote c={c} forms={forms} />
-          {await paymentsOff(c, db) ? (
+          <SectionTabs label={label} links={tabs} current={here} />
+          {notes ? <EmailNote c={c} forms={forms} /> : null}
+          {notes && await paymentsOff(c, db) ? (
             <p class="mb-4 rounded-card border border-line bg-panel/60 px-4 py-3 text-copy text-ink">
               <strong>Payments are off.</strong> A form takes payment, but Stripe isn't connected, so nobody can pay. Ask the AI to connect Stripe for this app.
             </p>
@@ -384,7 +408,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
             ]}
           />
           {results}
-          <AskNote />
+          {notes ? <AskNote /> : null}
         </>);
   };
 
@@ -507,7 +531,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
       : move("read", "Not spam");
     // A lead's submission moves with its lead, so "Archived" here would only mean the lead moved on: the lead says where it stands.
     const head = {
-      back: { href: base + VIEWS[view].path || "/", label: view === "open" || lead ? "Submissions" : VIEWS[view].label },
+      back: { href: base + VIEWS[view].path || "/", label: view === "open" || lead ? label : VIEWS[view].label },
       sub: (
         <p>
           {title} · <When at={r.created_at} timeZone={tz} />
@@ -571,7 +595,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
                   </ul>
                 </Section>
               ) : null}
-              {r.email ? <NotesCard action={`${self}/notes`} email={r.email} notes={notes} timeZone={tz} /> : null}
+              {r.email ? <NotesCard one={one} backdate={opts.noteDates !== false} action={`${self}/notes`} email={r.email} notes={notes} timeZone={tz} /> : null}
             </div>
             <div class="flex flex-col gap-4">
               {booking ? <BookingCard b={booking} held={linked.booking!.held && !r.completed_at} timeZone={tz} at={opts.links?.booking} /> : null}
@@ -589,11 +613,11 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
                     <p class={`mb-3 ${smallText} text-ink-2`}>In their CRM: {reached.external_url && /^https?:\/\//i.test(reached.external_url) ? <a href={reached.external_url} rel="noreferrer" class="underline">{reached.external_status}</a> : reached.external_status}</p>
                   ) : null}
                   <form method="post" action={`${self}/outcome`} class="grid gap-3">
-                    <label class={fieldClass}>Where it got to
-                      <select name="outcome" class={controlClass}>
-                        <option value="">Not yet</option>
+                    <label class={fieldClass}>Status
+                      <Select name="outcome" class="w-full">
+                        <option value="">No status yet</option>
                         {LEAD_OUTCOMES.map((o) => <option value={o} selected={reached.outcome === o}>{OUTCOME_LABELS[o]}</option>)}
-                      </select>
+                      </Select>
                     </label>
                     <label class={fieldClass}>Sold for
                       <input name="sold" inputmode="decimal" value={reached.sold_cents === null ? "" : (Number(reached.sold_cents) / 100).toFixed(2)} class={controlClass} />
@@ -602,17 +626,19 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
                   </form>
                 </Section>
               ) : null}
-              <Section title="Where it came from">
+              <Section title={opts.utmFields ? "Source" : "Where it came from"}>
                 <FieldList
                   fields={[
                     { label: "Form", value: title },
-                    // The form's own page says nothing the Form line doesn't.
-                    { label: "Page", value: r.page && /\/forms\/[^/]+\/start\/?$/.test(r.page) ? null : r.page },
-                    { label: "Found you through", value: from },
-                    { label: "Keyword", value: utm.term ? tagWords(utm.term) : null },
-                    { label: "Ad", value: utm.content ? tagWords(utm.content) : null },
-                    { label: "Landing page", value: landing },
-                    { label: "First found you through", value: first ? cameFrom({ _utm: first.utm }) : null },
+                    // The form's own page says nothing the Form line doesn't, and the page they landed on says the same as a page they stayed on.
+                    { label: "Page", value: (r.page && /\/forms\/[^/]+\/start\/?$/.test(r.page)) || (opts.utmFields && r.page === landing) ? null : r.page },
+                    ...(opts.utmFields ? sourceRows(r.data, opts.termLabel) : [
+                      { label: "Found you through", value: from },
+                      { label: opts.termLabel ?? "Keyword", value: utm.term ? tagWords(utm.term) : null },
+                      { label: "Ad", value: utm.content ? tagWords(utm.content) : null },
+                      { label: "Landing page", value: landing === r.page ? null : landing },
+                    ]),
+                    { label: opts.utmFields ? "First source" : "First found you through", value: first ? cameFrom({ _utm: first.utm }) : null },
                     { label: "Last changed by", value: r.updated_by ? <>{r.updated_by}, <When at={r.updated_at} timeZone={tz} /></> : null },
                   ]}
                 />
@@ -816,11 +842,11 @@ function DestinationsCard({ list }: { list: Destination[] }) {
  * The person's notes: the CRM's timeline box (a note, or a call, email,
  * meeting or text, now or at another time) and what is logged, newest first.
  */
-function NotesCard({ action, email, notes, timeZone }: { action: string; email: string; notes: Note[]; timeZone: string }) {
+function NotesCard({ action, email, notes, timeZone, one, backdate }: { action: string; email: string; notes: Note[]; timeZone: string; one: string; backdate: boolean }) {
   return (
     <Section title="Notes">
-      <p class={`mb-4 ${smallText} text-ink-3`}>About {email}, on every submission from them.</p>
-      <NoteForm action={action} />
+      <p class={`mb-4 ${smallText} text-ink-3`}>About {email}, on every {one} from them.</p>
+      <NoteForm action={action} backdate={backdate} />
       {notes.length ? (
         <ol class="mt-6 flex flex-col gap-4">
           {notes.map((n) => (
@@ -1413,9 +1439,9 @@ function Editor(props: {
               <div class="mt-2 grid gap-4 sm:grid-cols-2">
                 <label class={fieldClass + " hidden group-has-[input[value=deal]:checked]/becomes:flex"}>
                   New deals start in
-                  <select name="deal_stage" class={controlClass}>
+                  <Select name="deal_stage" class="w-full">
                     {props.deals.stages.map((st) => <option value={st.value} selected={st.value === form.deal_stage}>{st.label}</option>)}
-                  </select>
+                  </Select>
                 </label>
                 <label class={fieldClass + " hidden group-has-[input[value=lead]:checked]/becomes:flex group-has-[input[value=deal]:checked]/becomes:flex"}>
                   Owner

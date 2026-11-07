@@ -1163,9 +1163,9 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
               <input name="amount" required inputmode="decimal" value={v.amount} class={controlClass} />
             </label>
             <label class={fieldClass}>Method
-              <select name="method" class={controlClass}>
+              <Select name="method" class="w-full">
                 {PAYMENT_METHODS.map((m) => <option value={m} selected={m === v.method}>{m}</option>)}
-              </select>
+              </Select>
             </label>
             <label class={fieldClass}>Date paid
               <input name="on" type="date" required value={v.on} max={today()} class={controlClass} />

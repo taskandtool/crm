@@ -6,7 +6,7 @@ import type { Child } from "hono/jsx";
 import type { FlashMessages } from "../admin/flash";
 import { BOOKING_MESSAGES } from "../booking/admin";
 import { RECURRING_MESSAGES } from "../invoices/recurring-admin";
-import { buttonClass, controlClass, fieldClass, primaryClass, quietClass, type StatusOption } from "../admin/status";
+import { buttonClass, controlClass, fieldClass, primaryClass, quietClass, type StatusOption, Select } from "../admin/status";
 import { cfg, dealsCfg, eventsCfg, vocab } from "../config";
 import type { CustomField } from "../config-schema";
 import { When } from "../admin/list";
@@ -162,13 +162,13 @@ export function SaveOnChange(p: { action: string; current: string; options: Stat
       <input type="hidden" name="return" value={p.returnTo} />
       <label class="flex items-center gap-2 text-label text-ink-2">
         {p.label}
-        <select name="status" class={controlClass + " text-copy text-ink"}>
+        <Select name="status" class="w-full">
           {p.options.map((o) => (
             <option value={o.value} selected={o.value === p.current}>
               {o.label}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       <noscript>
         <button class={buttonClass}>Save</button>
@@ -231,11 +231,11 @@ export function CustomerPicker({ customers, selected, person }: {
   return (
     <>
       <Field label={vocab.one} class="col-span-full">
-        <select name="customer" required autofocus class={controlClass + " w-full min-w-0"}>
+        <Select name="customer" required autofocus class="w-full">
           {customers.length ? <option value="">Choose a {vocab.one.toLowerCase()}</option> : null}
           {customers.map((c) => <option value={c.id} selected={c.id === selected}>{c.email ? `${c.name} (${c.email})` : c.name}</option>)}
           <option value="new" selected={isNew}>Someone new</option>
-        </select>
+        </Select>
       </Field>
       <div class="col-span-full hidden gap-3 sm:grid-cols-2 [form:has(select[name=customer]>option[value=new]:checked)_&]:grid">
         <PersonFields pairs person={person} />
@@ -271,7 +271,7 @@ export function CustomInput({ f, value }: { f: CustomField; value: unknown }) {
     const isNone = (o: string) => o.trim().toLowerCase() === "none";
     const options = (f.options ?? []).filter((o) => !isNone(o));
     input = (
-      <select name={name} class={controlClass}>
+      <Select name={name} class="w-full">
         <option value="" selected={!v || isNone(v)}>None</option>
         {options.map((o) => (
           <option value={o} selected={o === v}>
@@ -283,7 +283,7 @@ export function CustomInput({ f, value }: { f: CustomField; value: unknown }) {
             {v}
           </option>
         ) : null}
-      </select>
+      </Select>
     );
   } else {
     const type = { text: "text", number: "number", date: "date", phone: "tel", email: "email" }[f.type];

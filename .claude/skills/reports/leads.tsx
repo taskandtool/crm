@@ -175,7 +175,8 @@ const td = "px-4 py-2.5 text-right tabular-nums first:text-left first:font-mediu
  * Leads, cost and how far they got, by source, campaign, ad or keyword. `href` adds the tabs, and
  * `rowHref` makes each row a link: the page narrows to it.
  */
-export function LeadBreakdown({ report: r, by, href, rowHref, locale = "en-US" }: { report: LeadReport; by: BreakdownBy; href?: (by: BreakdownBy) => string; rowHref?: (by: BreakdownBy, tag: string) => string; locale?: string }) {
+export function LeadBreakdown({ report: r, by, href, rowHref, locale = "en-US", termLabel }: { report: LeadReport; by: BreakdownBy; href?: (by: BreakdownBy) => string; rowHref?: (by: BreakdownBy, tag: string) => string; locale?: string; termLabel?: string }) {
+  const labels = { ...BREAKDOWNS, term: termLabel ?? BREAKDOWNS.term };
   const rows = breakdown(r, by);
   const costs = by !== "term";
   const tabs = (Object.keys(BREAKDOWNS) as BreakdownBy[]).filter((k) => k !== "term" || by === "term" || r.cells.some((c) => c.term));
@@ -201,17 +202,17 @@ export function LeadBreakdown({ report: r, by, href, rowHref, locale = "en-US" }
           {tabs.map((k) => (
             <a href={href(k)} aria-current={k === by ? "true" : undefined}
               class={"inline-flex min-h-9 items-center rounded-control px-3 text-label font-medium no-underline " + (k === by ? "bg-panel text-ink" : "text-ink-2 hover:text-ink")}>
-              {BREAKDOWNS[k]}
+              {labels[k]}
             </a>
           ))}
         </nav>
       ) : null}
       <div class="overflow-x-auto">
         <table class="w-full min-w-[42rem] border-collapse text-copy">
-          <caption class="sr-only">Leads by {BREAKDOWNS[by].toLowerCase()}</caption>
+          <caption class="sr-only">Leads by {labels[by].toLowerCase()}</caption>
           <thead>
             <tr class="border-b border-line text-label text-ink-3">
-              <th scope="col" class={th}>{BREAKDOWNS[by]}</th>
+              <th scope="col" class={th}>{labels[by]}</th>
               <th scope="col" class={th}>Leads</th>
               {costs ? (
                 <>
@@ -285,7 +286,8 @@ export function ReportPeriods({ base, days, by, filter }: { base: string; days: 
  * page and shows what is inside it: a source's campaigns, a campaign's ads. `scripts` is where
  * client.js is served. To change a business's report, lay the components out in its own page instead.
  */
-export function LeadReportBody({ report: r, base, scripts, days, by, locale = "en-US" }: { report: LeadReport; base: string; scripts: string; days: number; by: BreakdownBy; locale?: string }) {
+export function LeadReportBody({ report: r, base, scripts, days, by, locale = "en-US", termLabel, setupNotes = true }: { report: LeadReport; base: string; scripts: string; days: number; by: BreakdownBy; locale?: string; termLabel?: string; setupNotes?: boolean }) {
+  const labels = { ...BREAKDOWNS, term: termLabel ?? BREAKDOWNS.term };
   const here = (o: { by?: BreakdownBy; filter?: ReportFilter }) => `${base}?${new URLSearchParams({ days: String(days), by: o.by ?? by, ...(o.filter ?? r.filter) })}`;
   const inside: Partial<Record<BreakdownBy, BreakdownBy>> = { source: "campaign", campaign: "content" };
   const narrowed = (Object.keys(r.filter) as BreakdownBy[]).filter((k) => r.filter[k] !== undefined);
@@ -297,8 +299,8 @@ export function LeadReportBody({ report: r, base, scripts, days, by, locale = "e
           {narrowed.map((k) => {
             const { [k]: _gone, ...rest } = r.filter;
             return (
-              <a href={here({ filter: rest })} aria-label={`Stop filtering by ${BREAKDOWNS[k].toLowerCase()}`} class="inline-flex min-h-9 items-center gap-1.5 rounded-control border border-line bg-surface px-3 font-medium text-ink no-underline hover:border-line-strong">
-                <span class="text-ink-3">{BREAKDOWNS[k]}:</span> {tagLabel(k, r.filter[k]!)} <span aria-hidden="true" class="text-ink-3">×</span>
+              <a href={here({ filter: rest })} aria-label={`Stop filtering by ${labels[k].toLowerCase()}`} class="inline-flex min-h-9 items-center gap-1.5 rounded-control border border-line bg-surface px-3 font-medium text-ink no-underline hover:border-line-strong">
+                <span class="text-ink-3">{labels[k]}:</span> {tagLabel(k, r.filter[k]!)} <span aria-hidden="true" class="text-ink-3">×</span>
               </a>
             );
           })}
@@ -306,12 +308,12 @@ export function LeadReportBody({ report: r, base, scripts, days, by, locale = "e
         </div>
       ) : null}
       <LeadKpis report={r} locale={locale} />
-      {r.total.spend_cents === 0 && !narrowed.length ? <AskAi ask="Each morning, read yesterday's ad costs from our ad account and save them for the lead report" /> : null}
+      {setupNotes && r.total.spend_cents === 0 && !narrowed.length ? <AskAi ask="Each morning, read yesterday's ad costs from our ad account and save them for the lead report" /> : null}
       <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <LeadTrends report={r} locale={locale} />
         <LeadFunnel report={r} locale={locale} />
       </div>
-      <LeadBreakdown report={r} by={by} href={(k) => here({ by: k })} rowHref={(k, tag) => here({ by: inside[k] ?? k, filter: { ...r.filter, [k]: tag } })} locale={locale} />
+      <LeadBreakdown report={r} by={by} href={(k) => here({ by: k })} rowHref={(k, tag) => here({ by: inside[k] ?? k, filter: { ...r.filter, [k]: tag } })} locale={locale} termLabel={termLabel} />
     </div>
   );
 }

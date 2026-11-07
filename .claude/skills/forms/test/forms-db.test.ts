@@ -67,7 +67,7 @@ test("a submission is stored with the email lowered and the rest in data, then 3
     assert.equal(res.headers.get("location"), "/forms/contact/thanks");
     const rows = await s.db.sql`select form_key, name, email::text as email, phone, data, source, page, status from submissions`;
     assert.deepEqual(rows, [
-      { form_key: "contact", name: "Ann Lee", email: "ann@example.com", phone: null, data: { message: "Hello there" }, source: "website", page: "/contact", status: "new" },
+      { form_key: "contact", name: "Ann Lee", email: "ann@example.com", phone: null, data: { message: "Hello there", _landing: "/contact" }, source: "website", page: "/contact", status: "new" },
     ]);
     const [f] = await s.db.sql`select title from forms where key = 'contact'`;
     assert.equal(f.title, "Contact");

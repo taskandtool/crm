@@ -134,7 +134,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     if (stepped) return takeStep(c, db, form, steps, input, v, stamp);
 
     const page = sitePath(one(input._page));
-    const origin = readOrigin(one(input[UTM_FIELD]), one(input[REFERRER_FIELD]), c.req.header("cookie"));
+    const origin = readOrigin(one(input[UTM_FIELD]), one(input[REFERRER_FIELD]), c.req.header("cookie"), page);
     const r = validate(form.fields, input);
     if (!r.ok) {
       // The stamp they were served goes back unchanged, so fixing one answer
@@ -359,7 +359,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
       const st = steps[0];
       if (st.kind !== "fields") return notWired(c, form, st.kind);
       const page = sitePath(one(input._page));
-      const origin = readOrigin(one(input[UTM_FIELD]), one(input[REFERRER_FIELD]), c.req.header("cookie"));
+      const origin = readOrigin(one(input[UTM_FIELD]), one(input[REFERRER_FIELD]), c.req.header("cookie"), page);
       const r = validate(st.fields, input);
       if (!r.ok) {
         const carried = { utm: one(input[UTM_FIELD]), ref: one(input[REFERRER_FIELD]) };

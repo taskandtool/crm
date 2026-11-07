@@ -7,7 +7,7 @@ import { Section } from "../admin/detail";
 import { Flash } from "../admin/flash";
 import { EmptyCard, rowClick, When } from "../admin/list";
 import { listUrl } from "../admin/query";
-import { StatusBadge, StatusForm } from "../admin/status";
+import { StatusBadge, StatusForm, Select } from "../admin/status";
 import { dealsCfg, invoicesCfg, ownerLabel, vocab } from "../config";
 import type { Customer } from "../crm/customers";
 import type { Deal } from "../crm/deals";
@@ -146,9 +146,9 @@ function DealInputs({ stages, title, notes }: { stages: Stage[]; title?: string;
         <input name="value" inputmode="decimal" maxlength={20} class={controlClass} />
       </Field>
       <Field label="Stage">
-        <select name="stage" class={controlClass}>
+        <Select name="stage" class="w-full">
           {stages.map((s) => <option value={s.key}>{s.label}</option>)}
-        </select>
+        </Select>
       </Field>
       <Field label="Notes" class="col-span-full">
         <textarea name="notes" rows={3} maxlength={10000} class={controlClass}>{notes ?? ""}</textarea>

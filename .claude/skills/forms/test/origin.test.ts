@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runInNewContext } from "node:vm";
-import { cameFrom, ORIGIN_SCRIPT, readOrigin, token } from "../origin";
+import { cameFrom, ORIGIN_SCRIPT, readOrigin, sourceRows, token } from "../origin";
 
 test("Meta's ad names survive, lowercased; markup and addresses do not", () => {
   assert.equal(token("Roof Offer | 4:5 (v2)"), "roof-offer-|-4:5-(v2)");
@@ -64,11 +64,13 @@ function visit(url: string, jar: { cookie: string; set?: string }) {
   runInNewContext(ORIGIN_SCRIPT, page);
 }
 
-test("the script keeps the first and last tagged visits, and an untagged visit sets nothing", () => {
-  const jar = { cookie: "" } as { cookie: string; set?: string };
-  visit("https://site.example/about", jar);
-  assert.equal(jar.cookie, "", "no tags, no cookie");
+test("the script keeps the first and last tagged visits, and an untagged visit only the page it arrived on", () => {
+  const untagged = { cookie: "" } as { cookie: string; set?: string };
+  visit("https://site.example/about", untagged);
+  assert.match(untagged.set!, /^tt_land=%2Fabout; Path=\/; SameSite=Lax; Secure$/, "gone when the browser closes");
+  assert.equal(readOrigin("", "", untagged.cookie)._landing, "/about");
 
+  const jar = { cookie: "" } as { cookie: string; set?: string };
   visit("https://site.example/roof?utm_source=Google&utm_campaign=brand", jar);
   assert.match(jar.set!, /Path=\/; Max-Age=2592000; SameSite=Lax; Secure$/);
   assert.equal(readOrigin("", "", jar.cookie)._utm?.source, "google");
@@ -83,4 +85,33 @@ test("the script keeps the first and last tagged visits, and an untagged visit s
   assert.equal(both._landing, "/offer");
   assert.equal(both._first?.utm?.source, "google");
   assert.equal(both._first?.page, "/roof");
+});
+
+test("the script keeps a utm_ field it has no name for", () => {
+  const jar = { cookie: "" } as { cookie: string; set?: string };
+  visit("https://site.example/roof?utm_source=facebook&utm_id=123", jar);
+  assert.equal(readOrigin("", "", jar.cookie)._utm?.id, "123");
+});
+
+test("any other utm_ field is kept under its own name, bounded", () => {
+  const got = readOrigin("utm_source=facebook&utm_id=123&utm_Custom_Thing=Hello%20There&utm_%3Cx%3E=no&utm_bad=%3Cscript%3E", "");
+  assert.deepEqual(got._utm, { source: "facebook", custom_thing: "hello-there", id: "123" });
+  const many = Array.from({ length: 30 }, (_, i) => `utm_x${String(i).padStart(2, "0")}=1`).join("&");
+  assert.equal(Object.keys(readOrigin(many, "")._utm ?? {}).length, 10);
+});
+
+test("the landing page is known without a tag: from the cookie, else the form's page", () => {
+  assert.equal(readOrigin("", "", "tt_land=%2Froof")._landing, "/roof");
+  assert.equal(readOrigin("", "", undefined, "/quote")._landing, "/quote");
+  assert.equal(readOrigin("", "", "tt_land=%2Froof", "/quote")._landing, "/roof");
+  assert.equal(readOrigin("", "", undefined, "/forms/a/start")._landing, undefined);
+  assert.equal(readOrigin("", "", undefined, "/q/forms/a/start")._landing, undefined);
+  assert.equal(readOrigin("", "", "tt_land=<script>", undefined)._landing, undefined);
+});
+
+test("a submission's source reads as its UTM fields, under their own names", () => {
+  const rows = sourceRows({ _utm: { source: "facebook", campaign: "fall-sale", term: "west", id: "9" }, _landing: "/roof" }, "Ad set");
+  const shown = Object.fromEntries(rows.filter((r) => r.value).map((r) => [r.label, r.value]));
+  assert.deepEqual(shown, { "Landing page": "/roof", Source: "facebook", Campaign: "fall sale", "Ad set": "west", id: "9" });
+  assert.equal(sourceRows({ _referrer: "google.com" }).find((r) => r.label === "Source")?.value, "google.com");
 });
