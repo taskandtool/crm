@@ -1,60 +1,37 @@
 ---
 name: tropes
-description: "Finds and removes the tells of AI-made work in copy, pictures and video before the owner sees it. Use after drafting any page, ad, post or picture, before showing or sending it, or when the owner says it sounds or looks like AI. Not for writing the first draft."
+description: "Finds and fixes the signs that copy, pictures or video were made by AI, before the owner sees them. Use after drafting any page, post, article, ad, email or picture, before showing or sending it, or when the owner says it sounds or looks like AI. Not for the first draft (writing)."
 ---
 
 # Tropes
 
-A tell is an unspecified default: the model's average where this business's
-particular should be. Readers and platforms trust work that reads as
-generated less, so it costs the owner customers and reach. Fix it with the
-specific thing that was missing, not a synonym.
+Readers and platforms trust copy less when it sounds generated. Most tells
+are a default the model reached for because it lacked a fact about this
+business, so the fix is that fact, never a synonym.
 
-## Copy, by script
+## The check
 
-One set of tells for everything the AI writes; two ways to check it.
+- `node .claude/skills/tropes/tropes.mjs <file>` checks one finished page,
+  post, article, ad or email (`--help` lists the `--kind`s).
+- `--scan <file or folder>...` checks every line the AI wrote anywhere. It
+  skips quoted words and any line marked `tropes-allow`.
+- `--words <page.html>` prints a built page's words for a cold read.
 
-- **Every line, anywhere:** `node .claude/skills/tropes/tropes.mjs --scan
-  <file or folder>...` reads code, comments, strings, templates, notes and
-  skills a line at a time: the figures of speech, the pivots, the riders,
-  the em dash. Others' words in markdown (a blockquote, text in quotation
-  marks) are left alone; a line holding `tropes-allow` is a deliberate
-  example. In a code file's comments and docs the em dash is let be; the
-  other tells still count there. Each app's own check runs it over what the AI writes.
-- **A piece of copy, whole:** `node .claude/skills/tropes/tropes.mjs
-  <file>` adds what only shows across a page, post or ad: triads, rhythm,
-  "X, not Y", joined headings, two lists of three in the hero (`--kind` names which;
-  `--help` lists them). Markdown headings split it into sections. The
-  app's own check, named in its `AGENTS.md`, runs it on what the app makes.
+An `error` fails the check; a `hint` is yours to judge. The app's own check
+(`AGENTS.md`) runs it.
 
-`error` fails the check (exit 1); a `hint` is for you to judge and never fails: a
-real list of three stays. For a cold read, `--words <page.html>` prints a
-built page's words as markdown.
+## Fixing
 
-## Fixing a finding
+Rewrite the whole sentence; patching a phrase keeps the shape. A missing
+fact is a `NEED:` line for the owner. Fix these first: invented proof, the
+pivot ("it's not X, it's Y") and figures of speech ("lands in your inbox"). A phrase
+the owner insists on stays; on a website, mark it `data-lint-allow="<rule>"`.
 
-- Rewrite the flagged line whole; never patch the phrase, and never add a
-  fact to fill the gap a cut left. A missing fact is a `NEED:` line for the owner.
-- Strongest tells first: invented proof, the negation pivot and "X, not Y",
-  today's models' figures of speech ("lands in your inbox", "hands you"),
-  then older vocabulary.
-- An owner who insists on a flagged phrase keeps it; the website marks it
-  `data-lint-allow="<rule>"`.
+The script only knows patterns people rarely write. The rest need the cold
+read in the `writing` skill, with `references/copy.md`.
 
-## By eye
+## Pictures and video
 
-The script holds only rules that rarely fire on people's copy, so most tells
-need a reader: the cold read in the `writing` skill, with `references/copy.md`
-("Today's sentence shapes" first). Read the copy aloud against the brand's voice
-notes: would the owner say it, could a competitor run it unchanged, is the
-one triad or contrast earned? Then pictures at full size and at 25%
-(`references/images.md`), and video frames at 0, 25, 50, 75 and 100%
-(`references/video.md`). Generated people never stand in for customers,
-staff or testimonials; the owner's own photograph beats any fix to a
-generated one.
-
-## References
-
-- `references/copy.md`: vocabulary, structures, rhythm and claims, each with
-  its fix and the rule id the script prints
-- `references/images.md`, `references/video.md`: picture and video tells
+Look at pictures at full size and at 25% (`references/images.md`), and
+video at its start, each quarter and its end (`references/video.md`). A
+generated person never stands in for a customer, staff member or reviewer.

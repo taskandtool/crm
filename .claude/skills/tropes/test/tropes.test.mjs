@@ -79,6 +79,18 @@ test("today's models' figures of speech, and the literal uses that pass", () => 
   assert.equal(findings("Honestly, we love this job.").find((f) => f.rule === "model-tell").severity, "hint");
 });
 
+test("the claudisms people rarely write, and the plain sentences that share their words", () => {
+  for (const s of ["I keep coming back to one question.", "It all turns on trust.", "Here's where I landed.", "That's the throughline.",
+    "This paves the way for growth.", "It underscores the importance of follow-up.", "Let's explore the options."]) {
+    assert.ok(rules(s).includes("model-tell"), s);
+  }
+  for (const s of ["Customers keep coming back to us every spring.", "The heating turns on at 6 AM.", "North Star Plumbing fits boilers.",
+    "Double-click on the file to open it.", "We pressure-test every gas line."]) {
+    assert.ok(!rules(s).includes("model-tell"), s);
+  }
+  assert.equal(findings("Key takeaways from the survey are below.").find((f) => f.rule === "model-tell").severity, "hint");
+});
+
 test("every figurative land, and the literal ones that pass", () => {
   for (const s of ["Your invoice lands in your inbox in seconds.", "The report lands every Monday morning.", "When a new lead lands, you get a text.",
     "Every booking lands straight in the CRM.", "Replies land in Messages.", "That line really landed."]) {

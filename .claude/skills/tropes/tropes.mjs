@@ -102,6 +102,14 @@ const MODEL_TELLS = [
   /\bat its core\b/gi, /\b(this|that) is where \w+(?: \w+)? comes? in\b/gi,
   /\b(trust|value|growth|knowledge|advantage|progress) compounds\b/gi,
   /\blet'?s (break (it|this) down|unpack)\b/gi, /\bshed light on\b/gi,
+  // claudisms.ai and Wikipedia's Signs of AI writing, the ones people rarely write
+  /\bI (keep|kept) coming back to\b/gi, /\bthe throughline\b/gi,
+  /\bparadigm shift\b/gi, /\bhere'?s where I landed\b/gi, /\bwe'?ve seen this movie\b/gi,
+  /\bI can'?t stop thinking about\b/gi, /\bnobody handed (you|us|me)\b/gi, /\bpave(s|d)? the way\b/gi,
+  /\bunderscor(e|es|ed|ing) the importance\b/gi,
+  /\bfield notes from\b/gi, /\bthe physics of\b/gi, /\bI want to be careful here\b/gi,
+  /\blet'?s explore\b/gi, /\bgreat question\b/gi, /\bthe (question|thing) I keep\b/gi,
+  /\b(it|this|everything) all turns on\b/gi, /\bnavigat(e|es|ing) the (\w+ )?landscape\b/gi,
 ];
 // The stock question and its stock answer: "Tired of leaks? We've got you.",
 // "Looking for a plumber? Look no further." A hook's real question with a
@@ -121,7 +129,7 @@ const EFFORT_ONCE = /(?<!\bat )\b(?:ask|tell|set|save|change|connect|add|remove|
 // Common in people's speech too, so only hints.
 const MODEL_HINTS = [/\bhonestly\b/gi, /\bquietly\b/gi, /\bgenuinely\b/gi, /\bthe real (cost|value|work|test|story)\b/gi, /\blean(s|ing)? into\b/gi,
   /\b(lives|live) (in|on) (one place|your|the same|its own)\b/gi, /\byours to (keep|own|take)\b/gi,
-  /(?:^|[.!?]\s+)(less|fewer) \w+(?: \w+)?[,.] more \w+/gi, /\bat the end of the day\b/gi];
+  /(?:^|[.!?]\s+)(less|fewer) \w+(?: \w+)?[,.] more \w+/gi, /\bat the end of the day\b/gi, /\bkey takeaways\b/gi];
 
 // A complete sentence with a comma and a "with" phrase bolted on to carry the
 // claim: "Your site runs on Cloudflare, with its SEO and design done professionally."
