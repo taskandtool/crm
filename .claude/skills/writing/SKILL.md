@@ -1,6 +1,6 @@
 ---
 name: writing
-description: "Writes and edits the words people read: a page, a blog post or article, an ad, a social post, an email, a proposal, an app's labels and messages. Use whenever words are written or rewritten, or the owner says they sound generic, salesy or like AI."
+description: "Writes and edits the words people read: a page, a blog post or article, an ad, a social post, an email, a proposal, an app's labels and messages. Use whenever words are written or rewritten, or the owner says they sound generic or salesy."
 ---
 
 # Writing
@@ -14,8 +14,7 @@ in words a person would say out loud. Clear beats clever.
 The owner's notes are the only source; the app's `AGENTS.md` names them.
 When the words need a fact the notes don't have, write a `NEED:` line for
 the owner instead of a vaguer sentence. Never invent customers, results,
-awards or urgency, and cite no outside source. A rating carries its count
-and source.
+awards or urgency. A rating carries its count and source.
 
 Follow `brand/voice.md`, plainer where the owner's own copy is marketese.
 Plain still sounds like the owner: keep their warmth and humour, carried by
@@ -25,8 +24,8 @@ in a piece.
 
 ## The standard
 
-1. **Every line earns its place:** the reader's problem, what they get, why
-   to believe it, or how little it takes. Cut the rest.
+1. **Keep a line only if it says** the reader's problem, what they get,
+   why to believe it, or how little it takes.
 2. **Lead with the value.** The first line says what this is and what the
    reader gets, before how it works. A page headline is usually under ten
    words.
@@ -83,7 +82,7 @@ in Leeds."
 
 Edit in this order: truth (every fact is in the notes), meaning, order,
 words, sound (read it aloud), length. Then run the app's check (`AGENTS.md`
-names it) and rewrite each flagged passage whole.
+names it) and fix what it flags (the `tropes` skill says how).
 
 Then the cold read, the main check, on what this turn changed:
 
@@ -92,7 +91,6 @@ Then the cold read, the main check, on what this turn changed:
 2. Give a fresh sub-agent only that file, the notes, `brand/voice.md` and
    the tropes skill's `references/copy.md`. It lists every line that should
    change as `| line, exactly | replacement, or CUT | why |`. Rules the
-   page's own skill sets stand, and each replacement must pass the same
-   list.
+   page's skill sets still apply. Each replacement must pass the same list.
 3. Apply the table in one pass. With no sub-agent, read it yourself as a
    stranger would, and say so.

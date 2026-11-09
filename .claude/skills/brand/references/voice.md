@@ -2,8 +2,8 @@
 
 `brand/voice.md` is the first file every writing task reads, whether it's a
 web page, an ad, a post or an email. Every line in it quotes one of the
-owner's own sentences as evidence. A voice guide built on adjectives drifts.
-A line with no sample stays "to fill".
+owner's own sentences as evidence. Adjectives alone don't show a writer how
+the owner sounds. A line with no sample stays "to fill".
 
 ## What to collect
 
@@ -42,7 +42,7 @@ the lexicon, because they show how buyers describe the problem.
 
 A signature, with its evidence:
 
-> **Tells you when not to spend.** "Honestly, a £20 part will fix that.
+> **Tells you when not to spend.** "A £20 part will fix that.
 > Don't let anyone sell you a new boiler." (the owner's reply to a Google review,
 > 2026-03-04, from `raw/places/`)
 
