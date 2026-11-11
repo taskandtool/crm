@@ -1,37 +1,14 @@
 ---
 name: data
-description: "What every skill's code builds on: the project's shared tables and their rules, the Db handle, settings, connection calls, email, spam checks, the business's name and address, unsubscribes. Use before creating or changing a table or copying another skill's code. Not for DATABASE_URL, drivers or extensions (the `database` skill)."
+description: "The code every business skill's snippets build on, copied into src/data/: the Db handle and applySchema, settings, sending email, spam checks, the business's name and address, unsubscribes, visitor keys, script helpers. Use before copying another skill's code into the app. Table rules are the `database` skill's."
 ---
 
 # Data
 
-Every app in a project shares one Postgres database, so a CRM installed
-later finds the Website's form submissions, bookings and payments already
-there.
-
-## The rules
-
-- **One set of tables for the project, each by its plain name.** Every app
-  reads, writes and alters every table, so name a new one for what it holds
-  (`quotes`, `report_snapshots`), never for the app that made it. Look
-  first: `select table_name from information_schema.tables where
-  table_schema = 'public'`. A table another app made is the one to use: add
-  a column to it rather than making a second one.
-- **A person is an email.** Every table that names a person has
-  `email citext`, stored through `normalizeEmail` (`email.ts`). That is how
-  every app finds the same person; there is no people table.
-- **A `schema.sql` runs every time the app starts**, so each statement
-  must be safe to run again: `create table if not exists`, `create index if
-  not exists`. A table already there is skipped, so a column added to one
-  needs its own line: `alter table x add column if not exists y …`.
-- **Times are `timestamptz`.** Store the IANA zone next to any time a person
-  chose in their own zone (`time_zone text`). Never store a local time without
-  its zone.
-- **Money is an integer in minor units** with a currency (`amount_cents
-  bigint`, `currency text`). Never a float.
-- **Rows say who wrote them**: `source text` (the app's slug, e.g. `website`),
-  `created_at timestamptz not null default now()`, and `updated_by citext`
-  (the team member's email) on anything a person edits.
+The code the other business skills import, and the conventions their
+snippets keep. The project's table rules (naming, emails, money, times,
+who wrote a row) are the `database` skill's; connection calls and
+scheduled route jobs are the `connections` and `schedule-job` skills'.
 
 ## The database handle
 
@@ -45,6 +22,12 @@ the only one a snippet assumes.
 Every route factory takes a `GetDb`, `(c) => Db`: made per request from the
 binding in production, the app's one handle in dev.
 
+Store an email through `normalizeEmail` (`email.ts`). A `schema.sql`
+runs every time the app starts, so each statement must be safe to run
+again: `create table if not exists`, `create index if not exists`, and a
+column added to an existing table on its own line, `alter table x add
+column if not exists y …`.
+
 Each app makes its handle from the driver it already uses:
 
 - **The Neon HTTP driver** (the Website): `fromNeon(envVar(c,
@@ -54,26 +37,12 @@ Each app makes its handle from the driver it already uses:
   `env.DATABASE_URL`, closed in `ctx.waitUntil`, deployed with
   `--flag nodejs_compat` (the `deploy` skill).
 
-## Settings, the gateway, email, spam
+## Settings, email, spam
 
 - **Settings** (`env.ts`): `envVar(c, name)` reads a Worker binding in
   production and `process.env` in dev; `envOf(c)` passes them to code that
   takes an `Env`. Never `c.env ?? process.env`: on the machine `c.env` is
   node-server's `{ incoming, outgoing }`, so that reads nothing.
-- **A connection** (`gateway.ts`):
-  `gatewayFetch(env, slug, path, init)`, the same in dev and production:
-  Task & Tool adds the key or token, which never reaches app code. Pass
-  `envOf(c)`: in production it carries the connections the routing Worker
-  hands each request (`TT`), on the machine the gateway's address.
-  `listConnections(env)` is the app's list for code, in both: a slug per
-  granted endpoint, with its `service` and `account`. Two people's Google on
-  one app are `google-calendar` and `google-calendar-7c2e1a`, so code that
-  serves everyone who connected finds them by `service`, not by one slug.
-- **Scheduled work** (`jobs.ts`): a `/jobs/<name>` route scheduled with
-  `schedule-job --route` runs where the app is served (production once
-  deployed, else the dev server). Put it on `jobRoutes()`: it answers only
-  when `isJob(c)` (the routing Worker's `props.job` in production, the
-  machine token in dev), and a throw becomes a JSON 500.
 - **Email** (`send.ts`): `sendEmail(env, mail)` through Resend or Postmark
   (the owner's, to anyone; `NOTIFY_FROM` and `NOTIFY_VIA`), else Task & Tool
   email (ours, free, nothing to set). Task & Tool email sends only mail
@@ -102,7 +71,7 @@ Copy the files the app uses into `src/<skill>/`, with what they import
 (this skill's go in `src/data/`, so `../data/db` resolves as it does in the
 skills repo) and the tests that cover them (`data/test/scratch.ts` for any
 database test). The copy is this app's code: change it as the app needs,
-keeping the rules above and its tests passing. Then:
+keeping the `database` skill's table rules and its tests passing. Then:
 
 1. Run this skill's `schema.sql` first, then the skill's own, with
    `applySchema` from the app's setup or start
@@ -125,11 +94,6 @@ run check` allows Node built-ins only in the files listed in `nodeOnly`
 `.ts` file imports `cli.mjs` by its full name (`../data/cli.mjs`), and the
 app's `tsconfig.json` needs `"allowJs": true`.
 
-## When the database is not there
-
-No `DATABASE_URL` means the app has no database yet: ask the owner with
-`python3 ~/tools/taskandtool.py request-database`.
-
 ## Files
 
 | File | What it is |
@@ -139,8 +103,8 @@ No `DATABASE_URL` means the app has no database yet: ask the owner with
 | `migrate.ts` | `applySchema` |
 | `email.ts` | `normalizeEmail` |
 | `env.ts` | `envVar`, `envOf`, `setting`, `connectionsOf` |
-| `gateway.ts` | `gatewayFetch`, `listConnections`, `gatewayReachable` (dev and production) |
-| `jobs.ts` | `jobRoutes`, `isJob`: the scheduled route jobs' Hono app, and whether a request is one |
+| `gateway.ts` | `gatewayFetch(envOf(c), slug, path, init)`, `listConnections`, `gatewayReachable`: the `connections` skill's calls, in dev and production |
+| `jobs.ts` | `jobRoutes`, `isJob`: a Hono app whose `/jobs/*` routes answer only a job (the `schedule-job` skill), a throw becoming a JSON 500 |
 | `send.ts` | `sendEmail`, `emailsCustomers`, `teamOf` (who Task & Tool email reaches), `afterResponse` |
 | `spam.tsx` | `SpamFields`, `makeStamp`, `verdict` |
 | `schema.sql` | `business`, `email_optouts`, `unsubscribe_keys` |

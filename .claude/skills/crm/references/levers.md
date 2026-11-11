@@ -86,7 +86,7 @@ Everything a business wants changed is one of these.
    location", use a tag or lever 4).
 
 4. **`schema.sql`, for a real column** (indexed, filtered, joined on),
-   by the `data` skill's table rules. It runs at every start, dev's
+   by the `database` skill's table rules. It runs at every start, dev's
    included, on the database production shares:
 
    ```sql

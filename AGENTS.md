@@ -110,7 +110,7 @@ node scripts/migrate.mjs                        # every schema file applied, sta
 
 ## Rules
 
-- The project's tables follow the `data` skill. The customer's words live
+- The project's tables follow the `database` skill. The customer's words live
   in `crm.config.json`, never in a table name.
 - A customer, a lead or a deal is archived, never deleted; an event is cancelled;
   a task is done. A merge waits for the owner's yes.

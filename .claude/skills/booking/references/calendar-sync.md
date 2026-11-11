@@ -38,8 +38,8 @@ and each person connecting their own works too. Free/busy access alone is
 not enough: the pull reads events. The lookup goes through the app's
 connections (`gatewayFetch`), from the team address or production alike.
 
-Calls go through the app's connections (`gatewayFetch`: the machine's
-gateway in dev, `tt` in production), to the row's connection.
+Calls go through the app's connections (`gatewayFetch`), to the row's
+connection.
 Google is `events.list` with `singleEvents=true`, paged by `nextPageToken`;
 free (transparent), cancelled and declined events are not busy. Microsoft is
 `calendarView` with `Prefer: outlook.timezone="UTC"` and the tag `$expand`ed,
