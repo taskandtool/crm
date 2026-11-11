@@ -2,7 +2,7 @@
 
 Read when connecting a Google or Outlook calendar, scheduling the sync, or when busy times look wrong.
 
-`sync.ts` is the sync, run as the app's job route `/jobs/calendar-sync`
+`sync.ts` is the sync, run as the app's job route `/_jobs/calendar-sync`
 (`jobs.ts`). Each run pushes first, then pulls. The push
 gives each confirmed booking without an event one, with no attendees
 (Google and Microsoft would email the booker from the owner's account), and
@@ -49,12 +49,11 @@ An all-day event covers its dates in the person's zone.
 Only the app that owns the calendars (the CRM) mounts it: it links
 accounts first, and `linkAccounts` drops the ones the calling app does not
 hold. `app.route("/", bookingJobs(getDb))` in its `app.tsx`, ahead of the
-team gate, then schedule it once (the `schedule-job` skill; check
-`python3 ~/tools/taskandtool.py list-jobs` first), every 15 minutes (the
-platform's floor), not visible to clients:
+team gate, then schedule it once (the `schedule-job` skill), every 15
+minutes, not visible to clients:
 
 ```bash
-python3 ~/tools/taskandtool.py schedule-job "Calendar sync" --when "*/15 * * * *" --route /jobs/calendar-sync
+python3 ~/tools/taskandtool.py schedule-job "Calendar sync" --when "*/15 * * * *" --route /_jobs/calendar-sync
 ```
 
 It runs in production once the app is deployed (no machine wakes), on the

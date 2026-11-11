@@ -283,9 +283,9 @@ if (invoicesCfg) {
   }));
 }
 
-// Scheduled work (`schedule-job --route`): the platform's, never a visitor's
-// (data/jobs.ts isJob). Ahead of the team gate: a job is nobody signed in.
-app.use("/jobs/*", publicDb);
+// Scheduled work (`schedule-job --route`): only Task & Tool reaches /_jobs/,
+// so no visitor gets here. Ahead of the team gate: a job is nobody signed in.
+app.use("/_jobs/*", publicDb);
 app.route("/", bookingJobs((c) => (c as unknown as C).var.db));
 app.route("/", crmJobs((c) => (c as unknown as C).var.db, (c) => (c as unknown as C).env.runtime.production));
 

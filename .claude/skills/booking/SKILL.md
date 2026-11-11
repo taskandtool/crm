@@ -111,7 +111,7 @@ address; the manage page changes nothing on one tap: a booker asks to move or ca
 | `reminders.ts` | `sendReminders`: claims and sends the reminders due now |
 | `calendars.ts` | The connected calendar accounts: `linkAccounts`, `findCalendars` (what each account can see), the gateway call |
 | `sync.ts` | The calendar sync: `pushBookings`, then pull busy times; `pushAfterWrites`: a booking reaches its calendar after the write that changed it |
-| `jobs.ts` | `bookingJobs`: the routes `/jobs/calendar-sync` and `/jobs/booking-reminders` |
+| `jobs.ts` | `bookingJobs`: the routes `/_jobs/calendar-sync` and `/_jobs/booking-reminders` |
 | `test/` | Slots and DST, concurrency, sync and finding calendars with a fake gateway, ICS, the pages, spam, afterBook |
 
 ## Read next

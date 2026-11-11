@@ -85,8 +85,8 @@ exist) need `@theme static`, or a class that uses them, to reach the page.
 
 ## Handing a report to someone
 
-A schedule is a job (`schedule-job` skill; cron is in UTC, so pick an hour
-that is right in the business's zone either side of a clock change). The
+A schedule is a job (`schedule-job` skill): pick an hour that is right in
+the business's zone either side of a clock change. The
 hand-over is a deliverable (`work` skill), and a deliverable is a file:
 
 1. Render the report into `ReportDocument` (no private navigation,

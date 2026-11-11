@@ -1,10 +1,10 @@
 // The booking skill's scheduled work as the app's own job routes (data/jobs.ts;
 // `schedule-job --route`). Edge-safe: these run in production once the app is
-// deployed, on the dev server before.
+// deployed, on the dev server before; only Task & Tool reaches /_jobs/.
 //
-//   app.route("/", bookingJobs(getDb));       // /jobs/calendar-sync, /jobs/booking-reminders
+//   app.route("/", bookingJobs(getDb));       // /_jobs/calendar-sync, /_jobs/booking-reminders
 //
-// Only the app that owns the calendars (the CRM) mounts /jobs/calendar-sync:
+// Only the app that owns the calendars (the CRM) mounts /_jobs/calendar-sync:
 // it links accounts (calendars.ts linkAccounts), which drops the ones the
 // calling app does not hold, and the project's tables are shared.
 import type { Context } from "hono";
@@ -21,15 +21,15 @@ import { syncCalendars } from "./sync";
 const gatewayOf = (env: Env): Gateway => (slug, path, init) => gatewayFetch(env, slug, path, init);
 
 /**
- * POST /jobs/calendar-sync (every 15 minutes: link new accounts, push, pull
- * busy times) and POST /jobs/booking-reminders (every 15 minutes). Each
+ * POST /_jobs/calendar-sync (every 15 minutes: link new accounts, push, pull
+ * busy times) and POST /_jobs/booking-reminders (every 15 minutes). Each
  * answers JSON, a 500 when anything failed, so the run's history says why.
  */
 export function bookingJobs(getDb: (c: Context) => Db, opts: { calendars?: boolean; before?: number[] } = {}) {
   const app = jobRoutes();
 
   if (opts.calendars !== false) {
-    app.post("/jobs/calendar-sync", async (c) => {
+    app.post("/_jobs/calendar-sync", async (c) => {
       const env = envOf(c);
       const db = getDb(c);
       const linked = await linkAccounts(db, await listConnections(env));
@@ -38,7 +38,7 @@ export function bookingJobs(getDb: (c: Context) => Db, opts: { calendars?: boole
     });
   }
 
-  app.post("/jobs/booking-reminders", async (c) => {
+  app.post("/_jobs/booking-reminders", async (c) => {
     const db = getDb(c);
     // Times held for a payment that never came are freed first, so nobody is reminded of them.
     const released = await releaseLapsedHolds(db);

@@ -1,5 +1,5 @@
 // The calendar sync: pages read busy; this fills it. Edge-safe. It runs as
-// the app's job route `/jobs/calendar-sync` every 15 minutes (jobs.ts,
+// the app's job route `/_jobs/calendar-sync` every 15 minutes (jobs.ts,
 // references/calendar-sync.md), and the push runs after every write too
 // (pushAfterWrites, below), so a booking reaches the calendar at once:
 //
@@ -395,7 +395,7 @@ const WRITES = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * calendars, after the response (pushBookings finds what is due from the
  * rows, so this covers every page that writes one, now and later). Only the
  * calendars whose connection this app holds; the rest wait for the app that
- * does (its /jobs/calendar-sync). An app with no calendar it holds asks
+ * does (its /_jobs/calendar-sync). An app with no calendar it holds asks
  * nothing more. `open` gives a database of its own: the request's may close
  * once the response is sent.
  */

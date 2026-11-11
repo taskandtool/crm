@@ -104,7 +104,7 @@ app's `tsconfig.json` needs `"allowJs": true`.
 | `email.ts` | `normalizeEmail` |
 | `env.ts` | `envVar`, `envOf`, `setting`, `connectionsOf` |
 | `gateway.ts` | `gatewayFetch(envOf(c), slug, path, init)`, `listConnections`, `gatewayReachable`: the `connections` skill's calls, in dev and production |
-| `jobs.ts` | `jobRoutes`, `isJob`: a Hono app whose `/jobs/*` routes answer only a job (the `schedule-job` skill), a throw becoming a JSON 500 |
+| `jobs.ts` | `jobRoutes`: a Hono app for `/_jobs/` routes whose throws answer a JSON 500 (the `schedule-job` skill); `isJob`: whether a request is a job's run |
 | `send.ts` | `sendEmail`, `emailsCustomers`, `teamOf` (who Task & Tool email reaches), `afterResponse` |
 | `spam.tsx` | `SpamFields`, `makeStamp`, `verdict` |
 | `schema.sql` | `business`, `email_optouts`, `unsubscribe_keys` |

@@ -5,7 +5,7 @@
 // fresh project too.
 import type pg from "pg";
 import { cfg, invoicesCfg, seeds } from "../src/config";
-import { fail, flag, flags, localTime, machineEnv, misused, parseArgs, type Args } from "../src/data/cli.mjs";
+import { askForDatabase, fail, flag, flags, localTime, machineEnv, misused, parseArgs, type Args } from "../src/data/cli.mjs";
 import type { CustomField } from "../src/config-schema";
 import { readFields, type FieldRead } from "../src/crm/fields";
 import { clean } from "../src/crm/text";
@@ -33,7 +33,7 @@ const at = [script, ["import", "export", "migrate"].includes(script) ? undefined
 export async function withDb<T>(fn: (db: Db, pool: pg.Pool) => Promise<T>, opts: { force?: boolean } = {}): Promise<T> {
   const url = databaseUrl();
   if (!url) {
-    fail(`${at}: the project has no database yet (DATABASE_URL is not set; off Task & Tool, set it in the environment)`, "python3 ~/tools/taskandtool.py request-database");
+    fail(`${at}: the project has no database yet (DATABASE_URL is not set; off Task & Tool, set it in the environment)`, askForDatabase());
   }
   const pool = openPool(url);
   const db = fromPool(pool);

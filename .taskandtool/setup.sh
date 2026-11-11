@@ -11,7 +11,7 @@
 #      builds the CSS once
 #   3. registers the `web` service (`npm run dev`) so the CRM runs in dev on
 #      the machine's URL, or restarts it after a replacement
-#   4. schedules the automatic texts' job (the route /jobs/automatic-texts,
+#   4. schedules the automatic texts' job (the route /_jobs/automatic-texts,
 #      src/crm/jobs.ts) every 15 minutes, once: the phone skill's follow-ups,
 #      by email until Twilio is connected
 #
@@ -72,9 +72,9 @@ fi
 # the jobs can't be listed, nothing is scheduled (the next run tries again).
 if [ -f "$HOME/tools/taskandtool.py" ]; then
   if jobs=$(python3 "$HOME/tools/taskandtool.py" list-jobs --json 2>/dev/null); then
-    if ! printf '%s' "$jobs" | grep -q "/jobs/automatic-texts"; then
+    if ! printf '%s' "$jobs" | grep -q "/_jobs/automatic-texts"; then
       echo "== scheduling the automatic texts"
-      python3 "$HOME/tools/taskandtool.py" schedule-job "Automatic texts" --when "*/15 * * * *" --route /jobs/automatic-texts \
+      python3 "$HOME/tools/taskandtool.py" schedule-job "Automatic texts" --when "*/15 * * * *" --route /_jobs/automatic-texts \
         || echo "== warning: the automatic texts' job is not scheduled; run this script again"
     fi
   else

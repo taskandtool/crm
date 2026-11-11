@@ -1,13 +1,13 @@
 // The CRM's scheduled work as its own job routes (data/jobs.ts;
 // `schedule-job --route`): in production once deployed, on the dev server
-// before. Each answers JSON, a 500 when something failed, so the run's
+// before; only Task & Tool reaches /_jobs/. Each answers JSON, a 500 when something failed, so the run's
 // history says why (a throw too: jobRoutes). Mounted ahead of the team gate with the request's
 // database (app.tsx); booking's two (calendar sync, reminders) are
 // booking/jobs.ts's.
 //
-//   POST /jobs/task-emails          hourly: each person's tasks due, at 7:00 in the business's zone (digest.ts DEFAULT_HOUR; ?hour=H to change)
-//   POST /jobs/recurring-invoices   daily, at the UTC hour that is 06:00 in the business's zone
-//   POST /jobs/automatic-texts      every 15 minutes: the texts and follow-ups due, the texting registration
+//   POST /_jobs/task-emails          hourly: each person's tasks due, at 7:00 in the business's zone (digest.ts DEFAULT_HOUR; ?hour=H to change)
+//   POST /_jobs/recurring-invoices   daily, at the UTC hour that is 06:00 in the business's zone
+//   POST /_jobs/automatic-texts      every 15 minutes: the texts and follow-ups due, the texting registration
 import type { Context } from "hono";
 import { cfg, invoicesCfg } from "../config";
 import { emailSend } from "../booking/notify";
@@ -31,21 +31,21 @@ import { jobCtx, phoneCtx } from "./texting";
 export function crmJobs(getDb: (c: Context) => Db, productionOf: (c: Context) => (() => Promise<Production | null>) | undefined) {
   const app = jobRoutes();
 
-  app.post("/jobs/task-emails", async (c) => {
+  app.post("/_jobs/task-emails", async (c) => {
     const h = c.req.query("hour");
     const hour = h && /^\d{1,2}$/.test(h) && Number(h) < 24 ? Number(h) : undefined;
     const r = await sendDigests(getDb(c), emailSend(envOf(c)), { timeZone: cfg.time_zone, hour, word: invoicesCfg?.word });
     return c.json({ ok: !r.failed, ...r }, r.failed ? 500 : 200);
   });
 
-  app.post("/jobs/recurring-invoices", async (c) => {
+  app.post("/_jobs/recurring-invoices", async (c) => {
     if (!invoicesCfg) return c.json({ ok: true, skipped: "quotes and invoices are off" });
     const db = getDb(c);
     const r = await runRecurring(db, { today: todayIn(cfg.time_zone), timeZone: cfg.time_zone, stripe: () => stripeFrom(envOf(c)), task: recurringTask(db) });
     return c.json({ ok: !r.failed, ...r }, r.failed ? 500 : 200);
   });
 
-  app.post("/jobs/automatic-texts", async (c) => {
+  app.post("/_jobs/automatic-texts", async (c) => {
     // In production the job is asked for at the app's own address, and the
     // router says whether customers can open /q there, as on a page.
     const production = productionOf(c);

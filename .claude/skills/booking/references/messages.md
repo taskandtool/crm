@@ -19,14 +19,13 @@ shows both). It claims the booking first, so the message goes once,
 whichever app, and whichever of the two hooks, gets there first; an app with
 no sender leaves it for one that has a sender.
 
-**Reminders** are the CRM's job route `/jobs/booking-reminders`
+**Reminders** are the CRM's job route `/_jobs/booking-reminders`
 (`bookingJobs` in `jobs.ts`; `reminders.ts`, the sending), a day and an
-hour before by default. Schedule it once (the `schedule-job` skill; check
-`python3 ~/tools/taskandtool.py list-jobs` first), every 15 minutes, not
-visible to clients:
+hour before by default. Schedule it once (the `schedule-job` skill), every
+15 minutes, not visible to clients:
 
 ```bash
-python3 ~/tools/taskandtool.py schedule-job "Booking reminders" --when "*/15 * * * *" --route /jobs/booking-reminders
+python3 ~/tools/taskandtool.py schedule-job "Booking reminders" --when "*/15 * * * *" --route /_jobs/booking-reminders
 ```
 
 `bookingJobs(getDb, { before: [1440, 120] })` changes the times. The job

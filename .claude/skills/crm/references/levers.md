@@ -115,9 +115,9 @@ The code keeps these; never redo them by hand:
 - The morning email lists each person's tasks due, once a day, through
   the app's email sender (Task & Tool email will do: it goes only to the
   team). The same job makes the follow-up task for an unsigned proposal.
-  Schedule it once, if `python3 ~/tools/taskandtool.py list-jobs` does not
-  show it: `python3 ~/tools/taskandtool.py schedule-job "Task emails"
-  --when "0 * * * *" --route /jobs/task-emails` (hourly; it
+  Schedule it once (the `schedule-job` skill):
+  `python3 ~/tools/taskandtool.py schedule-job "Task emails"
+  --when "0 * * * *" --route /_jobs/task-emails` (hourly; it
   sends at 7:00 in the business's zone, `DEFAULT_HOUR` in
   `src/crm/digest.ts`).
   An owner written as an email gets one, and so does a team member

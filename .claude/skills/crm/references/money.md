@@ -96,10 +96,9 @@ Set it up once, in this order:
    event it lists, and the card settings for charging). The CRM is team
    only, so the webhook's URL is the one
    `python3 ~/tools/taskandtool.py inbound-url /hooks/stripe` prints.
-5. Recurring invoices need the time zone (lever 1) and one daily job, if
-   `python3 ~/tools/taskandtool.py list-jobs` does not show it, at the UTC
-   hour that is 06:00 in `time_zone`:
-   `python3 ~/tools/taskandtool.py schedule-job "Recurring invoices" --when "0 <h> * * *" --route /jobs/recurring-invoices`
+5. Recurring invoices need the time zone (lever 1) and one daily job (the
+   `schedule-job` skill), at the UTC hour that is 06:00 in `time_zone`:
+   `python3 ~/tools/taskandtool.py schedule-job "Recurring invoices" --when "0 <h> * * *" --route /_jobs/recurring-invoices`
    (`src/crm/jobs.ts`).
 
 The `invoices` skill has the rules, sending among them; `src/invoices/` is its code.

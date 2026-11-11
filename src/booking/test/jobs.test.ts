@@ -19,23 +19,15 @@ function ctxOf(props: object) {
   return { ctx: { waitUntil: (p: Promise<unknown>) => waits.push(p), passThroughOnException() {}, props } as never, waits };
 }
 
-test("the job routes answer only a job", async () => {
-  const app = bookingJobs(() => { throw new Error("no database for a refusal"); });
-  for (const path of ["/jobs/calendar-sync", "/jobs/booking-reminders"]) {
-    const { ctx } = ctxOf({});
-    assert.equal((await app.request(path, { method: "POST" }, {}, ctx)).status, 404, path);
-  }
-});
-
 test("reminders run as a job and answer JSON; the CRM's calendar sync is not mounted where calendars are off", (t) =>
   withDb(t, async (s) => {
     await applySchema(s.db, schema);
     const app = bookingJobs(() => s.db, { calendars: false });
-    const { ctx } = ctxOf({ job: "booking-reminders" });
-    const res = await app.request("/jobs/booking-reminders", { method: "POST" }, {}, ctx);
+    const { ctx } = ctxOf({});
+    const res = await app.request("/_jobs/booking-reminders", { method: "POST" }, {}, ctx);
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { ok: true, released: 0, sent: 0, none: 0, failed: 0, errors: [] });
-    assert.equal((await app.request("/jobs/calendar-sync", { method: "POST" }, {}, ctxOf({ job: "calendar-sync" }).ctx)).status, 404);
+    assert.equal((await app.request("/_jobs/calendar-sync", { method: "POST" }, {}, ctxOf({}).ctx)).status, 404);
   }));
 
 test("a write sends the booking it made to the calendar, through the app's connections, after the response", (t) =>
@@ -68,10 +60,15 @@ test("a write sends the booking it made to the calendar, through the app's conne
       return c.text(r.ok ? "booked" : "no", r.ok ? 200 : 409);
     });
     app.get("/schedule", (c) => c.text("a read"));
+    app.post("/_jobs/booking-reminders", (c) => c.json({ ok: true }));
 
     const read = ctxOf({ tt: TT });
     await app.request("/schedule", {}, { TT }, read.ctx);
     assert.equal(read.waits.length, 0, "a read pushes nothing");
+
+    const job = ctxOf({ tt: TT });
+    await app.request("/_jobs/booking-reminders", { method: "POST" }, { TT }, job.ctx);
+    assert.equal(job.waits.length, 0, "a job's own run pushes nothing: the sync job does that");
 
     const write = ctxOf({ tt: TT });
     assert.equal(await (await app.request("/book", { method: "POST" }, { TT }, write.ctx)).text(), "booked");

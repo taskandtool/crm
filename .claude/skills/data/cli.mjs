@@ -240,6 +240,13 @@ export function out(json, data, text) {
 export const localTime = (d, zone) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: zone, dateStyle: "short", timeStyle: "short", hourCycle: "h23" }).format(new Date(d));
 
+/** Whether this computer is a Task & Tool machine (its ~/.tasktool), not a laptop or another host. */
+export const onTaskAndTool = () => existsSync(join(homedir(), ".tasktool"));
+
+/** What to do about a missing database here: ask the owner on a machine, set DATABASE_URL anywhere else. */
+export const askForDatabase = () =>
+  onTaskAndTool() ? "python3 ~/tools/taskandtool.py request-database" : "export DATABASE_URL=postgres://... (the README says which database), then run it again";
+
 /**
  * The settings a script that sends or charges needs (NOTIFY_FROM, NOTIFY_VIA,
  * the gateway's PHOENIX_URL and MACHINE_TOKEN): this shell's, then, on a
@@ -251,7 +258,7 @@ export function machineEnv() {
   /** @type {Record<string, string | undefined>} */
   const out = {};
   try {
-    if (!existsSync(join(homedir(), ".tasktool"))) throw new Error("off Task & Tool");
+    if (!onTaskAndTool()) throw new Error("off Task & Tool");
     for (const line of readFileSync(join(homedir(), ".env"), "utf8").split("\n")) {
       const m = /^(?:export\s+)?([A-Z_][A-Z0-9_]*)=(.*)$/.exec(line.trim());
       if (m) out[m[1]] = m[2].trim().replace(/^(['"])(.*)\1$/, "$2");
