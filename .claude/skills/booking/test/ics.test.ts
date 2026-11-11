@@ -46,7 +46,7 @@ test("a CANCEL keeps the UID, carries the higher SEQUENCE and says CANCELLED", (
 });
 
 test("a newline cannot inject a property", () => {
-  const text = unfold(invite({ ...base, method: "REQUEST", summary: "Hi\r\nATTENDEE:mailto:evil@x.com", booking: { ...booking, name: "A\r\nB", email: "ann@example.com\r\nX:1" } }));
+  const text = unfold(invite({ ...base, method: "REQUEST", summary: "Hi\r\nATTENDEE:mailto:evil@x.example", booking: { ...booking, name: "A\r\nB", email: "ann@example.com\r\nX:1" } }));
   assert.equal(text.split("\r\n").filter((l) => l.startsWith("ATTENDEE")).length, 1);
   assert.ok(!text.split("\r\n").some((l) => l.startsWith("X:")));
 });

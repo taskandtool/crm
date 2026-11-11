@@ -56,7 +56,7 @@ const RE = "RE" + "0123456789abcdef".repeat(2);
 async function setup(s: Scratch, o: { texting?: boolean; links?: boolean } = {}) {
   for (const sql of schemas) await applySchema(s.db, sql);
   const tw = fakeTwilio();
-  const n = await addNumber(s.db, { e164: "+15125550100", label: "Business number", provider_id: "PN1", ring_to: "+15125559999" }, "o@x.com");
+  const n = await addNumber(s.db, { e164: "+15125550100", label: "Business number", provider_id: "PN1", ring_to: "+15125559999" }, "o@x.example");
   await setHooks(s.db, n.id, "https://hooks.example/tok/hooks/twilio", await tokenHash(SECRET));
   if (o.texting !== false) await s.db.sql`update phone_numbers set texting = 'approved' where id = ${n.id}::bigint`;
   let now = new Date("2026-10-20T15:00:00Z"); // 10am in Chicago
@@ -198,8 +198,8 @@ test("a missed call gets one text at any hour, and a link the owner types goes a
     // Team hours only on a day that isn't today: the text is the same.
     const today = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "America/Chicago" }).format(new Date()));
     await s.db.sql`delete from availability where resource_id = ${person.id}::bigint`;
-    await addWindow(s.db, person.id, String((today + 3) % 7), "09:00", "17:00", "o@x.com");
-    const w = await setWords(s.db, "missed_call", "one", "Hi, it's {business}. Sorry we missed you! Book a time here: https://acme.example/book", "o@x.com");
+    await addWindow(s.db, person.id, String((today + 3) % 7), "09:00", "17:00", "o@x.example");
+    const w = await setWords(s.db, "missed_call", "one", "Hi, it's {business}. Sorry we missed you! Book a time here: https://acme.example/book", "o@x.example");
     assert.ok(w.ok);
     await post("/hooks/twilio/voice", { CallSid: "CA1", From: "+15125550111", To: "+15125550100", Direction: "inbound" });
     await post("/hooks/twilio/dialed", { CallSid: "CA1", DialCallStatus: "no-answer" });
@@ -265,7 +265,7 @@ test("the registration is read from Twilio as the owner makes it in the Console,
     // What reviewers read is the box customers see, on the page they can open.
     const flow = paste.find((p) => p.field.startsWith("How do end-users consent"))!.words;
     assert.match(flow, /for example https:\/\/acme\.example\/forms\/quote/);
-    await saveBusiness(s.db, business, "o@x.com");
+    await saveBusiness(s.db, business, "o@x.example");
     assert.ok(flow.includes(`'${await textingBox(s.db, "request")}'`));
     assert.equal(paste.find((p) => p.field.startsWith("Opt-in page"))!.words, "https://acme.example/forms/quote");
     // The form page is known, so the campaign says links, and a sample shows one on the business's own address. No number.
@@ -275,8 +275,8 @@ test("the registration is read from Twilio as the owner makes it in the Console,
     assert.match(said(rows, "Sample message 4")!, /Finish here: https:\/\/acme\.example\/forms\/quote/);
     assert.equal(said(steps({ ...n, registration: r.reg }, business, null, await flowSettings(s.db)), "Messages will include embedded links"), "No", "no page yet, so no link to show");
     // An owner's review link: the answer turns Yes, and a sample shows it (Twilio 30889).
-    await setEnabled(s.db, "after_visit", true, "o@x.com");
-    await setWords(s.db, "after_visit", "one", "Hi {first_name}, thanks from {business}! A review helps: https://g.page/r/acme/review", "o@x.com");
+    await setEnabled(s.db, "after_visit", true, "o@x.example");
+    await setWords(s.db, "after_visit", "one", "Hi {first_name}, thanks from {business}! A review helps: https://g.page/r/acme/review", "o@x.example");
     const linked = steps({ ...n, registration: r.reg }, business, null, await flowSettings(s.db));
     assert.equal(said(linked, "Messages will include embedded links"), "Yes");
     assert.match(said(linked, "Sample message 4")!, /https:\/\/g\.page\/r\/acme\/review/);
@@ -289,7 +289,7 @@ test("the registration is read from Twilio as the owner makes it in the Console,
 test("a toll-free number is verified, read by its number, with the date a turned-down one can be fixed by", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
   withDb(async (s) => {
     const { tw } = await setup(s, { texting: false });
-    const n = await addNumber(s.db, { e164: "+18885550100", label: "Toll-free", provider_id: "PN2", ring_to: null }, "o@x.com");
+    const n = await addNumber(s.db, { e164: "+18885550100", label: "Toll-free", provider_id: "PN2", ring_to: null }, "o@x.example");
     tw.provider.call = (async (_m: string, _h: string, path: string, params?: Record<string, unknown>) =>
       path === "/v1/Tollfree/Verifications" && params?.TollfreePhoneNumberSid === "PN2"
         ? { verifications: [{ sid: "HH1", status: "TWILIO_REJECTED", rejection_reasons: [{ reason: "Opt-in image not accessible" }], edit_allowed: true, edit_expiration: "2026-10-23T00:00:00Z" }] }
@@ -308,7 +308,7 @@ test("STOP opts the number out: nothing more goes to it, a person's text include
     const { post, ctx } = await setup(s);
     await post("/hooks/twilio/sms", { MessageSid: "SMa", From: "+15125550111", To: "+15125550100", Body: "STOP", OptOutType: "STOP" });
     assert.equal(await optedOut(s.db, "5125550111"), true);
-    const r = await sendText(ctx, { to: "+15125550111", body: "Are you still there?", sentBy: "o@x.com" });
+    const r = await sendText(ctx, { to: "+15125550111", body: "Are you still there?", sentBy: "o@x.example" });
     assert.ok(!r.ok && /opted out/.test(r.why));
     await post("/hooks/twilio/sms", { MessageSid: "SMb", From: "+15125550111", To: "+15125550100", Body: "START", OptOutType: "START" });
     assert.equal(await optedOut(s.db, "5125550111"), false);
@@ -353,7 +353,7 @@ test("a text Twilio delivers twice is answered once, and a plain Yes is an answe
 test("a text before approval is refused with the reason", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
   withDb(async (s) => {
     const { ctx } = await setup(s, { texting: false });
-    const r = await sendText(ctx, { to: "+15125550111", body: "Hi", sentBy: "o@x.com" });
+    const r = await sendText(ctx, { to: "+15125550111", body: "Hi", sentBy: "o@x.example" });
     assert.ok(!r.ok && /approves your number/.test(r.why));
   }));
 
@@ -361,14 +361,14 @@ test("a text before approval is refused with the reason", { skip: !process.env.T
 
 /** A service with an open host every weekday from 9 to 5 in Chicago. */
 async function service(s: Scratch) {
-  const p = await createPerson(s.db, { name: "Dan Ruiz", email: "dan@example.com", time_zone: "America/Chicago" }, "o@x.com", "test");
+  const p = await createPerson(s.db, { name: "Dan Ruiz", email: "dan@example.com", time_zone: "America/Chicago" }, "o@x.example", "test");
   const t = await createType(s.db, {
     name: "Furnace check", slug: "furnace", duration_min: "60", interval_min: "60", buffer_before_min: "0", buffer_after_min: "0",
     min_notice_min: "0", horizon_days: "30", location_kind: "their_place", location: "",
-  }, "o@x.com", "test");
+  }, "o@x.example", "test");
   assert.ok(p.ok && t.ok);
   await setHosts(s.db, t.value.id, [p.value.id]);
-  for (const d of [1, 2, 3, 4, 5]) await addWindow(s.db, p.value.id, String(d), "09:00", "17:00", "o@x.com");
+  for (const d of [1, 2, 3, 4, 5]) await addWindow(s.db, p.value.id, String(d), "09:00", "17:00", "o@x.example");
   return { person: p.value, type: t.value };
 }
 
@@ -536,7 +536,7 @@ test("someone who paid gets no nudge, and the flow's switch stops it", { skip: !
     assert.equal((await scan(ctx)).sent, 1, "only the one who did not pay");
     assert.equal(tw.texts.length, 1);
     assert.match(tw.texts[0].to, /5550128/);
-    await setEnabled(s.db, "unpaid", false, "o@x.com");
+    await setEnabled(s.db, "unpaid", false, "o@x.example");
     await s.db.sql`insert into submission_drafts (form_key, key_hash, step, phone, source, text_consent, updated_at, created_at)
       values ('order', 'h7', 1, '512-555-0129', 'test', 'Text me', '2026-10-20T14:30:00Z', '2026-10-20T14:28:00Z')`;
     assert.equal((await scan(ctx)).sent, 0, "the switch off");
@@ -636,10 +636,10 @@ test("a flow switched off sends nothing, and changed words are what goes", { ski
     const { ctx, tw } = await setup(s);
     await s.db.sql`insert into forms (key, title, fields, follow_up) values ('quote', 'Quote', '[{"name":"phone","label":"Phone","type":"tel"}]', true)`;
     const ins = async (phone: string) => (await s.db.sql<{ id: string }>`insert into submissions (form_key, name, phone, source, text_consent) values ('quote', 'Natalie', ${phone}, 'test', 'Text me') returning id::text as id`)[0].id;
-    await setEnabled(s.db, "thanks", false, "o@x.com");
+    await setEnabled(s.db, "thanks", false, "o@x.example");
     await onSubmitted(ctx, await ins("512-555-0123"));
     assert.equal(tw.texts.length, 0);
-    await setEnabled(s.db, "thanks", true, "o@x.com");
+    await setEnabled(s.db, "thanks", true, "o@x.example");
     const w = await setWords(s.db, "thanks", "one", "Thanks {first_name}! {business} will call you today.", "ai");
     assert.ok(w.ok);
     await onSubmitted(ctx, await ins("512-555-0124"));
@@ -667,7 +667,7 @@ test("turning After the visit on texts nobody about a visit done before it was o
     await s.db.sql`
       insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, phone, location_kind, status, text_consent)
       values (${type.id}::bigint, ${person.id}::bigint, '2026-10-19T15:00:00Z', '2026-10-19T16:00:00Z', 'Natalie Ruiz', 'nat@example.com', '512-555-0123', 'their_place', 'completed', 'Text me')`;
-    await setEnabled(s.db, "after_visit", true, "o@x.com");
+    await setEnabled(s.db, "after_visit", true, "o@x.example");
     setNow(new Date(Date.now() + 60_000));
     await scan(ctx);
     assert.equal(tw.texts.length, 0);
@@ -696,11 +696,11 @@ test("a send Twilio refuses because they opted out (21610) is kept as their STOP
   withDb(async (s) => {
     const { ctx, tw, post } = await setup(s);
     tw.refuse.add("+15125550111");
-    const r = await sendText(ctx, { to: "+15125550111", body: "Are you still there?", sentBy: "o@x.com" });
+    const r = await sendText(ctx, { to: "+15125550111", body: "Are you still there?", sentBy: "o@x.example" });
     assert.ok(!r.ok && /opted out/.test(r.why));
     assert.equal(await optedOut(s.db, "5125550111"), true);
     // Through a messaging service the refusal can come later, in the delivery report.
-    const sent = await sendText(ctx, { to: "+15125550122", body: "Hi", sentBy: "o@x.com" });
+    const sent = await sendText(ctx, { to: "+15125550122", body: "Hi", sentBy: "o@x.example" });
     assert.ok(sent.ok && sent.communication);
     await post("/hooks/twilio/status", { MessageSid: sent.communication.provider_id!, MessageStatus: "failed", ErrorCode: "21610" });
     assert.equal(await optedOut(s.db, "5125550122"), true);
@@ -768,7 +768,7 @@ test("the booking confirmation goes past the three a day and at 11pm; the review
     await s.db.sql`
       insert into bookings (type_id, resource_id, starts_at, ends_at, name, email, phone, location_kind, status)
       values (${type.id}::bigint, ${person.id}::bigint, '2026-10-20T15:00:00Z', '2026-10-20T16:00:00Z', 'Rae Kim', null, '512-555-0144', 'their_place', 'completed')`;
-    await setEnabled(s.db, "after_visit", true, "o@x.com");
+    await setEnabled(s.db, "after_visit", true, "o@x.example");
     await s.db.sql`update text_flows set enabled_at = '2026-10-19T00:00:00Z' where key = 'after_visit'`;
     ctx.zone = "America/Chicago";
     setNow(new Date("2026-10-21T15:00:00Z"));
@@ -779,7 +779,7 @@ test("the booking confirmation goes past the three a day and at 11pm; the review
 test("an unsubscribe link stops the follow-up emails to that address, at a press, not an open", { skip: !process.env.TEST_DATABASE_URL && why }, () =>
   withDb(async (s) => {
     await setup(s);
-    await saveBusiness(s.db, { name: "Acme Plumbing" }, "o@x.com");
+    await saveBusiness(s.db, { name: "Acme Plumbing" }, "o@x.example");
     const link = await unsubscribeLink(s.db, "https://acme.example", "nat@example.com");
     const k = new URL(link).searchParams.get("k")!;
     const app = unsubscribeRoutes(() => s.db, { page: (_c, _t, body) => String(body) });
@@ -814,10 +814,10 @@ test("the texting box shows once there's a number and a name, before texting is 
   withDb(async (s) => {
     await setup(s, { texting: false });
     assert.equal(await textingBox(s.db, "request"), null, "no name: no box, never one that says 'us'");
-    const bad = await saveBusiness(s.db, { privacyUrl: "acme.example/privacy" }, "o@x.com");
+    const bad = await saveBusiness(s.db, { privacyUrl: "acme.example/privacy" }, "o@x.example");
     assert.ok(!bad.ok && bad.field === "privacyUrl");
-    await saveBusiness(s.db, { name: "  Acme   Plumbing ", privacyUrl: "https://acme.example/privacy" }, "o@x.com");
-    await saveBusiness(s.db, { termsUrl: "https://acme.example/terms" }, "o@x.com");
+    await saveBusiness(s.db, { name: "  Acme   Plumbing ", privacyUrl: "https://acme.example/privacy" }, "o@x.example");
+    await saveBusiness(s.db, { termsUrl: "https://acme.example/terms" }, "o@x.example");
     assert.equal(await textingBox(s.db, "booking"),
       "Text me about this booking from Acme Plumbing. Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out. Terms: https://acme.example/terms Privacy: https://acme.example/privacy");
     await s.db.sql`delete from phone_numbers`;

@@ -88,9 +88,9 @@ test("an answer over the default length for its type is refused", () => {
 });
 
 test("a field named email is normalised whatever its type", () => {
-  const r = validate([{ name: "email", label: "Email", type: "text" }], { email: "BOB@X.IO" });
+  const r = validate([{ name: "email", label: "Email", type: "text" }], { email: "BOB@X.EXAMPLE" });
   assert.ok(r.ok);
-  assert.equal(r.submission.email, "bob@x.io");
+  assert.equal(r.submission.email, "bob@x.example");
 });
 
 test("a definition is checked before it is saved or rendered", () => {

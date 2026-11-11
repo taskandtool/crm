@@ -1,6 +1,6 @@
 ---
 name: tropes
-description: "Finds and fixes the signs that copy, pictures or video were made by AI, before the owner sees them. Use after drafting any page, post, article, ad, email or picture, before showing or sending it, or when the owner says it sounds or looks like AI. Not for the first draft (writing)."
+description: "Finds and fixes the signs that copy, pictures or video were made by AI, before the owner sees them. Use after drafting any page, post, article, ad, email or picture, before showing or sending it, or when the owner says it sounds or looks like AI. Not for writing the first draft."
 ---
 
 # Tropes
@@ -27,8 +27,8 @@ fact is a `NEED:` line for the owner. Fix these first: invented proof, the
 pivot ("it's not X, it's Y") and figures of speech ("lands in your inbox"). A phrase
 the owner insists on stays; on a website, mark it `data-lint-allow="<rule>"`.
 
-The script only knows patterns people rarely write. The rest need the cold
-read in the `writing` skill, with `references/copy.md`.
+The script only knows patterns people rarely write. The rest need a cold
+read with `references/copy.md`, inside the `writing` skill where the app has one.
 
 ## Pictures and video
 

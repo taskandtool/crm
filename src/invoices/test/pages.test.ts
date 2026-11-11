@@ -29,7 +29,7 @@ test("a quote from the pages: made, edited, previewed, sent with its PDF, accept
   if (!s) return t.skip(why);
   try {
     await applySchema(s.db, schema);
-    await saveBusiness(s.db, { name: "Acme Fencing" }, "o@x.com");
+    await saveBusiness(s.db, { name: "Acme Fencing" }, "o@x.example");
     const rate = await createTaxRate(s.db, { name: "Sales tax", percent: "10" }, "owner@example.com");
     assert.ok(rate.ok);
     const mail: Email[] = [];

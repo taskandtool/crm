@@ -15,11 +15,11 @@ const T = (iso: string) => new Date(iso);
 /** A host, a video call type, and a booking at `start` made at `made`. */
 async function setup(s: Scratch) {
   await applySchema(s.db, schema);
-  const p = await createPerson(s.db, { name: "Pat", email: "pat@example.com", time_zone: "America/New_York" }, "o@x.com", "test");
+  const p = await createPerson(s.db, { name: "Pat", email: "pat@example.com", time_zone: "America/New_York" }, "o@x.example", "test");
   const t = await createType(s.db, {
     name: "Video consultation", slug: "video", duration_min: "30", interval_min: "30", buffer_before_min: "0", buffer_after_min: "0",
     min_notice_min: "0", horizon_days: "30", location_kind: "video", location: "https://meet.example/pat",
-  }, "o@x.com", "test");
+  }, "o@x.example", "test");
   assert.ok(p.ok && t.ok);
   await setHosts(s.db, t.value.id, [p.value.id]);
   const add = async (start: string, made: string, email = "ann@example.com", status = "confirmed") => {

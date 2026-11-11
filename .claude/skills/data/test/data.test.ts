@@ -17,10 +17,10 @@ test("an email is trimmed, lowered, and refused when it is not one", () => {
   assert.equal(normalizeEmail("ann@example"), null);
   assert.equal(normalizeEmail("a b@example.com"), null);
   assert.equal(normalizeEmail(42), null);
-  for (const bad of ["Bank<evil@a.b>", "a,b@x.com", '"a"@x.com', "a@x.com\r\nBcc: c@d.e", "a;b@x.com", "a@x.", "a@.com"]) {
+  for (const bad of ["Bank<evil@a.b>", "a,b@x.example", '"a"@x.example', "a@x.example\r\nBcc: c@d.e", "a;b@x.example", "a@x.", "a@.com"]) {
     assert.equal(normalizeEmail(bad), null, bad);
   }
-  for (const ok of ["ann.lee+tag@sub.example.co.uk", "o'neil@example.ie", "x_y-z@ex-ample.io"]) assert.equal(normalizeEmail(ok), ok);
+  for (const ok of ["ann.lee+tag@sub.example.co.uk", "o'neil@example.org", "x_y-z@ex-ample.example"]) assert.equal(normalizeEmail(ok), ok);
 });
 
 test("a schema file splits into statements: comments dropped, a semicolon inside a string kept", () => {
@@ -43,8 +43,8 @@ test("applySchema runs twice cleanly, and a file that fails part way changes not
     const schema = "create table if not exists things (id bigserial primary key, email citext not null, note text)";
     await applySchema(s.db, schema);
     await applySchema(s.db, schema);
-    await s.db.sql`insert into things (email, note) values (${"A@x.com"}, ${"n"})`;
-    const [row] = await s.db.sql`select note from things where email = ${"a@X.com"}`;
+    await s.db.sql`insert into things (email, note) values (${"A@x.example"}, ${"n"})`;
+    const [row] = await s.db.sql`select note from things where email = ${"a@X.example"}`;
     assert.equal(row.note, "n");
 
     await assert.rejects(applySchema(s.db, "create table if not exists more (id int);\nselect nope from things"));

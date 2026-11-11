@@ -300,10 +300,10 @@ test("the team marks a booking; a cancelled one stays cancelled", (t) =>
 test("the hours editor refuses bad and overlapping windows", (t) =>
   withDb(t, async (s) => {
     const r = await person(s, "Pat");
-    assert.equal(((await addWindow(s.db, r.host, "1", "17:00", "09:00", "o@x.com")) as { errors: Record<string, string> }).errors.end !== undefined, true);
-    assert.equal(((await addWindow(s.db, r.host, "1", "16:00", "18:00", "o@x.com")) as { errors: Record<string, string> }).errors.start, "These hours overlap hours already set for that day.");
-    assert.ok((await addWindow(s.db, r.host, "1", "17:00", "24:00", "o@x.com")).ok, "touching is fine; 24:00 is midnight");
-    assert.ok(!(await addWindow(s.db, r.host, "9", "10:00", "11:00", "o@x.com")).ok);
+    assert.equal(((await addWindow(s.db, r.host, "1", "17:00", "09:00", "o@x.example")) as { errors: Record<string, string> }).errors.end !== undefined, true);
+    assert.equal(((await addWindow(s.db, r.host, "1", "16:00", "18:00", "o@x.example")) as { errors: Record<string, string> }).errors.start, "These hours overlap hours already set for that day.");
+    assert.ok((await addWindow(s.db, r.host, "1", "17:00", "24:00", "o@x.example")).ok, "touching is fine; 24:00 is midnight");
+    assert.ok(!(await addWindow(s.db, r.host, "9", "10:00", "11:00", "o@x.example")).ok);
     const mon = (await weeklyHours(s.db, r.host)).filter((w) => w.weekday === 1);
     assert.deepEqual(mon.map((w) => [w.start, w.end]), [["09:00", "17:00"], ["17:00", "24:00"]]);
     const badPerson = readPerson({ name: "", email: "nope", time_zone: "Mars/Base" });
@@ -313,7 +313,7 @@ test("the hours editor refuses bad and overlapping windows", (t) =>
     assert.ok(!badType.ok);
     assert.deepEqual(Object.keys(badType.errors).sort(), ["duration_min", "location", "name", "slug"]);
     assert.ok(!readType({ name: "x", slug: "manage", duration_min: "30", interval_min: "30", buffer_before_min: "0", buffer_after_min: "0", min_notice_min: "0", horizon_days: "60", location_kind: "phone" }).ok, "manage is the manage links' address");
-    assert.equal(((await createType(s.db, { name: "Again", slug: "pat", duration_min: "30", interval_min: "30", buffer_before_min: "0", buffer_after_min: "0", min_notice_min: "0", horizon_days: "60", location_kind: "phone" }, "o@x.com", "test")) as { errors: Record<string, string> }).errors.slug, "Another service already uses this booking page address. Choose another.", "a typed address is the owner's to change");
+    assert.equal(((await createType(s.db, { name: "Again", slug: "pat", duration_min: "30", interval_min: "30", buffer_before_min: "0", buffer_after_min: "0", min_notice_min: "0", horizon_days: "60", location_kind: "phone" }, "o@x.example", "test")) as { errors: Record<string, string> }).errors.slug, "Another service already uses this booking page address. Choose another.", "a typed address is the owner's to change");
   }));
 
 test("a booking that has not started cannot be marked completed or no-show: that would free its slot", (t) =>
@@ -343,12 +343,12 @@ test("a service's address made from its name is numbered when taken; a video cal
   try {
     await applySchema(s.db, schema);
     const rules = { slug: "", duration_min: "30", interval_min: "30", buffer_before_min: "0", buffer_after_min: "0", min_notice_min: "0", horizon_days: "60" };
-    const a = await createType(s.db, { name: "Zoom consult", location_kind: "video", ...rules }, "o@x.com", "test");
-    const b = await createType(s.db, { name: "Zoom consult", location_kind: "video", ...rules }, "o@x.com", "test");
+    const a = await createType(s.db, { name: "Zoom consult", location_kind: "video", ...rules }, "o@x.example", "test");
+    const b = await createType(s.db, { name: "Zoom consult", location_kind: "video", ...rules }, "o@x.example", "test");
     assert.ok(a.ok && b.ok);
     assert.deepEqual([a.value.slug, b.value.slug], ["zoom-consult", "zoom-consult-2"]);
     assert.equal(a.value.location, null, "no link: each person is sent theirs");
-    const bad = await createType(s.db, { name: "Call", location_kind: "video", location: "zoom.us/j/1", ...rules }, "o@x.com", "test");
+    const bad = await createType(s.db, { name: "Call", location_kind: "video", location: "zoom.us/j/1", ...rules }, "o@x.example", "test");
     assert.ok(!bad.ok && /starting https:\/\//.test(bad.errors.location));
   } finally {
     await s.drop();

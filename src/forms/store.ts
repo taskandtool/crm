@@ -47,7 +47,7 @@ export async function seedForm(db: Db, form: { key: string; title: string; field
 
 /**
  * What came of telling the team about a submission, kept on it in one line
- * the admin shows: "Emailed pat@acme.com" or "Not emailed: <why>".
+ * the admin shows: "Emailed pat@acme.example" or "Not emailed: <why>".
  */
 export async function recordNotified(db: Db, id: number | string, to: string[], sent: Sent): Promise<void> {
   let line: string;
