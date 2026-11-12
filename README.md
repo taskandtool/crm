@@ -1,5 +1,7 @@
 # CRM
 
+[![Deploy on Task & Tool](https://taskandtool.com/images/deploy-button.svg)](https://taskandtool.com/accounts/register?starter_app=crm)
+
 The customer record for a small business: everyone who got in touch, in
 one place, and what happens next. Its first screen is **Home**: the
 figures (new leads this week, your tasks due, the open pipeline, what was
