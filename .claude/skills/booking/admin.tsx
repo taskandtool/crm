@@ -101,7 +101,7 @@ const MESSAGES: FlashMessages = {
   hosts: "Who takes it saved.",
   created: "Added. Now set their weekly hours.",
   "type-created": "Added. Now choose who takes it.",
-  calendar: "Calendar saved. The next sync, within 15 minutes, reads it.",
+  calendar: "Calendar saved. It syncs within 15 minutes.",
 };
 
 /** Minor units as the editor shows them: 12000 usd is "120.00". */
@@ -430,7 +430,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
     }, (
       <div class="rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
         <p class={`mb-5 flex flex-wrap gap-x-3 gap-y-1 ${smallText} text-ink-2`}>
-          {hosts.length === 1 ? <span>Only {hosts[0].name} takes this service, so these are their open times.</span> : null}
+          {hosts.length === 1 ? <span>Only {hosts[0].name} does this service. These are their open times.</span> : null}
           {hosts.length === 1 ? <a href={`${opts.sections.team}/${hosts[0].id}`} class={linkClass}>{hosts[0].name}'s hours</a> : null}
           <a href={`${opts.sections.services}/${t.id}`} class={linkClass}>Change who takes it</a>
         </p>
@@ -700,7 +700,7 @@ function FoundCalendars(p: { self: string; found: CalendarSearch }) {
             </li>
           ))}
         </ul>
-      ) : <p class={`${smallText} text-ink-3`}>No calendars to add. Connect Google or Microsoft to this app in Task &amp; Tool, on the app's Connections tab, or ask a teammate to share their calendar with a connected account.</p>}
+      ) : <p class={`${smallText} text-ink-3`}>No calendars to add. Connect Google or Microsoft on the app's Connections tab in Task &amp; Tool. Or ask a teammate to share their calendar with a connected account.</p>}
       {p.found.errors.map((e) => <p class={`${smallText} text-ink-2`}>Could not list {e}</p>)}
     </div>
   );
@@ -789,7 +789,7 @@ function TypeForm({ action, t, errors = {}, submit, publicBase, currency, deals 
         </summary>
         <div class="grid gap-x-4 gap-y-5 border-t border-line p-4 sm:grid-cols-2">
           <p class={`${smallText} text-ink-2 sm:col-span-2`}>
-            These cut the hours of whoever takes it into appointments: a time is open when they are working (Team), not off, and not already booked.
+            A time is open when the person doing this service is working (see Team), isn't off and isn't already booked.
           </p>
           <Choice label="Start times every" name="interval_min" value={at("interval_min", "30")} options={minutes([10, 15, 20, 30, 45, 60, 90, 120])} errors={errors} />
           <Choice label="Booking notice" name="min_notice_min" value={at("min_notice_min", "120")} options={NOTICE} errors={errors} hint="How soon a customer can book." />
@@ -809,8 +809,8 @@ function TypeForm({ action, t, errors = {}, submit, publicBase, currency, deals 
           <input type="hidden" name="deals" value="0" />
           <input type="checkbox" name="deals" value="1" checked={one(t.deals) === true || one(t.deals) === "1"} class="mt-1 size-4 shrink-0 accent-accent" />
           <span class="flex flex-col">
-            <span class="text-sm/6 font-medium">Each booking becomes a deal, straight away</span>
-            <Hint text="In the pipeline's first stage, its value the price, its lead marked converted. Off: a lead to look at first." />
+            <span class="text-sm/6 font-medium">Make each booking a deal</span>
+            <Hint text="It goes in the pipeline's first stage at the service's price, and its lead is marked converted. Off: a lead to look at first." />
           </span>
         </label>
       ) : null}
@@ -909,7 +909,7 @@ export function typeRoutes(getDb: GetDb, opts: BookingAdminOptions) {
               </li>
             ))}
           </ul>
-        ) : <p class="text-ink-2">Nothing can be booked yet. <a href={`${base}/new`} class={linkClass}>Add a service</a>: an estimate visit, a consultation, a video call.</p>}
+        ) : <p class="text-ink-2">Nothing can be booked yet. <a href={`${base}/new`} class={linkClass}>Add a service</a></p>}
       </>
     ));
   });
@@ -1085,7 +1085,7 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
         <div class="grid gap-4 md:grid-cols-3">
           <div class="flex min-w-0 flex-col gap-4 md:col-span-2">
             <Section title="Weekly hours">
-            <p class={`mb-3 ${smallText} text-ink-2`}>When {r.name} can be booked, for every service they take. Each service's scheduling rules cut these hours into appointments.</p>
+            <p class={`mb-3 ${smallText} text-ink-2`}>When {r.name} can be booked, for every service they do. Each service's scheduling rules apply within these hours.</p>
             <ul class="mb-5 divide-y divide-line">
               {WEEKDAYS.map((_, i) => (i + 1) % 7).map((i) => {
                 const mine = hours.filter((h) => h.weekday === i);
@@ -1161,7 +1161,7 @@ export function peopleRoutes(getDb: GetDb, opts: BookingAdminOptions) {
                       </li>
                     ))}
                   </ul>
-                ) : <p class={`mb-4 ${smallText} text-ink-3`}>Busy times in their calendar close those times here, and new bookings go into it.</p>}
+                ) : <p class={`mb-4 ${smallText} text-ink-3`}>Add their calendar to block their busy times here and to put new bookings in it.</p>}
                 <FieldError id="calendar-error" text={problems.calendar?.calendar} />
                 {found ? (
                   <FoundCalendars self={self} found={{ ...found, calendars: found.calendars.filter((f) => !f.options.some(attached)) }} />

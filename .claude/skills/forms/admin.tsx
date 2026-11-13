@@ -226,14 +226,14 @@ function EmailNote({ c, forms }: { c: Context; forms: FormInfo[] }) {
   if (!on) {
     return (
       <p class="mb-4 rounded-card border border-line bg-panel/60 px-4 py-3 text-copy text-ink">
-        <strong>Email is off.</strong> This app's email settings are incomplete, so nobody is emailed about new submissions and
+        <strong>Email is off.</strong> Nobody gets emails about new submissions, and
         customers get no booking confirmations. Ask the AI to fix email for this app.
       </p>
     );
   }
   const text = to.length
     ? ours
-      ? `New form submissions are emailed to ${to.join(", ")} by Task & Tool email, which reaches only people who can open this app in Task & Tool. Customers get no confirmation emails until Resend or Postmark is connected.`
+      ? `New form submissions are emailed to ${to.join(", ")} by Task & Tool email. It can only reach people who can open this app in Task & Tool. To send customers confirmation emails, connect Resend or Postmark.`
       : `New form submissions are emailed to ${to.join(", ")}.`
     : "Nobody is emailed about new submissions. Add yourself to a form's list.";
   return <p class={`mb-4 ${smallText} text-ink-2`}>{text}</p>;
@@ -389,7 +389,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
           {notes ? <EmailNote c={c} forms={forms} /> : null}
           {notes && await paymentsOff(c, db) ? (
             <p class="mb-4 rounded-card border border-line bg-panel/60 px-4 py-3 text-copy text-ink">
-              <strong>Payments are off.</strong> A form takes payment, but Stripe isn't connected, so nobody can pay. Ask the AI to connect Stripe for this app.
+              <strong>Payments are off.</strong> One of your forms has a payment step. Nobody can pay until Stripe is connected. Ask the AI to connect Stripe for this app.
             </p>
           ) : null}
           <SearchBar
@@ -602,7 +602,7 @@ export function formsAdmin(getDb: GetDb, opts: FormsAdminOptions) {
               {payment ? <PaymentCard p={payment} label={linked.payment!.label} at={opts.links?.payment} /> : null}
               {r.completed_at ? null : (
                 <Section title="Not finished">
-                  <p class="text-ink-2">{form?.fields.some((x) => x.type === "booking") && !booking ? "They have not picked a time yet." : form?.fields.some((x) => x.type === "payment") ? "They have not paid yet." : "They have not finished yet."} It completes on its own when they do.</p>
+                  <p class="text-ink-2">{form?.fields.some((x) => x.type === "booking") && !booking ? "They have not picked a time yet." : form?.fields.some((x) => x.type === "payment") ? "They have not paid yet." : "They have not finished yet."} It's marked complete when they do.</p>
                 </Section>
               )}
               {sends.length ? <div id="destinations" class="scroll-mt-4"><SentCard rows={sends} self={self} timeZone={tz} /></div> : null}
@@ -1011,7 +1011,7 @@ export function formEditor(getDb: GetDb, opts: {
             </table>
           </div>
         ) : (
-          <EmptyCard title="No forms yet.">A form is how people ask for something on your website: a quote, a booking, a question. Make one with New form.</EmptyCard>
+          <EmptyCard title="No forms yet.">People use forms on your website to ask you for a quote or a booking. Make one with New form.</EmptyCard>
         ), status);
   };
 
@@ -1074,7 +1074,7 @@ export function formEditor(getDb: GetDb, opts: {
     const team = await teamOf(envOf(c));
     const outside = team ? draft.notify_emails.filter((e) => !team.some((p) => p.email.toLowerCase() === e.toLowerCase())) : [];
     if (outside.length && !formProblems.notify_emails)
-      formProblems.notify_emails = `${outside.join(", ")} cannot open this app in Task & Tool, so Task & Tool email will not reach them. Invite them to the app, or connect Resend or Postmark.`;
+      formProblems.notify_emails = `${outside.join(", ")} can't open this app in Task & Tool. Task & Tool email only reaches people who can. Invite them to the app, or connect Resend or Postmark.`;
     if (draft.redirect_to && !sitePath(draft.redirect_to)) formProblems.redirect_to = "Use a path on this site that starts with /, like /thank-you.";
     const form: Form = {
       key: found.form.key,
@@ -1111,7 +1111,7 @@ export function formEditor(getDb: GetDb, opts: {
       where key = ${form.key} and updated_at::text = ${draft.version}
       returning key`;
     if (!saved.length) {
-      return again(409, "Someone saved this form after you opened it, so your changes are not saved yet. Check them below and save again to replace theirs.", found.version);
+      return again(409, "Someone saved this form after you opened it. Your changes aren't saved yet. Check them below and save again to replace theirs.", found.version);
     }
     return c.redirect(withFlash(`${base}/form/${form.key}`, "saved") + (draft.focus ? `#${draft.focus}` : ""), 303);
   });
@@ -1425,7 +1425,7 @@ function Editor(props: {
             <legend class="mb-1 font-medium">Each submission becomes</legend>
             {[
               ["lead", "A lead", "To look at first, then convert to a deal or archive."],
-              ...(props.deals ? [["deal", "A deal, created automatically", "From everything that comes through this form, in the stage below, its lead marked converted."]] : []),
+              ...(props.deals ? [["deal", "A deal", "Added to the stage below. Its lead is marked converted."]] : []),
               ["contact", "Just a contact", "For a newsletter sign-up or a job application."],
             ].map(([value, label, help]) => (
               <label class="flex items-start gap-2">
@@ -1458,7 +1458,7 @@ function Editor(props: {
               <span>
                 <span class="font-medium">Follow up automatically</span>
                 <span class="block font-normal text-ink-3">
-                  A thank-you when they finish. If they stop before booking, the next open times. If they stop before paying, a link back by email. <a href={followUp.settings} class="font-semibold text-accent no-underline hover:underline">See what it sends</a>
+                  They get a thank-you when they finish. If they stop before booking, they get the next open times by email. If they stop before paying, they get a link back by email. <a href={followUp.settings} class="font-semibold text-accent no-underline hover:underline">See the emails</a>
                 </span>
               </span>
             </label>
@@ -1493,7 +1493,7 @@ function Editor(props: {
                   ) : null}
                   {type === "items" || type === "payment" ? (
                     <p class="mb-3 text-label text-ink-2">
-                      {type === "items" ? `Sells ${Array.isArray(f.items) ? f.items.length : 0} things.` : `${Array.isArray(f.fees) ? f.fees.length : 0} fees${f.tax_rate_id ? ", taxed" : ""}.`} Ask the AI to change what it sells, its prices or fees; they are kept as they are here.
+                      {type === "items" ? `${Array.isArray(f.items) ? f.items.length : 0} items.` : `${Array.isArray(f.fees) ? f.fees.length : 0} fees${f.tax_rate_id ? ", taxed" : ""}.`} Ask the AI to change the items, prices or fees. If you save here, they stay as they are.
                     </p>
                   ) : null}
                   {/* As Google Forms lays a question out: what it asks and its type on one line, the rest under it, the moves at its foot. */}

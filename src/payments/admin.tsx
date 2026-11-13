@@ -346,7 +346,7 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
     const typed = str(body.amount);
 
     // A refund recorded since the page opened changes what is left to refund.
-    if (str(body.seen) !== String(p.refunded_cents)) return refundPage(c, p, typed, "A refund was recorded since this page opened. Check the amount and confirm again.");
+    if (str(body.seen) !== String(p.refunded_cents)) return refundPage(c, p, typed, "A refund was recorded after you opened this page. Check the amount and confirm again.");
     const amount = toMinor(typed, p.currency);
     if (amount === null || amount <= 0) return refundPage(c, p, typed, "Enter an amount, such as 25.00.");
     if (amount > remaining(p)) return refundPage(c, p, typed, `At most ${formatMoney(remaining(p), p.currency)} is left to refund.`);
@@ -375,7 +375,7 @@ function RefundForm({ p, base, keep, amount, error }: { p: Payment; base: string
   return (
     <form method="post" action={`${base}/${p.id}/refund`} class="flex max-w-md flex-col gap-3 rounded-card border border-line bg-surface p-4">
       <p>
-        This sends money back to {p.email ?? "the payer"} through Stripe. It cannot be undone. Paid {formatMoney(paid(p), p.currency)}
+        You're about to refund {p.email ?? "the payer"} through Stripe. You can't undo a refund. Paid {formatMoney(paid(p), p.currency)}
         {Number(p.refunded_cents) ? `, already refunded ${formatMoney(p.refunded_cents, p.currency)}` : ""}.
       </p>
       <input type="hidden" name="seen" value={String(p.refunded_cents)} />

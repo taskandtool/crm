@@ -199,7 +199,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     const sent = await sendEmail(env, {
       to,
       subject: `A ${form?.title ?? key} submission could not be saved`,
-      text: [`Someone sent this form but it could not be saved, so they were asked to try again. If they did, it is in your submissions too. Their answers:`, ...answers].join("\n"),
+      text: [`Someone sent this form and it could not be saved. They were asked to try again. If they did, it is in your submissions too. Their answers:`, ...answers].join("\n"),
       // Nothing was validated, and a bad address would stop this email being taken at all.
       replyTo: normalizeEmail(one(input.email)),
       team: true,

@@ -535,7 +535,7 @@ test("the editor keeps what an order form sells, its fees, its tax rate and its 
     await seedForm(s.db, { key: "order", title: "Order", fields: fields as never }, "website");
     const app = site(s);
     const page = await (await app.request("https://site.example/admin/forms/form/order", { headers: team })).text();
-    assert.match(page, /Sells 1 things\./);
+    assert.match(page, /1 items\./);
     assert.match(page, /1 fees, taxed\./);
     // Post back exactly what the editor shows, as a browser would.
     const unescape = (v: string) => v.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");

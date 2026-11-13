@@ -370,7 +370,7 @@ test("a refund needs a confirmation, sends an idempotency key, and leaves the st
 
   const confirm = await admin(stripe).request(`https://site.example/admin/payments/${id}/refund`, { headers: team });
   assert.equal(confirm.status, 200);
-  assert.match(await confirm.text(), /cannot be undone/);
+  assert.match(await confirm.text(), /can&#39;t undo a refund/);
   assert.equal(sent.length, 0, "opening the confirmation moves no money");
 
   const post = (amount: string, seen = "0") =>
@@ -390,7 +390,7 @@ test("a refund needs a confirmation, sends an idempotency key, and leaves the st
   assert.equal((await row(id)).updated_by, "owner@example.com");
 
   const stale = await post("10.00", "999");
-  assert.match(await stale.text(), /since this page opened/);
+  assert.match(await stale.text(), /recorded after you opened this page/);
   assert.equal(sent.length, 1);
 
   const crossSite = await admin(stripe).request(`https://site.example/admin/payments/${id}/refund`, {
