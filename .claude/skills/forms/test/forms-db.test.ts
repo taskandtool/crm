@@ -74,7 +74,7 @@ test("a submission is stored with the email lowered and the rest in data, then 3
 
     const thanks = await app.request("https://site.example/forms/contact/thanks");
     assert.equal(thanks.status, 200);
-    assert.match(await thanks.text(), /Your message has arrived/);
+    assert.match(await thanks.text(), /We got your message/);
   } finally {
     await s.drop();
   }

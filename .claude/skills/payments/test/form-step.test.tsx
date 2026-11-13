@@ -132,7 +132,7 @@ test("an order: two kinds of cookies and delivery, taxed, paid through Checkout 
 
     // Cancelled: back on the step, which can be paid again (a new session).
     html = await (await app.request(session.cancel_url)).text();
-    assert.match(html, /Pay securely with Stripe/);
+    assert.match(html, /Pay with Stripe/);
     const [pay] = await s.db.sql`select id::text as id, amount_cents::text as amount, status from payments where ref_type = 'submission' and ref_id = ${sub.id} order by id desc`;
     assert.deepEqual([pay.amount, pay.status], ["12600", "pending"]);
 

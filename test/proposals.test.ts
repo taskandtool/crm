@@ -206,7 +206,7 @@ test("a proposal end to end: built, its deposit attached, linked, opened, change
   assert.deepEqual([dep.lines[0].description, dep.total_cents], ["Deposit", "100000"], "the owner's own deposit, not a share of the new total");
   // No Stripe here: it stays a draft, and a task says so.
   assert.equal(dep.status, "draft");
-  assert.match((await db.sql`select title from follow_ups where title like 'The invoice for $1,000.00%'`)[0]?.title ?? "", /Stripe is not connected/);
+  assert.match((await db.sql`select title from follow_ups where title like 'The invoice for $1,000.00%'`)[0]?.title ?? "", /Stripe isn't connected/);
   assert.match(mail.at(-1)!.subject, /^You signed quote Q-\d{4} with Acme Test Co$/);
   assert.match(mail.at(-1)!.text, new RegExp(`Your copy, with what happens next: ${HOST}/q/${token}`));
 
@@ -216,7 +216,7 @@ test("a proposal end to end: built, its deposit attached, linked, opened, change
   assert.match(html, /Coming by email/);
   assert.doesNotMatch(html, /Type your full name/);
   res = await post(`/invoices/quotes/${id}/proposal`, { title: "Changed", components: ["team"] });
-  assert.match(decodeURIComponent(res.headers.get("location")!), /Nothing was saved: It was accepted/);
+  assert.match(decodeURIComponent(res.headers.get("location")!), /Nothing was saved: It's accepted now/);
   assert.deepEqual((await db.sql`select key from quote_components where quote_id = ${id}::bigint order by key`).map((r) => r.key), ["about", "reviews"]);
 });
 

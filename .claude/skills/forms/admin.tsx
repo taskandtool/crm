@@ -81,7 +81,7 @@ export const STATUSES: StatusOption[] = [
 /** The three tabs: which statuses each shows. */
 type View = "open" | "archived" | "spam";
 const VIEWS: Record<View, { path: string; label: string; statuses: string[]; empty: string }> = {
-  open: { path: "", label: "Open", statuses: ["new", "read"], empty: "Nothing here yet. What people send from your site's forms and booking page shows up here." },
+  open: { path: "", label: "Open", statuses: ["new", "read"], empty: "Nothing here yet. You'll see what people send from your site's forms and booking page here." },
   archived: { path: "/archived", label: "Archived", statuses: ["done"], empty: "Nothing archived." },
   spam: { path: "/spam", label: "Spam", statuses: ["spam"], empty: "No spam." },
 };
@@ -233,7 +233,7 @@ function EmailNote({ c, forms }: { c: Context; forms: FormInfo[] }) {
   }
   const text = to.length
     ? ours
-      ? `New form submissions are emailed to ${to.join(", ")} by Task & Tool email. It can only reach people who can open this app in Task & Tool. To send customers confirmation emails, connect Resend or Postmark.`
+      ? `Task & Tool emails new form submissions to ${to.join(", ")}. It can only email people who can open this app. To send customers confirmation emails, connect Resend or Postmark.`
       : `New form submissions are emailed to ${to.join(", ")}.`
     : "Nobody is emailed about new submissions. Add yourself to a form's list.";
   return <p class={`mb-4 ${smallText} text-ink-2`}>{text}</p>;
@@ -795,7 +795,7 @@ function SentCard({ rows, self, timeZone }: { rows: Delivery[]; self: string; ti
                 <StatusBadge value={stuck ? "stuck" : d.status} options={SEND_STATUSES} />
               </p>
               <p class={`mt-1 ${smallText} text-ink-2`}>
-                {d.status === "waiting" ? "Goes when the form is finished." : d.attempts > 1 ? <>Tried {d.attempts} times, last <When at={d.updated_at} timeZone={timeZone} /></> : <When at={d.sent_at ?? d.updated_at} timeZone={timeZone} />}
+                {d.status === "waiting" ? "Sent when the form is finished." : d.attempts > 1 ? <>Tried {d.attempts} times, last <When at={d.updated_at} timeZone={timeZone} /></> : <When at={d.sent_at ?? d.updated_at} timeZone={timeZone} />}
               </p>
               {d.error ? <p class={`mt-1 ${smallText}`}>{d.error}</p> : null}
               {d.body || d.response_body ? (
@@ -1074,7 +1074,7 @@ export function formEditor(getDb: GetDb, opts: {
     const team = await teamOf(envOf(c));
     const outside = team ? draft.notify_emails.filter((e) => !team.some((p) => p.email.toLowerCase() === e.toLowerCase())) : [];
     if (outside.length && !formProblems.notify_emails)
-      formProblems.notify_emails = `${outside.join(", ")} can't open this app in Task & Tool. Task & Tool email only reaches people who can. Invite them to the app, or connect Resend or Postmark.`;
+      formProblems.notify_emails = `${outside.join(", ")} can't open this app in Task & Tool. You can only send Task & Tool email to people who can. Invite them to the app, or connect Resend or Postmark.`;
     if (draft.redirect_to && !sitePath(draft.redirect_to)) formProblems.redirect_to = "Use a path on this site that starts with /, like /thank-you.";
     const form: Form = {
       key: found.form.key,
@@ -1411,7 +1411,7 @@ function Editor(props: {
             <input name="notify_emails" value={form.notify_emails.join(", ")} placeholder="you@example.com" class={controlClass} aria-invalid={formProblems.notify_emails ? "true" : undefined} aria-describedby="p-notify-help p-notify" />
             <span id="p-notify-help" class="font-normal text-ink-3">
               {team
-                ? `Task & Tool email reaches the people who can open this app: ${team.map((p) => p.name).join(", ") || "nobody yet"}. Anyone else needs Resend or Postmark connected.`
+                ? `You can send Task & Tool email to the people who can open this app: ${team.map((p) => p.name).join(", ") || "nobody yet"}. To email anyone else, connect Resend or Postmark.`
                 : "Sent through this app's email sender: Task & Tool email for the people on this app, or Resend or Postmark for anyone."}
             </span>
             <FieldError id="p-notify" text={formProblems.notify_emails} />

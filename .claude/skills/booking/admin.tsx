@@ -101,7 +101,7 @@ const MESSAGES: FlashMessages = {
   hosts: "Who takes it saved.",
   created: "Added. Now set their weekly hours.",
   "type-created": "Added. Now choose who takes it.",
-  calendar: "Calendar saved. It syncs within 15 minutes.",
+  calendar: "Calendar saved. Give it up to 15 minutes to sync.",
 };
 
 /** Minor units as the editor shows them: 12000 usd is "120.00". */
@@ -480,7 +480,7 @@ export function bookingAdmin(getDb: GetDb, opts: BookingAdminOptions) {
           <input type="hidden" name="start" value={start.toISOString()} />
           {host ? <input type="hidden" name="host" value={host.id} /> : null}
           <Input label="Name" name="name" value={values.name} errors={errors} required />
-          <Input label="Email" name="email" type="email" value={values.email} errors={errors} required hint="The confirmation goes here." />
+          <Input label="Email" name="email" type="email" value={values.email} errors={errors} required hint="We send the confirmation here." />
           <Input label={t.location_kind === "phone" ? "Phone, for the call" : "Phone"} name="phone" type="tel" value={values.phone} errors={errors} required={t.location_kind === "phone"} />
           {t.location_kind === "their_place" ? <Input label="Address" name="address" value={values.address} errors={errors} hint="Where the visit is. Leave it blank if you do not have it yet." class="sm:col-span-2" /> : null}
           <label class={fieldClass + " sm:col-span-2"}>Notes
@@ -802,7 +802,7 @@ function TypeForm({ action, t, errors = {}, submit, publicBase, currency, deals 
           {ownCurrency ? <input type="hidden" name="currency" value={cur} /> : <Input label="Currency" name="currency" value={cur} errors={errors} hint="Like usd." />}
         </div>
       </details>
-      <Active value={t.active} label="Can be booked" hint="Off hides it from the booking page; bookings already made stay." />
+      <Active value={t.active} label="Can be booked" hint="When off, it isn't on the booking page. Bookings already made stay." />
       {/* As Jobber's job booking: each online booking is a job to win at once, its lead marked converted. */}
       {deals ? (
         <label class="flex items-start gap-3 sm:col-span-2">
@@ -810,7 +810,7 @@ function TypeForm({ action, t, errors = {}, submit, publicBase, currency, deals 
           <input type="checkbox" name="deals" value="1" checked={one(t.deals) === true || one(t.deals) === "1"} class="mt-1 size-4 shrink-0 accent-accent" />
           <span class="flex flex-col">
             <span class="text-sm/6 font-medium">Make each booking a deal</span>
-            <Hint text="It goes in the pipeline's first stage at the service's price, and its lead is marked converted. Off: a lead to look at first." />
+            <Hint text="You get each booking as a deal in your first stage at the service's price. Its lead is marked converted. When off, you get a lead to look at first." />
           </span>
         </label>
       ) : null}
@@ -850,7 +850,7 @@ function PersonForm({ action, r, errors = {}, submit, zone }: { action: string; 
       <Input label="Name" name="name" value={v("name")} errors={errors} required />
       <Input label="Email" name="email" type="email" value={v("email")} errors={errors} hint="The organizer on calendar invites." />
       <ZoneSelect current={v("time_zone") || zone} errors={errors} />
-      <Active value={r.active} label="Taking bookings" hint="Off keeps their bookings and stops new ones." />
+      <Active value={r.active} label="Taking bookings" hint="When off, nobody can book them. Their bookings stay." />
       <div class="sm:col-span-2"><button class={primaryClass}>{submit}</button></div>
     </form>
   );

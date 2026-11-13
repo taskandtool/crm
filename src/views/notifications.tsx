@@ -92,7 +92,7 @@ export function NotificationsPage({ user, rows, seen }: { user: string; rows: No
         </div>
       ) : (
         <EmptyCard title="Nothing yet">
-          A customer moving or cancelling their own booking, signing or declining a {(invoicesCfg?.word ?? "Quote").toLowerCase()} at its link, and payments show up here.
+          You'll see it here when a customer moves or cancels a booking, signs or declines a {(invoicesCfg?.word ?? "Quote").toLowerCase()}, pays you, or texts or calls your business number.
         </EmptyCard>
       )}
     </Layout>

@@ -125,7 +125,7 @@ export function proposalAdmin(getDb: GetDb, o: ProposalAdminOpts) {
     const link = await mintLink(getDb(c), qt.id, c.get("user"), base.base);
     return framed(c, o.quotes, { title: `A new link to ${w} ${qt.number}`, back: { href: self, label: `${W} ${qt.number}` } }, (
       <Section title="Copy it now">
-        <p class="mb-3 max-w-prose">The link sent before no longer works. Send {qt.name ?? qt.email} this one; it is shown once.</p>
+        <p class="mb-3 max-w-prose">The link you sent before no longer works. Send {qt.name ?? qt.email} this one. You'll see it only once.</p>
         <input readonly value={link} aria-label="The link" class={controlClass + " w-full font-mono"} data-select-all />
         <p class="mt-3"><a href={self} class={buttonClass}>Done</a></p>
       </Section>

@@ -24,10 +24,10 @@ export function BusinessPage(p: { user: string; business: Business; values?: Rec
         <Field label="Business name" hint={`What customers know you as, up to ${NAME_MAX} letters. It goes in every text.`}>
           <input name="name" value={v.name} required maxlength={NAME_MAX} autocomplete="organization" class={controlClass} aria-invalid={p.error?.field === "name" ? "true" : undefined} />
         </Field>
-        <Field label="Privacy policy page" hint="Carriers ask for it before you can text from your number. The texting box links it.">
+        <Field label="Privacy policy page" hint="Carriers ask for it before you can text from your number. The texting box has a link to it.">
           <input name="privacy_url" type="url" value={v.privacy_url} placeholder="https://" class={controlClass} aria-invalid={p.error?.field === "privacyUrl" ? "true" : undefined} />
         </Field>
-        <Field label="Terms page" hint="If you have one. The texting box links it too.">
+        <Field label="Terms page" hint="If you have one. The texting box has a link to it too.">
           <input name="terms_url" type="url" value={v.terms_url} placeholder="https://" class={controlClass} aria-invalid={p.error?.field === "termsUrl" ? "true" : undefined} />
         </Field>
         <Field label="Postal address" hint="If you have one to give. US law requires it in follow-up emails that ask for a booking or a review.">
@@ -39,7 +39,7 @@ export function BusinessPage(p: { user: string; business: Business; values?: Rec
       <section class="mt-8 max-w-prose">
         <h2 class="mb-2 text-heading font-semibold text-ink">Time zone</h2>
         <p>{zoneName(timeZone)}</p>
-        <p class="mt-1 text-label text-ink-3">Automatic texts and recurring invoices use this time zone. Screens show each person their own time.</p>
+        <p class="mt-1 text-label text-ink-3">This is the time zone for automatic texts and recurring invoices. Everyone sees times on screen in their own time zone.</p>
         <AskAi class="mt-2" ask="Set our time zone to " />
       </section>
 
@@ -67,7 +67,7 @@ export function BusinessPage(p: { user: string; business: Business; values?: Rec
             ) : null}
           </dl>
         ) : (
-          <p class="text-ink-2">Until it's set, texts say "it's us", quotes and invoices carry no name, and the texting box stays off your forms.</p>
+          <p class="text-ink-2">Until it's set, texts say "it's us", quotes and invoices have no name, and the texting box stays off your forms.</p>
         )}
       </section>
     </Layout>

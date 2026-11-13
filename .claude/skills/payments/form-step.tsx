@@ -74,7 +74,7 @@ export function paymentStep(getDb: GetDb, stripeOf: (c: Context) => Stripe, opts
           )}
           {price && taxed ? <p class="text-label text-ink-2">Tax is added on the next page.</p> : null}
           <div>
-            <button type="submit" class={button}>{price ? "Pay securely with Stripe" : "Continue"}</button>
+            <button type="submit" class={button}>{price ? "Pay with Stripe" : "Continue"}</button>
           </div>
         </form>
       );

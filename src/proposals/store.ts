@@ -101,7 +101,7 @@ export type ProposalInput = { title?: unknown; components: string[] };
 export async function saveProposal(db: Db, quoteId: string, input: ProposalInput, by: string): Promise<Saved<null>> {
   const qt = await quoteById(db, quoteId);
   if (!qt) return { ok: false, errors: { status: "No such quote." } };
-  if (!isEditable(qt)) return { ok: false, errors: { status: `It was ${qt.status}, so it no longer changes.` } };
+  if (!isEditable(qt)) return { ok: false, errors: { status: `It's ${qt.status} now and can't be changed.` } };
   await ensureProposal(db, qt);
   const errors: Errors = {};
   const title = typeof input.title === "string" ? input.title.trim() : "";
@@ -119,7 +119,7 @@ export async function saveProposal(db: Db, quoteId: string, input: ProposalInput
     q`update quote_proposals set title = ${title || null}, updated_by = ${by}, updated_at = now()
       where quote_id = ${quoteId}::bigint and exists (select 1 from quotes where id = ${quoteId}::bigint and status = any(${EDITABLE}::text[]))`,
   ]);
-  if (!(EDITABLE as readonly string[]).includes(out[0][0]?.status)) return { ok: false, errors: { status: `It was ${out[0][0]?.status ?? "removed"}, so it no longer changes.` } };
+  if (!(EDITABLE as readonly string[]).includes(out[0][0]?.status)) return { ok: false, errors: { status: `It's ${out[0][0]?.status ?? "removed"} now and can't be changed.` } };
   return { ok: true, value: null };
 }
 
@@ -187,7 +187,7 @@ export async function storePage(db: Db, quoteId: string, opts: ProposalOpts): Pr
       from quotes qt where p.quote_id = ${quoteId}::bigint and qt.id = p.quote_id and qt.status = any(${EDITABLE}::text[])
       returning p.quote_id`,
   ]);
-  return rows.length ? { ok: true, sha: page.sha } : { ok: false, why: "It was decided, so its page no longer changes." };
+  return rows.length ? { ok: true, sha: page.sha } : { ok: false, why: "Its page can't be changed after the customer answers." };
 }
 
 // ---- the link and its opens ----------------------------------------------------

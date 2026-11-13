@@ -78,7 +78,7 @@ function EventFields({ r, choices, where, deals = [], dealId = null }: { r?: Eve
   const lengths = LENGTHS.includes(length) ? LENGTHS : [...LENGTHS, length].sort((a, b) => a - b);
   return (
     <>
-      <Field label="Title" class="sm:col-span-2" hint={choices.services.length ? "Blank uses the service's name." : undefined}>
+      <Field label="Title" class="sm:col-span-2" hint={choices.services.length ? "Leave blank for the service's name." : undefined}>
         <input name="title" value={r?.title ?? ""} maxlength={200} required={!choices.services.length} placeholder={`What the ${one} is for`} class={controlClass} />
       </Field>
       {choices.services.length ? (
@@ -247,7 +247,7 @@ export function EventResults(p: { filter: EventFilter; rows: Event[]; next: stri
             <NoMatches clear={listUrl("/events", { view: params.view })} />
           ) : (
             <EmptyState title={p.filter.view === "upcoming" ? `Nothing scheduled.` : p.filter.view === "overdue" ? "Nothing overdue." : `No ${many} yet.`} action={<a href="/events/new" class={buttonClass}>New {one}</a>}>
-              {p.filter.view === "upcoming" ? `Add one here or from a ${vocab.one.toLowerCase()}'s page. Online bookings show here too.` : null}
+              {p.filter.view === "upcoming" ? `Add one here or from a ${vocab.one.toLowerCase()}'s page. You'll see online bookings here too.` : null}
             </EmptyState>
           )
         }

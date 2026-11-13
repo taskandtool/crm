@@ -142,7 +142,7 @@ function DealInputs({ stages, title, notes }: { stages: Stage[]; title?: string;
       <Field label="Title">
         <input name="title" required value={title ?? ""} maxlength={200} placeholder="New furnace" class={controlClass} />
       </Field>
-      <Field label={`Value (${dealsCfg.currency})`} hint="Blank uses the quote's total.">
+      <Field label={`Value (${dealsCfg.currency})`} hint="Leave blank for the quote's total.">
         <input name="value" inputmode="decimal" maxlength={20} class={controlClass} />
       </Field>
       <Field label="Stage">
@@ -370,7 +370,7 @@ export function DealPage(p: {
               {p.quotes.length ? (
                 <Docs quotes={p.quotes} invoices={p.invoices} />
               ) : (
-                <p class="text-ink-3">No quotes yet. {d.customer_email ? `Accepting a quote marks the ${one} won.` : `Add an email to ${d.customer_name} to send a quote.`}</p>
+                <p class="text-ink-3">No quotes yet. {d.customer_email ? `When they accept a quote, the ${one} is marked won.` : `Add an email to ${d.customer_name} to send a quote.`}</p>
               )}
               {invoicesCfg && d.customer_email && !closed ? <p class="mt-3"><AddLink href={listUrl("/invoices/quotes/new", who)}>New quote</AddLink></p> : null}
             </Section>
@@ -431,7 +431,7 @@ function DealEdit({ d, owners }: { d: Deal; owners: string[] }) {
       <Field label="Title">
         <input name="title" value={d.title} required maxlength={200} class={controlClass} />
       </Field>
-      <Field label={`Value (${(d.currency ?? dealsCfg.currency).toUpperCase()})`} hint="Blank uses the quote's total.">
+      <Field label={`Value (${(d.currency ?? dealsCfg.currency).toUpperCase()})`} hint="Leave blank for the quote's total.">
         <input name="value" inputmode="decimal" value={d.value_cents === null ? "" : amountText(d.value_cents, d.currency ?? dealsCfg.currency)} maxlength={20} class={controlClass} />
       </Field>
       <Field label="Expected close date">

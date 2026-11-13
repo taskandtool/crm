@@ -90,7 +90,7 @@ async function sendAttached(db: Db, qt: Quote, by: string, deps: AnswerDeps): Pr
   const lines: string[] = [];
   for (const inv of drafts) {
     const what = `invoice for ${formatMoney(inv.total_cents, inv.currency)}`;
-    const notConnected = `The ${what} for ${qt.name ?? qt.email} (${qt.number}) is a draft: Stripe is not connected, so it was not sent. Connect Stripe, then send it.`;
+    const notConnected = `The ${what} for ${qt.name ?? qt.email} (${qt.number}) is a draft. It wasn't sent because Stripe isn't connected. Connect Stripe, then send it.`;
     let stripe: Stripe;
     try {
       stripe = deps.stripe();

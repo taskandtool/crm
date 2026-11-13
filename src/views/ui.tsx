@@ -323,7 +323,7 @@ export const MESSAGES: FlashMessages = {
   ...RECURRING_MESSAGES,
   rescheduled: `${eventWord} moved. They have been told the new time.`,
   cancelled: `${eventWord} cancelled.`,
-  unchanged: { error: `Nothing changed. A cancelled ${eventWord.toLowerCase()} stays cancelled, and one is marked completed or no-show only once it has started.` },
+  unchanged: { error: `Nothing changed. You can't change a cancelled ${eventWord.toLowerCase()}, and you can mark one completed or no-show only once it has started.` },
   added: `${vocab.one} added.`,
   exists: `That ${one} is already here. This is their record.`,
   saved: "Saved.",

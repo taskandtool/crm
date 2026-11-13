@@ -98,7 +98,7 @@ const paidFor = (p: { ref_type: string | null; ref_id: string | null }) =>
 
 /** What a refund says on the page it comes back to: the payment's, or the app's own page for it. */
 export const PAYMENT_MESSAGES: FlashMessages = {
-  refund: "Refund requested. The payment changes when Stripe confirms it, usually within a minute.",
+  refund: "Refund requested. You'll usually see it marked refunded here within a minute.",
 };
 
 type Filters = { q: string | null; status: string | null; kind: string | null; refType: string | null; refId: string | null };
@@ -229,7 +229,7 @@ export function paymentsAdmin(getDb: GetDb, opts: PaymentsAdminOptions) {
             filtered ? (
               <NoMatches clear={base} />
             ) : (
-              <EmptyState title="No payments yet.">Money paid through your forms, bookings and invoices shows here.</EmptyState>
+              <EmptyState title="No payments yet.">You'll see money paid through your forms, bookings and invoices here.</EmptyState>
             )
           }
         />

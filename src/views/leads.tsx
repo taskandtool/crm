@@ -116,7 +116,7 @@ export function LeadResults({ filter, rows }: { filter: LeadFilter; rows: Lead[]
             <EmptyState title="No leads match." action={<a href={listUrl("/leads", { status: params(filter).status })} class={buttonClass}>Clear filters</a>} />
           ) : filter.status === "open" ? (
             <EmptyState title="No open leads." action={<a href="/leads/new" class={buttonClass}>New lead</a>}>
-              Website form entries and online bookings appear here. Use New lead to add someone who called or walked in.
+              You'll see website form entries and online bookings here. Use New lead to add someone who called or walked in.
             </EmptyState>
           ) : (
             <EmptyState title={filter.status === "converted" ? `None converted to a ${deal} yet.` : "Nothing archived."} />
@@ -274,7 +274,7 @@ export function NewLeadPage(p: { user: string; owners: string[]; flash: { code?:
         </Field>
         <div class="sm:col-span-2 flex flex-wrap items-center gap-3">
           <button class={primaryClass}>Create lead</button>
-          <span class="text-label text-ink-3">If the email or phone matches a {vocab.one.toLowerCase()}, the lead goes on their record.</span>
+          <span class="text-label text-ink-3">If the email or phone matches a {vocab.one.toLowerCase()}, you'll find the lead on their record.</span>
         </div>
       </form>
     </Layout>

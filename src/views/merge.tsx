@@ -42,8 +42,8 @@ export function MergePage(p: {
           <ul class="mb-3 flex list-disc flex-col gap-1 pl-5">
             <li>{p.preview.moves.notes} notes, {p.preview.moves.deals} {dealsCfg.many.toLowerCase()}, {p.preview.moves.tasks} tasks{eventsCfg ? `, ${p.preview.moves.events} ${eventsCfg.many.toLowerCase()}` : ""} move here.</li>
             {p.preview.fills.length ? <li>{p.keep.name} gains: {p.preview.fills.join(", ")}.</li> : null}
-            <li>What they sent, paid and were quoted under either address shows here.</li>
-            <li>{p.preview.other.name}'s record is archived and opens this one. You can't undo a merge.</li>
+            <li>Here you'll see what they sent, paid and were quoted under either address.</li>
+            <li>{p.preview.other.name}'s record is archived. If you open it, you'll land on this one. You can't undo a merge.</li>
           </ul>
           <form method="post" action={self} class="flex flex-wrap gap-2">
             <input type="hidden" name="other" value={p.preview.other.id} />

@@ -339,12 +339,12 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
 
   async function notWired(c: Context, form: Form, kind: "booking" | "payment") {
     console.error(`forms: ${form.key} has a ${kind} step, but formRoutes was given no steps.${kind} (the ${kind === "booking" ? "booking" : "payments"} skill's ${kind}Step)`);
-    const body = <div><h1 class="text-title font-semibold">This form is not ready yet</h1><p class="mt-4">Its next step cannot run here yet. Your answers are saved.</p></div>;
+    const body = <div><h1 class="text-title font-semibold">This form is not ready yet</h1><p class="mt-4">We can't take you to the next step yet. We have your answers.</p></div>;
     return c.html(await opts.page(c, form.title, body), 500);
   }
 
   async function gone(c: Context, form: Form) {
-    const body = <div><h1 class="text-title font-semibold">Start the form again</h1><p class="mt-4">This form could not be found where you left it. <a href={`${P}/forms/${form.key}/start`} class="font-semibold text-accent underline">Start again</a>.</p></div>;
+    const body = <div><h1 class="text-title font-semibold">Start the form again</h1><p class="mt-4">We couldn't find where you left off. <a href={`${P}/forms/${form.key}/start`} class="font-semibold text-accent underline">Start again</a>.</p></div>;
     return c.html(await opts.page(c, form.title, body), 404);
   }
 
@@ -470,7 +470,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
     const body = (
       <div>
         {booked ?? <h1 class="text-title font-semibold">Thank you</h1>}
-        {form.success_message || !booked ? <p class="mt-4">{form.success_message || "Your message has arrived. We will be in touch soon."}</p> : null}
+        {form.success_message || !booked ? <p class="mt-4">{form.success_message || "We got your message and will be in touch soon."}</p> : null}
         {c.req.query("paid") ? <p class="mt-4">Your payment is being confirmed. You will get a receipt by email.</p> : null}
         <div data-cart-clear={form.key} hidden></div>
       </div>
@@ -581,7 +581,7 @@ export function summary(form: Form, s: Submission, page: string | null, link: st
     const step = (type: string) => form.fields.find((f) => f.type === type);
     lines.push(`Total${step("payment")?.tax_rate_id ? " before tax" : ""}: ${formatMoney(price.subtotal_cents, price.currency)}`);
     if (step("booking")) lines.push("A booking's price, if it has one, is added when they pick a time.");
-    if (step("payment")) lines.push("They pay next, by card through Stripe; the submission shows when it is paid.");
+    if (step("payment")) lines.push("They pay next, by card through Stripe. You'll see it marked paid on the submission.");
   }
   if (page) lines.push("", `Sent from ${page}`);
   const from = cameFrom(origin);

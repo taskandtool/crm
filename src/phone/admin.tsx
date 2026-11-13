@@ -109,9 +109,9 @@ export function phoneSettings(getDb: GetDb, opts: PhoneAdminOptions) {
         <div class="space-y-6">
           {name}
           <SetupNeeded title="Connect Twilio for a business number" ask="Connect my Twilio account so customers can call and text my business number.">
-            Customers call and text one number. It rings your phone. If you miss a call, the caller gets a text back, and replies show in Messages. Twilio bills you
-            directly, about $1.15 a month for the number and under a cent a text. Connect Twilio to this app in Task &amp; Tool, on the app's Connections tab,
-            with the Account SID and an API key from Twilio's Console. For a client of yours, use their own subaccount.
+            Customers call and text one number. You take the calls on your own phone. If you miss a call, the caller gets a text back. You'll see their replies in Messages. You pay Twilio
+            directly, about $1.15 a month for the number and under a cent a text. Connect Twilio on this app's Connections tab in Task &amp; Tool. You'll need
+            the Account SID and an API key from Twilio's Console. For a client of yours, use their own subaccount.
           </SetupNeeded>
           <FlowList base={base} settings={settings} counts={counts} texting={false} />
         </div>
@@ -195,7 +195,7 @@ export function phoneSettings(getDb: GetDb, opts: PhoneAdminOptions) {
         <section>
           <h2 class="mb-1 text-base/7 font-semibold text-ink">{main ? "5. Automatic texts" : "Automatic texts"}</h2>
           <p class={smallText + " mb-3 text-ink-2"}>
-            {main?.texting === "approved" ? "Switch each on or off. Open one to see what it sends." : "You can switch them on now; they start once your number can text."}
+            {main?.texting === "approved" ? "Switch each on or off. Open one to read its texts." : "You can switch them on now. Customers get them once texting is set up on your number."}
             {" "}Where a text can't go, flows that can send an email instead.
           </p>
           <FlowList base={base} settings={settings} counts={counts} texting={main?.texting === "approved"} />
@@ -470,7 +470,7 @@ function FlowList({ base, settings, counts, texting }: { base: string; settings:
               <a href={`${base}/flows/${f.key}`} class="font-semibold text-ink no-underline hover:underline">{f.name}</a>
               <p class={smallText + " text-ink-2"}>
                 {f.summary}{n?.sent ? ` ${outcomeText(f, n)}` : ""}
-                {texting || f.emailFirst ? null : f.email ? " Goes by email until your number can text." : " Starts once your number can text."}
+                {texting || f.emailFirst ? null : f.email ? " Sent by email until texting is set up on your number." : " Sent once texting is set up on your number."}
               </p>
             </div>
             <Switch action={`${base}/flows/${f.key}`} on={s.enabled} label={f.name} />
@@ -523,10 +523,10 @@ export function FlowPicture(props: {
           <p>{flow.where}</p>
           {forms ? (
             forms.length ? <p class="mt-1 text-ink-2">On for: {forms.map((f, i) => <>{i ? ", " : ""}{formHref ? <a href={formHref(f.key)} class={linkClass}>{f.title}</a> : f.title}</>)}.</p>
-            : <p class="mt-1 font-semibold">No form has "Follow up automatically" on yet, so this sends nothing.</p>
+            : <p class="mt-1 font-semibold">No form has "Follow up automatically" on yet. Until one does, nobody gets this.</p>
           ) : null}
-          {!channel ? <p class="mt-1 font-semibold">{hasNumber ? "Starts once your number can text." : "Starts once you have a business number."}</p> : null}
-          {channel === "email" && !flow.emailFirst ? <p class="mt-1 text-ink-2">Until your number can text, this goes by email where it can.</p> : null}
+          {!channel ? <p class="mt-1 font-semibold">{hasNumber ? "Nobody gets this until texting is set up on your number." : "Nobody gets this until you have a business number."}</p> : null}
+          {channel === "email" && !flow.emailFirst ? <p class="mt-1 text-ink-2">Until texting is set up on your number, people with an email address get this by email.</p> : null}
         </div>
         <Switch action={action} on={s.enabled} label={flow.name} back="flow" />
       </div>
@@ -561,7 +561,7 @@ export function FlowPicture(props: {
                           ours={WORDS[flow.key][v.key] ?? ""} fills={flow.fills} refused={refused?.variant === v.key ? refused : undefined} />
                         {letter && !flow.emailFirst ? (
                           <details class="mt-2">
-                            <summary class={smallText + " cursor-pointer text-ink-2"}>Until your number can text, this goes by email</summary>
+                            <summary class={smallText + " cursor-pointer text-ink-2"}>Until texting is set up on your number, we send this by email</summary>
                             <div class="mt-2 border-t border-line pt-2">{letter}</div>
                           </details>
                         ) : null}
@@ -605,7 +605,7 @@ function WordsEditor({ action, variant, words, ours, fills, refused }: { action:
         <div class={smallText + " text-ink-2"}>
           <p>Words in braces are filled in for each person:</p>
           <ul class="mt-1 space-y-0.5">{fills.map((k) => <li><code class="text-ink">{`{${k}}`}</code> {FILL_SAYS[k]}</li>)}</ul>
-          <p class="mt-1">A sentence whose fill-in is missing is left out. One text holds 160 plain letters; emoji can't be used, as they cut that to 70.</p>
+          <p class="mt-1">If a fill-in is empty, that sentence is left out. One text holds 160 characters. You can't use emoji: with emoji, a text holds only 70.</p>
         </div>
         <div class="flex flex-wrap gap-2">
           <button class={buttonClass}>Save</button>
@@ -923,7 +923,7 @@ function ReplyBox({ action, callAction, to, canText, canCall }: { action: string
           </label>
           <button class={primaryClass}>Send</button>
         </form>
-      ) : <p class="text-ink-2">Replies go once your number can text.</p>}
+      ) : <p class="text-ink-2">You can reply once texting is set up on your number.</p>}
       {canCall ? (
         <form method="post" action={callAction}>
           <input type="hidden" name="to" value={to} />

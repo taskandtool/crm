@@ -292,13 +292,13 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   const emailReady = (c: Ctx) => !!opts.send || emailsCustomers(envOf(c));
   const needStripe = (
     <SetupNeeded title="Connect Stripe to send invoices" ask="Connect my Stripe account so I can send invoices.">
-      Invoices are made in your Stripe account. Stripe emails them with a Pay button and tells this app when they are paid.
-      Make sure Stripe is connected to this app in Task & Tool, on the app's Connections tab. You can write drafts now; sending waits for Stripe.
+      Invoices are made in your Stripe account. Your customer gets each one by email from Stripe and pays with its Pay button. You'll see here when it's paid.
+      Connect Stripe on this app's Connections tab in Task & Tool. You can write drafts now and send them once Stripe is connected.
     </SetupNeeded>
   );
   const needEmail = (
     <SetupNeeded title="Connect your email to send quotes" ask="Connect my email so I can send quotes.">
-      Quotes go out from your email address, so connect Resend or Postmark to this app in Task &amp; Tool, on the app's Connections tab. Task &amp; Tool email reaches only your team.
+      You send quotes from your own email address. Connect Resend or Postmark on this app's Connections tab in Task &amp; Tool. You can only send Task &amp; Tool email to your team.
       You can write and preview quotes now, or send the text yourself and mark them sent.
     </SetupNeeded>
   );
@@ -1107,7 +1107,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
       <>
         <p class="mb-4 max-w-prose text-ink-2">
           Quotes and invoices have no tax unless you choose one under their line items. Add the rates you charge here.
-          A rate stays as it is once used; to change a percent, add a new rate and archive the old one.
+          You can't change a rate once it's used. To change a percent, add a new rate and archive the old one.
         </p>
         {rates.length ? (
           <ul class="mb-6 flex flex-col gap-2">

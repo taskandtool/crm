@@ -1204,7 +1204,7 @@ test("a form's payment step runs here: with Stripe not connected it says so, and
     assert.equal(page.status, 200);
     const html = await page.text();
     assert.match(html, /Online payment isn&#39;t available right now|Online payment isn't available right now/);
-    assert.doesNotMatch(html, /Pay securely/);
+    assert.doesNotMatch(html, /Pay with Stripe/);
   } finally {
     await db.sql`delete from submission_drafts where form_key = 'q-order'`;
     await db.sql`delete from submissions where form_key = 'q-order'`;

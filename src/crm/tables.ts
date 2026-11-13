@@ -27,5 +27,5 @@ export function missingSentence(p: Present): string | null {
   if (!p.payments) names.push("payments");
   if (!names.length) return null;
   const list = names.length === 1 ? names[0] : names.slice(0, -1).join(", ") + " or " + names[names.length - 1];
-  return `This project has no ${list} yet. They show here once an app in the project collects them.`;
+  return `This project has no ${list} yet. You'll see them here once you collect them with an app in this project.`;
 }

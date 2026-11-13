@@ -206,7 +206,7 @@ test("a customer's email never reaches Task & Tool", async () => {
   const r = answering({});
   const out = await sendEmail(MACHINE, msg, r.f);
   assert.equal(out.status, "none");
-  assert.match((out as { why: string }).why, /connect Resend or Postmark/);
+  assert.match((out as { why: string }).why, /connect Resend or Postmark/i);
   assert.equal(r.calls.length, 0);
   assert.equal(emailSender(MACHINE), null, "booking confirmations need a sender that reaches customers");
 });

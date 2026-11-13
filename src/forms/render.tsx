@@ -66,7 +66,7 @@ export function FormView(props: {
       {step && step.count > 1 ? <StepHeading step={oneClick ? { ...step, label: null } : step} /> : null}
       {failed.length ? (
         <div role="alert" class="rounded-card border border-line-strong bg-panel p-4">
-          <p class="font-semibold">Some answers need a fix before this can be sent.</p>
+          <p class="font-semibold">Please fix the answers marked below, then send again.</p>
           <ul class="mt-2 list-disc pl-5">
             {failed.map((f) => (
               <li>

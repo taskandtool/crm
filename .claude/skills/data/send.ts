@@ -44,7 +44,7 @@ export type Sender = { vendor: Vendor; slug: string };
 /** Task & Tool email's connection slug. */
 const OURS = "taskandtool-email";
 const PATH: Record<Exclude<Vendor, "taskandtool">, string> = { resend: "/emails", postmark: "/email" };
-const ONLY_TEAM = "Task & Tool email reaches only the people who can open this app; connect Resend or Postmark to email anyone else";
+const ONLY_TEAM = "You can only send Task & Tool email to people who can open this app. Connect Resend or Postmark to email anyone else";
 
 /** Which sender this app uses (NOTIFY_VIA, else Task & Tool email), or why there is none. */
 export function senderOf(env: Env): Sender | string {
@@ -137,7 +137,7 @@ export async function teamAddresses(env: Env, doFetch: typeof fetch = fetch): Pr
  */
 async function sendOurs(env: Env, sender: Sender, mail: Email, doFetch: typeof fetch): Promise<Sent> {
   if (!mail.team) return { status: "none", why: ONLY_TEAM };
-  if (mail.attachments?.length) return { status: "none", why: "Task & Tool email sends no attachments" };
+  if (mail.attachments?.length) return { status: "none", why: "You can't send attachments with Task & Tool email" };
   const res = await gatewayFetch(env, sender.slug, "/emails", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },

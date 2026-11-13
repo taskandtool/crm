@@ -42,7 +42,7 @@ export function TasksPage(p: TasksProps) {
         </nav>
       </div>
       {p.view === "done" ? (
-        p.rows.length ? <DoneList rows={p.rows} today={p.today} /> : <EmptyCard title="Nothing done yet.">Tasks ticked off show here, newest first.</EmptyCard>
+        p.rows.length ? <DoneList rows={p.rows} today={p.today} /> : <EmptyCard title="Nothing done yet.">Tasks you tick off, newest first.</EmptyCard>
       ) : p.rows.length ? (
         // Headed by day, as task lists are: Overdue, Today, Tomorrow, then each day after.
         <div class="flex flex-col gap-4">

@@ -57,7 +57,7 @@ test("a flow's picture shows its steps and its words filled in, and its switch t
   const pic = await (await get("/phone/flows/unbooked")).text();
   assert.match(pic, /Sends/);
   // No texting here yet: the text is still shown and editable, the email it sends for now beside it.
-  assert.match(pic, /Until your number can text, this goes by email where it can/);
+  assert.match(pic, /Until texting is set up on your number, people with an email address get this by email/);
   assert.match(pic, /Reply 1, 2 or 3 to book/);
   assert.match(pic, /<summary[^>]*>Edit<\/summary>/);
   assert.match(pic, /Subject: Pick a time for your/);
@@ -85,7 +85,7 @@ test("with a number: Messages in the sidebar, a thread from a text, and the repl
   assert.match(list, /Natalie Ruiz/);
   assert.match(list, /Can you come Thursday\?/);
   const thread = await (await get("/messages/5125550123")).text();
-  assert.match(thread, /Texting starts when Twilio approves your number|Replies go once your number can text/);
+  assert.match(thread, /Texting starts when Twilio approves your number|You can reply once texting is set up on your number/);
   assert.doesNotMatch(await (await get("/messages/count")).text(), />1</, "opening it reads it");
   const reply = await post("/messages/5125550123/reply", { to: "+15125550123", body: "Yes, 2pm works" });
   assert.equal(reply.status, 422);

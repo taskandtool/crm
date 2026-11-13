@@ -172,7 +172,7 @@ export function NewCustomerPage({ user, stages, flash }: { user: string; stages:
         </Field>
         <div class="sm:col-span-2">
           <button class={primaryClass}>Create {vocab.one.toLowerCase()}</button>
-          <span class="ml-3 text-label text-ink-3">A name, email or phone is enough. If they're already in the CRM, their record opens instead.</span>
+          <span class="ml-3 text-label text-ink-3">A name, email or phone is enough. If they're already in the CRM, you'll see their record instead.</span>
         </div>
       </form>
     </Layout>

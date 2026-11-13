@@ -134,7 +134,7 @@ export function bookingStep(getDb: GetDb, opts: BookingStepOptions): FormStep {
       const already = await bookingForSubmission(getDb(c), ctx.submission.id);
       if (already) return { ok: true, charge: chargeFor(t, already, paid) };
       const email = ctx.submission.email;
-      if (!email) return { ok: false, errors: { start: "This form needs to ask for an email before a time can be booked." } };
+      if (!email) return { ok: false, errors: { start: "This form needs an email question before anyone can book a time." } };
       const raw = typeof input.start === "string" ? input.start : "";
       const start = new Date(raw);
       if (!raw || Number.isNaN(start.getTime())) return { ok: false, errors: { start: "Pick a time." } };

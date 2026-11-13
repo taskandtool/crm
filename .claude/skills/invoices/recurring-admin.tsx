@@ -135,7 +135,7 @@ function RecurringForm({ action, v, errors, rates, cancel, submit, taxPage, fixe
           </div>
           <label class={fieldClass}>First invoice on
             <input name="first_on" type="date" required value={v.first_on} readonly={fixed} class={controlClass} />
-            <span class="text-label text-ink-3">{fixed ? "Set once its first invoice is made." : "Its day is every invoice's day: the 1st to the 28th for months and years."}</span>
+            <span class="text-label text-ink-3">{fixed ? "Set once its first invoice is made." : "Later invoices fall on the same day. For months and years, pick the 1st to the 28th."}</span>
             {err("first_on")}
           </label>
           <fieldset class={fieldClass + " sm:col-span-2"}>
@@ -161,9 +161,9 @@ function RecurringForm({ action, v, errors, rates, cancel, submit, taxPage, fixe
               <span>
                 <span class="font-medium">{MODE_LABELS[m]}</span>
                 <span class="block text-label text-ink-3">
-                  {m === "draft" ? "For an amount that changes. The draft is made a few days early with a task to finish and send it."
-                    : m === "send" ? "Stripe emails the invoice and they pay on its page."
-                    : "Stripe charges the card they saved. Until they have one, it is emailed to pay; paying it on Stripe's page saves their card."}
+                  {m === "draft" ? "For an amount that changes. You get a draft a few days early and a task to finish and send it."
+                    : m === "send" ? "They get the invoice by email from Stripe and pay on its page."
+                    : "We charge the card they saved with Stripe. Until they save one, they get the invoice by email. When they pay it on Stripe's page, their card is saved."}
                 </span>
               </span>
             </label>

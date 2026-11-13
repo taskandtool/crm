@@ -567,7 +567,7 @@ export const inviteSummary = (type: BookingType | null, host: Resource | null) =
 
 const DEPOSIT: Record<string, string> = {
   paid: "Deposit paid.",
-  pending: "Deposit not confirmed yet. If you have just paid, it shows here within a minute.",
+  pending: "Deposit not confirmed yet. If you just paid, check back in a minute.",
   failed: "The deposit payment failed.",
   cancelled: "The deposit was not paid.",
   refunded: "Deposit refunded.",
