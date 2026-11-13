@@ -1,4 +1,4 @@
-// How we'll do it: the work in four steps, each with when it happens. From public/services.md
+// How we'll do it: what happens before, during and after the job. From public/services.md
 // (how the business works), in its own words.
 import { Band, Heading, Inner } from "./kit";
 import type { ProposalComponent } from "./types";
@@ -11,7 +11,7 @@ const STEPS = [
 ];
 
 export const approach: ProposalComponent = {
-  key: "approach", label: "How we'll do it", shows: "The work in four steps, with when each happens", on: false, sample: true,
+  key: "approach", label: "How we'll do it", on: false, sample: true,
   render: (d) => (
     <Band id="approach" tone={d.ground("approach")}>
       <Inner>

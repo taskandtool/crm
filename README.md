@@ -48,23 +48,11 @@ The CRM has no way to delete one.
 
 ### The agent writes proposals from your website
 
-The agent reads your website, and your Google listing once Google Places is
-connected. Then it writes the proposal's sections in your words and with
-your photographs. You tick the ones a quote should have:
-
-| Section | What's in it |
-|---|---|
-| Cover photo | Your best photograph under the title |
-| Letter | Your message to this customer |
-| About us | The business in a photograph, a few lines and three figures |
-| How we'll do it | The four steps of the work and when each happens |
-| A full photograph | One photograph across the page |
-| Our work | Case studies: a photograph, the job and its result |
-| Our team | Portraits of the people who will do the work |
-| Reviews | Customer reviews and their star ratings |
-| Clients | Client names or logos |
-| Questions | Common customer questions and your answers |
-| Terms | The terms they agree to by signing |
+The agent reads your website. Once Google Places is connected, it reads your
+Google listing too. Then it writes the proposal's sections in your words and with
+your photographs. You tick the sections a quote should have: Cover photo,
+Letter, About us, How we'll do it, Full-width photo, Our work, Our team,
+Reviews, Clients, Questions and Terms.
 
 Every proposal has the price, tax and total.
 
@@ -140,8 +128,7 @@ when a task needs it:
 
 The agent runs scripts for common actions like adding a contact or sending
 an invoice. All of them have a `--help`. The agent sends to a customer or
-merges two contacts only when you tell it to. `npm test` runs 433 tests, 214
-of them against a Postgres database.
+merges two contacts only when you tell it to.
 
 ## Why run it on Task & Tool
 

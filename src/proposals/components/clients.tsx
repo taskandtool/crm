@@ -9,7 +9,7 @@ const CLIENTS: { name: string; logo?: string | null }[] = [
 ];
 
 export const clients: ProposalComponent = {
-  key: "clients", label: "Clients", shows: "A strip of client names or logos", on: false, sample: true,
+  key: "clients", label: "Clients", on: false, sample: true,
   render: (d) => (
     <Band id="clients" tone={d.ground("clients")} tight>
       <Inner>

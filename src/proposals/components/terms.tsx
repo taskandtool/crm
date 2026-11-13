@@ -4,7 +4,7 @@ import { Band, Heading, Inner, Lines } from "./kit";
 import type { ProposalComponent } from "./types";
 
 export const terms: ProposalComponent = {
-  key: "terms", label: "Terms", shows: "The quote's terms, which they agree to by signing", on: true, sample: false,
+  key: "terms", label: "Terms", on: true, sample: false,
   render: (d) => {
     const t = d.quote.terms?.trim();
     if (!t) return null;

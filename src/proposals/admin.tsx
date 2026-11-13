@@ -78,8 +78,8 @@ export function proposalAdmin(getDb: GetDb, o: ProposalAdminOpts) {
         <form method="post" action={`${self}/proposal`} class="flex flex-col gap-5">
           <label class={fieldClass}>Title<input name="title" value={p?.title ?? ""} maxlength={160} placeholder={`${W} ${qt.number}`} class={inputClass} /></label>
           <fieldset>
-            <legend class="mb-1 font-semibold">Components</legend>
-            <p class={smallText + " mb-2 text-ink-3"}>A {w} is its price and sign-off; tick what else it shows.</p>
+            <legend class="mb-1 font-semibold">Sections</legend>
+            <p class={smallText + " mb-2 text-ink-3"}>Every {w} has its price and a place to sign. Tick what else to add.</p>
             <ul class="flex flex-col divide-y divide-line">
               {PICKABLE.map((cpt) => (
                 <li class="py-2.5">
@@ -87,7 +87,6 @@ export function proposalAdmin(getDb: GetDb, o: ProposalAdminOpts) {
                     <input type="checkbox" name="components" value={cpt.key} checked={keys.includes(cpt.key)} class="mt-1 size-4 shrink-0" />
                     <span>
                       <span class="font-medium">{cpt.label}</span>{cpt.sample ? <SampleTag /> : null}
-                      <span class={"block " + smallText + " text-ink-3"}>{cpt.shows}</span>
                     </span>
                   </label>
                 </li>

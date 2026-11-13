@@ -38,7 +38,7 @@ export function Masthead({ d }: { d: View }) {
 }
 
 export const cover: ProposalComponent = {
-  key: "cover", label: "Cover photo", shows: "Your best photograph edge to edge, under the title and its dates", on: false, sample: false,
+  key: "cover", label: "Cover photo", on: false, sample: false,
   render: (d) => {
     const q = d.quote;
     const day = dayOf(d);

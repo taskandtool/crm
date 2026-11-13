@@ -5,7 +5,7 @@ import { Band, Inner, Lines } from "./kit";
 import type { ProposalComponent } from "./types";
 
 export const intro: ProposalComponent = {
-  key: "intro", label: "Letter", shows: "The quote's message, as a letter to them", on: true, sample: false,
+  key: "intro", label: "Letter", on: true, sample: false,
   render: (d) => {
     const note = d.quote.notes?.trim();
     if (!note) return null;

@@ -1,4 +1,4 @@
-// Questions customers ask, answered. From public/business.md and the FAQ on
+// Common questions and your answers. From public/business.md and the FAQ on
 // their website, in their words.
 import { Band, Heading, Inner } from "./kit";
 import type { ProposalComponent } from "./types";
@@ -11,7 +11,7 @@ const QUESTIONS = [
 ];
 
 export const faq: ProposalComponent = {
-  key: "faq", label: "Questions", shows: "Questions customers ask, answered", on: false, sample: true,
+  key: "faq", label: "Questions", on: false, sample: true,
   render: (d) => (
     <Band id="faq" tone={d.ground("faq")}>
       <Inner>

@@ -32,8 +32,6 @@ export type ProposalComponent = {
   key: string;
   /** Its name on the quote's checklist. */
   label: string;
-  /** What it shows, in a few words, beside its name. */
-  shows: string;
   /** Ticked on a new quote. */
   on: boolean;
   /** On every proposal, from the quote itself: not in the checklist. */

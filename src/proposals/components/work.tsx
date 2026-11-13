@@ -10,7 +10,7 @@ const CASES: { client: string; title: string; result?: string; note: string; pho
 ];
 
 export const work: ProposalComponent = {
-  key: "work", label: "Our work", shows: "Case studies: a photograph, the job and its result", on: false, sample: true,
+  key: "work", label: "Our work", on: false, sample: true,
   render: (d) => (
     <Band id="work" tone={d.ground("work")}>
       <Inner>

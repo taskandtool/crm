@@ -7,7 +7,7 @@ const PHOTO = photo("");
 const CAPTION = "";
 
 export const gallery: ProposalComponent = {
-  key: "gallery", label: "A full photograph", shows: "One photograph across the whole page", on: false, sample: true,
+  key: "gallery", label: "Full-width photo", on: false, sample: true,
   render: () => (
     <section id="gallery" class="bg-canvas print:break-before-page">
       <Picture src={PHOTO} alt={CAPTION} label="One wide photograph of the work" class="aspect-[16/7] min-h-80 w-full" />

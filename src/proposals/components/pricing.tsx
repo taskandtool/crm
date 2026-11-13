@@ -7,7 +7,7 @@ import { raw } from "hono/html";
 import { BEFORE_SIGN, type ProposalComponent } from "./types";
 
 export const pricing: ProposalComponent = {
-  key: "pricing", label: "Pricing", shows: "The quote's lines, tax and total, and what happens when they sign", on: true, always: true, sample: false,
+  key: "pricing", label: "Pricing", on: true, always: true, sample: false,
   render: (d) => {
     const q = d.quote;
     const m = (c: string | number) => formatMoney(c, q.currency, d.locale);

@@ -18,7 +18,7 @@ const FIGURES = [
 ];
 
 export const about: ProposalComponent = {
-  key: "about", label: "About us", shows: "The business in a photograph, a few lines and three figures", on: false, sample: true,
+  key: "about", label: "About us", on: false, sample: true,
   render: (d) => (
     <Band id="about" tone={d.ground("about")}>
       <Inner>
