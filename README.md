@@ -6,7 +6,7 @@ board, and quotes your customers sign and pay online.
 
 [![Deploy on Task & Tool](https://taskandtool.com/images/deploy-button.svg)](https://taskandtool.com/accounts/register?starter_app=crm)
 
-![Nora's Home in Northline Gardens' CRM, with a signed backyard proposal over it](https://taskandtool.com/images/starter-apps/crm.webp)
+![Northline Gardens' CRM home screen and a signed backyard proposal](https://taskandtool.com/images/starter-apps/crm.webp)
 
 It's made to run on Task & Tool. There, each app has its own computer for
 your AI agent. The project has a Postgres database. The agent uses the
@@ -24,7 +24,7 @@ See it in use on the [CRM page](https://taskandtool.com/starter-apps/crm).
 
 ## Features
 
-### You turn leads into deals and drag them across your stages
+### Leads and a deals board
 
 A form fill or an online booking becomes a lead as it comes in. You add
 phone calls and walk-ins with New lead. Convert a good lead into a deal, or
@@ -33,7 +33,7 @@ stages you named. A card has the deal's value and its next task. A column
 has its count and total. On a phone you press and hold a card to drag it, or
 change the stage on the deal's page.
 
-### Your team sees this week's numbers on Home
+### This week's numbers on Home
 
 At the top are new leads in the last 7 days against the 7 before, your tasks
 due, the open deals, what you won this month and what you're owed. Below
@@ -43,9 +43,9 @@ a booker who moved or cancelled, a proposal signed or declined, a payment.
 
 ![Northline Gardens' Home in the CRM: six new leads in 7 days, four tasks due, $25,960 in open deals, $10,657 won this month and $1,560 owed](https://taskandtool.com/images/marketing/northline-gardens-crm-home.webp)
 
-### Someone who gets in touch twice has one record
+### One record per person
 
-They are matched by email, or by phone when there's no email. A contact's
+People are matched by email, or by phone when there's no email. A contact's
 page has their tasks, a timeline of notes, calls, quotes and payments, their
 deals and their invoices. You can search contacts, leads, deals, quotes and
 invoices from any page. Filter contacts by status, tag or owner, export the
@@ -55,10 +55,10 @@ The CRM has no way to delete one.
 ### The agent writes proposals from your website
 
 The agent reads your website. Once Google Places is connected, it reads your
-Google listing too. Then it writes the proposal's sections in your words and with
-your photographs. You tick the sections a quote should have: Cover photo,
-Letter, About us, How we'll do it, Full-width photo, Our work, Our team,
-Reviews, Clients, Questions and Terms.
+Google listing too. Then it writes the proposal's sections in your words and
+with your photographs. You tick the sections a quote should have: Cover
+photo, Letter, About us, How we'll do it, Full-width photo, Our work, Our
+team, Reviews, Clients, Questions and Terms.
 
 Every proposal has the price, tax and total.
 
@@ -67,7 +67,7 @@ Every proposal has the price, tax and total.
   <img src="https://taskandtool.com/images/marketing/northline-gardens-crm-proposal-signed.webp" width="300" alt="The signed proposal: Grace Okafor signed on October 9, and invoice HDTLW5D9-0001 for $2,580.00 is paid">
 </p>
 
-### Customers sign quotes online and pay by card through your Stripe account
+### Quotes customers sign and pay online
 
 You email a quote as a private link through your Resend or Postmark account.
 You can also copy the link and send it yourself. The customer types their
@@ -79,7 +79,7 @@ Once a customer has paid by card, you can charge that saved card next time.
 You can bill a customer on the dates you set, by email or on their saved
 card.
 
-### Your team plans visits and jobs on a shared calendar
+### A shared calendar of visits and jobs
 
 The calendar has the events your team adds and the bookings customers make
 on the Website Starter App's booking page. You can view a day, a week or a
@@ -91,14 +91,14 @@ booked.
 
 ![The day's schedule by person: Ana Silva's lawn care and fall cleanup, Marco Ferrara's patio laying and Nora Quinn's garden visit](https://taskandtool.com/images/marketing/northline-gardens-crm-schedule.webp)
 
-### Each person gets a morning email of their tasks
+### A morning email of each person's tasks
 
 At 7:00 in the business's time zone, everyone with something due gets one
 email. It has their overdue tasks, today's tasks, their proposals a customer
 opened since yesterday, and how many leads came in. When a proposal is still
 unsigned after 3 days, whoever made it gets a follow-up task.
 
-### You can add a business phone number from Twilio
+### A business phone number through Twilio
 
 You connect your Twilio account and choose a business number. Calls to that
 number ring your phone. Anyone whose call you miss can get a text back. Your
@@ -114,7 +114,7 @@ first. The agent matches each row to an existing contact by email, then
 phone. For a match it fills only empty fields and adds tags. A person on
 three rows becomes one contact.
 
-### You tell the agent your stages and fields
+### The agent sets up your stages and fields
 
 The agent reads what it already knows about the business, asks what it can't
 tell, and writes `crm.config.json`. That file holds what you call a contact
@@ -150,7 +150,7 @@ included. The agent sets up the scheduled jobs. Each app gets:
 
 - Its own computer for the agent
 - A dev address where your team uses the CRM
-- A Postgres database for contacts, deals and invoices that you can roll
+- A Postgres database for contacts, deals and invoices. You can roll it
   back to an earlier point in time. The Website Starter App in the same
   project uses this database too. A booking there is already a lead here.
 - Publishing on your own domain with a free SSL certificate. Only your team
