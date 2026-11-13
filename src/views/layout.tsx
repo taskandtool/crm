@@ -246,7 +246,7 @@ export function WaitingView({ state, error }: { state: string; error: string }) 
         <h1 class="text-title font-semibold">The CRM is waiting for its database</h1>
         <p class="mt-2 max-w-xl text-ink-2">
           {state === "no-url"
-            ? "The project's database is not connected yet. On Task & Tool it is being set up, or can be added from the app's page, and this page refreshes on its own. Off Task & Tool, put a Postgres connection string in .env as DATABASE_URL (see .env.example)."
+            ? "The project's database is not connected yet. On Task & Tool, it is being set up, or you can add it from the app's page. This page refreshes on its own. Off Task & Tool, put a Postgres connection string in .env as DATABASE_URL (see .env.example)."
             : state === "error"
               ? `The database did not answer yet: ${error}. Retrying.`
               : "Connecting and setting up the tables."}

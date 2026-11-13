@@ -13,8 +13,8 @@ computed colours by role; check them against the screenshots in `shots/`,
 since a site's CSS often carries colours it never shows. From a logo or
 photos alone, sample the logo's colours and say that is the source.
 
-A colour given a text or link role names its contrast on the ground it sits
-on (`#b05e27` on white, 4.7:1) and reaches 4.5:1; a lighter one is a fill or
+A colour given a text or link role names its contrast on its background
+(`#b05e27` on white, 4.7:1) and reaches 4.5:1; a lighter one is a fill or
 an accent, never text.
 
 ## Type

@@ -100,7 +100,7 @@ export function phoneSettings(getDb: GetDb, opts: PhoneAdminOptions) {
     const name = ctx.unnamed ? (
       <section class="rounded-card border border-line bg-surface p-4 shadow-card">
         <h2 class="mb-1 text-base/7 font-semibold text-ink">Give your texts the business's name</h2>
-        <p class="max-w-prose text-ink-2">Every text names the business, so customers know who it is. Until it's set, they say "it's us", and the texting box stays off your forms.</p>
+        <p class="max-w-prose text-ink-2">Each text includes the business's name. Until it's set, texts say "it's us" and the texting box stays off your forms.</p>
         <a href={opts.businessHref} class={primaryClass + " mt-3 inline-block no-underline"}>Set the name</a>
       </section>
     ) : null;
@@ -399,7 +399,7 @@ function Registration({ base, n, settings, business, optIn, box, businessHref }:
     <section id="texting" class="rounded-card border border-line bg-surface p-4 shadow-card">
       <h2 class="mb-1 text-base/7 font-semibold text-ink">4. Texting</h2>
       <p class={smallText + " mb-3 max-w-prose text-ink-2"}>
-        {n.texting === "approved" ? "Your number can text." : <>US carriers block business texts until the number is registered. Calls work now. You register in Twilio's Console, at <a href="https://console.twilio.com" target="_blank" rel="noopener" class={linkClass}>console.twilio.com</a>, with the words below; this page follows each step, checking every hour.</>}
+        {n.texting === "approved" ? "Your number can text." : <>US carriers block business texts until the number is registered. Calls work now. You register in Twilio's Console, at <a href="https://console.twilio.com" target="_blank" rel="noopener" class={linkClass}>console.twilio.com</a>, with the words below. Each step's status is checked with Twilio every hour.</>}
       </p>
       {n.texting !== "approved" ? (
         <div class="mb-4 space-y-2 rounded-control bg-panel p-3">

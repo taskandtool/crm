@@ -77,7 +77,7 @@ await quotesCli(process.argv.slice(2), {
     warning: (db, qt) => sampleWarning(db, qt.id),
   },
   more: {
-    help: `  proposal <id>                        its components (ticked or not), title and what its yes sends
+    help: `  proposal <id>                        its components (ticked or not), title and what accepting it sends
   proposal <id> [--components ${pickable.split(",").slice(0, 3).join(",")},...] [--title "..."]
                                        ticks exactly the components named; the page is made again
   The components: ${pickable}. Pricing and the sign-off are on every one, a plain quote;

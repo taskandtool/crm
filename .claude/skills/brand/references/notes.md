@@ -54,8 +54,8 @@ plain paths from the app root.
 ## Typed frontmatter
 
 Apps read these fields as data (a website renders its footer, contact
-section and JSON-LD from them), so the atomic facts live in frontmatter and
-the prose lives in the body. Leave a field empty rather than guess.
+section and JSON-LD from them), so the atomic facts go in frontmatter and
+the prose in the body. Leave a field empty rather than guess.
 
 ```yaml
 # public/business.md                    type: business

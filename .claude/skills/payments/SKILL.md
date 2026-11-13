@@ -55,7 +55,7 @@ payment (money)                   payments  payments
   - **A standing link** (a bio, a flyer): a one-page form with a `payment`
     step, at `/forms/<key>/start`; each click opens a fresh Checkout.
 - **Not Stripe Payment Links:** their payments name nothing here. One the
-  owner already made can sit on a page; tell them its payments will not
+  owner already made can go on a page; tell them its payments will not
   show beside a form.
 - **Every app that takes payments has its own webhook.** The Website and
   the CRM never know of each other, so each mounts `stripeWebhook` and gets

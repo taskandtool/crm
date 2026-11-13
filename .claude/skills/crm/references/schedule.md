@@ -36,9 +36,9 @@ where and who does it: add the people first, then the services.
 
 **Messages.** An online booker gets a confirmation, and the reminder job
 reminds them a day and an hour before (only for a booking of a service,
-with someone taking it, to someone with an email). A move or a cancel
-tells them too, from wherever it is made: the event's page or
-`events.mjs` (which says whether they were told). They need the owner's
+with someone taking it, to someone with an email). They are also told
+when someone moves or cancels the event on its page or with `events.mjs`
+(which says whether they were told). They need the owner's
 Resend or Postmark, since Task & Tool email reaches only the team; with
 no sender nothing is sent. The sender and the reminders job to schedule
 once: the `booking` skill's `references/messages.md`. Texts are the

@@ -8,7 +8,7 @@ const PHOTO = photo("");
 const TITLE = "About us";
 const WORDS = [
   "Sample words: two or three sentences about the business, how long it has done this work, who it works for and what it promises.",
-  "The AI writes them from your website, in your own voice, and keeps every fact to what a source says.",
+  "The AI writes them from your website in your own voice, with facts only from your sources.",
 ];
 // Stated figures only, each from a source: years in business, jobs done, a rating with its count.
 const FIGURES = [

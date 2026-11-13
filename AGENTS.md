@@ -6,8 +6,8 @@ contacts keyed by email, deals on a board of stages, tasks, notes of every
 call, a bell for what customers did themselves, and a schedule of events (an
 appointment, a job, a visit: one record each, booked online or added by the team). It runs in **dev** on this machine
 and in **production** on Cloudflare once deployed. This
-repository *is* the app: the code at the root, the skill that knows how to
-work on it in `.claude/skills/crm/`, and `.taskandtool/setup.sh` for what
+repository *is* the app: the code at the root, the skill for working on it
+in `.claude/skills/crm/`, and `.taskandtool/setup.sh` for what
 the machine needs (dependencies, the `web` service). All of it is the
 owner's to change.
 
@@ -92,7 +92,7 @@ node scripts/migrate.mjs                        # every schema file applied, sta
 ## The loop
 
 - `npm run dev` is what the `web` service runs: Tailwind rebuilds the CSS
-  and the server restarts on every change, so an edit is in dev on refresh.
+  and the server restarts on every change. Refresh to see an edit in dev.
   If the service is not running, re-run `bash ~/app/.taskandtool/setup.sh`
   (it is safe to run again).
 - To look from the machine:

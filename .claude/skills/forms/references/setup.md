@@ -27,7 +27,7 @@ there, make the form with `node scripts/forms.mjs save`, then do steps 4 and 6.
    it), and add its nav link to `site.nav` by hand.
 5. Mount `formsAdmin(getDb, { base: "/admin/submissions", css, timeZone, links: { booking: (id) => `/admin/schedule/${id}`, payment: (id) => `/admin/payments/${id}` } })`
    at `/admin/submissions` (see the `admin` skill for where private views
-   live), and apply the `customers` skill's `schema.sql` with the forms one:
+   go), and apply the `customers` skill's `schema.sql` with the forms one:
    a submission shows the person's notes.
 6. Set up telling the owner ("Telling the owner", below) or say there is no sender, then post a
    test submission in dev and find it in `/admin/submissions`.

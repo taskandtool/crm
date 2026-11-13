@@ -466,7 +466,7 @@ async function act(db: Db, r: Recurring, invoice: Invoice, deps: RunDeps, late: 
   const name = invoiceOf(r.name ?? r.email, r.unit, invoice.period_on ?? r.next_on);
   const task = async (title: string, due_on = deps.today) => deps.task?.(r, { title: title.slice(0, 300), due_on });
   if (late) {
-    await task(`${name} was made ${daysBetween(invoice.period_on!, deps.today)} days late, so it waits as a draft. Check it and send it.`);
+    await task(`${name} was made ${daysBetween(invoice.period_on!, deps.today)} days late and is left as a draft. Check it and send it.`);
     return { recurring: r, invoice, outcome: "draft" };
   }
   if (r.mode === "draft") {

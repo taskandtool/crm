@@ -1,5 +1,5 @@
 {
-  "business": "A two-dentist family practice: new patient enquiries, first visits and recalls. Clinical notes live in the practice software, not here.",
+  "business": "A two-dentist family practice: new patient enquiries, first visits and recalls. Clinical notes are kept in the practice software, not here.",
   "vocabulary": { "one": "Patient", "many": "Patients" },
   "statuses": [
     { "key": "enquiry", "label": "Enquiry", "kind": "open" },

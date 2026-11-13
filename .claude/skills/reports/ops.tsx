@@ -86,7 +86,7 @@ export async function loadOps(db: Db, opts: { period: Period; grain: Grain; zone
 }
 
 const STEP: Record<string, string> = { lead: "Leads", booked: "Booked", showed: "Showed", paid: "Paid" };
-const missing = (what: string, app: string) => `This project has no ${what} yet, so there is nothing to show here. It fills in once ${app} is set up.`;
+const missing = (what: string, app: string) => `This project has no ${what} yet. They show here once ${app} is set up.`;
 
 export function OpsReport(props: { data: OpsData; locale?: string }) {
   const { data, locale = "en-US" } = props;

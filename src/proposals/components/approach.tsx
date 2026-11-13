@@ -6,7 +6,7 @@ import type { ProposalComponent } from "./types";
 const STEPS = [
   { when: "Before you sign", title: "We look first", text: "Sample words: what happens at the first visit, before the price is final." },
   { when: "A week before", title: "You approve the plan", text: "When the work is booked, and what they need to do before it." },
-  { when: "On the day", title: "We do the work", text: "We come on the day we said and keep the site clean. We tell you about anything we find." },
+  { when: "On the day", title: "We do the work", text: "Who comes, when they arrive and what they do on the day." },
   { when: "When it is done", title: "We walk you through it", text: "A walkthrough at the end, and the warranty registered in your name." },
 ];
 

@@ -52,9 +52,10 @@ and read the desktop images it names.
 Copy link (`send <id> --link --confirm`). The customer opens it signed out,
 types their name to accept, or declines with a reason. It stays editable
 until then; the link always shows the current page, and a page changed
-while they read is refused at Accept. Their yes sends the invoices the
-owner attached to the quote through Stripe, with Pay now on their copy, and
-starts its recurring ones; a no discards them. The owner writes those
+while they read is refused at Accept. When they accept, the invoices the
+owner attached to the quote go out through Stripe with Pay now on their
+copy. The quote's recurring invoices start too. When they decline, those invoices are
+discarded. The owner writes those
 invoices like any other (a deposit, all of it, anything):
 `invoices.mjs add <who> --quote <id>` (the quote's lines unless `--line`
 says otherwise), or New invoice on the quote's page, whose Repeats makes a

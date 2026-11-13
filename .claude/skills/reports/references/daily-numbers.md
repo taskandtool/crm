@@ -1,6 +1,6 @@
 # Daily numbers from other systems
 
-For an app with `scripts/reports.mjs` (the CRM, Lander). The lead report reads our Postgres only. Numbers that live elsewhere come in
+For an app with `scripts/reports.mjs` (the CRM, Lander). The lead report reads our Postgres only. Numbers kept in other systems come in
 through a scheduled job you write for this client, using their connection.
 Never read those systems from a page.
 

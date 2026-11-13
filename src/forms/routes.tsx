@@ -339,7 +339,7 @@ export function formRoutes(getDb: GetDb, opts: FormRoutesOptions) {
 
   async function notWired(c: Context, form: Form, kind: "booking" | "payment") {
     console.error(`forms: ${form.key} has a ${kind} step, but formRoutes was given no steps.${kind} (the ${kind === "booking" ? "booking" : "payments"} skill's ${kind}Step)`);
-    const body = <div><h1 class="text-title font-semibold">This form is not ready yet</h1><p class="mt-4">Its next step cannot run here yet. Nothing you sent is lost.</p></div>;
+    const body = <div><h1 class="text-title font-semibold">This form is not ready yet</h1><p class="mt-4">Its next step cannot run here yet. Your answers are saved.</p></div>;
     return c.html(await opts.page(c, form.title, body), 500);
   }
 

@@ -180,7 +180,7 @@ export async function pageFor(db: Db, quoteId: string, opts: ProposalOpts): Prom
 export async function storePage(db: Db, quoteId: string, opts: ProposalOpts): Promise<{ ok: true; sha: string } | { ok: false; why: string }> {
   const page = await pageFor(db, quoteId, opts);
   if (!page) return { ok: false, why: "No such quote." };
-  if (page.bytes > MAX_PAGE_BYTES) return { ok: false, why: `The page would be ${(page.bytes / 1048576).toFixed(1)} MB, over 9 MB: its components carry too many photographs.` };
+  if (page.bytes > MAX_PAGE_BYTES) return { ok: false, why: `The page would be ${(page.bytes / 1048576).toFixed(1)} MB, over 9 MB: there are too many photographs in its components.` };
   const [, rows] = await db.transaction([
     q`select status from quotes where id = ${quoteId}::bigint for update`,
     q`update quote_proposals p set page_html = ${page.html}, page_sha256 = ${page.sha}, rendered_at = now()

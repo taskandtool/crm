@@ -8,10 +8,10 @@ description: "The private side of an app: lists of what came in (submissions, bo
 Private views over the project's tables: the CRM's starting surface and the
 Website's `/admin`. The other skills build their own lists on these pieces.
 
-## Where private views live
+## Where private views go
 
-Private views sit under one prefix (`/admin`, `/reports`) and are private by
-default, with two locks:
+Put private views under one prefix (`/admin`, `/reports`). They are private
+by default, with two locks:
 
 1. **Task & Tool decides who reaches the path:** only people placed on
    the app, in dev and in production until a person makes it public.

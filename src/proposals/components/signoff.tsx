@@ -58,7 +58,7 @@ export function Accept({ s, word }: { s: AcceptState; word: string }) {
     <div>
       <h2 class="mb-10 font-display text-section">Ready to go ahead?</h2>
       {open && s.problem ? <p role="alert" class="mb-6 rounded-box border border-line-strong bg-panel p-4 text-body">{s.problem}</p> : null}
-      {!open ? <p class="mb-6 rounded-box bg-panel p-4 text-small text-muted">A preview: on the customer's page this form signs it.</p> : null}
+      {!open ? <p class="mb-6 rounded-box bg-panel p-4 text-small text-muted">A preview. The customer signs here on their page.</p> : null}
       <form method="post" action={open ? s.action : undefined} class="flex flex-col gap-6 rounded-box border border-line bg-canvas p-8 sm:p-10">
         {open ? <input type="hidden" name="page" value={s.sha} /> : null}
         <label class="block text-small font-semibold">

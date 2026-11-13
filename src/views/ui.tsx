@@ -325,7 +325,7 @@ export const MESSAGES: FlashMessages = {
   cancelled: `${eventWord} cancelled.`,
   unchanged: { error: `Nothing changed. A cancelled ${eventWord.toLowerCase()} stays cancelled, and one is marked completed or no-show only once it has started.` },
   added: `${vocab.one} added.`,
-  exists: `That ${one} is already here, so their record opened.`,
+  exists: `That ${one} is already here. This is their record.`,
   saved: "Saved.",
   invalid: { error: "Saved, except values that were not a valid number, date, time, amount, option or email." },
   stage: "Status changed.",

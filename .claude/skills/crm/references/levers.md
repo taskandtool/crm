@@ -31,9 +31,9 @@ Everything a business wants changed is one of these.
      the filter splits them.
    - `time_zone`: an IANA name, the business's zone: automatic texts and
      their quiet hours, the digest, recurring invoices, dates a script
-     reads. It ships as `UTC`, so setting it is part of shaping. Screens show
+     reads. It ships as `UTC`; set it when shaping. Screens show
      each person their own browser's zone, and fall back to this one. The
-     machine's clock never decides.
+     machine's clock is never used.
    - `events`: what one event on the schedule is called (`{ "one":
      "Event", "many": "Events" }`; a trade's "Job", a practice's
      "Appointment"), its own custom `fields` (same shape as lever 3), and
@@ -107,8 +107,8 @@ The code keeps these; never redo them by hand:
 - A deal with a blank value shows the latest quote made for it
   (`quotes.mjs add --deal <id>`, or New quote on the deal's page). Accepting
   that quote wins the deal, whether on the page, by script or by paying online.
-- A done task goes on the timeline as a note of its kind, so a done
-  call counts as contact; so does a quote or an invoice that went out.
+- A done task goes on the timeline as a note of its kind. A done call
+  counts as contact, and so does a quote or an invoice that went out.
   "Nothing planned" (the Contacts filter, `tasks.mjs list --none`) is
   everyone with an open status or an open deal and no open task or
   scheduled event.

@@ -21,16 +21,16 @@ export function BusinessPage(p: { user: string; business: Business; values?: Rec
       <Flash code={p.flash} messages={SAVED} />
       {p.error ? <p role="alert" class={"mb-4 " + alertClass}>{p.error.why}</p> : null}
       <form method="post" action="/business" class="grid max-w-lg gap-4">
-        <Field label="Business name" hint={`What customers know you as, up to ${NAME_MAX} letters. Every text names it.`}>
+        <Field label="Business name" hint={`What customers know you as, up to ${NAME_MAX} letters. It goes in every text.`}>
           <input name="name" value={v.name} required maxlength={NAME_MAX} autocomplete="organization" class={controlClass} aria-invalid={p.error?.field === "name" ? "true" : undefined} />
         </Field>
-        <Field label="Privacy policy page" hint="Carriers want it named before your number can text. The texting box links it.">
+        <Field label="Privacy policy page" hint="Carriers ask for it before you can text from your number. The texting box links it.">
           <input name="privacy_url" type="url" value={v.privacy_url} placeholder="https://" class={controlClass} aria-invalid={p.error?.field === "privacyUrl" ? "true" : undefined} />
         </Field>
         <Field label="Terms page" hint="If you have one. The texting box links it too.">
           <input name="terms_url" type="url" value={v.terms_url} placeholder="https://" class={controlClass} aria-invalid={p.error?.field === "termsUrl" ? "true" : undefined} />
         </Field>
-        <Field label="Postal address" hint="If you have one to give. The follow-up emails that ask for a booking or a review end with it, as US law asks.">
+        <Field label="Postal address" hint="If you have one to give. US law requires it in follow-up emails that ask for a booking or a review.">
           <input name="address" value={v.address} maxlength={ADDRESS_MAX} autocomplete="street-address" placeholder="12 Main St, Austin, TX 78701" class={controlClass} aria-invalid={p.error?.field === "address" ? "true" : undefined} />
         </Field>
         <div><button class={primaryClass}>Save</button></div>
@@ -39,7 +39,7 @@ export function BusinessPage(p: { user: string; business: Business; values?: Rec
       <section class="mt-8 max-w-prose">
         <h2 class="mb-2 text-heading font-semibold text-ink">Time zone</h2>
         <p>{zoneName(timeZone)}</p>
-        <p class="mt-1 text-label text-ink-3">Automatic texts and recurring invoices run on it. Screens show each person their own time.</p>
+        <p class="mt-1 text-label text-ink-3">Automatic texts and recurring invoices use this time zone. Screens show each person their own time.</p>
         <AskAi class="mt-2" ask="Set our time zone to " />
       </section>
 

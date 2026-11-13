@@ -50,7 +50,7 @@ Change a business's report by choosing and arranging them, or adding a component
 lead's status from another system come from a daily job:
 `references/daily-numbers.md`.
 
-## Where reports live
+## Where reports go
 
 - **Under `/reports`, behind `teamOnly()`**, in `AdminLayout` with
   `head={<ChartScripts src="/reports.js" />}`. Copy `client.js` to where the

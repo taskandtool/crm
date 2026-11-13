@@ -292,7 +292,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
   const emailReady = (c: Ctx) => !!opts.send || emailsCustomers(envOf(c));
   const needStripe = (
     <SetupNeeded title="Connect Stripe to send invoices" ask="Connect my Stripe account so I can send invoices.">
-      Invoices are made in your Stripe account, which emails them with a Pay button and tells this app when they are paid.
+      Invoices are made in your Stripe account. Stripe emails them with a Pay button and tells this app when they are paid.
       Make sure Stripe is connected to this app in Task & Tool, on the app's Connections tab. You can write drafts now; sending waits for Stripe.
     </SetupNeeded>
   );
@@ -1155,7 +1155,7 @@ export function invoicesAdmin(getDb: GetDb, opts: InvoicesAdminOptions) {
         <Section title="The payment" class="max-w-2xl">
           <p class="mb-4 max-w-prose text-ink-2">
             {money(left, inv.currency)} is still owed of {money(inv.total_cents, inv.currency)}. Stripe keeps the payment on the invoice; no card is charged.
-            Part of it leaves the rest owed on their payment page.
+            If you record part of it, the rest stays owed on their payment page.
           </p>
           <form method="post" action={`${self}/payment`} class="grid gap-3 sm:grid-cols-2">
             <input type="hidden" name="key" value={v.key} />
