@@ -42,7 +42,7 @@ export function wordsOf(html: string, quoteWords: string[]): string {
     .join("\n");
 }
 
-type Finding = { rule: string; match: string; fix: string; severity: string; section?: number; sections?: [number, number] };
+type Finding = { rule: string; match: string; fix: string; severity: string; section?: number };
 
 const quoteWords = [view.quote.notes!, view.quote.terms!.replace(/^- /, ""), view.business, view.title];
 const drawn = COMPONENTS.filter((c) => !c.always).map((c) => ({ c, html: String(c.render(view) ?? "") })).filter((x) => x.html);
@@ -53,7 +53,7 @@ const sections = drawn.map(({ html }) => ({
 const file = (i: number) => `src/proposals/components/${drawn[i].c.key}.tsx`;
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   for (const f of check(sections, { kind: "page" }) as Finding[]) {
-    const where = f.section !== undefined ? file(f.section) : f.sections ? `${file(f.sections[1])} (and ${file(f.sections[0])})` : "the components";
+    const where = f.section !== undefined ? file(f.section) : "the components";
     const line = `${where}: ${f.rule} "${f.match.slice(0, 60)}": ${f.fix}`;
     if (f.severity === "error") console.log(line);
     else console.error(`hint: ${line}`);

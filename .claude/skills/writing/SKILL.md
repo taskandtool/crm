@@ -63,7 +63,7 @@ The tells to avoid, and the check that names them: the `tropes` skill.
 
 A page:
 
-Draft: "Experience seamless boiler care with our dedicated team of experts. It's not just a service, it's peace of mind." <!-- tropes-allow -->
+Draft: "Warm homes, sorted. Boiler problems don't wait for business hours, and neither do we. There's no call centre, just a small local team." <!-- tropes-allow -->
 
 Rewrite: "The engineer who fitted your boiler services it. Same two of us
 since 2004, from Headingley to Horsforth. Book your service before the
@@ -71,7 +71,7 @@ first cold week."
 
 An article answering "How often should a boiler be serviced?":
 
-Draft: "In today's busy world, it's easy to forget about your boiler. But regular servicing plays a crucial role in keeping your home warm, safe and efficient. Let's dive in." <!-- tropes-allow -->
+Draft: "Winter has a way of finding the one thing you forgot. A yearly service keeps your boiler safe and efficient, so a cold snap never takes you by surprise." <!-- tropes-allow -->
 
 Rewrite: "Once a year, ideally in early autumn before the heating goes on.
 Most manufacturers ask for a yearly service to keep the warranty valid.

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { check, findings, repeated, scan, sectionsOf, series, wordsOf } from "../tropes.mjs";
+import { check, findings, scan, sectionsOf, series, wordsOf } from "../tropes.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,15 +15,6 @@ test("clean copy passes", () => {
   assert.deepEqual(rules("Book a survey this week: we measure, quote and fit within ten days."), []);
 });
 
-test("a heading of fragments joined by a colon or a comma; a list's commas, numbers and times are fine", () => {
-  for (const h of ["Fall cleanup in Larkfield, from $90.", "Fall cleanup in Larkfield,from $90.", "What we do, and what it costs", "Garden design: a plan in a week, planted in spring.", "Spring planting, Elm Street", "Send a proposal that wins the job, or just an invoice."]) {
-    assert.ok(rules("A line under it.", { heading: h }).includes("joined-heading"), h);
-  }
-  for (const h of ["Fall cleanup in Larkfield starts at $90.", "Forms, bookings and payments on the site.", "If a client leaves, you can give them the code.", "Garden design, lawn, hedge and seasonal care", "1,412 visitors in October", "Open from 8:00 AM"]) {
-    assert.ok(!rules("A line under it.", { heading: h }).includes("joined-heading"), h);
-  }
-});
-
 test("negation pivot", () => {
   assert.ok(rules("It's not just a roof, it's peace of mind.").includes("negation-pivot"));
   assert.ok(rules("Our roofers are licensed, not cheap.").includes("negation-tail"));
@@ -31,10 +22,8 @@ test("negation pivot", () => {
   assert.ok(rules("Don't just fix it, fix it for good.").includes("negation-pivot"));
 });
 
-test("refused phrases and the em dash", () => {
-  const r = rules("Say goodbye to leaks — elevate your home.");
-  assert.ok(r.includes("refused-phrase"));
-  assert.ok(r.includes("em-dash"));
+test("the em dash", () => {
+  assert.ok(rules("We fit boilers — and service them.").includes("em-dash"));
 });
 
 test("a promise of fit that names nothing", () => {
@@ -58,10 +47,6 @@ test("a promise of fit that names nothing", () => {
   ]) assert.ok(!rules(s).includes("vague-fit"), s);
 });
 
-test("an -ing rider", () => {
-  assert.ok(rules("We rebuilt the porch in May, ensuring years of shelter.").includes("ing-rider"));
-});
-
 test("a 'with' rider bolted onto a finished sentence", () => {
   assert.ok(rules("Your site runs on our servers, with its SEO and design done for you.").includes("with-rider"));
   assert.ok(!rules("Fall cleanup with leaf removal starts at $90.").includes("with-rider"));
@@ -81,7 +66,7 @@ test("today's models' figures of speech, and the literal uses that pass", () => 
 
 test("the claudisms people rarely write, and the plain sentences that share their words", () => {
   for (const s of ["I keep coming back to one question.", "It all turns on trust.", "Here's where I landed.", "That's the throughline.",
-    "This paves the way for growth.", "It underscores the importance of follow-up.", "Let's explore the options."]) {
+  ]) {
     assert.ok(rules(s).includes("model-tell"), s);
   }
   for (const s of ["Customers keep coming back to us every spring.", "The heating turns on at 6 AM.", "North Star Plumbing fits boilers.",
@@ -121,20 +106,6 @@ test("text a line at a time: today's tells only", () => {
   assert.deepEqual(app("New requests land here.\nSaved — reload to see it."), ["model-tell", "em-dash"]);
 });
 
-test("a long heading is a hint; the line under it may run long", () => {
-  const lede = "Your site loads fast and stays up while the AI checks it every Monday for broken links and slow images and then fixes whatever it found as soon as you ask it to.";
-  const found = check([{ heading: "A website you change by asking that the AI checks every single week for you", body: `${lede}\nStart your site` }]);
-  assert.deepEqual(found.filter((f) => f.rule.startsWith("long-")).map((f) => [f.rule, f.severity]), [["long-heading", "hint"]]);
-});
-
-test("a rhetorical question, then its answer", () => {
-  assert.ok(rules("Tired of leaks? We fix them fast.").includes("rhetorical-question"));
-  assert.ok(rules("Looking for a plumber in Leeds? Look no further.").includes("rhetorical-question"));
-  for (const hook of ["Radiators cold at the top? That's not the boiler.", "£180 repair or £2,400 boiler? Here's how I decide."]) {
-    assert.ok(!rules(hook, { kind: "ad" }).includes("rhetorical-question"), hook);
-  }
-});
-
 test("one triad is allowed, two are not", () => {
   assert.deepEqual(rules("We measure, quote and fit."), []);
   assert.ok(rules("Fast. Simple. Effective. Roofs, gutters, and skylights.").includes("triads"));
@@ -165,11 +136,6 @@ test("triads are counted per section, so a list of parts does not trip them", ()
   assert.ok(!check(sections).some((f) => f.rule === "triads"));
 });
 
-test("dated vocabulary counts by density, not one word", () => {
-  assert.ok(!rules("A meticulous fitter, booked a week ahead.").includes("dated-vocabulary"));
-  assert.ok(rules("We delve into intricate, meticulous work.").includes("dated-vocabulary"));
-});
-
 test("'X, not Y' is an error in a heading or with 'not just', a hint in a sentence, and left alone a line at a time", () => {
   const level = (t, rule, kind) => findings(t, { kind }).find((f) => f.rule === rule)?.severity;
   const heading = (t) => check([{ heading: t, body: "Booking opens at 9 AM." }]).find((f) => f.rule === "negation-tail")?.severity;
@@ -180,43 +146,13 @@ test("'X, not Y' is an error in a heading or with 'not just', a hint in a senten
   assert.equal(level("Reply to the topic, not any specific post", "negation-tail", "text"), undefined);
 });
 
-test("talking about itself: an error in an ad, a hint on a page", () => {
-  const text = "We built our firm on our name. We are here for you.";
-  assert.equal(findings(text, { kind: "ad" }).find((f) => f.rule === "we-over-you").severity, "error");
-  assert.equal(findings(text).find((f) => f.rule === "we-over-you").severity, "hint");
-});
-
 test("personal attributes only in ads", () => {
   assert.ok(rules("Struggling with debt?", { kind: "ad" }).includes("personal-attribute"));
   assert.ok(!rules("Struggling with debt?", { kind: "post" }).includes("personal-attribute"));
 });
 
-test("weak calls to action are a hint; Get started and Sign up are fine", () => {
-  for (const label of ["Learn more", "Submit", "Click here"]) {
-    assert.deepEqual(findings(label).map((f) => [f.rule, f.severity]), [["weak-cta", "hint"]], label);
-  }
-  for (const label of ["Get started", "Sign up", "Book a service"]) assert.deepEqual(rules(label), [], label);
-  assert.deepEqual(rules("Submit your meter reading by Friday and we credit it the same day."), []);
-});
-test("a line that only restates its heading", () => {
-  assert.ok(rules("We do fast boiler repairs across Leeds.", { heading: "Fast boiler repairs in Leeds" }).includes("restates-heading"));
-  assert.ok(!rules("Same-day visits from Headingley to Horsforth, £85 for the first hour.", { heading: "Fast boiler repairs in Leeds" }).includes("restates-heading"));
-});
-
 test("tells in a heading count too", () => {
-  assert.ok(rules("Fitted in three days.", { heading: "Roofing, reimagined" }).includes("refused-phrase"));
-});
-
-test("the same four-word phrase on two sections", () => {
-  const found = repeated([
-    { heading: "Boilers", body: "Same two engineers since 2004 fit every boiler." },
-    { heading: "Prices", body: "Fixed prices, and the same two engineers since 2004." },
-    { heading: "Area", body: "Leeds and Bradford." },
-  ]);
-  assert.equal(found.length, 1);
-  assert.equal(found[0].match, "same two engineers since 2004");
-  assert.deepEqual(found[0].sections, [0, 1]);
-  assert.deepEqual(repeated([{ body: "one of the best in the city" }, { body: "one of the best in town" }]), []);
+  assert.ok(rules("Fitted in three days.", { heading: "Your quote lands in a day" }).includes("model-tell"));
 });
 
 test("markdown splits into sections at its headings, past the frontmatter", () => {
@@ -226,9 +162,9 @@ test("markdown splits into sections at its headings, past the frontmatter", () =
 
 test("the command: --json, exit codes, --help", () => {
   const run = (input, ...args) => spawnSync(process.execPath, [CLI, ...args, "-"], { input, encoding: "utf8" });
-  const bad = run("Say goodbye to leaks.", "--json");
+  const bad = run("Your quote lands in a day.", "--json");
   assert.equal(bad.status, 1);
-  assert.equal(JSON.parse(bad.stdout)[0].rule, "refused-phrase");
+  assert.equal(JSON.parse(bad.stdout)[0].rule, "model-tell");
   assert.equal(run("A trusted firm.").status, 0);
   assert.equal(run("Fitted in three days.").stdout.trim(), "tropes: clean");
   for (const h of ["--help", "-h"]) assert.match(spawnSync(process.execPath, [CLI, h], { encoding: "utf8" }).stdout, /--kind/);
@@ -241,7 +177,7 @@ test("the command: --json, exit codes, --help", () => {
 });
 
 test("the command: the count first, errors before hints, the first 40 and how to see the rest", () => {
-  const many = Array.from({ length: 60 }, (_, i) => `# Part ${i}\nOur seamless service number ${i} ran fine in May.`).join("\n");
+  const many = Array.from({ length: 60 }, (_, i) => `# Part ${i}\nThe report for job ${i} lands in May.`).join("\n");
   const r = spawnSync(process.execPath, [CLI, "-"], { input: many, encoding: "utf8" });
   assert.equal(r.status, 1);
   const lines = r.stdout.trim().split("\n");
@@ -284,7 +220,7 @@ test("the skills around this one carry no tells of their own", () => {
 });
 
 test("a business's plain sentences pass, and the tells in curly quotes are caught", () => {
-  const errors = (s) => findings(s).filter((f) => f.severity === "error" && !["weak-cta", "we-over-you"].includes(f.rule)).map((f) => f.rule);
+  const errors = (s) => findings(s).filter((f) => f.severity === "error").map((f) => f.rule);
   for (const s of ["If it isn't working, it's probably the battery.", "If this isn't your first visit, it's quicker to sign in.",
     "Cash only, not cards.", "Our ferry lands at the pier at 9.", "Fresh fish, landed this morning in Newlyn.",
     "Your flight will land at Heathrow.", "She landed a big contract.", "We disinfect surfaces every visit.",
@@ -353,3 +289,9 @@ test("'once' as a promise of no effort is an error; a literal once is not", () =
   }
 });
 
+
+test("today's other shapes: 'no X, just Y' and how they actually run; 'at once' is literal", () => {
+  assert.ok(rules("There's no lecture, just good care.").includes("negation-pivot"));
+  assert.ok(rules("Built for how restaurants actually run").includes("vague-fit"));
+  assert.ok(!rules("Do both at once:").includes("effort-once"));
+});
