@@ -6,6 +6,8 @@ board, and quotes your customers sign and pay online.
 
 [![Deploy on Task & Tool](https://taskandtool.com/images/deploy-button.svg)](https://taskandtool.com/accounts/register?starter_app=crm)
 
+![Nora's Home in Northline Gardens' CRM, with a signed backyard proposal over it](https://taskandtool.com/images/starter-apps/crm.webp)
+
 It's made to run on Task & Tool. There, each app has its own computer for
 your AI agent. The project has a Postgres database. The agent uses the
 skills and scripts in this repo to add contacts, move deals, write proposals
@@ -17,6 +19,8 @@ and Tailwind.
 Click the button above, or pick CRM when you create an app on [Task &
 Tool](https://taskandtool.com/starter-apps/crm). Then ask the agent to set
 up the CRM for your business.
+
+See it in use on the [CRM page](https://taskandtool.com/starter-apps/crm).
 
 ## Features
 
@@ -37,6 +41,8 @@ them are the newest leads, today's schedule, your tasks due and the deals
 closing this month. Under the bell you see what customers did on their own:
 a booker who moved or cancelled, a proposal signed or declined, a payment.
 
+![Northline Gardens' Home in the CRM: six new leads in 7 days, four tasks due, $25,960 in open deals, $10,657 won this month and $1,560 owed](https://taskandtool.com/images/marketing/northline-gardens-crm-home.webp)
+
 ### Someone who gets in touch twice has one record
 
 They are matched by email, or by phone when there's no email. A contact's
@@ -55,6 +61,11 @@ Letter, About us, How we'll do it, Full-width photo, Our work, Our team,
 Reviews, Clients, Questions and Terms.
 
 Every proposal has the price, tax and total.
+
+<p>
+  <img src="https://taskandtool.com/images/marketing/northline-gardens-crm-proposal-cover.webp" width="300" alt="The cover of a backyard redesign proposal for Grace Okafor, over a photo of her garden">
+  <img src="https://taskandtool.com/images/marketing/northline-gardens-crm-proposal-signed.webp" width="300" alt="The signed proposal: Grace Okafor signed on October 9, and invoice HDTLW5D9-0001 for $2,580.00 is paid">
+</p>
 
 ### Customers sign quotes online and pay by card through your Stripe account
 
@@ -77,6 +88,8 @@ book, and everyone's hours and time off. Anyone on the team can connect a
 Google or Microsoft calendar. The agent schedules a sync every 15 minutes.
 Your bookings appear on that calendar. Times marked busy there can't be
 booked.
+
+![The day's schedule by person: Ana Silva's lawn care and fall cleanup, Marco Ferrara's patio laying and Nora Quinn's garden visit](https://taskandtool.com/images/marketing/northline-gardens-crm-schedule.webp)
 
 ### Each person gets a morning email of their tasks
 
