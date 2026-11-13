@@ -1,157 +1,223 @@
 # CRM
 
+**A CRM for leads, deals, proposals and invoices that your AI agent sets up
+and runs by chat.** You get a record of everyone who got in touch, a deals
+board, and quotes your customers sign and pay online.
+
 [![Deploy on Task & Tool](https://taskandtool.com/images/deploy-button.svg)](https://taskandtool.com/accounts/register?starter_app=crm)
 
-The customer record for a small business: everyone who got in touch, in
-one place, and what happens next. Its first screen is **Home**: the
-figures (new leads this week, your tasks due, the open pipeline, what was
-won this month, what is owed), then the newest leads, today's schedule,
-your tasks due and the deals closing this month. Then the leads, each
-enquiry from a form or an online booking; the tasks; the
-deals on a board you drag between stages, the customers themselves, a
-timeline of notes and calls per customer, and a schedule of events (an
-appointment, a job, a visit): when, who, where, for how much. It works the minute it
-is installed and is shaped for the business by talking to the app's AI:
-an HVAC shop, a dental practice, a restaurant, a plumber with several
-locations and trucks, a counselor who only wants a record of who called.
+It's made to run on Task & Tool. There, each app has its own computer for
+your AI agent. The project has a Postgres database. The agent uses the
+skills and scripts in this repo to add contacts, move deals, write proposals
+and send invoices when you ask in the chat. The CRM is built with Hono, htmx
+and Tailwind.
 
-This repository *is* the app. On Task & Tool it is cloned onto the app's
-own machine, served from there, and everything in it is yours. It also
-runs anywhere with Node 20 and a Postgres.
+## Get started
 
-## What is in the box
+Click the button above, or pick CRM when you create an app on [Task &
+Tool](https://taskandtool.com/starter-apps/crm). Then ask the agent to set
+up the CRM for your business.
 
-- **Home**: the figures, each opening its list, then four short lists
-  (new leads, today, your tasks due, closing this month), each with the
-  way to the whole list. Everyone who gets in touch is saved as a contact
-  on their own, matched by email, else by phone, never by name.
-- **Notifications**: the bell beside the business's name. What happened
-  without the team doing it, newest first: a booker's own reschedule or
-  cancel, a proposal the customer signed or declined at its link, and
-  money paid. Opening the bell clears its count; what was new is in bold that
-  once. Each opens its record.
-- **Leads**: one enquiry each, as Pipedrive's leads and Jobber's
-  requests: a form fill or an online booking makes one as it comes in, and
-  New lead adds a phone call or a walk-in. Open, Converted or Archived. A
-  lead shows who, where it came from, what they said, and what they
-  already have (an open deal, a visit); on its page Convert to deal opens
-  the deal form filled in, and Archive asks why and offers Undo. A form's
-  submission follows its lead. A form or a service can make each lead a
-  deal straight away (Settings), as Pipedrive's web forms and Jobber's job
-  bookings do.
-- **Tasks**: a call, email, meeting, text or to-do due on a day, by
-  one person. Mine (the default), Everyone's or Done, overdue first, and
-  New task; the next one at the top of a customer's page and on every
-  card. Contacts' "Nothing planned" filter shows who is in play with
-  nothing planned. Done goes on the timeline. A deal made from a lead
-  gets a "Call back" for that day, and a morning email lists what is due.
-- **Deals**: one piece of work being won, for one customer, who may have
-  many. Stages you name, a value (a quote's total until one is typed),
-  an owner, an expected close; its own tasks and events (a visit to quote
-  it, the job itself); won makes them a customer, accepting a quote wins it, a
-  lost one keeps why.
-- **Contacts**, everyone the business deals with, keyed by email (a phone
-  alone is fine too), each with a status (Lead until they buy, then
-  Customer, or Not a fit), as Pipedrive and HubSpot name them; the word is
-  the `vocabulary` setting (a dentist's Patients): search by name, email, phone or
-  company, filter by status, tag and owner, export the filter as CSV,
-  archive (never delete), and merge two records of one person.
-- **A contact's page**, laid out as CRMs lay out a record: tasks,
-  one Activity timeline (notes and calls, and everything they sent,
-  paid and were quoted) with a note box on top, and their events;
-  beside it Details (details and custom fields, Edit), their deals, quotes
-  and invoices, possible duplicates; Call, Email and More (New quote, Merge,
-  Archive) at the top.
-- **Search** from any page finds contacts, leads, deals, quotes and
-  invoices, a few of each as you type, the rest on its page.
-- **Schedule**: one record per event (the config names them: Event,
-  Job, Appointment), whether a customer booked it online or the team put
-  it on the schedule. Scheduled, then completed, no-show or cancelled,
-  with who takes it, where, an amount and its own fields (which truck,
-  which room). The Calendar (a day, a week or a month, by person) and the
-  list (upcoming, overdue, past, all, exported as CSV). The public booking page is the Website's; both use
-  the same table. Turned off for a business that keeps its schedule
-  elsewhere.
-- **Settings**: the forms, the stages and statuses, Services (what
-  customers can book online, with online booking on), the Team (everyone's
-  hours, time off and Google or Outlook calendar) and tax rates.
-- **Proposals, quotes and invoices**: a quote with lines and tax, and the
-  designed components you tick by name (about us, your team, reviews, case
-  studies, a full-page photograph, questions, terms), which the AI fills
-  with your own words and photographs from your website. It goes out as a private link from your own email sender (or one
-  you copy); the customer reads a clean page, types their name to accept
-  or says why not, and you see when they opened it. Signing can make the
-  first invoice, a deposit too, and take them straight to pay. The
-  invoice is made in your Stripe account, which emails it and takes the
-  payment by card or bank on Stripe's page. Cash, a check or a transfer is
-  recorded there too (Record payment), all of it or part; the rest stays
-  owed. A customer's page shows what was quoted, what they owe now
-  and what they paid.
-- **The deals board**: a column per stage with its count and total, drag
-  between them, or a select on each card on a phone or without JavaScript.
-- **CSV import** of a customer list, matched by email then phone
-  so nobody is added twice, with a dry run first.
-- **Scripts the AI runs**: find, add, edit, note, tag, merge,
-  import and export customers from chat, add and move deals, plan and
-  tick off tasks, schedule and close events, quote and invoice,
-  and read the form submissions. Sending anything to a customer, and a merge,
-  waits for your yes.
+## Features
 
-## Shaping it
+### You turn leads into deals and drag them across your stages
 
-`crm.config.json` holds the words (`Patients`, `Guests`, `Clients`), the
-statuses and deal stages seeded on the first run (and what a deal is
-called), sources, custom fields (`text`, `number`, `date`, `select`,
-`phone`, `email`, no migration needed), what the owner is called, the
-time zone, which forms count as leads, and what an event is called and
-records. `examples/` has five worked configs. Ask the AI to shape the CRM
-for your business; it reads them, asks what it cannot infer, and sets it
-up. After the first run, statuses and deal stages are rows, edited from
-Edit stages on the board. A field that deserves a real column is a line in
-`schema.sql`.
+A form fill or an online booking becomes a lead as it comes in. You add
+phone calls and walk-ins with New lead. Convert a good lead into a deal, or
+archive it with a reason. On the deals board you drag deals between the
+stages you named. A card has the deal's value and its next task. A column
+has its count and total. On a phone you press and hold a card to drag it, or
+change the stage on the deal's page.
 
-## How it runs
+### Your team sees this week's numbers on Home
 
-- **Dev, on Task & Tool:** the platform clones this repository, runs
-  `.taskandtool/setup.sh` (dependencies, CSS, the `web` service), grants
-  the project's Postgres as `DATABASE_URL`, and the CRM sets its tables up.
-  The team opens it from the app's Development link.
-- **Production, on Cloudflare:** `npm run deploy` applies the schema from
-  the machine, builds, and deploys. It stays team only: Task & Tool signs
-  your team in and tells the CRM who they are, which is the whole login.
-  Without that, every page answers 404, except Stripe's signed webhook.
-- Anywhere else: `npm install`, put `DATABASE_URL` (any Postgres) and
-  `ADMIN_DEV_USER=<your email>` in the environment, `npm run dev`, and open
-  `http://localhost:3000`. `npm run check` and `npm test` are the checks;
-  the database tests run when `TEST_DATABASE_URL` is set.
+At the top are new leads in the last 7 days against the 7 before, your tasks
+due, the open deals, what you won this month and what you're owed. Below
+them are the newest leads, today's schedule, your tasks due and the deals
+closing this month. Under the bell you see what customers did on their own:
+a booker who moved or cancelled, a proposal signed or declined, a payment.
 
-## Layout
+### Someone who gets in touch twice has one record
+
+They are matched by email, or by phone when there's no email. A contact's
+page has their tasks, a timeline of notes, calls, quotes and payments, their
+deals and their invoices. You can search contacts, leads, deals, quotes and
+invoices from any page. Filter contacts by status, tag or owner, export the
+list as CSV, and merge two records of one person. You can archive a contact.
+The CRM has no way to delete one.
+
+### The agent writes proposals from your website
+
+The agent reads your website, and your Google listing once Google Places is
+connected. Then it writes the proposal's sections in your words and with
+your photographs. You tick the ones a quote should have:
+
+| Section | What's in it |
+|---|---|
+| Cover photo | Your best photograph under the title |
+| Letter | Your message to this customer |
+| About us | The business in a photograph, a few lines and three figures |
+| How we'll do it | The four steps of the work and when each happens |
+| A full photograph | One photograph across the page |
+| Our work | Case studies: a photograph, the job and its result |
+| Our team | Portraits of the people who will do the work |
+| Reviews | Customer reviews and their star ratings |
+| Clients | Client names or logos |
+| Questions | Common customer questions and your answers |
+| Terms | The terms they agree to by signing |
+
+Every proposal has the price, tax and total.
+
+### Customers sign quotes online and pay by card through your Stripe account
+
+You email a quote as a private link through your Resend or Postmark account.
+You can also copy the link and send it yourself. The customer types their
+name to accept, or says why not. You see when they opened it. You can attach
+a deposit invoice to a quote. The customer gets it with a Pay now button
+when they sign. Stripe emails the invoice from your account and takes the
+payment. You can record a full or part payment made in cash or by check.
+Once a customer has paid by card, you can charge that saved card next time.
+You can bill a customer on the dates you set, by email or on their saved
+card.
+
+### Your team plans visits and jobs on a shared calendar
+
+The calendar has the events your team adds and the bookings customers make
+on the Website Starter App's booking page. You can view a day, a week or a
+month, for everyone or one person. Under Settings you set what customers can
+book, and everyone's hours and time off. Anyone on the team can connect a
+Google or Microsoft calendar. The agent schedules a sync every 15 minutes.
+Your bookings appear on that calendar. Times marked busy there can't be
+booked.
+
+### Each person gets a morning email of their tasks
+
+At 7:00 in the business's time zone, everyone with something due gets one
+email. It has their overdue tasks, today's tasks, their proposals a customer
+opened since yesterday, and how many leads came in. When a proposal is still
+unsigned after 3 days, whoever made it gets a follow-up task.
+
+### You can add a business phone number from Twilio
+
+You connect your Twilio account and choose a business number. Calls to that
+number ring your phone. Anyone whose call you miss can get a text back. Your
+team can text customers from the CRM. You can switch on and reword seven
+automatic texts. Two of them are a booking confirmation and a reminder.
+Texts start once Twilio approves your US texting registration. Calls work
+from the first day.
+
+### The agent imports your contacts from a spreadsheet
+
+Attach a CSV or an Excel file in the chat. The agent shows you a dry run
+first. The agent matches each row to an existing contact by email, then
+phone. For a match it fills only empty fields and adds tags. A person on
+three rows becomes one contact.
+
+### You tell the agent your stages and fields
+
+The agent reads what it already knows about the business, asks what it can't
+tell, and writes `crm.config.json`. That file holds what you call a contact
+(Patients, Guests, Clients), the statuses, the deal stages, your custom
+fields and the time zone. `examples/` has five worked setups: a two-van HVAC
+shop, a dental practice, a restaurant with events, a plumber with three
+locations and eight trucks, and a counselor.
+
+### Skills in this repo
+
+A skill is a set of instructions for one kind of work. The agent loads one
+when a task needs it:
+
+| Skill | What it does |
+|---|---|
+| `crm` | Leads, contacts, deals, tasks, the schedule, proposals and setting the CRM up |
+| `invoices` | Quotes, invoices, recurring invoices and saved cards |
+| `booking` | What customers can book, hours, reminders and calendar sync |
+| `phone` | The business number, missed-call texts and the automatic texts |
+| `forms` `payments` `reports` | Form submissions, Stripe payments and refunds, the lead report |
+| `brand` | Facts, photographs and the look of the business from its site |
+| `writing` `tropes` | Writing in the owner's voice and the check for phrases that read as AI |
+| `customers` `data` `admin` | The shared contact records, email sending, the team's lists |
+
+The agent runs scripts for common actions like adding a contact or sending
+an invoice. All of them have a `--help`. The agent sends to a customer or
+merges two contacts only when you tell it to. `npm test` runs 433 tests, 214
+of them against a Postgres database.
+
+## Why run it on Task & Tool
+
+Task & Tool is the easiest place to run it. The database the CRM needs is
+included. The agent sets up the scheduled jobs. Each app gets:
+
+- Its own computer for the agent
+- A dev address where your team uses the CRM
+- A Postgres database for contacts, deals and invoices that you can roll
+  back to an earlier point in time. The Website Starter App in the same
+  project uses this database too. A booking there is already a lead here.
+- Publishing on your own domain with a free SSL certificate. Only your team
+  can open the CRM. You decide when customers can open proposal links.
+- Connections to Stripe, Google and Microsoft calendars, Twilio and email.
+  Task & Tool holds their keys.
+- Scheduled jobs for the morning email, recurring invoices, texts, reminders
+  and calendar sync
+- Sign-in for your team. The CRM has no login of its own.
+
+## Make it your own
+
+Ask the agent for any change in the chat. To start from your own copy, fork
+this repo, change what you like, and start a new app from your fork on Task
+& Tool. You can also copy its skills from `.claude/skills/` into another
+repo.
+
+## What's in the repo
 
 ```
-crm.config.json          the levers: words, statuses, deals, sources, fields, zone, events, invoices
-schema.sql               the tables, applied at start and deploy
-src/app.tsx              the Hono app: the team-only gate, the routes
-src/crm/                 home, customers, leads, stages, deals, tasks, events, notifications, search, history, merge, import
-src/views/               home, leads, tasks, deals, customers, a customer, events, notifications, search, settings, stages
-src/booking/             a copy of the booking skill: the Schedule, Services and Team, the calendar sync job
-src/customers/           a copy of the customers skill: the customers and notes tables, the note box
-src/forms/               a copy of the forms skill: the submissions list, the form editor
-src/invoices/            a copy of the invoices skill: quotes, invoices, tax rates, Stripe
-src/proposals/           a quote as the customer's page: designed components, the link at /q, signing, opens
-src/data/  src/admin/    copies of the data and admin business skills, and what is
-src/payments/ src/reports/   used of payments and reports
-scripts/                 reports, leads, customers, deals, tasks, events, forms, quotes, invoices, stages, import, export, migrate (--help)
-styles/  static/         the tokens (proposal.css: the proposal's own); the built CSS, vendored htmx and SortableJS, crm.js
-examples/                hvac, dental, restaurant, plumbing, counselor configs
-test/                    node:test
-.claude/skills/crm/      the skill the AI reads (Claude or Codex)
-.taskandtool/setup.sh    what the CRM needs to run; idempotent
-.taskandtool/after-setup.sh  tt-crawl and its browsers, once the CRM is up
+crm.config.json   your words, statuses, deal stages, fields and time zone
+schema.sql        the CRM's tables
+src/              the app: pages, routes and the business code
+src/proposals/    the proposal page and its sections
+examples/         five worked setups for different businesses
+scripts/          what the agent runs: contacts, deals, tasks, quotes, invoices
+styles/ static/   the design tokens, the built CSS and the browser scripts
+test/             the tests
+.claude/skills/   the 13 skills
+AGENTS.md         what the agent reads first
+DESIGN.md         the design tokens explained
+.taskandtool/     setup for an install on Task & Tool
+starter-app.json  what the app needs and its chat suggestions
 ```
 
-## Stack
+## Commands
 
-Hono with server-rendered JSX, `pg` on Postgres with plain SQL, Tailwind
-v4 as tokens, htmx for the round trips, SortableJS for the deals board. No
-client framework, no ORM, no login of its own. Email goes through the owner's sender and payments
-through Stripe. MIT.
+The agent runs these on the app's computer. With Node 20 or later and a
+Postgres database, you can run the CRM on your own computer too. Run `npm
+install` and set `DATABASE_URL` to your database. Set `ADMIN_DEV_USER` to
+your email to sign in as yourself.
+
+- `npm run dev` serves the CRM on localhost:3000. It rebuilds the CSS and
+  restarts the server whenever a file changes.
+- `npm run check` runs the checks: the config and examples, the design
+  rules, the AI-tells scan and the typecheck. `npm test` runs the tests. The
+  database tests run when `TEST_DATABASE_URL` is set and skip without it.
+- `npm run deploy` applies the schema, builds the CRM and publishes it to
+  production. It works only on Task & Tool.
+
+## Third-party tools
+
+- [`tt-crawl`](https://github.com/taskandtool/crawler), our crawler, and the
+  browsers it reads sites with. The agent uses it for the proposal's words
+  and photos.
+- Pillow, for sizing photographs.
+- Schibsted Grotesk, the CRM's typeface (SIL Open Font License,
+  `static/fonts/`).
+- npm packages, MIT: `hono`, `@hono/node-server`, `pg`, `tailwindcss` +
+  `@tailwindcss/cli`, `esbuild`, `tsx`, `sortablejs`; `htmx.org` (0BSD) and
+  `typescript` (Apache-2.0).
+
+## Contributing
+
+Pull requests are welcome. The repo holds no credentials. We run a secret
+scan before each push.
+
+## License
+
+MIT. See `LICENSE`.
