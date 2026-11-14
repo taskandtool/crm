@@ -7,13 +7,13 @@ sources: []
 ---
 
 How this business sounds, stated so that anyone (the AI included) can write
-in it and be checked against it. Every writing task reads it first: web
-pages, ads, posts, emails. Fill it from the owner's own words: what they
+in it and be checked against it. Read it before writing any web page, ad,
+post or email. Fill it from the owner's own words: what they
 wrote on the old site, in emails, in chat. Lines marked *to fill* are
 placeholders, not decisions.
 
-**Quote the evidence for every line below** (a guide built on assertions
-drifts). When there is no sample yet, say so and leave the line to fill.
+**Quote the evidence for every line below.** When there is no sample yet,
+say so and leave the line to fill.
 
 ## The card
 
@@ -90,5 +90,5 @@ no exclamation marks; contractions yes."
 
 ## Sources
 
-Where the samples came from, so every line above can be checked: to fill
+Where the samples came from: to fill
 (e.g. `raw/site/theirsite.com/pages/about.md`, `raw/transcripts/2026-09-07-chat.md`).

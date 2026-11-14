@@ -6,7 +6,7 @@ status: current
 sources: []
 ---
 
-The actual people who arrive, not demographics. To fill (the brand skill).
+The actual people who buy, not demographics. To fill (the brand skill).
 
 - **Who they are:** to fill
 - **What they already know:** to fill

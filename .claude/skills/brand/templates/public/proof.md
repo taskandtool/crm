@@ -15,4 +15,4 @@ sources: []
 What others say about the business, from anywhere: reviews and ratings,
 the logos of customers, brands, suppliers, partners, memberships and
 certifications, the people they work with, the numbers they state, and
-posts about them. Words stay exactly as written; nothing is invented.
+posts about them. Copy words exactly as written and invent nothing.

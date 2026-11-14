@@ -27,24 +27,25 @@ Without invoices, the first three and Balance are enough. Ask with
 `python3 ~/tools/taskandtool.py request-connection stripe --why "take
 payments" --auth api_key` and give the owner its review link.
 
-The grant serves dev and production alike: the key never reaches the app,
-and Task & Tool adds it to each call (`stripeFrom`). For another slug:
+The grant works in dev and production alike. Task & Tool adds the key to
+each call (`stripeFrom`), and the key never reaches the app. For another slug:
 `stripeFrom(envOf(c), fetch, "stripe-eu")`.
 
 ## The webhook
 
 1. Mount it at the root of every app that takes payments:
-   `app.route("/", stripeWebhook(getDb, { afterPaid }))`, where `afterPaid`
+   `app.route("/", stripeWebhook(getDb, { afterPaid }))`. `afterPaid`
    completes a form that ends in payment (forms' `completePaidSubmission`)
-   and confirms its booking (booking's `confirm.ts` header has the lines),
-   with `more: [invoiceEvents, cardEvents]` where the invoices skill is carried. It
-   answers POST `/hooks/stripe` and reads `STRIPE_WEBHOOK_SECRET`. In a
-   team-only app, mount it before the team gate: Stripe has no sign-in, only
-   the signature.
+   and confirms its booking (booking's `confirm.ts` header has the lines).
+   Where the app carries the invoices skill, add
+   `more: [invoiceEvents, cardEvents]`. The webhook answers POST
+   `/hooks/stripe` and reads `STRIPE_WEBHOOK_SECRET`. In a team-only app,
+   mount it before the team gate: Stripe has no sign-in, only the
+   signature.
 2. Its URL. A public production site: `https://<production host>/hooks/stripe`
    (the machine stays asleep). Otherwise (team only, or not deployed):
-   `python3 ~/tools/taskandtool.py inbound-url /hooks/stripe`, which reaches
-   the machine asleep or not.
+   `python3 ~/tools/taskandtool.py inbound-url /hooks/stripe`. That URL
+   reaches the machine whether it is asleep or not.
 3. The owner adds the endpoint in Stripe, Developers, Webhooks, with these
    events: `checkout.session.completed`,
    `checkout.session.async_payment_succeeded`,
@@ -54,7 +55,7 @@ and Task & Tool adds it to each call (`stripeFrom`). For another slug:
    `invoice.payment_failed`, `invoice.voided`,
    `invoice.marked_uncollectible`, `invoice.deleted`, and for saved cards
    `payment_method.attached`, `payment_method.detached`, `customer.updated`.
-   An app without invoices registers only the first six. Never
+   Without invoices, register only the first six. Never add
    `invoice.created`: Stripe holds automatic charges for up to 72 hours
    when an endpoint does not answer it.
 4. The owner copies the endpoint's signing secret (`whsec_…`) into the form from

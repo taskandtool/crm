@@ -13,10 +13,10 @@ a proposal needs.
 - **A job with no stated result** still has its photograph, its place and
   what was done. Where two sources disagree, use the business's newest own
   page.
-- **The reply says what went in,** not what is missing, what conflicted or
-  what the owner could add.
+- **In your reply, say what went in.** Leave out what is missing, what
+  conflicted and what the owner could add.
 
 `npm run check` runs the `tropes` skill on every component's words. For the
 cold read, after `node scripts/proposal-sample.mjs`:
 `node .claude/skills/tropes/tropes.mjs --words uploads/proposal-sample/page.html`
-gives the sub-agent the page's words alone.
+prints the page's words alone; give those to the sub-agent.

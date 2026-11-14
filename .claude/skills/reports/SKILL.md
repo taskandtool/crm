@@ -1,6 +1,6 @@
 ---
 name: reports
-description: "Charts and report pages over the project's tables and the Google connection: KPI tiles, trends, funnels, the operations and SEO reports, branded from the theme, under /reports, and handed over as a PDF deliverable on a schedule. Use for any chart, dashboard or report. Not for lists of rows (admin)."
+description: "Builds charts and report pages from the project's tables and the Google connection: KPI tiles, trends, funnels, the operations and SEO reports, branded from the theme, under /reports, and handed over as a PDF deliverable on a schedule. Use for any chart, dashboard or report. Not for lists of rows (admin)."
 ---
 
 # Reports
@@ -13,13 +13,14 @@ draws them.
 
 - **Bucket in the business's zone, in SQL**: `date_trunc('week', created_at
   at time zone $zone)`. Periods are local dates and become instants only in
-  SQL (`sql.ts`); a day bucket on the fall-back day holds 25 hours and a
-  week is Monday to Sunday locally. Never bucket in JavaScript or in UTC.
-- **Quiet periods are zero**: `generate_series` fills every bucket, or the
-  chart draws a line straight over an empty week.
+  SQL (`sql.ts`). A day bucket on the fall-back day holds 25 hours, and a
+  week runs Monday to Sunday locally. Never bucket in JavaScript or in UTC.
+- **Quiet periods are zero**: fill every bucket with `generate_series`.
+  Otherwise the chart draws a straight line over an empty week.
 - **Compare equal periods**: the previous period is the same number of
   days (whole months for a month grain only), ending the day before
-  (`previousPeriod(p, grain)`). Its points line up with this period's by position.
+  (`previousPeriod(p, grain)`). Its points line up with this period's by
+  position.
 - **Ratios from totals**: CTR is total clicks over total impressions; a
   conversion rate is total conversions over total sessions. Never average
   per-row ratios (`ratioOfSums`, `weightedMean`). Show a change in a rate in
@@ -28,15 +29,15 @@ draws them.
   revenue is `revenueQuery` (net of refunds, live only, dated by when it was
   paid). Minor units through `fromMinor`, never `/ 100`.
 - **People are emails**: the funnel matches across tables on
-  `lower(email::text)` within the period, and each step narrows the one
-  before.
+  `lower(email::text)` within the period, and each step is a subset of the
+  one before.
 - **Where leads came from is the visit, not the app.** `submissions.source`
   is the app that took the form; an owner asking about sources means the
   UTM source the forms skill stored, else the referring host, else direct
   (`leadsByOriginQuery`).
 - **A table may not exist yet** (no bookings, no payments):
-  `projectTables(db)` checks `information_schema`, and the section says so
-  in a sentence instead of failing the page.
+  `projectTables(db)` checks `information_schema`. For a missing table,
+  show one sentence in that section instead of failing the page.
 - **Table and column names never come from input.** A query over another
   table is a new entry in `SOURCES` (`sql.ts`): its names are string
   literals there, values are always `$n`. Composed statements run with
@@ -44,34 +45,36 @@ draws them.
 
 ## The lead report
 
-`leads.tsx` is parts to lay out: `loadLeadReport`, then `LeadReportBody` for
+`leads.tsx` holds parts to lay out: `loadLeadReport`, then `LeadReportBody` for
 the whole page, or `LeadKpis`, `LeadTrends`, `LeadFunnel`, `LeadBreakdown`.
-Change a business's report by choosing and arranging them, or adding a component beside them. Ad cost and a
-lead's status from another system come from a daily job:
+Change a business's report by choosing and arranging them, or by adding a
+component beside them. Ad cost and a lead's status from another system
+come from a daily job:
 `references/daily-numbers.md`.
 
 ## Where reports go
 
 - **Under `/reports`, behind `teamOnly()`**, in `AdminLayout` with
   `head={<ChartScripts src="/reports.js" />}`. Copy `client.js` to where the
-  app serves static files, at the path you pass as `src`. Tables of rows
-  (top queries, recent bookings) are admin's `DataTable`, so they match
+  app serves static files, at the path you pass as `src`. Show tables of
+  rows (top queries, recent bookings) with admin's `DataTable` to match
   every other private view.
 - **Chart.js 4.5.1, the UMD build from cdnjs** (`CHARTJS_SRC`, with its
   integrity hash). No date adapter: the server sends bucket labels as text.
 
 ## Branding
 
-A canvas cannot use CSS classes, so `client.js` reads the theme's custom
+A canvas cannot use CSS classes. `client.js` reads the theme's custom
 properties at draw time (`--color-accent` for the series, `--color-ink-3`
 for the previous period, `--color-line` for gridlines, `--font-body`) and
-reads them again when the theme changes. An app whose `brand/` folder is
-filled already has its theme set from it, so a report for a client is
-branded by that: no colours in chart code.
+again when the theme changes. An app whose `brand/` folder is filled already
+has its theme set from it: its reports are in that brand. Put no colours in
+chart code.
 
-Tailwind 4 writes out only the theme variables some class uses. Extra
-series colours (`--color-chart-2` … `-6`, which `client.js` uses when they
-exist) need `@theme static`, or a class that uses them, to reach the page.
+Tailwind 4 writes out only the theme variables some class uses.
+`client.js` uses extra series colours (`--color-chart-2` … `-6`) when they
+exist. They reach the page only with `@theme static` or a class that uses
+them.
 
 ## In the page
 
@@ -85,14 +88,14 @@ exist) need `@theme static`, or a class that uses them, to reach the page.
 
 ## Handing a report to someone
 
-A schedule is a job (`schedule-job` skill): pick an hour that is right in
-the business's zone either side of a clock change. The
-hand-over is a deliverable (`work` skill), and a deliverable is a file:
+Schedule the report as a job (the `schedule-job` skill), at an hour that
+is right in the business's zone on both sides of a clock change. Hand it
+over as a deliverable (the `work` skill). A deliverable is a file:
 
 1. Render the report into `ReportDocument` (no private navigation,
-   stylesheet and script by `fileUrl`) and `printToPdf` it (`print.ts`).
-   That uses the browser the crawler installs (`tt-crawl setup`). The job
-   renders the page itself, so the browser needs no sign-in.
+   stylesheet and script by `fileUrl`) and `printToPdf` it (`print.ts`). It
+   uses the browser that `tt-crawl setup` installs. The browser needs no
+   sign-in: the job renders the page itself.
 2. `python3 ~/tools/taskandtool.py create-deliverables --file -` with `[{"path": pdf, "title": …, "status": "info"}]` on stdin (the `work` skill).
 3. With no browser, the deliverable is a link to the private report page
    instead: say which in the chat.
@@ -115,8 +118,8 @@ hand-over is a deliverable (`work` skill), and a deliverable is a file:
 | `test/` | copy with the files and keep green |
 
 Copy `client.js` with `charts.tsx` (the charts test reads `client.js`
-from beside it). `ops.tsx` imports `seo-report.tsx`, which imports `seo.ts`,
-so keep those even without Google.
+from beside it). `ops.tsx` imports `seo-report.tsx`, and `seo-report.tsx`
+imports `seo.ts`. Keep those even without Google.
 
 ## More, when the request needs it
 

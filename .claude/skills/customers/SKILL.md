@@ -1,46 +1,47 @@
 ---
 name: customers
-description: "The project's customers, their leads (one per enquiry) and their notes (calls, emails, meetings, texts): one record per person, matched by email, read by every app. Use when an app saves, shows or notes the people who got in touch. Not for the CRM's pipeline, deals or tasks (those are the CRM's own)."
+description: "Saves the project's customers, their leads (one per enquiry) and their notes (calls, emails, meetings, texts): one record per person, matched by email, shared by every app. Use when an app saves, shows or notes the people who got in touch. Not for the CRM's pipeline, deals or tasks (those are the CRM's own)."
 ---
 
 # Customers
 
 One `customers` row per person the business deals with, keyed by email, a
 `leads` row per enquiry they make, and their timeline in `customer_notes`.
-The CRM lists and edits them; any other app (the Website's submission page)
-reads them and adds notes, and both see the same rows.
+The team lists and edits them in the CRM. Other apps (the Website's
+submission page) read the same rows and add notes to them.
 
 ## The rules
 
-- **Everyone who gets in touch is a customer, at once.** Whatever saves a
-  submission, a booking or a call calls `savePerson` in the same request
-  (the forms, booking and phone skills already do). It matches by email (an
-  address gained in a merge too), else by phone where either side has no
-  email, never by name; it makes the customer in the CRM's first open status
-  when there is none, and fills address, company and custom fields from the
-  answers. Outside the CRM, never insert a customer yourself: `savePerson`
-  takes the same locks as the CRM's own create, so two saves at once make
-  one record.
+- **Everyone who gets in touch is a customer, at once.** Code that saves a
+  submission, a booking or a call also calls `savePerson` in the same
+  request (the forms, booking and phone skills already do). `savePerson`
+  matches by email, including an address gained in a merge. Where either
+  side has no email it matches by phone, and it never matches by name.
+  With no match it makes the customer in the CRM's first open status. It
+  fills address, company and custom fields from the answers. Outside the
+  CRM, never insert a customer yourself. Two saves at once make one
+  record: `savePerson` takes the same locks as the CRM's own create.
 - **Each enquiry is a lead** (`saveLead`): one per submission or booking (a
-  second call returns the first), open until the CRM converts it to a deal
-  or archives it. A form with `leads` off (a newsletter, a job application)
-  saves the person and no lead.
-- **Custom fields** are the CRM's, published in `customer_fields` at its
-  start and deploy. An answer under one of their keys fills it when it is a
-  valid value for the field's type (`answerFields`); anything else is left
-  out.
+  second call returns the first). It stays open until the team converts it
+  to a deal or archives it in the CRM. A form with `leads` off (a
+  newsletter, a job application) saves the person and no lead.
+- **Custom fields** are the CRM's. The CRM writes them to
+  `customer_fields` at each start and deploy. An answer under one of their
+  keys fills the field when the value is valid for the field's type
+  (`answerFields`). Other answers are left out.
 - **A note's time is a wall time** in the business's zone (`wallTime`), or
-  now. A call, email, meeting or text moves `last_contact_at` forward; a
-  plain note does not.
+  now. A note for a call, email, meeting or text moves `last_contact_at`
+  forward; a plain note does not.
 - **A customer is archived, never deleted.** A merged duplicate keeps
   `merged_into`.
 
 ## Where a lead got to
 
-`setLeadOutcome` keeps our word for it (`appointment_set`, `showed`, `no_show`,
-`sold`, `lost`), what it sold for, and the same lead's id and status in another
-CRM. A CRM's own bookings and won deals count without it. A job that reads
-another CRM: the reports skill's `references/daily-numbers.md`.
+`setLeadOutcome` records the outcome in our words (`appointment_set`,
+`showed`, `no_show`, `sold`, `lost`), what it sold for, and the same lead's
+id and status in another CRM. The CRM's own bookings and won deals count
+without it. For a job that reads another CRM, see the reports skill's
+`references/daily-numbers.md`.
 
 ## Files
 

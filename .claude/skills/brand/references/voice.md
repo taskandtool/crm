@@ -1,9 +1,9 @@
 # The voice
 
-`brand/voice.md` is the first file every writing task reads, whether it's a
-web page, an ad, a post or an email. Every line in it quotes one of the
-owner's own sentences as evidence. Adjectives alone don't show a writer how
-the owner sounds. A line with no sample stays "to fill".
+Whoever writes a web page, an ad, a post or an email reads `brand/voice.md`
+first. Back every line in it with one of the owner's own
+sentences, quoted: a writer can't copy a voice from adjectives. Leave a
+line with no sample "to fill".
 
 ## What to collect
 

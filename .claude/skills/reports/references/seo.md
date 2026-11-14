@@ -2,20 +2,22 @@
 
 ## The Google data
 
-Through two connections, each on the gateway (`googleCall` in `seo.ts`):
+The data comes through two connections, both on the gateway (`googleCall`
+in `seo.ts`):
 `google-search-console` (endpoint `google-search-console`) and
 `google-analytics` (endpoint `google-analytics-data`). Ask for whichever the
 app does not hold with `python3 ~/tools/taskandtool.py request-connection
-google-search-console --why "…"` (or `google-analytics`); on their own Google
-Cloud app the owner also needs the Search Console and Analytics Data APIs
-enabled.
+google-search-console --why "…"` (or `google-analytics`). An owner on
+their own Google Cloud app also enables the Search Console and Analytics
+Data APIs.
 
 `siteUrl` is the property exactly as Search Console names it
 (`sc-domain:acme.com`, or `https://acme.com/` with the slash). GA4 takes the
-numeric property id. A report page renders `loadSnapshot` of what a job
-fetched and `saveSnapshot`ed, never Google itself: the figures are slow to
-fetch and change daily. The figures that are easy to get wrong are in `seo.ts`'s
-header; `fetchSeo` and `SeoReport` keep them.
+numeric property id. A job fetches the figures and saves them with
+`saveSnapshot`. A report page renders `loadSnapshot`, never Google itself:
+the figures are slow to fetch and change daily. The figures that are easy to
+get wrong are listed in `seo.ts`'s header. `fetchSeo` and `SeoReport` handle
+each one.
 
 ## The weekly SEO report for a client
 

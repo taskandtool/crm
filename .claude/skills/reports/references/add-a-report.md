@@ -23,8 +23,8 @@ app.route("/reports", reports);
 ```
 
 A period to date ("this quarter", "this month") is `{ from: <first day>,
-to: todayIn(zone) }`; its first and last weeks are partial, so say so on
-the page. `lastFull` covers whole periods only.
+to: todayIn(zone) }`. Its first and last weeks are partial; say so on the
+page. `lastFull` covers whole periods only.
 
 A new chart over another table: add its entry to `SOURCES`, then
 `run(db, seriesQuery(name, period, grain, zone))` and

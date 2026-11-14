@@ -8,36 +8,37 @@ Wire the confirmation once, where bookings are taken:
 onBooked: (c, e) => afterResponse(c, notifyBooking(emailSend(envOf(c)), e, { domain })),
 ```
 
-It sends the booked, moved or cancelled message with the calendar invite
-(REQUEST, or CANCEL with a higher SEQUENCE) when the host has an email.
-`bookingAdmin`'s `onBooked` does the same for a booking the team makes.
+`notifyBooking` sends the booked, moved or cancelled message with the
+calendar invite (REQUEST, or CANCEL with a higher SEQUENCE) when the host
+has an email. `bookingAdmin`'s `onBooked` does the same for a booking the
+team makes.
 
 A booking made inside a form is confirmed when the form is complete
 (`confirm.ts`): wire `confirmFormBooking` into the forms routes'
 `onComplete` and the payments webhook's `afterPaid` (that file's header
-shows both). It claims the booking first, so the message goes once,
-whichever app, and whichever of the two hooks, gets there first; an app with
-no sender leaves it for one that has a sender.
+shows both). `confirmFormBooking` claims the booking first. The message goes once, from
+whichever app and hook gets there first. An app with no sender leaves the
+booking for an app that has one.
 
 **Reminders** are the CRM's job route `/_jobs/booking-reminders`
-(`bookingJobs` in `jobs.ts`; `reminders.ts`, the sending), a day and an
-hour before by default. Schedule it once (the `schedule-job` skill), every
-15 minutes, not visible to clients:
+(`bookingJobs` in `jobs.ts`; the sending is in `reminders.ts`). By default
+they go a day and an hour before. Schedule the job once with the
+`schedule-job` skill, every 15 minutes and not visible to clients:
 
 ```bash
 python3 ~/tools/taskandtool.py schedule-job "Booking reminders" --when "*/15 * * * *" --route /_jobs/booking-reminders
 ```
 
 `bookingJobs(getDb, { before: [1440, 120] })` changes the times. The job
-answers what was sent and what was left alone, and a 500 when a send
-failed. Each reminder is
-claimed in `booking_reminders` before it is sent, so it goes once
-(`reminders.ts` lists which go); with no sender each is recorded as `none`.
+answers with what was sent and what was left alone, and a 500 when a send failed. Each reminder is claimed in `booking_reminders` before it is sent,
+and goes once (`reminders.ts` lists which go). With no sender each is
+recorded as `none`.
 
-**Sending to a booker uses the owner's connection** (Task & Tool email
-reaches only the team). Email is Resend or Postmark
-(`python3 ~/tools/taskandtool.py list-connections`; ask with `python3 ~/tools/taskandtool.py request-connection resend --why "…"` if
-neither is granted), then `NOTIFY_FROM` on a domain verified there. Texts
-are the `phone` skill's: its Booked and Looking forward texts go from the
-business number beside these emails (call its `onBooked` from the same
-`onBooked`), with its own once-only claims.
+**Email to a booker goes through the owner's Resend or Postmark**,
+because Task & Tool email goes only to the team. Check with
+`python3 ~/tools/taskandtool.py list-connections`. If neither is granted,
+ask with `python3 ~/tools/taskandtool.py request-connection resend --why "…"`.
+Then set `NOTIFY_FROM` on a domain verified there. Texts are the `phone`
+skill's: its Booked and Looking forward texts go from the business number
+alongside these emails. They have their own once-only claims. Call its
+`onBooked` from the same `onBooked`.

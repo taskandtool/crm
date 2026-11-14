@@ -1,6 +1,6 @@
 ---
 name: booking
-description: "Appointments: booking types with hosts, hours and time off, tested slots, double-booking-safe booking, a time and its price inside a form, manage links, invites, reminders, calendar sync. Use for a booking page, availability, hours, appointments or calendars. Not for the form around a booking (forms)."
+description: "Books appointments: booking types with hosts, hours and time off, tested slots, double-booking-safe booking, a time and its price inside a form, manage links, invites, reminders and calendar sync. Use for a booking page, availability, hours, appointments or calendars. Not for the form around a booking (forms)."
 ---
 
 # Booking
@@ -10,63 +10,64 @@ video call, each with its length, rules and where it happens), who takes
 it (`booking_type_hosts`, the people in `resources`), when they can
 (`availability`, `time_off`), what their calendar says is busy
 (`calendars`, `busy`), and what is booked (`bookings`). Every app granted
-the project database reads the same rows: the Website's `/book` pages
-take bookings, the CRM sets types, hosts and hours and lists the bookings
-by email.
+the project database reads the same rows. Visitors book on the Website's
+`/book` pages. In the CRM the team sets types, hosts and hours, and the
+bookings are listed by email.
 
 ## The rules
 
 - **Pages read Postgres for busy times.** A page never reads a calendar
   while someone waits: the sync job copies busy times into `busy`, and the
-  page reads that. A booking a page writes goes to the calendar after the
-  response (`pushAfterWrites`), through the app's connections, which hold
-  no token in the app, in dev or production.
-- **The jobs are the CRM's.** Calendar sync and reminders run there
-  (`jobs.ts`, as job routes); other apps book into the same tables, mount
-  `bookingAdmin` with `calendars: false` and `pushAfterWrites`. Without the CRM in the project there is no sync and no
-  reminders: offer the owner the CRM Starter App.
+  page reads that. A booking, new or changed, goes to the calendar after the response (`pushAfterWrites`). The push goes through the app's connections; the
+  app holds no token, in dev or production.
+- **The jobs are the CRM's.** Calendar sync and reminders are job routes
+  in the CRM (`jobs.ts`). Other apps book into the same tables and mount
+  `bookingAdmin` with `calendars: false`, plus `pushAfterWrites`. A project
+  without the CRM has no sync and no reminders: offer the owner the CRM
+  Starter App.
 - **Store instants, show local.** Bookings and time off are `timestamptz`.
   Weekly hours are wall times in the person's `time_zone`. Show a booker
   times in *their* browser's zone and name it once ("Times are in
-  Kolkata"); show the team times in their own browser's zone
-  (`admin/viewer.tsx`); weekly hours and time off stay in the host's zone. A
-  message has no browser: it uses the booker's saved zone, else the host's.
-  Never format a time without `timeZone`: dev and production both run in UTC.
-- **Changing `slots.ts`, `book.ts` or `ics.ts`:** each file's header says
-  what is decided and why; `npm test` holds it.
+  Kolkata"). Show the team times in their own browser's zone
+  (`admin/viewer.tsx`). Weekly hours and time off stay in the host's zone.
+  A message has no browser: it uses the booker's saved zone, else the host's. Never format a
+  time without `timeZone`: dev and production both run in UTC.
+- **Changing `slots.ts`, `book.ts` or `ics.ts`:** each file's header has
+  what is decided and why, and `npm test` checks those decisions.
 - **The double-booking window.** An event added to the calendar since the
-  last sync is not in `busy` yet, so that time can be booked. The event
-  and the booking then both show in the owner's calendar. Say so if the owner asks; syncing every
-  15 minutes keeps it small. Bookings never double-book each other.
+  last sync is not in `busy` yet. Someone can book that time, and the event
+  and the booking then both show in the owner's calendar. Tell the owner if
+  they ask. With a sync every 15 minutes the window is short. A host's bookings never overlap.
 - **A booker is a customer** from the moment they book: `takeSlot` saves
-  them through the customers skill (`savePerson`), a visit at their place
-  giving their address.
+  them with the customers skill's `savePerson`. For a visit at their place
+  it saves their address too.
 - **A booker's own changes are noted.** A move or cancel through their
-  manage link writes a `booking_changes` row in the same statement, so the
-  CRM's notifications show what the team did not do. The team's changes are not
-  noted there.
+  manage link writes a `booking_changes` row in the same statement. The
+  CRM's notifications list these rows: the changes the team did not make.
+  The team's changes are not noted there.
 - **One appointment table.** `bookings` also holds what the team schedules
-  itself (the CRM's events): such a row may have no service (`title` names
-  it), nobody assigned yet, or no email. Read it with `left join` to
+  itself (the CRM's events). Such a row may have no service (its `title`
+  is the name), nobody assigned yet, or no email. Read it with `left join` to
   `booking_types` and `resources`. Reminders and invites go only to a
   booking with a service, someone taking it and an email.
-- **Messages** are `bookingMessage`'s words (`notify.ts`) through a `Send`;
-  `emailSend(env)` is the app's sender (`data/send.ts`). A booker needs
-  Resend or Postmark: Task & Tool email reaches only the team. No sender
-  for them: nothing is sent, the booking stands, and the
-  manage page's .ics is the invite. A text instead: `references/messages.md`.
-- **A customer books a type; a host takes it.** A type's time is open
-  when any of its active hosts is free in their own hours and zone, using
-  the type's rules. The booker may pick a host (`?host=`); otherwise the
+- **Messages** are `bookingMessage`'s words (`notify.ts`) sent through a
+  `Send`. `emailSend(env)` is the app's sender (`data/send.ts`). Email to a
+  booker needs Resend or Postmark, because Task & Tool email goes only to
+  the team. Without either, nothing is sent and the booking still stands;
+  the .ics on the manage page is the invite. A text instead:
+  `references/messages.md`.
+- **A customer books a type; a host takes it.** A time is open for a type
+  when any of its active hosts is free in their own hours and zone, under
+  the type's rules. The booker may pick a host (`?host=`). Otherwise the
   booking goes to the free host whose latest booking was made longest ago
-  (a host never booked goes first), chosen inside the transaction. One person's hours
-  are shared by every type they take: a booking of one closes the others.
-- **Where it happens is the type's, kept on the booking.** A type at their
-  place asks for the address; a phone call asks for the number; a type at
-  ours or a video call carries the type's address or link. The booking stores the
-  place as it was when booked, so changing a type's link or address never
-  moves a booking already made. A meeting link is shown on the manage page
-  and in the invite, never on the public type page.
+  (a host never booked goes first); the choice is made inside the
+  transaction. A person has one set of hours for every type they take, and
+  booking one type closes that time for the others.
+- **Where it happens is set on the type and copied to the booking.** A type at
+  the customer's place asks for the address, and a phone call asks for the
+  number. A type at ours or a video call carries the type's address or
+  link. The booking stores the place as it was when booked. Changing a
+  type's link or address later leaves existing bookings as they are. A meeting link is shown on the manage page and in the invite, never on the public type page.
 - **Buffers.** The slot plus its before and after buffers must be clear of
   busy time and time off; two bookings are at least after + before apart.
   Buffers may fall outside the weekly hours.
@@ -81,18 +82,22 @@ sync.
 ## A time inside a form, and a paid booking
 
 A form's `booking` step (`bookingStep(getDb, { source })` in
-`form-step.tsx`) books the person the questions named; the booking names
-the submission (`submission_id`), the payment step charges the type's
-`price_cents`, and the booking is confirmed when the form is complete
-(`confirm.ts`). The time is held for 45 minutes (`hold_until`): until the
-form is complete the booking is the visitor's, so it keeps its time but is
-on no team list (the Schedule, an app's events) except its submission.
+`form-step.tsx`) books the person the form's questions named. The booking
+records the submission (`submission_id`), the payment step charges the
+type's `price_cents`, and `confirm.ts` confirms the booking when the form
+is complete. The time is held for 45 minutes (`hold_until`). Until the
+form is complete the booking keeps its time but appears on no team list
+(the Schedule, an app's events), only on its submission.
+
 `releaseLapsedHolds` runs before times are listed or taken. It cancels a
 held booking only when the form is not complete and either no payment was
-started or its checkout expired; the form then sends the person back to
-pick a time again (`stillValid`). How the three link: the payments skill's "Submissions,
-bookings and payments". The thanks page says the time (`thanks`), through the draft's key in its
-address; the manage page changes nothing on one tap: a booker asks to move or cancel, then confirms.
+started or its checkout expired. The visitor is then sent back to pick a
+time again (`stillValid`). How submissions, bookings and payments link:
+the payments skill's "Submissions, bookings and payments".
+
+The thanks page has the time (`thanks`), found through the draft's key in
+its address. On the manage page one tap changes nothing: a booker asks to
+move or cancel, then confirms.
 
 ## Files
 

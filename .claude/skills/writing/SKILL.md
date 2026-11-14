@@ -5,19 +5,19 @@ description: "Writes and edits the words people read: a page, a blog post or art
 
 # Writing
 
-Write for someone skimming on a phone, who leaves when they can't tell
+Write for someone skimming on a phone. They leave when they can't tell
 what's in it for them. Say what the business does and what the reader gets,
-in words a person would say out loud. Clear beats clever.
+in words a person would say out loud. Choose clear over clever.
 
 ## Facts and voice
 
 The owner's notes are the only source; the app's `AGENTS.md` names them.
 When the words need a fact the notes don't have, write a `NEED:` line for
 the owner instead of a vaguer sentence. Never invent customers, results,
-awards or urgency. A rating carries its count and source.
+awards or urgency. Give a rating with its count and source.
 
-Follow `brand/voice.md`, plainer where the owner's own copy is marketese.
-Plain still sounds like the owner: keep their warmth and humour, carried by
+Follow `brand/voice.md`, but write plainer where the owner's own copy is
+marketese. Keep their warmth and humour. Show it with
 a true detail ("If your boiler is older than your car, we'll tell you
 straight whether it's worth fixing"). Quote one of their lines at most once
 in a piece.
@@ -29,7 +29,7 @@ in a piece.
 2. **Lead with the value.** The first line says what this is and what the
    reader gets, before how it works. A page headline is usually under ten
    words.
-3. **Specific beats general.** "Six roofs in one day in Coles Crossing"
+3. **Be specific.** "Six roofs in one day in Coles Crossing"
    says more than "fast, reliable service".
 4. **One idea per sentence.** A second idea after a comma gets its own
    sentence or goes.

@@ -34,8 +34,9 @@ there, make the form with `node scripts/forms.mjs save`, then do steps 4 and 6.
 
 ## The command
 
-An app without `scripts/forms.mjs` gets one when it takes its first form,
-so the AI never writes SQL against `forms`. `scripts/forms.ts`:
+Give an app `scripts/forms.mjs` when it takes its first form, if it has
+none. With it, the agent never writes SQL against `forms`.
+`scripts/forms.ts`:
 
 ```ts
 import { formsCli } from "../src/forms/cli";
@@ -51,8 +52,8 @@ try {
 ```
 
 and `scripts/forms.mjs` runs it under tsx (copy another `.mjs` launcher and
-`scripts/run.mjs`). `src/data/cli.mjs` comes with it; `machineEnv()` reads
-`~/.env`, which a chat shell may not have loaded.
+`scripts/run.mjs`). `src/data/cli.mjs` is part of `data/`. `machineEnv()`
+reads `~/.env`, because a chat shell may not have loaded it.
 
 ## Steps, a booking and a payment
 
@@ -70,27 +71,26 @@ app.route("/", formRoutes(getDb, {
 ```
 
 A form that ends in payment completes in the payments webhook instead
-(`afterPaid`, the payments skill's setup), which confirms its booking the
-same way. A form with
-a step that is not wired shows "not ready" and logs which line is missing.
+(`afterPaid`, the payments skill's setup). The webhook confirms its
+booking the same way. A form with a step that is not wired shows "not
+ready" and logs which line is missing.
 When a form sells things, load `cart.js` on every page (the Website:
 `cart: true` in `src/site.ts`).
 
 ## Telling the owner
 
-The form's `notify_emails` are emailed once the questions are answered,
-with what was ordered and its total; a booking and a payment follow it, and
-the submission shows them, with who the email reached (`notified`). A form
-saved without a list goes to the owner.
+The form's `notify_emails` get an email once the questions are answered,
+with what was ordered and its total. A booking and a payment come later.
+The submission shows them, and who the email reached (`notified`). With no list, the email goes to the owner.
 
-**Task & Tool email** sends it with nothing to set up, to people who can
+**Task & Tool email** needs nothing set up and reaches the people who can
 open this app in Task & Tool (`python3 ~/tools/taskandtool.py request-connection taskandtool --why "email the team new submissions"` if it is not on).
-Anyone else on the list needs Resend or Postmark, configured once for
+Anyone else on the list needs Resend or Postmark. Configure it once for
 every skill that sends: `NOTIFY_FROM`, an address on a domain verified
-with the vendor, and `NOTIFY_VIA=resend` or `postmark`, with `:<slug>`
+with the vendor, and `NOTIFY_VIA=resend` or `postmark`. Add `:<slug>`
 when the connection's endpoint slug is not the vendor's name.
 
 The connection (`python3 ~/tools/taskandtool.py request-connection resend
---why "send form emails"`) works in dev and production alike: Task & Tool
-adds the key, which never reaches the app. What `sendEmail` returns: the
+--why "send form emails"`) works in dev and production alike. Task & Tool
+adds the key, and the key never reaches the app. What `sendEmail` returns: the
 `data` skill's Email.

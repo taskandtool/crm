@@ -6,8 +6,8 @@ description: "Finds and fixes the signs that copy, pictures or video were made b
 # Tropes
 
 Readers and platforms trust copy less when it sounds generated. Most tells
-are a default the model reached for because it lacked a fact about this
-business, so the fix is that fact, never a synonym.
+are a default the model reached for when it lacked a fact about this
+business. Fix one with that fact, not a synonym.
 
 ## The check
 
@@ -29,9 +29,9 @@ An `error` fails the check; a `hint` is yours to judge. The app's own check
 
 ## Fixing
 
-Rewrite the whole sentence; patching a phrase keeps the shape. A missing
-fact is a `NEED:` line for the owner. Fix these first: a thing doing the
-verb, invented proof and the pivot. A phrase the owner insists on stays; on
+Rewrite the whole sentence; patching a phrase keeps the shape. Write a missing
+fact as a `NEED:` line for the owner. Fix these first: a thing doing the
+verb, invented proof and the pivot. Keep a phrase the owner insists on; on
 a website, mark it `data-lint-allow="<rule>"`.
 
 ## Pictures and video

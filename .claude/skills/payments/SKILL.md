@@ -5,29 +5,29 @@ description: "Takes money through the owner's own Stripe: Checkout for an order,
 
 # Payments
 
-Money goes through the owner's own Stripe account, by their connection.
-Every payment is a row in `payments` naming what it pays for (`ref_type`,
-`ref_id`), so every app reads the same rows.
+Payments go to the owner's own Stripe account through their connection.
+Each payment is a row in `payments` that names what it pays for
+(`ref_type`, `ref_id`). Every app reads the same rows.
 
 ## The rules
 
 - **Status comes only from the webhook.** A success redirect is a URL
-  anyone can open, and arrives before a delayed payment settles: the thanks
-  page says the payment is being confirmed. Only `webhook.ts` changes
+  anyone can open, and it comes before a delayed payment settles. The
+  thanks page says the payment is being confirmed. Only `webhook.ts` changes
   `status`, and never backwards.
 - **The amount comes from the server** (the form's definition, the booking
   type, the invoice), never from the page. Money is minor units with a
-  lowercase currency, through `money.ts`; never `* 100`, never two
-  currencies added.
+  lowercase currency, through `money.ts`. Never multiply by 100 or add two
+  currencies.
 - **Moving money needs the owner's go-ahead** in chat for that amount and
   payment: a charge or a refund. A refund asked for in chat:
   `references/recipes.md`.
 - **Test rows are not revenue.** `livemode = false` is test mode; reports
   and the CRM leave it out.
-- **Changing `webhook.ts` or `checkout.ts`** keeps their guarantees (the
+- **Changing `webhook.ts` or `checkout.ts`:** keep their guarantees (the
   raw-body signature, each event once, statuses only forward, an
-  Idempotency-Key from the row's random key on every POST); `test/` checks
-  each. Adding an event: `references/recipes.md`.
+  Idempotency-Key from the row's random key on every POST). `test/` checks
+  each one. Adding an event: `references/recipes.md`.
 
 ## Submissions, bookings and payments
 
@@ -41,34 +41,33 @@ booking (when)                    booking   bookings
 payment (money)                   payments  payments
 ```
 
-- An order is up to three rows, each in the table that owns it, linked
-  from the later row to the earlier, with the person's email on each, so it
+- An order is up to three rows, each in the table that owns it. The later
+  row links to the earlier one, and each has the person's email. An order
   needs no table of its own. "My orders" is a form's submissions. Each
   skill writes only its own table; showing them together is a read (forms
   `linked.ts`).
 - Three ways to ask for money, all rows in `payments`:
   - **Pay now** on our page (an order, a paid booking, a deposit): a form's
-    `payment` step (`form-step.tsx`), which opens Checkout with the form's
+    `payment` step (`form-step.tsx`). It opens Checkout with the form's
     lines and tax rate.
   - **Pay later** from an email (an invoice, a deposit when a proposal is
     signed): a Stripe invoice, the invoices skill.
   - **A standing link** (a bio, a flyer): a one-page form with a `payment`
     step, at `/forms/<key>/start`; each click opens a fresh Checkout.
-- **Not Stripe Payment Links:** their payments name nothing here. One the
+- **Not Stripe Payment Links:** their payments link to no row here. One the
   owner already made can go on a page; tell them its payments will not
   show beside a form.
 - **Every app that takes payments has its own webhook.** The Website and
-  the CRM never know of each other, so each mounts `stripeWebhook` and gets
-  its own Stripe endpoint and its own `STRIPE_WEBHOOK_SECRET`. An event both
-  receive is applied once (`stripe_events`); one an app's skills do not
-  handle is answered 200 and left for the app that does.
+  the CRM do not know about each other. Each mounts `stripeWebhook` and has
+  its own Stripe endpoint and `STRIPE_WEBHOOK_SECRET`. An event both
+  receive is applied once (`stripe_events`). An event an app's skills do
+  not handle gets a 200 and is left for the app that does.
 
 ## The key and the webhook
 
-The owner connects a restricted key (`rk_…`), granted to the app; Task &
-Tool adds it to every call, in dev and production, and it is never in the
-app. Call
-Stripe with `stripeFrom(envOf(c))` in a route and `stripeFrom(process.env)`
+The owner connects a restricted key (`rk_…`), granted to the app. Task &
+Tool adds it to every call in dev and production; the key is never in the
+app. Call Stripe with `stripeFrom(envOf(c))` in a route and `stripeFrom(process.env)`
 in a script. Making the key, the request command and registering the
 webhook: `references/setup.md`.
 
